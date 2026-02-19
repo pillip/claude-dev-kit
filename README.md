@@ -14,18 +14,19 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 ## Workflow
 
 ```
-PRD.md ──▶ /kickoff ──▶ /implement ──▶ /review ──▶ /ship
-           │              │              │            │
-           ▼              ▼              ▼            ▼
-     Requirements      Code impl      Senior        Merge & deploy
-     UX spec           GH Issue       Minimal fix   CHANGELOG
-     Architecture      PR creation    Re-run tests  STATUS update
-     Issue breakdown   Closes #N
-     Test plan
+Idea ──▶ /prd ──▶ /kickoff ──▶ /implement ──▶ /review ──▶ /ship
+          │        │              │              │            │
+          ▼        ▼              ▼              ▼            ▼
+     Interactive  Requirements  Code impl      Senior        Merge & deploy
+     PRD writing  UX spec       GH Issue       Minimal fix   CHANGELOG
+                  Architecture  PR creation    Re-run tests  STATUS update
+                  Issue breakdown Closes #N
+                  Test plan
 ```
 
 | Skill | Description | Outputs |
 |-------|-------------|---------|
+| `/prd [path]` | Interactive conversation to co-write a PRD | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review on PR + minimal fixes | `docs/review_notes.md` |
@@ -70,8 +71,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 8 agent definitions
-│   ├── skills/          # 4 skills (kickoff, implement, review, ship)
+│   ├── agents/          # 9 agent definitions
+│   ├── skills/          # 5 skills (prd, kickoff, implement, review, ship)
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -87,6 +88,14 @@ gh auth status
 If not authenticated, run `gh auth login`.
 
 ## Usage
+
+### PRD — Co-write a PRD interactively
+
+```
+/prd [output-path]
+```
+
+Starts an interactive conversation to help you turn a rough idea into a structured PRD. The agent asks clarifying questions about missing sections (goals, target users, requirements, etc.) and generates a PRD following the `docs/example_prd.md` format. Default output: `PRD.md`.
 
 ### Kickoff — Generate project plan
 
@@ -131,10 +140,11 @@ Verifies tests pass, updates documentation, and merges the PR.
 
 ## Agents
 
-8 specialized agents, each with a defined role and tool permissions:
+9 specialized agents, each with a defined role and tool permissions:
 
 | Agent | Role | Tools |
 |-------|------|-------|
+| `prd-writer` | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
@@ -148,7 +158,8 @@ Verifies tests pass, updates documentation, and merges the PR.
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (8)
+├── agents/                  # Agent role definitions (9)
+│   ├── prd-writer.md
 │   ├── requirement-analyst.md
 │   ├── ux-designer.md
 │   ├── architect.md
@@ -157,7 +168,8 @@ claude-dev-kit/
 │   ├── developer.md
 │   ├── reviewer.md
 │   └── documenter.md
-├── skills/                  # Workflow skills (4)
+├── skills/                  # Workflow skills (5)
+│   ├── prd/SKILL.md
 │   ├── kickoff/SKILL.md
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
