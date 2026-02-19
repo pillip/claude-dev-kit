@@ -26,7 +26,7 @@ Idea ──▶ /prd ──▶ /kickoff ──▶ /implement ──▶ /review �
 
 | Skill | Description | Outputs |
 |-------|-------------|---------|
-| `/prd [path]` | Interactive conversation to co-write a PRD | `PRD.md` (or specified path) |
+| `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review on PR + minimal fixes | `docs/review_notes.md` |
@@ -95,7 +95,7 @@ If not authenticated, run `gh auth login`.
 /prd [output-path]
 ```
 
-Starts an interactive conversation to help you turn a rough idea into a structured PRD. The agent asks clarifying questions about missing sections (goals, target users, requirements, etc.) and generates a PRD following the `docs/example_prd.md` format. Default output: `PRD.md`.
+Starts an interactive conversation to help you create or update a PRD. If the file already exists, the agent reads it, summarizes the current state, and asks what you want to change — then produces an updated version with a diff summary. If the file doesn't exist, it guides you from scratch by asking about missing sections (goals, target users, requirements, etc.). Output follows the `docs/example_prd.md` format. Default output: `PRD.md`.
 
 ### Kickoff — Generate project plan
 
