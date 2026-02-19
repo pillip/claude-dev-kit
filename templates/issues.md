@@ -1,6 +1,6 @@
 # Issues
 
-> SSOT: 진행/완료 판정은 이 문서의 Status로 관리 (코드 분석으로 PRD 완료 판정하지 않음)
+> SSOT: Progress and completion are tracked by the Status field in this document (not inferred from code analysis)
 > Rule: **1 Issue = 1 PR** (GitHub-first)
 
 ## Conventions
@@ -9,7 +9,7 @@
 - Priority: `P0` | `P1` | `P2`
 - Estimate: `0.5d` | `1d` | `1.5d`
 - Branch: `issue/ISSUE-<NNN>-<slug>`
-- GitHub: **/implement가 GH Issue(없으면 생성) + PR 생성하고 연결(Closes #N)**
+- GitHub: **/implement creates a GH Issue (if missing) + PR and links them (Closes #N)**
 
 ---
 
