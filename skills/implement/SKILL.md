@@ -14,7 +14,9 @@ Algorithm:
 2) Locate $ARGUMENTS in issues.md.
 3) Ensure Branch is set; if empty, derive `issue/$ARGUMENTS-<slug>` and write back.
 4) Ensure GH-Issue exists:
-   - If empty: create with title `[$ARGUMENTS] <title>` and body summary; capture issue number/url; write back.
+   - If empty: `gh issue create --title "[$ARGUMENTS] <title>" --body "<body>"`
+   - Body must include: issue goal, scope (in/out), acceptance criteria, and implementation notes from issues.md.
+   - Capture issue number/url; write back to issues.md.
 5) Checkout branch; implement minimal code + tests.
 6) Run tests.
 7) Commit + push.

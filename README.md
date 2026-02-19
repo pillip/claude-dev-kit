@@ -29,8 +29,12 @@ Idea ──▶ /prd ──▶ /kickoff ──▶ /implement ──▶ /review �
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
-| `/review ISSUE-001` | Senior review on PR + minimal fixes | `docs/review_notes.md` |
+| `/review ISSUE-001` | Senior review + security audit on PR | `docs/review_notes.md` |
 | `/ship` | Merge PR + update docs/changelog | `CHANGELOG.md`, `STATUS.md` updated |
+| `/debug [error]` | Analyze a bug and propose a targeted fix | Diagnosis + fix |
+| `/migrate [target]` | Plan and execute a migration | Migration plan + updated code/config |
+| `/refactor [path]` | Improve code structure without changing behavior | Refactored code |
+| `/devops [target]` | Set up CI/CD, Dockerfiles, deployment configs | Infrastructure files |
 
 ## Requirements
 
@@ -71,8 +75,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 9 agent definitions
-│   ├── skills/          # 5 skills (prd, kickoff, implement, review, ship)
+│   ├── agents/          # 13 agent definitions
+│   ├── skills/          # 9 skills
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -128,7 +132,7 @@ Reads the PRD and runs 5 subagents to generate planning documents:
 /review ISSUE-001
 ```
 
-Performs a senior review on the PR. Applies only minimal fixes; larger changes are proposed as follow-up issues.
+Performs a senior code review with an integrated security audit. Checks correctness, maintainability, and complexity alongside OWASP Top 10 vulnerabilities, dependency CVEs, and hardcoded secrets. Outputs `docs/review_notes.md` with **Code Review** and **Security Findings** sections. Applies only minimal fixes; larger changes are proposed as follow-up issues.
 
 ### Ship — Deploy
 
@@ -138,9 +142,41 @@ Performs a senior review on the PR. Applies only minimal fixes; larger changes a
 
 Verifies tests pass, updates documentation, and merges the PR.
 
+### Debug — Analyze and fix bugs
+
+```
+/debug [error description or file path]
+```
+
+Traces an error from stack trace or reproduction steps back to the root cause, proposes a minimal fix, and runs tests to confirm no regressions.
+
+### Migrate — Upgrade dependencies or runtime
+
+```
+/migrate [target, e.g. "Django 5.0" or "Python 3.12"]
+```
+
+Scans the codebase for impact, generates a step-by-step migration plan with rollback instructions, and applies changes incrementally with test verification.
+
+### Refactor — Improve code structure
+
+```
+/refactor [file or module path]
+```
+
+Identifies code smells, proposes prioritized refactorings, and applies them one at a time while running tests after each step. Never changes observable behavior.
+
+### DevOps — Set up infrastructure
+
+```
+/devops [target, e.g. "github-actions", "docker", "compose"]
+```
+
+Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows, and deployment scripts.
+
 ## Agents
 
-9 specialized agents, each with a defined role and tool permissions:
+13 specialized agents, each with a defined role and tool permissions:
 
 | Agent | Role | Tools |
 |-------|------|-------|
@@ -151,14 +187,18 @@ Verifies tests pass, updates documentation, and merges the PR.
 | `planner` | Break work into issues | Read, Glob, Grep, Write, Edit |
 | `qa-designer` | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
 | `developer` | Implement code + GH Issue/PR | Read, Glob, Grep, Write, Edit, Bash |
-| `reviewer` | Senior code review | Read, Glob, Grep, Edit, Bash, Write |
+| `reviewer` | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
 | `documenter` | Maintain documentation | Read, Glob, Grep, Write, Edit |
+| `debugger` | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
+| `migrator` | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
+| `refactorer` | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
+| `devops` | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 
 ## Project Structure
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (9)
+├── agents/                  # Agent role definitions (13)
 │   ├── prd-writer.md
 │   ├── requirement-analyst.md
 │   ├── ux-designer.md
@@ -167,13 +207,21 @@ claude-dev-kit/
 │   ├── qa-designer.md
 │   ├── developer.md
 │   ├── reviewer.md
-│   └── documenter.md
-├── skills/                  # Workflow skills (5)
+│   ├── documenter.md
+│   ├── debugger.md
+│   ├── migrator.md
+│   ├── refactorer.md
+│   └── devops.md
+├── skills/                  # Workflow skills (9)
 │   ├── prd/SKILL.md
 │   ├── kickoff/SKILL.md
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
-│   └── ship/SKILL.md
+│   ├── ship/SKILL.md
+│   ├── debug/SKILL.md
+│   ├── migrate/SKILL.md
+│   ├── refactor/SKILL.md
+│   └── devops/SKILL.md
 ├── templates/               # Document templates
 │   ├── requirements.md
 │   ├── ux_spec.md

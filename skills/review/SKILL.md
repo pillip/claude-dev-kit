@@ -7,9 +7,13 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ---
 Steps:
 1) Find PR from issues.md (PR field) or `gh pr status`.
-2) Ask reviewer subagent to review code/docs.
-3) Apply minimal fixes; re-run tests.
-4) Update docs/review_notes.md (findings, changes, follow-ups).
+2) Ask reviewer subagent to perform code review + security audit:
+   - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
+   - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
+3) Apply minimal fixes for Critical/High security findings and code issues; re-run tests.
+4) Update docs/review_notes.md with two sections:
+   - **Code Review**: findings, changes, follow-ups.
+   - **Security Findings**: severity-classified list with remediation steps.
 5) If PR is draft and ready: `gh pr ready`.
 
 ## Error Handling
