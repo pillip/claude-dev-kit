@@ -84,14 +84,26 @@ cmd_remove() {
   root="$(repo_root)"
   local wt_path="$root/$WORKTREE_DIR/$s"
 
+  # If CWD is inside the worktree being removed, cd to repo root first
+  local cwd
+  cwd="$(pwd -P)"
+  local real_wt
+  real_wt="$(cd "$wt_path" 2>/dev/null && pwd -P || echo "")"
+  if [ -n "$real_wt" ] && [[ "$cwd" == "$real_wt"* ]]; then
+    cd "$root"
+  fi
+
   if [ -d "$wt_path" ]; then
     git worktree remove "$wt_path" --force 2>/dev/null || true
   fi
 
   # Clean up the branch (local only)
   if git show-ref --verify --quiet "refs/heads/$branch"; then
-    git branch -D "$branch" 2>/dev/null || true
+    git branch -D "$branch" >/dev/null 2>&1 || true
   fi
+
+  # Print repo root so callers can update their CWD
+  echo "$root"
 }
 
 cmd_root() {

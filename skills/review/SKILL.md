@@ -36,4 +36,4 @@ Steps:
 - Review changes are commits on the existing PR branch.
 - If review fixes must be fully undone: `git revert` the review commits (do not force-push).
 - docs/review_notes.md is append-only; no rollback needed for notes.
-- Clean up worktree when done: `bash scripts/worktree.sh remove "$BRANCH"`.
+- Clean up worktree when done: `cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove "$BRANCH"`.

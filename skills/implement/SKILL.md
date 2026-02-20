@@ -49,9 +49,14 @@ Algorithm:
 - If `gh pr create` fails: retry once; if still failing, the branch is already pushed — report and let user create PR manually.
 
 ## Rollback
+- **Before cleanup, always cd to repo root** to avoid broken CWD:
+  ```bash
+  cd "$(bash scripts/worktree.sh root)"
+  ```
 - If failure occurs after worktree creation but before PR:
-  1. `bash scripts/worktree.sh remove <branch>` (removes worktree + local branch)
-  2. `git push origin --delete <branch>` (remote cleanup, if pushed)
+  1. `cd "$(bash scripts/worktree.sh root)"`
+  2. `bash scripts/worktree.sh remove <branch>` (removes worktree + local branch)
+  3. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation:
   1. `gh pr close <pr_number>` to close the broken PR.
   2. Clean up worktree and branch as above.

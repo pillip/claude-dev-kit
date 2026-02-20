@@ -34,10 +34,15 @@ Steps:
 - If tests fail after fix: do NOT push or create PR. Report failing tests and stop.
 
 ## Rollback
+- **Before cleanup, always cd to repo root** to avoid broken CWD:
+  ```bash
+  cd "$(bash scripts/worktree.sh root)"
+  ```
 - If failure occurs after worktree creation but before PR:
-  1. `bash scripts/worktree.sh remove <branch>` (removes worktree + local branch)
-  2. `git push origin --delete <branch>` (remote cleanup, if pushed)
-- If failure occurs after PR creation: `gh pr close <pr_number>` then clean up worktree and branch.
+  1. `cd "$(bash scripts/worktree.sh root)"`
+  2. `bash scripts/worktree.sh remove <branch>` (removes worktree + local branch)
+  3. `git push origin --delete <branch>` (remote cleanup, if pushed)
+- If failure occurs after PR creation: `gh pr close <pr_number>` then clean up worktree and branch as above.
 
 ## Guidelines
 - Never guess-and-patch. Always confirm the root cause before proposing a fix.

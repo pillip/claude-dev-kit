@@ -16,6 +16,7 @@ Steps:
 4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
 5) Clean up worktree if one exists for this branch:
    ```bash
+   cd "$(bash scripts/worktree.sh root)"
    bash scripts/worktree.sh remove <branch>
    ```
 6) Post-merge smoke on main (optional).

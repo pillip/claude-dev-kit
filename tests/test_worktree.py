@@ -87,6 +87,21 @@ class TestRemove:
         )
         assert branch_check.stdout.strip() == ""
 
+    def test_remove_from_inside_worktree(self, git_repo):
+        """Remove should succeed even when CWD is inside the worktree."""
+        create_result = _run(["create", "feature/cwd-test"], git_repo)
+        wt_path = create_result.stdout.strip()
+
+        # Run remove with CWD inside the worktree
+        result = _run(["remove", "feature/cwd-test"], wt_path)
+        assert result.returncode == 0
+
+        # Output should be the repo root
+        assert result.stdout.strip() == os.path.realpath(git_repo)
+
+        # Worktree should be gone
+        assert not os.path.isdir(wt_path)
+
     def test_remove_nonexistent_is_noop(self, git_repo):
         result = _run(["remove", "feature/ghost"], git_repo)
         assert result.returncode == 0
