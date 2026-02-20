@@ -7,9 +7,18 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 Steps:
 1) Identify PR to merge (current branch or most recent done issue PR).
 2) Ensure tests pass locally and PR checks are green.
-3) Update docs/README.md, STATUS.md; append CHANGELOG.md.
+3) Update docs/README.md; append CHANGELOG.md.
+   Update shared files via flock:
+   ```bash
+   ROOT="$(bash scripts/worktree.sh root)"
+   bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
+   ```
 4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
-5) Post-merge smoke on main (optional).
+5) Clean up worktree if one exists for this branch:
+   ```bash
+   bash scripts/worktree.sh remove <branch>
+   ```
+6) Post-merge smoke on main (optional).
 
 ## Error Handling
 - Pre-merge checks (must all pass before merging):

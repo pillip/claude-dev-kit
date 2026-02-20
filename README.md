@@ -236,12 +236,16 @@ claude-dev-kit/
 │   ├── install_user.sh
 │   ├── install_project.sh
 │   ├── ensure_gh.sh
-│   └── merge_settings.py
+│   ├── merge_settings.py
+│   ├── worktree.sh          # git worktree lifecycle (create/path/remove/root)
+│   └── flock_edit.sh        # file-lock wrapper for shared files
 ├── user/                    # User-level tools
 │   └── kit/bin/cc-statusline.py
 ├── tests/                   # Tests
 │   ├── test_merge_settings.py
-│   └── test_agent_state.py
+│   ├── test_agent_state.py
+│   ├── test_worktree.py
+│   └── test_flock_edit.py
 ├── docs/                    # Kit documentation
 │   └── PRD_agent_system_v0.md
 └── README.md
@@ -266,6 +270,8 @@ pytest tests/ -q
 Current test coverage:
 - `test_merge_settings.py` — JSON deep merge logic
 - `test_agent_state.py` — Agent state hook lifecycle
+- `test_worktree.py` — git worktree create/path/remove/root
+- `test_flock_edit.py` — file-lock wrapper serialization
 
 ## Updating
 
@@ -277,6 +283,31 @@ git pull origin main
 cd ..
 bash .claude-kit/scripts/install_project.sh
 ```
+
+## Concurrency
+
+Multiple skill sessions (e.g., two `/implement` runs on different issues) can
+execute in parallel thanks to **git worktrees**. Each session gets its own
+working directory under `.worktrees/`, so branches never collide.
+
+```bash
+# Worktree lifecycle (used internally by skills)
+bash scripts/worktree.sh create issue/ISSUE-001-login   # → .worktrees/issue-ISSUE-001-login/
+bash scripts/worktree.sh path   issue/ISSUE-001-login   # print path
+bash scripts/worktree.sh remove issue/ISSUE-001-login   # cleanup
+bash scripts/worktree.sh root                            # main repo root
+```
+
+Shared files (`issues.md`, `STATUS.md`) live in the main repo root and are
+protected by an exclusive file lock during read-modify-write:
+
+```bash
+ROOT="$(bash scripts/worktree.sh root)"
+bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c 'echo "update" >> "$ROOT/issues.md"'
+```
+
+`flock_edit.sh` uses `flock(1)` when available, falling back to `mkdir`-based
+locking on macOS.
 
 ## v0 Scope & Limitations
 
