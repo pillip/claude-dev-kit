@@ -14,10 +14,13 @@ Steps:
    bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
    ```
 4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
-5) Clean up worktree if one exists for this branch:
+5) Clean up worktree if one exists for this branch.
+   **CRITICAL**: `cd` and `remove` MUST run in a single shell command.
+   A child process `cd` cannot change the parent shell's CWD, so if they
+   are separate calls the shell CWD remains in the deleted directory and
+   ALL subsequent commands (including hooks) will fail.
    ```bash
-   cd "$(bash scripts/worktree.sh root)"
-   bash scripts/worktree.sh remove <branch>
+   cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>
    ```
 6) Post-merge smoke on main (optional).
 
