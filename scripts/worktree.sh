@@ -11,8 +11,9 @@ WORKTREE_DIR=".worktrees"
 
 # Convert branch name to filesystem-safe slug
 # e.g. issue/ISSUE-001-login → issue-ISSUE-001-login
+# Replaces / and other filesystem-unsafe characters with -
 slug() {
-  echo "$1" | tr '/' '-'
+  echo "$1" | tr '/\\*?[]:<>|'"'"'"' '-'
 }
 
 # Get the main repo root (the original working tree, not a worktree)
@@ -94,7 +95,11 @@ cmd_remove() {
   fi
 
   if [ -d "$wt_path" ]; then
-    git worktree remove "$wt_path" --force 2>/dev/null || true
+    if ! git worktree remove "$wt_path" --force 2>&1; then
+      echo "warning: failed to remove worktree at $wt_path, cleaning up manually" >&2
+      rm -rf "$wt_path"
+      git worktree prune 2>/dev/null || true
+    fi
   fi
 
   # Clean up the branch (local only)

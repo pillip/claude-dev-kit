@@ -31,11 +31,42 @@ try_flock() {
 }
 
 # --- mkdir-based fallback ---
+# Stale lock threshold in seconds (process crashed without cleanup)
+STALE_LOCK_SECONDS=120
+
 try_mkdir() {
   local lockdir="${LOCKFILE}.d"
+  local pidfile="${lockdir}/pid"
   local deadline=$((SECONDS + 30))
 
   while ! mkdir "$lockdir" 2>/dev/null; do
+    # Check for stale lock: if the lock directory is older than threshold
+    # or the PID that created it is no longer running, force-remove it
+    if [ -f "$pidfile" ]; then
+      local lock_pid
+      lock_pid="$(cat "$pidfile" 2>/dev/null || echo "")"
+      if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+        echo "warning: removing stale lock (pid $lock_pid no longer running)" >&2
+        rm -rf "$lockdir"
+        continue
+      fi
+    elif [ -d "$lockdir" ]; then
+      # No pidfile but lockdir exists — check age
+      local lock_age=0
+      if stat -f %m "$lockdir" >/dev/null 2>&1; then
+        # macOS stat
+        lock_age=$(( $(date +%s) - $(stat -f %m "$lockdir") ))
+      elif stat -c %Y "$lockdir" >/dev/null 2>&1; then
+        # Linux stat
+        lock_age=$(( $(date +%s) - $(stat -c %Y "$lockdir") ))
+      fi
+      if [ "$lock_age" -ge "$STALE_LOCK_SECONDS" ]; then
+        echo "warning: removing stale lock (age ${lock_age}s >= ${STALE_LOCK_SECONDS}s)" >&2
+        rm -rf "$lockdir"
+        continue
+      fi
+    fi
+
     if [ $SECONDS -ge $deadline ]; then
       echo "error: timed out waiting for lock on $TARGET" >&2
       exit 1
@@ -43,14 +74,17 @@ try_mkdir() {
     sleep 0.1
   done
 
-  # Ensure cleanup on exit
-  trap 'rmdir "$lockdir" 2>/dev/null || true' EXIT
+  # Write PID for stale detection
+  echo $$ > "$pidfile"
+
+  # Ensure cleanup on exit (including signals)
+  trap 'rm -rf "$lockdir" 2>/dev/null || true' EXIT INT TERM HUP
 
   "$@"
   local rc=$?
 
-  rmdir "$lockdir" 2>/dev/null || true
-  trap - EXIT
+  rm -rf "$lockdir" 2>/dev/null || true
+  trap - EXIT INT TERM HUP
   return $rc
 }
 
