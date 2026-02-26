@@ -13,7 +13,8 @@ Algorithm:
 1) Ensure `gh` authenticated (gh auth status).
 2) Locate $ARGUMENTS in issues.md. Read the issue's Goal, Scope, AC, and Implementation Notes.
 2b) Gather context — read the following docs (if they exist, skip silently if not):
-   - `docs/architecture.md` — tech stack, modules, data model
+   - `docs/architecture.md` — tech stack, modules, API design
+   - `docs/data_model.md` — schema, indexes, query patterns, seed data, migrations
    - `docs/requirements.md` — related FRs/NFRs referenced by the issue
    - **UI context** (when the issue involves UI/frontend work):
      - `docs/design_system.md` — CSS tokens, component specs

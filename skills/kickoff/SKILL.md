@@ -1,6 +1,6 @@
 ---
 name: kickoff
-description: PRD 기반으로 요구사항/UX 스펙/아키텍처/이슈/테스트 플랜을 생성합니다. 5개 서브에이전트를 순서대로 실행합니다.
+description: PRD 기반으로 요구사항/UX 스펙/아키텍처/데이터 모델/이슈/테스트 플랜을 생성합니다. 6개 서브에이전트를 순서대로 실행합니다.
 argument-hint: [PRD.md 경로]
 disable-model-invocation: true
 allowed-tools: Task, Read, Glob, Grep, Write, Edit
@@ -32,15 +32,20 @@ Subagents MUST run in this order because later agents depend on earlier outputs:
 - Agent produces: Tech stack, modules, data model, API design, security, deployment, tradeoffs table
 - Verify output exists before proceeding
 
+**Step 3.5: data-modeler → `docs/data_model.md`**
+- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
+- Agent produces: Access patterns, detailed schema (tables, columns, types, constraints), indexes with justification, migration strategy, seed data, query patterns, scaling notes
+- Verify output exists before proceeding
+
 **Step 4 & 5 (parallel — no dependency between them):**
 
 **planner → `issues.md`**
-- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
+- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
 - Agent produces: Issues sized 0.5d–1.5d with AC, tests, dependencies, implementation notes
 - Verify output exists
 
 **qa-designer → `docs/test_plan.md`**
-- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
+- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
 - Agent produces: Risk matrix, critical flow test cases, edge cases, fixtures, automation candidates, smoke checklist
 - Verify output exists
 
@@ -61,6 +66,7 @@ Subagents MUST run in this order because later agents depend on earlier outputs:
    - `docs/requirements.md`
    - `docs/ux_spec.md`
    - `docs/architecture.md`
+   - `docs/data_model.md`
    - `docs/test_plan.md`
    - `issues.md`
    - `STATUS.md`
@@ -94,7 +100,7 @@ When invoking each subagent via the Task tool:
 - If a subagent was skipped, re-run `/kickoff` after fixing the root cause to regenerate the missing document.
 
 ## Guidelines
-- The dependency order is critical: requirements → UX → architecture → (planner + QA in parallel).
+- The dependency order is critical: requirements → UX → architecture → data model → (planner + QA in parallel).
 - Each subagent should receive ALL prior outputs as context for maximum coherence.
 - Do NOT modify subagent outputs after they are written — each agent owns its document.
 - If the PRD is very large (>3000 words), summarize key sections when passing to later subagents to stay within context limits.
