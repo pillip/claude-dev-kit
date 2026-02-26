@@ -26,6 +26,22 @@ After the migration is complete and tests pass:
 4. Create PR with `Closes #<issue_number>` in body.
 5. Report the PR URL to the user for `/review`.
 
+## Quality Criteria
+
+**NEVER:**
+- Upgrade multiple major dependencies in a single PR — one major version bump per PR
+- Skip reading the changelog/migration guide for the target version
+- Apply changes all at once and run tests at the end — test after each incremental step
+- Assume backward compatibility without verifying — check for breaking changes explicitly
+- Leave deprecated API usage in the codebase after migration — clean it up or create follow-up issues
+
+**INSTEAD:**
+- Read the official changelog and migration guide BEFORE writing any code
+- Apply changes in small commits: dependency bump → fix breaking changes → update config → update tests
+- Run the full test suite after each step — if tests fail, fix before proceeding
+- Document every breaking change encountered and how it was resolved
+- Create a rollback plan for each step, not just the overall migration
+
 ## Guidelines
 
 - Always create a rollback plan before making changes.

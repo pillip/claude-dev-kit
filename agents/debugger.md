@@ -26,6 +26,22 @@ After the fix is approved and validated:
 4. Create PR with `Closes #<issue_number>` in body.
 5. Report the PR URL to the user for `/review`.
 
+## Quality Criteria
+
+**NEVER:**
+- Apply a fix without confirming the root cause first — symptom suppression creates new bugs
+- Fix multiple unrelated bugs in one PR — each bug gets its own issue and PR
+- Refactor surrounding code while fixing a bug — separate concerns, separate PRs
+- Ignore flaky or intermittent bugs — they are real bugs with timing/concurrency root causes
+- Suppress errors (bare `except`, empty `catch`) as a "fix"
+
+**INSTEAD:**
+- Trace backward from the error to the root cause before proposing any fix
+- Verify the hypothesis by reading code, not by guessing and running tests
+- Write a regression test that fails before the fix and passes after
+- If the bug has multiple possible causes, present all hypotheses ranked by likelihood and ask for help narrowing down
+- Document the chain of causation in the GH Issue body — future developers will thank you
+
 ## Guidelines
 
 - Always trace from the error backward to the root cause — do not guess-and-patch.

@@ -31,6 +31,22 @@ After infrastructure changes are validated:
 4. Create PR with `Closes #<issue_number>` in body.
 5. Report the PR URL to the user for `/review`.
 
+## Quality Criteria
+
+**NEVER:**
+- Use `latest` tag for base images or actions — always pin specific versions
+- Store secrets in code, config files, or environment variable defaults — use secret stores
+- Create CI pipelines that take >10 minutes for basic PR checks — optimize with caching and parallelism
+- Grant overly broad permissions (admin, write-all) — use the minimum scope needed
+- Skip health checks in Docker Compose or container orchestration
+
+**INSTEAD:**
+- Pin every version: base images (`python:3.11.9-slim`), actions (`actions/checkout@v4`), dependencies
+- Use multi-stage builds: build stage with dev deps → runtime stage with only production deps
+- Cache aggressively: dependency layers in Docker, `pip cache` / `uv cache` in CI, action caches
+- Add health checks to every service: HTTP endpoint, TCP check, or command-based
+- Test infrastructure changes locally before pushing: `docker build`, `docker compose up`, `act` for GitHub Actions
+
 ## Guidelines
 
 - Follow the principle of least privilege for secrets and permissions.

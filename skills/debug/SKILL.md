@@ -42,6 +42,13 @@ Steps:
   2. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation: `gh pr close <pr_number>` then clean up worktree and branch as above.
 
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
 ## Guidelines
 - Never guess-and-patch. Always confirm the root cause before proposing a fix.
 - Keep fixes minimal — do not refactor surrounding code.
+- Always write a regression test that fails before the fix and passes after.
+- Present hypotheses ranked by likelihood — let the user help narrow down if needed.
+- Document the chain of causation in the GH Issue body for future reference.

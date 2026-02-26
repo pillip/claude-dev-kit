@@ -40,7 +40,14 @@ Steps:
   2. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation: `gh pr close <pr_number>` then clean up worktree and branch as above.
 
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
 ## Guidelines
 - Never change observable behavior — structure-only changes.
-- Run tests after every individual step, not just at the end.
-- Keep each change small and focused on one transformation.
+- Run tests after EVERY individual step — green-to-green transitions only.
+- Keep each commit small and focused on one transformation.
+- If test coverage is below 70% for the target code, warn the user and suggest adding tests first.
+- If you discover a bug during refactoring, stop — file it as a separate issue.
+- Use well-known refactoring patterns: Extract Method, Move Function, Replace Conditional with Polymorphism, Introduce Parameter Object.

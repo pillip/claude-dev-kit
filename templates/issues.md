@@ -6,8 +6,8 @@
 ## Conventions
 - Track: `product` | `platform`
 - Status: `backlog` | `doing` | `waiting` | `done` | `drop`
-- Priority: `P0` | `P1` | `P2`
-- Estimate: `0.5d` | `1d` | `1.5d`
+- Priority: `P0` (blocks everything) | `P1` (core) | `P2` (nice-to-have)
+- Estimate: `0.5d` | `1d` | `1.5d` (> 1.5d must be split)
 - Branch: `issue/ISSUE-<NNN>-<slug>`
 - GitHub: **/implement creates a GH Issue (if missing) + PR and links them (Closes #N)**
 
@@ -30,47 +30,35 @@
 
 ## Issue Detail (copy & fill)
 
-### ISSUE-<NNN>: <title>
+### ISSUE-<NNN>: [imperative verb + object]
 - Track: product | platform
-- PRD-Ref: <optional: PRD#section>
+- PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
 - Estimate: 0.5d | 1d | 1.5d
 - Status: backlog | doing | waiting | done | drop
-- Owner: <name>
-- Branch: issue/ISSUE-<NNN>-<slug>
-- GH-Issue: <url or #number>
-- PR: <url>
-- Labels: <optional>
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: [ISSUE-NNN list, or "none"]
 
 #### Goal
-- ...
+[One sentence: what is true when this issue is done]
 
-#### Scope
-- In:
-  - ...
-- Out:
-  - ...
+#### Scope (In/Out)
+- In: [specific deliverables]
+- Out: [what this issue does NOT include]
 
 #### Acceptance Criteria (DoD)
-- [ ] ...
-- [ ] ...
+- [ ] [Testable criterion 1]
+- [ ] [Testable criterion 2]
 
 #### Implementation Notes
-- ...
+[Key technical hints — which files, patterns, gotchas]
 
 #### Tests
-- [ ] Unit: ...
-- [ ] Integration: ...
-- [ ] Smoke: ...
-- Test Command: `<...>`
-
-#### Observability (Minimal)
-- [ ] Logs: ...
-- [ ] Metrics: N/A
-- [ ] Tracing: N/A
+- [ ] [Specific test case 1]
+- [ ] [Specific test case 2]
 
 #### Rollback
-- ...
-
-#### Dependencies / Blockers
-- ...
+[How to undo if something goes wrong]

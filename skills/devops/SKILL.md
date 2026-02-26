@@ -43,9 +43,15 @@ Steps:
   2. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation: `gh pr close <pr_number>` then clean up worktree and branch as above.
 
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
 ## Guidelines
-- Follow least-privilege for secrets and permissions.
-- Use multi-stage Docker builds to minimize image size.
-- Cache dependencies in CI to speed up builds.
-- Pin versions for reproducibility.
-- Never hardcode secrets.
+- Follow least-privilege for secrets and permissions — minimum scope needed.
+- Use multi-stage Docker builds: build stage with dev deps → runtime stage with production deps only.
+- Cache aggressively: dependency layers in Docker, pip/uv cache in CI, action caches.
+- Pin every version: base images (`python:3.11.9-slim`), actions (`actions/checkout@v4`), dependencies.
+- Never hardcode secrets — always use environment variables or secret stores.
+- Add health checks to every service: HTTP endpoint, TCP check, or command-based.
+- Test infrastructure changes locally before pushing: `docker build`, `docker compose up`, `act` for GitHub Actions.

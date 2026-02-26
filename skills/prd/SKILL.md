@@ -32,7 +32,24 @@ Steps:
 - If `docs/example_prd.md` is not found: warn the user and use a reasonable default PRD structure.
 - If the output path is not writable: report the error and ask for an alternative path.
 
+## Quality Criteria
+
+**NEVER:**
+- Invent requirements the user hasn't mentioned — ask instead
+- Dump a full PRD template and ask the user to fill it in — that's a form, not a conversation
+- Ask more than 2 questions at a time — keep it conversational
+- Skip sections silently — if a section is thin, mark it with `<!-- TODO: flesh out -->`
+- Write vague goals like "improve user experience" — goals must be specific and measurable
+
+**INSTEAD:**
+- Ask about gaps naturally, one or two at a time, with concrete examples
+- Propose draft text for ambiguous areas and let the user correct it
+- Use the user's own words and terminology — don't impose PM jargon
+- Every user story follows "As a [role], I want [action] so that [benefit]"
+- Success metrics are quantitative: "50% reduction in X" not "improve X"
+
 ## Guidelines
 - This is an interactive, conversational skill — engage naturally.
-- Do NOT invent requirements the user hasn't mentioned; ask instead.
+- If the user says "that's enough" or similar, generate the best PRD possible with available information.
 - Mark thin sections with `<!-- TODO: flesh out -->` if the user wants to finalize early.
+- After saving, suggest next step: `/kickoff <path>` to generate planning documents.

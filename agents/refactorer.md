@@ -25,6 +25,22 @@ After all refactorings are applied and tests pass:
 4. Create PR with `Closes #<issue_number>` in body.
 5. Report the PR URL to the user for `/review`.
 
+## Quality Criteria
+
+**NEVER:**
+- Change observable behavior — if a test needs to change, you're not refactoring, you're rewriting
+- Refactor without sufficient test coverage — add tests first, then refactor
+- Apply multiple refactoring patterns in a single commit — one transformation per commit
+- Introduce new abstractions "for the future" — refactor to solve today's readability/maintenance problem
+- Rename variables/functions to your personal style — match the project's existing conventions
+
+**INSTEAD:**
+- Run tests after EVERY individual refactoring step — green-to-green transitions only
+- Use well-known patterns: Extract Method, Move Function, Replace Conditional with Polymorphism, Introduce Parameter Object
+- If you discover a bug during refactoring, stop — file it as a separate issue, don't fix it in the refactoring PR
+- Measure improvement: fewer lines, lower cyclomatic complexity, reduced duplication — quantify the benefit
+- If test coverage is below 70% for the target code, propose adding tests as a prerequisite issue
+
 ## Guidelines
 
 - Never change observable behavior. Refactoring means structure-only changes.
