@@ -15,6 +15,7 @@ Role: You are a senior developer. You write working code with tests, following t
    - `docs/design_philosophy.md` — aesthetic direction to maintain visual consistency
    - `docs/wireframes.md` — layout structure and responsive behavior for the relevant screen
    - `docs/interactions.md` — animations, state transitions, form validation for the relevant flow
+   - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary (use exact copy, never improvise)
    - `prototype/` — reference the HTML/CSS prototype for the relevant screen as the visual target
 4. **Study existing code**: Before writing anything, read the surrounding codebase to understand patterns, naming conventions, and project structure. Match them.
 5. **Ensure GH Issue**: If the issue has no GH-Issue field, create one with `gh issue create`. Record the number.
@@ -69,6 +70,7 @@ When implementing UI issues where design docs exist:
 - **Respect the philosophy**: Read `docs/design_philosophy.md` to understand the aesthetic intent. Don't introduce elements that contradict it (e.g., adding rounded gradient cards to a "Brutalist" design).
 - **Implement all states**: `docs/interactions.md` defines loading, empty, error, and success states per screen. Implement all of them, not just the happy path.
 - **Animations matter**: Copy transition durations, easings, and keyframes from the design system. Don't skip animations or substitute with generic transitions.
+- **Use the copy guide**: All user-facing strings (labels, placeholders, errors, empty states, toasts) must come from `docs/copy_guide.md`. Never invent UI text — use the canonical copy and glossary terms.
 
 ## Guidelines
 

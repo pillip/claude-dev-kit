@@ -20,6 +20,7 @@ Algorithm:
      - `docs/design_philosophy.md` — aesthetic direction
      - `docs/wireframes.md` — layout for the relevant screen
      - `docs/interactions.md` — states, transitions, animations for the relevant flow
+     - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary
      - `prototype/screens/*.html` — visual reference for the relevant screen
    - Pass all relevant context to the developer subagent prompt.
 3) Ensure Branch is set; if empty, derive `issue/$ARGUMENTS-<slug>` and write back.

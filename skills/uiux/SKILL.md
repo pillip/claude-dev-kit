@@ -69,6 +69,14 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - Form validation rules
     - High-impact motion moments: page-load stagger reveals, scroll-triggered effects, hover surprises
 
+### Phase 4.5 — Copy Guide
+12.5) Run the **copywriter** agent to generate `docs/copy_guide.md`:
+    - Input: `docs/ux_spec.md`, `docs/design_philosophy.md`, `docs/wireframes.md`, `docs/interactions.md`, PRD
+    - Output: Voice & tone definition, copy inventory per screen (labels, placeholders, empty/error/success states, confirmations, toasts), patterns, glossary
+    - Include FULL CONTENT of input documents in the subagent prompt.
+    - The copy guide must align with the design philosophy's tone (e.g., "Ink & Paper" → restrained, precise language).
+    - This step MUST complete before Phase 5 so the prototype uses real copy, not placeholder text.
+
 ### Phase 5 — HTML/CSS Prototype
 13) Ensure `prototype/` and `prototype/screens/` directories exist.
 14) Generate `prototype/styles.css`:
@@ -87,7 +95,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - `<meta name="viewport">` for responsiveness
     - Linked to `../styles.css`
     - Responsive layout reflecting wireframe spatial composition
-    - Realistic placeholder content — domain-appropriate text, NOT lorem ipsum
+    - Use actual copy from `docs/copy_guide.md` — labels, placeholders, empty states, error messages. NOT placeholder text.
     - All states represented (or togglable via minimal vanilla JS)
     - Accessibility: alt text, form labels, ARIA attributes, color contrast >= 4.5:1, keyboard navigable
 16) Generate `prototype/index.html`:
