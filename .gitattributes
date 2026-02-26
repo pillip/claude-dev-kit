@@ -1,0 +1,4 @@
+# 공유 레지스트리 파일: merge 시 항상 main(ours) 버전 유지
+issues.md merge=ours
+STATUS.md merge=ours
+CHANGELOG.md merge=ours

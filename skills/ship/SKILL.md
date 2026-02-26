@@ -24,6 +24,10 @@ Steps:
    ```
 6) Post-merge smoke on main (optional).
 
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
 ## Error Handling
 - Pre-merge checks (must all pass before merging):
   1. `gh pr checks <pr>` — all CI checks must be green.

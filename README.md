@@ -14,20 +14,23 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 ## Workflow
 
 ```
-Idea ──▶ /prd ──▶ /kickoff ──▶ /implement ──▶ /review ──▶ /ship
-          │        │              │              │            │
-          ▼        ▼              ▼              ▼            ▼
-     Interactive  Requirements  Code impl      Senior        Merge & deploy
-     PRD writing  UX spec       GH Issue       Minimal fix   CHANGELOG
-                  Architecture  PR creation    Re-run tests  STATUS update
-                  Issue breakdown Closes #N
-                  Test plan
+Idea ──▶ /prd ──▶ /kickoff ──▶ /uiux ──▶ /implement ──▶ /review ──▶ /ship
+          │        │             │           │              │            │
+          ▼        ▼             ▼           ▼              ▼            ▼
+     Interactive  Requirements  Design      Code impl      Senior        Merge & deploy
+     PRD writing  UX spec       philosophy  GH Issue       Minimal fix   CHANGELOG
+                  Architecture  Design sys  PR creation    Re-run tests  STATUS update
+                  Issue plan    Wireframes  Closes #N
+                  Test plan     Prototype
 ```
+
+> `/uiux`는 UI가 있는 프로젝트에서 선택적으로 사용합니다. UI가 없는 백엔드/CLI 프로젝트는 `/kickoff` → `/implement`로 바로 진행합니다.
 
 | Skill | Description | Outputs |
 |-------|-------------|---------|
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
+| `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review + security audit on PR | `docs/review_notes.md` |
 | `/ship` | Merge PR + update docs/changelog | `CHANGELOG.md`, `STATUS.md` updated |
@@ -75,8 +78,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 13 agent definitions
-│   ├── skills/          # 9 skills
+│   ├── agents/          # 14 agent definitions
+│   ├── skills/          # 10 skills
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -113,6 +116,22 @@ Reads the PRD and runs 5 subagents to generate planning documents:
 - `architect` → `docs/architecture.md`
 - `planner` → `issues.md`
 - `qa-designer` → `docs/test_plan.md`
+
+### UI/UX — Design and prototype
+
+```
+/uiux [PRD.md]
+```
+
+Requires `/kickoff` outputs. Builds on `docs/ux_spec.md` and `docs/requirements.md` to produce:
+
+1. **Design Philosophy** (`docs/design_philosophy.md`) — Named aesthetic direction with visual philosophy
+2. **Design System** (`docs/design_system.md`) — Colors, typography (Google Fonts), spacing, components as CSS custom properties
+3. **Wireframes** (`docs/wireframes.md`) — Screen layouts with responsive breakpoints
+4. **Interaction Spec** (`docs/interactions.md`) — User flows, state machines, animations
+5. **HTML/CSS Prototype** (`prototype/`) — Self-contained, opens via `file://` in any browser
+
+The skill applies [Anthropic's frontend-design guidelines](https://claude.com/blog/improving-frontend-design-through-skills) to avoid generic "AI slop" aesthetics — no Inter fonts, no purple gradients, no cookie-cutter layouts. Every design choice is intentional and driven by the product's identity.
 
 ### Implement — Build an issue
 
@@ -176,13 +195,14 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ## Agents
 
-13 specialized agents, each with a defined role and tool permissions:
+14 specialized agents, each with a defined role and tool permissions:
 
 | Agent | Role | Tools |
 |-------|------|-------|
 | `prd-writer` | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
+| `uiux-developer` | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash |
 | `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `planner` | Break work into issues | Read, Glob, Grep, Write, Edit |
 | `qa-designer` | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
@@ -198,10 +218,11 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (13)
+├── agents/                  # Agent role definitions (14)
 │   ├── prd-writer.md
 │   ├── requirement-analyst.md
 │   ├── ux-designer.md
+│   ├── uiux-developer.md
 │   ├── architect.md
 │   ├── planner.md
 │   ├── qa-designer.md
@@ -212,9 +233,10 @@ claude-dev-kit/
 │   ├── migrator.md
 │   ├── refactorer.md
 │   └── devops.md
-├── skills/                  # Workflow skills (9)
+├── skills/                  # Workflow skills (10)
 │   ├── prd/SKILL.md
 │   ├── kickoff/SKILL.md
+│   ├── uiux/SKILL.md
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
 │   ├── ship/SKILL.md
@@ -226,6 +248,10 @@ claude-dev-kit/
 │   ├── requirements.md
 │   ├── ux_spec.md
 │   ├── architecture.md
+│   ├── design_philosophy.md
+│   ├── design_system.md
+│   ├── wireframes.md
+│   ├── interactions.md
 │   ├── issues.md
 │   └── test_plan.md
 ├── project/                 # Files installed into target project
@@ -311,7 +337,6 @@ locking on macOS.
 
 ## v0 Scope & Limitations
 
-- UX spec generation only (no UI code generation)
 - macOS/Linux only
 - Default architecture preference: Django monolith + Postgres
 - All subagents use model: `opus`

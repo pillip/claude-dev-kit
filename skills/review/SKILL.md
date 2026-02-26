@@ -23,6 +23,10 @@ Steps:
 6) Commit + push from `$WT/`.
 7) If PR is draft and ready: `gh pr ready`.
 
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
 ## Error Handling
 - If PR not found (issues.md has no PR field and `gh pr status` returns nothing): stop and report; suggest running `/implement` first.
 - If reviewer subagent fails: retry once; if still failing, skip automated review and log a warning in docs/review_notes.md.

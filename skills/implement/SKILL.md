@@ -40,6 +40,10 @@ Algorithm:
     bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
     ```
 
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
 ## Error Handling
 - If `gh auth status` fails: stop and instruct the user to run `gh auth login`.
 - If issue not found in issues.md: stop and report the missing issue number.
