@@ -11,7 +11,17 @@ Hard requirements:
 
 Algorithm:
 1) Ensure `gh` authenticated (gh auth status).
-2) Locate $ARGUMENTS in issues.md.
+2) Locate $ARGUMENTS in issues.md. Read the issue's Goal, Scope, AC, and Implementation Notes.
+2b) Gather context — read the following docs (if they exist, skip silently if not):
+   - `docs/architecture.md` — tech stack, modules, data model
+   - `docs/requirements.md` — related FRs/NFRs referenced by the issue
+   - **UI context** (when the issue involves UI/frontend work):
+     - `docs/design_system.md` — CSS tokens, component specs
+     - `docs/design_philosophy.md` — aesthetic direction
+     - `docs/wireframes.md` — layout for the relevant screen
+     - `docs/interactions.md` — states, transitions, animations for the relevant flow
+     - `prototype/screens/*.html` — visual reference for the relevant screen
+   - Pass all relevant context to the developer subagent prompt.
 3) Ensure Branch is set; if empty, derive `issue/$ARGUMENTS-<slug>` and write back.
    - **File lock**: wrap the issues.md read-modify-write with:
      `bash scripts/flock_edit.sh issues.md -- bash -c '<update command>'`
