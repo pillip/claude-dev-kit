@@ -139,8 +139,9 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
       - `react-native-gesture-handler`, `react-native-safe-area-context`, `react-native-screens` — navigation native deps
       - `expo-haptics`, `expo-status-bar` — interaction/UI
       - `expo-font` (only if custom fonts are used)
-    - Do NOT manually pin exact versions — use `~` ranges matching the target Expo SDK
-    - After generating, run `npx expo install --fix` to resolve exact compatible versions
+    - Use the latest stable Expo SDK — do NOT pin to an older version for Expo Go compatibility
+    - Use `~` ranges for Expo ecosystem packages
+    - After generating package.json, run: `cd prototype-mobile && npm install && npx expo install --fix` to resolve exact compatible versions
 17-a) Generate `prototype-mobile/babel.config.js`:
     - ONLY use `babel-preset-expo` as preset
     - Do NOT manually add `react-native-reanimated/plugin` — babel-preset-expo handles it automatically (SDK 54+)
@@ -208,8 +209,13 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - List all generated files with brief descriptions
     - Highlight the design philosophy and key aesthetic choices
     - Report verification results from Phase 5.5 (token compliance, screen coverage, state coverage)
-    - Suggest: `cd prototype-mobile && npx expo start` to preview on device/simulator
-    - Note: user needs `npx expo install` first to install dependencies
+    - Suggest running on simulator (NOT Expo Go — SDK version mismatch issues):
+      ```bash
+      cd prototype-mobile
+      npx expo start --ios      # iOS Simulator (requires Xcode)
+      npx expo start --android  # Android Emulator (requires Android Studio)
+      ```
+    - Note: dependencies are already installed during Phase 5 (`npm install && npx expo install --fix`)
     - Ask for feedback on any screen
 31) Iterate based on user feedback:
     - Modify specific screens, adjust design system, add missing states

@@ -74,12 +74,17 @@ These rules ensure the React Native prototype is runnable and production-grade, 
 ### 1. Expo Project Setup (MUST follow exactly)
 Every prototype MUST be a valid, immediately-runnable Expo project:
 
+**SDK Version Strategy:**
+- Always use the latest stable Expo SDK — do NOT pin to an older version for Expo Go compatibility
+- Prototype is designed to run on iOS Simulator or Android Emulator, NOT Expo Go
+- In Phase 6 (Review), instruct the user to run via `npx expo start --ios` (Simulator) or `npx expo start --android` (Emulator)
+- After generating `package.json`, run `npx expo install --fix` to resolve exact compatible versions for the chosen SDK
+
 **package.json:**
-- `"main"` MUST be `"node_modules/expo/AppEntry.js"` — NEVER `"App.tsx"` (Expo Go cannot resolve it)
+- `"main"` MUST be `"node_modules/expo/AppEntry.js"` — NEVER `"App.tsx"` (AppEntry registers the root component correctly)
 - `babel-preset-expo` MUST be in dependencies (NOT devDependencies) — it is required at runtime by Metro
 - `expo-asset` MUST be in dependencies — Metro requires it for asset resolution
 - `react-native-worklets` MUST be in dependencies if using `react-native-reanimated` v4+
-- Do NOT manually pin Expo SDK version — run `npx expo install --fix` to resolve compatible versions
 - Do NOT add packages to `app.json` `plugins` unless they explicitly provide a config plugin (e.g., `expo-haptics` does NOT have one)
 
 **babel.config.js:**
