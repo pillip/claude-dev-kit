@@ -71,12 +71,38 @@ INSTEAD:
 
 These rules ensure the React Native prototype is runnable and production-grade, not just visual scaffolding.
 
-### 1. Required Config Files
-Every prototype MUST include:
-- `babel.config.js` — with `react-native-reanimated/plugin` (Reanimated WILL crash without this)
-- `tsconfig.json` — proper path aliases and strict mode
-- `app.json` — only reference assets that exist in the project
-- `assets/` directory — with at least `icon.png` and `splash.png` (or remove references from app.json)
+### 1. Expo Project Setup (MUST follow exactly)
+Every prototype MUST be a valid, immediately-runnable Expo project:
+
+**package.json:**
+- `"main"` MUST be `"node_modules/expo/AppEntry.js"` — NEVER `"App.tsx"` (Expo Go cannot resolve it)
+- `babel-preset-expo` MUST be in dependencies (NOT devDependencies) — it is required at runtime by Metro
+- `expo-asset` MUST be in dependencies — Metro requires it for asset resolution
+- `react-native-worklets` MUST be in dependencies if using `react-native-reanimated` v4+
+- Do NOT manually pin Expo SDK version — run `npx expo install --fix` to resolve compatible versions
+- Do NOT add packages to `app.json` `plugins` unless they explicitly provide a config plugin (e.g., `expo-haptics` does NOT have one)
+
+**babel.config.js:**
+- Use ONLY `babel-preset-expo` as preset — it automatically includes the Reanimated plugin (SDK 54+)
+- Do NOT manually add `react-native-reanimated/plugin` — this causes duplicate plugin errors
+```javascript
+module.exports = function (api) {
+  api.cache(true);
+  return { presets: ['babel-preset-expo'] };
+};
+```
+
+**app.json:**
+- Do NOT reference asset files (icon, splash) that don't exist in the project
+- If no custom assets, omit `icon` and `splash.image` fields entirely
+- Only list verified config plugins in `plugins` array
+
+**tsconfig.json:**
+- `"extends": "expo/tsconfig.base"` for Expo-compatible config
+- If using path aliases (`@/*`), ALSO configure `babel-plugin-module-resolver` — Metro does NOT read tsconfig paths
+
+**Other required files:**
+- `.gitignore` — standard Expo gitignore (node_modules, .expo, dist)
 
 ### 2. Zero Hardcoded Styles
 - NEVER use raw color hex codes, pixel values, or font sizes in screen/component files

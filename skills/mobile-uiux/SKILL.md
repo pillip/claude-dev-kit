@@ -108,7 +108,12 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
       App.tsx
       app.json
       package.json
+      babel.config.js
+      tsconfig.json
+      .gitignore
       src/
+        types/
+          index.ts (shared types)
         theme/
           tokens.ts
           typography.ts
@@ -125,10 +130,29 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
           index.tsx
     ```
 17) Generate `prototype-mobile/package.json`:
-    - Expo SDK (latest stable)
-    - Dependencies: `react-navigation` (native-stack, bottom-tabs), `react-native-reanimated`, `react-native-gesture-handler`, `react-native-safe-area-context`, `expo-haptics`, `expo-font` (if custom fonts)
+    - `"main"`: MUST be `"node_modules/expo/AppEntry.js"` (NOT `"App.tsx"`)
+    - **Required dependencies** (MUST include all of these):
+      - `expo`, `babel-preset-expo`, `expo-asset` — core Expo runtime
+      - `react`, `react-native` — framework
+      - `@react-navigation/native`, `@react-navigation/native-stack`, `@react-navigation/bottom-tabs` — navigation
+      - `react-native-reanimated`, `react-native-worklets` — animation (worklets is required for Reanimated v4+)
+      - `react-native-gesture-handler`, `react-native-safe-area-context`, `react-native-screens` — navigation native deps
+      - `expo-haptics`, `expo-status-bar` — interaction/UI
+      - `expo-font` (only if custom fonts are used)
+    - Do NOT manually pin exact versions — use `~` ranges matching the target Expo SDK
+    - After generating, run `npx expo install --fix` to resolve exact compatible versions
+17-a) Generate `prototype-mobile/babel.config.js`:
+    - ONLY use `babel-preset-expo` as preset
+    - Do NOT manually add `react-native-reanimated/plugin` — babel-preset-expo handles it automatically (SDK 54+)
+17-b) Generate `prototype-mobile/.gitignore`:
+    - Standard Expo gitignore: node_modules, .expo, dist, *.jks, *.keystore, .env
+17-c) Generate `prototype-mobile/tsconfig.json`:
+    - Extends `expo/tsconfig.base`
+    - If using path aliases, also configure `babel-plugin-module-resolver` (Metro ignores tsconfig paths)
 18) Generate `prototype-mobile/app.json`:
-    - Expo config with app name, slug, SDK version, orientation, splash screen config
+    - Expo config with app name, slug, orientation, userInterfaceStyle
+    - Do NOT reference asset files (icon, splash.image) unless they physically exist in the project
+    - `plugins` array: ONLY include packages that provide a config plugin (e.g., `expo-font`). Do NOT include `expo-haptics` (it has no config plugin)
 19) Generate `prototype-mobile/src/theme/`:
     - `colors.ts` — color palette from design system
     - `spacing.ts` — spacing scale
@@ -152,10 +176,15 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - Status bar configuration
 
 ### Phase 5.5 — Prototype Verification (REQUIRED before presenting to user)
-24) **Required config files check**:
-    - `babel.config.js` MUST exist with `react-native-reanimated/plugin`
-    - `tsconfig.json` MUST exist with proper config
-    - All assets referenced in `app.json` (icon, splash) MUST exist or references MUST be removed
+24) **Expo project setup check**:
+    - `package.json` `"main"` is `"node_modules/expo/AppEntry.js"` (NOT `"App.tsx"`)
+    - `babel-preset-expo` and `expo-asset` are in dependencies
+    - `react-native-worklets` is in dependencies (required for Reanimated v4+)
+    - `babel.config.js` uses ONLY `babel-preset-expo` preset (no manual reanimated plugin)
+    - `app.json` does NOT reference non-existent asset files
+    - `app.json` `plugins` does NOT include packages without config plugins (e.g., `expo-haptics`)
+    - `tsconfig.json` exists with `"extends": "expo/tsconfig.base"`
+    - `.gitignore` exists
 25) **Token compliance check**:
     - Scan all files in `src/screens/` and `src/components/` for hardcoded style values
     - Every color, spacing, font size, border radius, and shadow MUST use imports from `src/theme/`
