@@ -23,6 +23,13 @@ Algorithm:
      - `docs/interactions.md` — states, transitions, animations for the relevant flow
      - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary
      - `prototype/screens/*.html` — visual reference for the relevant screen
+   - **Mobile UI context** (when the issue involves mobile/React Native work):
+     - `docs/design_system_mobile.md` — React Native 디자인 토큰, 컴포넌트 스펙
+     - `docs/design_philosophy.md` — 미적 방향 (웹과 공유)
+     - `docs/wireframes_mobile.md` — 모바일 레이아웃, 제스처, safe area
+     - `docs/interactions_mobile.md` — 제스처 스펙, 햅틱 매핑, 트랜지션
+     - `docs/copy_guide.md` — UI 라벨, 에러 메시지 (웹과 공유)
+     - `prototype-mobile/src/screens/*.tsx` — React Native 화면 참조
    - Pass all relevant context to the developer subagent prompt.
 3) Ensure Branch is set; if empty, derive `issue/$ARGUMENTS-<slug>` and write back.
    - **File lock**: wrap the issues.md read-modify-write with:

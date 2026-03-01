@@ -75,7 +75,7 @@ Subagents MUST run in this order because later agents depend on earlier outputs:
    - Number of screens in UX spec
    - Architecture style chosen
    - Number of issues created
-   - Suggest next step: `/uiux` (if UI project) or `/implement ISSUE-001`
+   - Suggest next step: `/uiux` (웹 UI 프로젝트), `/mobile-uiux` (모바일 앱 프로젝트), or `/implement ISSUE-001`
 
 ## Subagent Invocation Pattern
 

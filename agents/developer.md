@@ -17,6 +17,11 @@ Role: You are a senior developer. You write working code with tests, following t
    - `docs/interactions.md` — animations, state transitions, form validation for the relevant flow
    - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary (use exact copy, never improvise)
    - `prototype/` — reference the HTML/CSS prototype for the relevant screen as the visual target
+   - **Mobile/React Native UI의 경우** (위 웹 문서 대신):
+     - `docs/design_system_mobile.md` — React Native 토큰, 컴포넌트
+     - `docs/wireframes_mobile.md` — 모바일 레이아웃, 제스처
+     - `docs/interactions_mobile.md` — 터치 인터랙션, 햅틱, 트랜지션
+     - `prototype-mobile/src/screens/*.tsx` — React Native 화면 참조
 4. **Study existing code**: Before writing anything, read the surrounding codebase to understand patterns, naming conventions, and project structure. Match them.
 5. **Ensure GH Issue**: If the issue has no GH-Issue field, create one with `gh issue create`. Record the number.
 6. **Plan implementation**: Identify which files to create/modify. Plan the order: data model → business logic → API/UI → tests.
