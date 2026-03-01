@@ -67,6 +67,45 @@ INSTEAD:
 - Use SafeAreaView consistently. Dynamic Island / notch / home indicator are design elements, not obstacles.
 - Card-based layouts for content density. Generous horizontal padding (16–20pt) with intentional variation.
 
+## Prototype Quality Rules (CRITICAL)
+
+These rules ensure the React Native prototype is runnable and production-grade, not just visual scaffolding.
+
+### 1. Required Config Files
+Every prototype MUST include:
+- `babel.config.js` — with `react-native-reanimated/plugin` (Reanimated WILL crash without this)
+- `tsconfig.json` — proper path aliases and strict mode
+- `app.json` — only reference assets that exist in the project
+- `assets/` directory — with at least `icon.png` and `splash.png` (or remove references from app.json)
+
+### 2. Zero Hardcoded Styles
+- NEVER use raw color hex codes, pixel values, or font sizes in screen/component files
+- ALL visual values MUST come from `src/theme/` imports (`colors.ts`, `spacing.ts`, `typography.ts`, `tokens.ts`)
+- Exception: layout-structural values like `flex: 1`, `position: 'absolute'`, percentage widths
+
+### 3. All 5 States Per Screen
+Every screen MUST implement all applicable states from the wireframes:
+- **Default**: normal content display
+- **Loading**: skeleton placeholders or ActivityIndicator (NOT blank screen)
+- **Empty**: illustration + message + CTA from copy guide
+- **Error**: error message + retry action
+- **Offline**: offline indicator (if app supports offline mode)
+
+### 4. Signature Animations Required
+- At least ONE signature animation from `design_philosophy.md` MUST be fully implemented with Reanimated worklet code — not just a prose description or comment stub
+- `useReducedMotion()` MUST be applied globally (wrap in a provider or check in every animated component), not just in one component
+
+### 5. Complete Component Specs
+- **Text Input**: focus state, error state, placeholder styling, character count, keyboard type — MUST be specced in design system, not left to defaults
+- **Segment Control / Toggle**: if the app has mode switching, spec the component
+- **Loading indicators**: skeleton screen appearance, pull-to-refresh styling, button loading state
+- Every interactive element MUST have an `accessibilityLabel` and `accessibilityRole`
+
+### 6. Performance Basics
+- `React.memo` on list item components rendered inside FlatList/SectionList
+- `useCallback` for event handlers passed to memoized children
+- Animated styles via `useAnimatedStyle` (UI thread), never JS-thread `Animated`
+
 ## Deliverables
 
 ### 1. Design Philosophy (`docs/design_philosophy.md`) — SHARED

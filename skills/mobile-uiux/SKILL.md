@@ -56,8 +56,13 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - **Typography**: Platform font choices (SF Pro/Roboto or custom). Tighter modular scale (1.125 or 1.2). Dynamic Type config (`allowFontScaling`, `maxFontSizeMultiplier`).
     - **Spacing**: 4pt-based scale (xs:4, sm:8, md:12, lg:16, xl:24, xxl:32, xxxl:48, xxxxl:64)
     - **Components**: Mobile-specific — Bottom Sheet, Action Sheet, Swipe Actions, Pull-to-Refresh. States: default, pressed, disabled, loading (NO hover). Touch targets: minimum 48pt.
+      - **MUST include**: Text Input (focus/error/placeholder/character count/keyboard type), Segment Control/Toggle (if app has mode switching), Loading indicators (skeleton, pull-to-refresh, button loading)
+      - **MUST include**: FlatList/SectionList patterns (ItemSeparator, ListHeader, ListEmpty, key extractor)
+      - **MUST include**: Stack header styling (back button, title alignment, header background)
     - **Shadows**: ios (shadowColor/Offset/Opacity/Radius) vs android (elevation) separated
     - **Motion tokens**: Duration (micro 80-120ms to large 400-600ms, max 700ms), spring configs (damping/stiffness/mass), easing (Reanimated), haptic mapping (expo-haptics)
+      - **Signature animations**: MUST include full worklet code for at least one signature animation, not just prose descriptions or comment stubs
+    - **Loading states**: Skeleton screen spec, pull-to-refresh indicator, cold start visual (splash → skeleton → content → interactive)
     - **Platform tokens**: `ios`/`android` keys for platform-specific values
     - All values expressed as TypeScript objects (NOT CSS custom properties)
 12) Ask the user if the design system direction looks right before proceeding.
@@ -94,6 +99,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
       - Output: Voice & tone definition, copy inventory per screen, patterns, glossary, mobile adaptations section
       - Include FULL CONTENT of input documents in the subagent prompt.
       - This step MUST complete before Phase 5 so the prototype uses real copy.
+16-a) **Accessibility labels (REQUIRED)**: Ensure `copy_guide.md` includes `accessibilityLabel` for EVERY interactive element (buttons, toggles, list items, navigation items, form inputs). Also include state-change announcement strings for VoiceOver/TalkBack (e.g., "달리기 완료", "달리기 체크 해제"). This is mandatory per NFR accessibility requirements.
 
 ### Phase 5 — React Native Prototype
 16) Create the `prototype-mobile/` directory structure:
@@ -145,14 +151,38 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - SafeAreaProvider, NavigationContainer, theme provider setup
     - Status bar configuration
 
+### Phase 5.5 — Prototype Verification (REQUIRED before presenting to user)
+24) **Required config files check**:
+    - `babel.config.js` MUST exist with `react-native-reanimated/plugin`
+    - `tsconfig.json` MUST exist with proper config
+    - All assets referenced in `app.json` (icon, splash) MUST exist or references MUST be removed
+25) **Token compliance check**:
+    - Scan all files in `src/screens/` and `src/components/` for hardcoded style values
+    - Every color, spacing, font size, border radius, and shadow MUST use imports from `src/theme/`
+    - Fix any hardcoded values found before proceeding
+26) **Screen coverage check**:
+    - Count screens defined in `docs/wireframes_mobile.md`
+    - Count .tsx files in `src/screens/`
+    - Every wireframe screen (except explicitly P2+ deferred screens) MUST have a corresponding screen file
+27) **State coverage check**:
+    - Every screen MUST implement at least default + one additional state (loading, empty, or error as applicable)
+    - Empty state MUST use copy from `docs/copy_guide.md`, not placeholder text
+28) **Animation completeness check**:
+    - At least ONE signature animation from `docs/design_philosophy.md` MUST be fully implemented with Reanimated worklet code
+    - `useReducedMotion()` MUST be respected globally, not just in one component
+29) **Performance check**:
+    - List item components used in FlatList MUST use `React.memo`
+    - Event handlers passed to memoized children MUST use `useCallback`
+
 ### Phase 6 — Review & Iterate
-24) Present deliverables summary to the user:
+30) Present deliverables summary to the user:
     - List all generated files with brief descriptions
     - Highlight the design philosophy and key aesthetic choices
+    - Report verification results from Phase 5.5 (token compliance, screen coverage, state coverage)
     - Suggest: `cd prototype-mobile && npx expo start` to preview on device/simulator
     - Note: user needs `npx expo install` first to install dependencies
     - Ask for feedback on any screen
-25) Iterate based on user feedback:
+31) Iterate based on user feedback:
     - Modify specific screens, adjust design system, add missing states
     - Each iteration updates both docs and prototype files consistently
     - If aesthetic direction needs major change, go back to Phase 2

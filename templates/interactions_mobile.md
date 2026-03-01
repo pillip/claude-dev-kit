@@ -194,3 +194,18 @@ import { useReducedMotion } from 'react-native-reanimated';
 - Minimum 3:1 for large text (>= 18pt or 14pt bold)
 - Do not convey information by color alone — use icons, patterns, or labels
 - Test with iOS "Increase Contrast" and Android "High contrast text"
+
+## Prototype Implementation Priority
+
+Mark each interaction as P0 (must be in prototype) or P1 (nice-to-have in prototype):
+
+| Interaction | Priority | Rationale |
+|-------------|----------|-----------|
+| [Core user flow gestures] | P0 | [Defines the app's primary experience] |
+| [Signature animation] | P0 | [The "unforgettable" moment from design philosophy] |
+| [Screen transitions] | P0 | [Navigation must work to demo the app] |
+| [Loading/empty/error states] | P0 | [Required for completeness — blank screens are unacceptable] |
+| [Secondary gestures (swipe-to-delete, drag-reorder)] | P1 | [Enhances UX but not critical for demo] |
+| [Complex choreography (stagger, parallax)] | P1 | [Polish layer, can be added incrementally] |
+
+Note: ALL P0 interactions MUST be implemented in the prototype. P1 interactions should be implemented if time permits.
