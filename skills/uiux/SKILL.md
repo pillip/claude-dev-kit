@@ -48,10 +48,14 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ### Phase 3 — Design System
 9) Generate `docs/design_system.md` reflecting the chosen aesthetic:
    - **Color palette**: Hex values. Dominant colors with sharp accents — NOT timid, evenly-distributed palettes. Choose a direction: bold/saturated, moody/restrained, or high-contrast/minimal.
+     - Ensure no semantic color (warning, error, etc.) shares the exact same hex value as a user-selectable/decorative color
    - **Typography**: Specific Google Fonts choices. Distinctive display font + refined body font. Extreme contrast in scale (3x+ ratio between heading and body). NEVER default to Inter, Roboto, Arial, Open Sans.
    - **Spacing**: 4px-based scale (4, 8, 12, 16, 24, 32, 48, 64)
    - **Components**: Buttons, inputs, cards, modals, navigation, tables, badges, toasts — each with variants and states (default, hover, active, focus, disabled, loading)
+     - **ALL button variants** (primary, secondary, destructive, ghost) MUST have full CSS with ALL states — not just the primary variant in CSS and others in prose
+     - **App-specific composite components** (e.g., FAB, list items, progress rings, pickers) MUST also be defined with full CSS — not just generic UI primitives
    - **Motion tokens**: Transition durations, easing curves, animation-delay stagger values
+     - Performance rules: only `transform` and `opacity` are GPU-composited. Do NOT list `box-shadow`.
    - All values expressed as CSS custom properties
 10) Ask the user if the design system direction looks right before proceeding.
 
@@ -62,12 +66,16 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - Spatial composition: asymmetry, overlap, grid-breaking elements, negative space strategy
     - Content hierarchy and information architecture
     - Responsive behavior per breakpoint (mobile 375px / tablet 768px / desktop 1280px)
+    - **PRD feature cross-check**: After writing, verify EVERY PRD feature (including P2) has a corresponding wireframe element. P2 features should show placement with a "P2 — deferred" note.
 12) Generate `docs/interactions.md`:
-    - User flow diagrams (text-based state machines)
+    - User flow diagrams (text-based state machines) — each with Trigger, Preconditions, Steps, Success/Error/Edge Cases
     - Screen transition map with animation descriptions
+    - **Shared Element Transitions**: document candidates or explicitly state "none planned" with rationale
     - Loading / empty / error states per screen
     - Form validation rules
+    - **Drag & Drop**: if PRD mentions reordering/dragging, include full spec (drag start, drag over, drop, cancel). If not applicable, state "N/A"
     - High-impact motion moments: page-load stagger reveals, scroll-triggered effects, hover surprises
+    - **Template completeness check**: verify every section from the template is present. If not applicable, add "N/A — [reason]"
 
 ### Phase 4.5 — Copy Guide
 12.5) Run the **copywriter** agent to generate `docs/copy_guide.md`:
@@ -96,20 +104,50 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
     - Linked to `../styles.css`
     - Responsive layout reflecting wireframe spatial composition
     - Use actual copy from `docs/copy_guide.md` — labels, placeholders, empty states, error messages. NOT placeholder text.
-    - All states represented (or togglable via minimal vanilla JS)
-    - Accessibility: alt text, form labels, ARIA attributes, color contrast >= 4.5:1, keyboard navigable
+    - All states represented AND togglable via a visible state-switcher toolbar:
+      - Add a small floating toolbar at the bottom of each screen with buttons: "Default", "Loading", "Empty", "Error"
+      - Clicking each button shows the corresponding state — reviewers should NOT need the browser console
+    - Accessibility:
+      - NEVER use `outline: none` on `:focus` without `:focus-visible` fallback
+      - All `role="button"` elements MUST have `keydown` handlers for Enter/Space
+      - All `role="radiogroup"` elements MUST support arrow-key navigation
+      - Placeholder text contrast >= 3:1
+      - `alt` text, form `<label>`s, ARIA attributes, color contrast >= 4.5:1, keyboard navigable
 16) Generate `prototype/index.html`:
     - Navigation hub linking to all screen prototypes
     - Product name, design philosophy name, screen list with descriptions
     - Styled consistently with the design system — this IS a designed page, not a plain list
 
+### Phase 5.5 — Verification (REQUIRED before presenting to user)
+17) **Component cross-check**:
+    - Every component referenced in `wireframes.md` MUST have a definition in `design_system.md`
+    - List any gaps and add missing component definitions before proceeding
+18) **PRD feature cross-check**:
+    - Every feature in the PRD (F1, F2, ... including P2) MUST appear in wireframes and/or interactions
+    - List any gaps and add missing features (P2 features as "deferred" notes)
+19) **Token compliance check**:
+    - CSS custom properties used in `styles.css` MUST match values in `design_system.md`
+    - Check for hardcoded hex colors, font sizes, or spacing in `styles.css` that should use `var(--token)`
+20) **Cross-document consistency check**:
+    - Color token references in wireframes/interactions use CSS custom property names (not prose descriptions)
+    - Hover/interaction states in interactions.md match component states in design_system.md
+    - Container widths and breakpoints are consistent across all docs and CSS
+21) **Accessibility check**:
+    - No `outline: none` on `:focus` without `:focus-visible` coverage
+    - Placeholder text contrast >= 3:1
+    - All interactive elements have keyboard handlers
+22) **State demo check**:
+    - Every screen has a visible state-switcher toolbar
+    - Loading, empty, and error states are implemented and togglable
+
 ### Phase 6 — Review & Iterate
-17) Present deliverables summary to the user:
+23) Present deliverables summary to the user:
     - List all generated files with brief descriptions
     - Highlight the design philosophy and key aesthetic choices
+    - Report verification results from Phase 5.5 (component coverage, PRD coverage, token compliance)
     - Suggest: `open prototype/index.html` to view in browser
     - Ask for feedback on any screen
-18) Iterate based on user feedback:
+24) Iterate based on user feedback:
     - Modify specific screens, adjust design system, add missing states
     - Each iteration updates both docs and prototype files consistently
     - If aesthetic direction needs major change, go back to Phase 2

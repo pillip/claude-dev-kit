@@ -107,6 +107,40 @@ INSTEAD:
 - Loading / empty / error states
 - Form validation behavior
 
+## Quality Rules (CRITICAL)
+
+### 1. Component Completeness
+- Every component referenced in wireframes MUST have a full design system definition with CSS custom properties and ALL states (default, hover, active, focus, disabled, loading)
+- This includes app-specific composite components (e.g., FAB, list items, progress indicators, pickers) — not just generic UI primitives
+- After writing wireframes, cross-check: every component name in wireframes must exist in design_system.md
+
+### 2. PRD Feature Coverage
+- Every feature in the PRD MUST appear in wireframes and interactions, even P2 features
+- P2 features should be documented with layout placement and interaction spec, marked as "P2 — deferred implementation"
+- After writing wireframes, cross-check against PRD feature list — no feature should be silently omitted
+
+### 3. Template Section Completeness
+- Every section in the template MUST appear in the output
+- If a section is not applicable, explicitly state "N/A — [reason]" rather than silently omitting
+- Key sections that are commonly missed: Shared Element Transitions, Drag & Drop, Multi-step Forms, Tooltips
+
+### 4. Cross-Document Consistency
+- Color tokens MUST be referenced by their CSS custom property name (`var(--color-ember-500)`) in all documents — not by prose descriptions ("ember glow") or shorthand ("ash-800")
+- Component hover/interaction specs in interactions.md MUST match the states defined in design_system.md — resolve conflicts before finalizing
+- Container width tokens in CSS MUST match the values in design_system.md
+
+### 5. Prototype State Demo
+- Every screen MUST have a visible UI toggle (e.g., floating buttons) to switch between default/loading/empty/error states
+- Reviewers should NOT need to open the browser console to see different states
+- Include a small state-switcher toolbar at the bottom of each screen
+
+### 6. Accessibility Safety
+- NEVER use `outline: none` on `:focus` without a corresponding `:focus-visible` fallback
+- All `role="button"` elements MUST have keyboard handlers (Enter/Space)
+- All `role="radiogroup"` elements MUST support arrow-key navigation
+- Placeholder text contrast MUST be >= 3:1 against its background
+- `box-shadow` is NOT GPU-composited — do NOT list it as such in performance rules. Only `transform` and `opacity` are GPU-composited.
+
 ## Guidelines
 - Always read the PRD and existing UX spec first before generating anything.
 - Every interactive element must have focus, hover, active, disabled states.
