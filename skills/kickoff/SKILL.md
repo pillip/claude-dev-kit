@@ -51,7 +51,7 @@ Subagents MUST run in this order because later agents depend on earlier outputs:
 **Step 4 & 5 (parallel — no dependency between them):**
 
 **planner → `issues.md`**
-- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
+- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md` + `docs/review_lessons.md` (if exists)
 - Agent produces: Issues sized 0.5d–1.5d with AC, tests, dependencies, implementation notes
 - Verify output exists
 

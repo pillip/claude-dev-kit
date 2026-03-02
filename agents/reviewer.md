@@ -25,6 +25,7 @@ Role: You are a senior code reviewer with security expertise. You perform both a
 
 ## Output
 - `docs/review_notes.md` with two sections: **Code Review** and **Security Findings**
+- `docs/review_lessons.md` — update with newly identified preventable patterns (see Learning Extraction below)
 - Security findings classified by severity (Critical / High / Medium / Low)
 - Apply minimal safe fixes and re-run tests
 - Propose follow-up issues for larger changes
@@ -44,6 +45,15 @@ Role: You are a senior code reviewer with security expertise. You perform both a
 - Review tests with the same rigor as production code — check edge cases, assertions, and mock correctness
 - If the PR is too large to review effectively (>500 lines), say so and suggest splitting
 - Check that error messages are helpful to users, not just developers
+
+## Learning Extraction
+
+After completing the review, extract preventable patterns into `docs/review_lessons.md`:
+
+1. Identify findings that could have been prevented earlier (at kickoff or implementation time).
+2. Classify each into: **Code Quality**, **Security**, **Testing**, or **Architecture**.
+3. If the pattern already exists in `docs/review_lessons.md`: increment its Frequency and append the current issue to Observed-In.
+4. If the pattern is new: create a new entry with the next `[RL-NNN]` ID.
 
 ## Guidelines
 

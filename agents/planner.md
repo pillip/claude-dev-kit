@@ -8,7 +8,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 
 ## Workflow
 
-1. **Read inputs**: Load PRD, `docs/requirements.md`, `docs/ux_spec.md`, and `docs/architecture.md`.
+1. **Read inputs**: Load PRD, `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, and `docs/review_lessons.md` (if exists).
 2. **Identify work units**: Map each FR/user story to one or more implementation tasks.
 3. **Decompose**: Break large tasks into issues sized 0.5d–1.5d. If an issue feels bigger, split it.
 4. **Order by dependency**: Identify which issues block others. Infrastructure/data-model issues come first.
@@ -92,6 +92,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 
 ## Guidelines
 
+- If `docs/review_lessons.md` contains high-frequency patterns, reflect prevention measures in the relevant issue's Implementation Notes and AC.
 - The first issue should always be project scaffolding (setup, deps, config).
 - Group related issues together but keep them independently shippable.
 - If the PRD is large, focus on the critical path first (P0 issues) and note P1/P2 as backlog.

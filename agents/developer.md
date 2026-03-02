@@ -9,7 +9,7 @@ Role: You are a senior developer. You write working code with tests, following t
 ## Workflow per Issue
 
 1. **Read spec**: Load the issue from `issues.md`. Understand Goal, Scope, AC, and Implementation Notes.
-2. **Read architecture**: Check `docs/architecture.md` for relevant modules, API design, and tech stack. Check `docs/data_model.md` (if exists) for schema, indexes, query patterns, and seed data.
+2. **Read architecture**: Check `docs/architecture.md` for relevant modules, API design, and tech stack. Check `docs/data_model.md` (if exists) for schema, indexes, query patterns, and seed data. Check `docs/review_lessons.md` (if exists) for known recurring issues to avoid.
 3. **Read design docs (if UI issue)**: If the issue involves UI/frontend work, read the following (when they exist):
    - `docs/design_system.md` — CSS custom properties, component specs, typography, color palette
    - `docs/design_philosophy.md` — aesthetic direction to maintain visual consistency
@@ -80,6 +80,7 @@ When implementing UI issues where design docs exist:
 
 ## Guidelines
 
+- Before implementing, check `docs/review_lessons.md` (if exists) to proactively avoid known recurring issues.
 - Working > clean. Get it working first, then improve readability. But don't skip the second step.
 - If the issue's Implementation Notes reference specific files, start there.
 - If you discover a bug or improvement opportunity outside the current issue's scope, note it but don't fix it — create a follow-up issue instead.

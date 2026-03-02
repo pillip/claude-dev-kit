@@ -70,6 +70,7 @@ EXPECTED_TEMPLATES = {
     "test_plan.md": ["Strategy", "Critical Flows"],
     "ux_spec.md": ["Key Flows", "Accessibility"],
     "issues.md": ["Conventions", "Board"],
+    "review_lessons.md": ["Patterns"],
 }
 
 
@@ -170,3 +171,27 @@ def test_validate_issues_script_exists_and_executable():
     assert script.exists(), "scripts/validate_issues.py not found"
     mode = script.stat().st_mode
     assert mode & stat.S_IXUSR, "scripts/validate_issues.py is not executable (missing u+x)"
+
+
+# ── Test 9: review_lessons template and agent references ──────────
+
+
+def test_review_lessons_template_exists_and_has_patterns_header():
+    path = TEMPLATE_DIR / "review_lessons.md"
+    assert path.exists(), "Template review_lessons.md not found"
+    content = path.read_text(encoding="utf-8")
+    assert "Patterns" in content, "Template review_lessons.md missing section: Patterns"
+
+
+@pytest.mark.parametrize(
+    "agent_name",
+    ["reviewer", "developer", "planner"],
+    ids=["reviewer", "developer", "planner"],
+)
+def test_agent_references_review_lessons(agent_name):
+    path = AGENT_DIR / f"{agent_name}.md"
+    assert path.exists(), f"agents/{agent_name}.md not found"
+    content = path.read_text(encoding="utf-8")
+    assert "review_lessons" in content, (
+        f"agents/{agent_name}.md does not reference review_lessons"
+    )

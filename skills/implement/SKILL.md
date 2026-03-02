@@ -16,6 +16,7 @@ Algorithm:
    - `docs/architecture.md` — tech stack, modules, API design
    - `docs/data_model.md` — schema, indexes, query patterns, seed data, migrations
    - `docs/requirements.md` — related FRs/NFRs referenced by the issue
+   - `docs/review_lessons.md` — known recurring review findings to proactively avoid
    - **UI context** (when the issue involves UI/frontend work):
      - `docs/design_system.md` — CSS tokens, component specs
      - `docs/design_philosophy.md` — aesthetic direction

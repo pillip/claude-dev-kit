@@ -16,10 +16,14 @@ Steps:
 3) Ask reviewer subagent to perform code review + security audit:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
+   - Pass existing `docs/review_lessons.md` (if exists) as context so the reviewer can identify recurring patterns.
 4) Apply minimal fixes for Critical/High security findings and code issues; re-run tests inside `$WT/`.
 5) Update docs/review_notes.md (inside `$WT/`) with two sections:
    - **Code Review**: findings, changes, follow-ups.
    - **Security Findings**: severity-classified list with remediation steps.
+5.5) Ask reviewer subagent to update `docs/review_lessons.md`:
+   - Use `$ROOT/docs/review_lessons.md` with `flock_edit.sh` for safe concurrent modification.
+   - Add new preventable patterns or increment frequency of existing ones.
 6) Commit + push from `$WT/`.
 7) If PR is draft and ready: `gh pr ready`.
 
