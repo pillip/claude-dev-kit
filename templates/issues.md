@@ -50,8 +50,8 @@
 - Out: [what this issue does NOT include]
 
 #### Acceptance Criteria (DoD)
-- [ ] [Testable criterion 1]
-- [ ] [Testable criterion 2]
+- [ ] Given [precondition], when [action], then [expected result]
+- [ ] Given [precondition], when [action], then [expected result]
 
 #### Implementation Notes
 [Key technical hints — which files, patterns, gotchas]

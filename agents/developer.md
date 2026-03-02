@@ -46,6 +46,7 @@ Role: You are a senior developer. You write working code with tests, following t
 - Error messages must help the user fix the problem: "API key not set. Export OPENAI_API_KEY=..." not "Configuration error."
 
 ### Testing
+- Each Given/When/Then AC maps to at least one test case. The Given becomes test setup, When becomes the action, Then becomes the assertion.
 - Test behavior, not implementation. Tests should survive refactoring.
 - Each test is independent — no shared mutable state, no execution order dependency.
 - Use descriptive test names: `test_login_with_expired_token_returns_401` not `test_login_3`.

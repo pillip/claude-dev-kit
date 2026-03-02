@@ -65,10 +65,10 @@ def test_skill_has_required_frontmatter(skill_path):
 
 TEMPLATE_DIR = ROOT / "templates"
 EXPECTED_TEMPLATES = {
-    "requirements.md": ["Goals", "User stories"],
-    "architecture.md": ["Overview", "Modules", "Data model"],
-    "test_plan.md": ["Strategy", "Test cases"],
-    "ux_spec.md": ["Key flows", "Accessibility"],
+    "requirements.md": ["Goals", "User Stories"],
+    "architecture.md": ["Overview", "Modules", "Data Model"],
+    "test_plan.md": ["Strategy", "Critical Flows"],
+    "ux_spec.md": ["Key Flows", "Accessibility"],
     "issues.md": ["Conventions", "Board"],
 }
 
@@ -93,8 +93,8 @@ def test_kickoff_references_valid_agents():
     kickoff = SKILL_DIR / "kickoff" / "SKILL.md"
     content = kickoff.read_text(encoding="utf-8")
 
-    # Extract agent names referenced in the skill (e.g. "requirement-analyst ->")
-    referenced = re.findall(r"- (\S+) ->", content)
+    # Extract agent names referenced in the skill (e.g. "**Step 1: requirement-analyst → ...")
+    referenced = re.findall(r"\*\*(?:Step \d+(?:\.\d+)?|[\w-]+):\s+([\w-]+)\s+→", content)
     assert referenced, "No agent references found in kickoff SKILL.md"
 
     existing = {p.stem for p in AGENT_DIR.glob("*.md")}
@@ -151,8 +151,8 @@ def test_kickoff_outputs_match_templates():
     kickoff = SKILL_DIR / "kickoff" / "SKILL.md"
     content = kickoff.read_text(encoding="utf-8")
 
-    # Extract subagent output files (e.g. "requirement-analyst -> docs/requirements.md")
-    output_refs = re.findall(r"-> docs/(\w+\.md)", content)
+    # Extract subagent output files (e.g. "requirement-analyst → `docs/requirements.md`")
+    output_refs = re.findall(r"→ `docs/(\w+\.md)`", content)
     assert output_refs, "No subagent output references found in kickoff"
 
     template_names = {p.name for p in TEMPLATE_DIR.glob("*.md")}
@@ -160,3 +160,13 @@ def test_kickoff_outputs_match_templates():
         assert ref in template_names, (
             f"Kickoff references output docs/{ref} but templates/{ref} does not exist"
         )
+
+
+# ── Test 8: validate_issues.py exists and is executable ──────────
+
+
+def test_validate_issues_script_exists_and_executable():
+    script = SCRIPTS_DIR / "validate_issues.py"
+    assert script.exists(), "scripts/validate_issues.py not found"
+    mode = script.stat().st_mode
+    assert mode & stat.S_IXUSR, "scripts/validate_issues.py is not executable (missing u+x)"

@@ -13,7 +13,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 3. **Decompose**: Break large tasks into issues sized 0.5d–1.5d. If an issue feels bigger, split it.
 4. **Order by dependency**: Identify which issues block others. Infrastructure/data-model issues come first.
 5. **Assign priority**: P0 = blocks everything, P1 = core functionality, P2 = nice-to-have/polish.
-6. **Write AC for each issue**: Acceptance Criteria must be specific enough that a developer knows exactly when they're done.
+6. **Write AC for each issue**: Write AC in **Given/When/Then** format. Each AC must be independently testable.
 7. **Add test requirements**: Each issue specifies what tests are expected (unit, integration, e2e).
 8. **Write output**: Generate `issues.md` using the template conventions.
 
@@ -60,8 +60,8 @@ Role: You are a technical project planner. You decompose requirements into issue
 - Out: [what this issue does NOT include]
 
 #### Acceptance Criteria (DoD)
-- [ ] [Testable criterion 1]
-- [ ] [Testable criterion 2]
+- [ ] Given [precondition], when [action], then [expected result]
+- [ ] Given [precondition], when [action], then [expected result]
 
 #### Implementation Notes
 [Key technical hints — which files, patterns, gotchas]
@@ -85,6 +85,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 
 **INSTEAD:**
 - Titles are imperative: "Create", "Add", "Implement", "Configure", "Set up"
+- AC must use Given/When/Then format — never free-form checklists
 - Every issue has at least 2 testable AC items
 - Implementation Notes reference specific files/modules from `docs/architecture.md`
 - Each issue maps back to at least one FR or user story (PRD-Ref field)

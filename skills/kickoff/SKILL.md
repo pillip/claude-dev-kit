@@ -13,39 +13,50 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit
 2) Read PRD (`$ARGUMENTS` or `PRD.md`). If not found, stop immediately and report.
 3) Read existing project files if any (README, pyproject.toml, etc.) to understand tech stack context.
 
+### Phase 1.5 — PRD Digest (Phase 2 전에 실행)
+PRD가 3000단어 이상이면, 다음 구조로 요약을 생성하여 `docs/prd_digest.md`에 저장:
+  - Goals (3줄 이내)
+  - Target User (1줄)
+  - Must-have Features (번호 목록, 각 1줄)
+  - Key NFRs (번호 목록, 각 1줄)
+  - Scope Boundaries (In/Out 각 3줄 이내)
+
+이후 subagent에 context 전달 시: PRD 원문 + `docs/prd_digest.md`를 함께 전달.
+3000단어 미만이면 이 단계를 skip.
+
 ### Phase 2 — Run Subagents (sequential, dependency order)
 
 Subagents MUST run in this order because later agents depend on earlier outputs:
 
 **Step 1: requirement-analyst → `docs/requirements.md`**
-- Context to pass: Full PRD content
+- Context to pass: Full PRD content + `docs/prd_digest.md` (if exists)
 - Agent produces: Goals, prioritized user stories with AC, FRs, NFRs with measurable targets, scope, assumptions, risks
 - Verify output exists before proceeding
 
 **Step 2: ux-designer → `docs/ux_spec.md`**
-- Context to pass: PRD + `docs/requirements.md`
+- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md`
 - Agent produces: IA, key flows with error paths, screen list with 5 states each, copy guidelines, accessibility notes
 - Verify output exists before proceeding
 
 **Step 3: architect → `docs/architecture.md`**
-- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md`
+- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md` + `docs/ux_spec.md`
 - Agent produces: Tech stack, modules, data model, API design, security, deployment, tradeoffs table
 - Verify output exists before proceeding
 
 **Step 3.5: data-modeler → `docs/data_model.md`**
-- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
+- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
 - Agent produces: Access patterns, detailed schema (tables, columns, types, constraints), indexes with justification, migration strategy, seed data, query patterns, scaling notes
 - Verify output exists before proceeding
 
 **Step 4 & 5 (parallel — no dependency between them):**
 
 **planner → `issues.md`**
-- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
+- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
 - Agent produces: Issues sized 0.5d–1.5d with AC, tests, dependencies, implementation notes
 - Verify output exists
 
 **qa-designer → `docs/test_plan.md`**
-- Context to pass: PRD + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
+- Context to pass: PRD + `docs/prd_digest.md` (if exists) + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md`
 - Agent produces: Risk matrix, critical flow test cases, edge cases, fixtures, automation candidates, smoke checklist
 - Verify output exists
 
@@ -62,7 +73,10 @@ Subagents MUST run in this order because later agents depend on earlier outputs:
    - Next issues to implement (top 3 P0 issues)
 
 ### Phase 4 — Verification
-6) Verify all required outputs exist:
+6) Run `scripts/validate_issues.py issues.md` to validate issue quality:
+   - If violations are found, re-invoke the planner subagent once with the violation list and ask it to fix the issues.
+   - If violations remain after the retry, log them in `STATUS.md` under `## Warnings` and proceed.
+7) Verify all required outputs exist:
    - `docs/requirements.md`
    - `docs/ux_spec.md`
    - `docs/architecture.md`
@@ -70,7 +84,7 @@ Subagents MUST run in this order because later agents depend on earlier outputs:
    - `docs/test_plan.md`
    - `issues.md`
    - `STATUS.md`
-7) Report summary to the user:
+8) Report summary to the user:
    - Number of FRs/NFRs identified
    - Number of screens in UX spec
    - Architecture style chosen
@@ -103,4 +117,4 @@ When invoking each subagent via the Task tool:
 - The dependency order is critical: requirements → UX → architecture → data model → (planner + QA in parallel).
 - Each subagent should receive ALL prior outputs as context for maximum coherence.
 - Do NOT modify subagent outputs after they are written — each agent owns its document.
-- If the PRD is very large (>3000 words), summarize key sections when passing to later subagents to stay within context limits.
+- PRD Digest는 Phase 1.5에서 자동 생성됨. 개별 subagent가 임의로 요약하지 말 것.
