@@ -12,6 +12,8 @@ Steps:
 3.5) Check if `docs/brainstorm_notes.md` exists. If it does, read it and use as
      additional context — problem space, target users, chosen direction. Pre-fill
      answers to questions already covered in the brainstorm notes.
+3.6) Check if `docs/business_analysis.md` exists. If it does, read it and use as
+     additional context — market analysis, competitive landscape, business model direction, risks.
 
 ### If the file does NOT exist (New PRD):
 4a) Ask the user to freely describe their product idea.

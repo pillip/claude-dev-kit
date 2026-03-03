@@ -1,0 +1,59 @@
+---
+name: bizanalysis
+description: 사업적 타당성을 분석하고 크리틱합니다. /brainstorm 이후, /prd 전에 사용하세요.
+argument-hint: [출력 파일 경로, 기본값 docs/business_analysis.md]
+disable-model-invocation: false
+allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch
+---
+Steps:
+1) Determine the output path ($ARGUMENTS or `docs/business_analysis.md`).
+2) Check if the file already exists at that path.
+3) Check if `docs/brainstorm_notes.md` exists. If it does, read it and use as
+   context — problem space, target users, chosen direction.
+
+### If the file does NOT exist (New Analysis):
+4a) If brainstorm notes exist, summarize the idea from them. Otherwise, ask the user to describe their idea.
+5a) **Market Research**: Use WebSearch/WebFetch to investigate market size, trends, TAM/SAM/SOM. Cite sources.
+6a) **Competitive Analysis**: Identify competitors and alternatives. Build a comparison table.
+7a) **Business Model Exploration**: Explore revenue model candidates and pricing strategy directions.
+8a) **Risk Assessment**: Identify key risks (market, technical, regulatory, competitive) and propose mitigations.
+9a) **Critique**: Produce a SWOT analysis and a Go/Pivot/No-Go recommendation. Discuss with the user.
+
+### If the file DOES exist (Continue Analysis):
+4b) Read the existing analysis and present a brief recap.
+5b) Ask the user which section they want to develop, challenge, or update.
+6b) Repeat research and analysis as needed for the chosen area.
+7b) Merge new insights into the existing analysis.
+
+### Common (both modes):
+10) Present the draft to the user and incorporate feedback.
+11) Save the final analysis to the output path with five sections:
+    - Executive Summary (one-line + Go/Pivot/No-Go)
+    - Market Analysis (size, trends, TAM/SAM/SOM)
+    - Competitive Landscape (comparison table, differentiation)
+    - Business Model (revenue models, pricing direction)
+    - Risks & Mitigations (risks, severity, mitigation strategies)
+12) Inform the user they can run `/prd` next — business analysis and brainstorm notes will be automatically used as context.
+
+## Error Handling
+- If the output path is not writable: report the error and ask for an alternative path.
+
+## Quality Criteria
+
+**NEVER:**
+- Fabricate market size numbers — back up with web research or label as "rough estimate"
+- Unconditionally praise the user's idea — provide honest critique
+- Ask more than 3 questions at a time — keep it conversational
+- Jump to conclusions without analysis — show your reasoning
+
+**INSTEAD:**
+- Cite sources when presenting market data
+- Present both strengths and weaknesses
+- Use concrete numbers and comparisons
+- Clearly state uncertainty when data is unavailable
+- Propose actionable next steps for each risk
+
+## Guidelines
+- This is an interactive, conversational skill — engage naturally.
+- If the user says "that's enough" or similar, produce the best analysis possible with available information.
+- After saving, suggest next step: `/prd` to create a PRD using both business analysis and brainstorm notes as context.

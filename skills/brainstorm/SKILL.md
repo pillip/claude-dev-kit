@@ -28,7 +28,7 @@ Steps:
 ### Common (both modes):
 7) Present the draft to the user and incorporate feedback.
 8) Save the final notes to the output path.
-9) Inform the user they can run `/prd` next — brainstorm notes will be automatically used as context.
+9) Inform the user they can run `/bizanalysis` next to validate business viability, or `/prd` to go straight to PRD creation — brainstorm notes will be automatically used as context in both.
 
 ## Error Handling
 - If the output path is not writable: report the error and ask for an alternative path.

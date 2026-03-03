@@ -315,3 +315,38 @@ def test_prd_skill_references_brainstorm_notes():
     assert "brainstorm_notes" in content, (
         "skills/prd/SKILL.md does not reference brainstorm_notes"
     )
+
+
+# ── Test 15: business-analyst agent and bizanalysis skill ──────────────
+
+
+def test_business_analyst_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "business-analyst.md"
+    assert path.exists(), "agents/business-analyst.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"business-analyst.md missing frontmatter keys: {missing}"
+
+
+def test_bizanalysis_skill_exists_and_has_required_frontmatter():
+    path = SKILL_DIR / "bizanalysis" / "SKILL.md"
+    assert path.exists(), "skills/bizanalysis/SKILL.md not found"
+    fm = _parse_frontmatter(path)
+    missing = SKILL_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"bizanalysis SKILL.md missing frontmatter keys: {missing}"
+
+
+def test_prd_skill_references_business_analysis():
+    path = SKILL_DIR / "prd" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "business_analysis" in content, (
+        "skills/prd/SKILL.md does not reference business_analysis"
+    )
+
+
+def test_brainstorm_skill_references_bizanalysis():
+    path = SKILL_DIR / "brainstorm" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "bizanalysis" in content, (
+        "skills/brainstorm/SKILL.md does not reference bizanalysis"
+    )
