@@ -6,6 +6,12 @@ def now():
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 def find_project_root(start: Path) -> Path:
+    # HOOK_ROOT is set by the inline hook command to handle git worktrees
+    hook_root = os.environ.get("HOOK_ROOT")
+    if hook_root:
+        root = Path(hook_root)
+        if (root / ".claude").is_dir():
+            return root
     cur = start
     while True:
         if (cur / ".claude").is_dir():

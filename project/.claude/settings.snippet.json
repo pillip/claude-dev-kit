@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/agent_state.py"
+            "command": "bash -c 'R=$(git rev-parse --show-toplevel 2>/dev/null || echo \".\"); G=$(git rev-parse --git-dir 2>/dev/null || echo \".git\"); [ -f \"$G/commondir\" ] && R=$(cd \"$G/$(cat \"$G/commondir\")/..\" && pwd); [ -f \"$R/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$R\" python3 \"$R/.claude/hooks/agent_state.py\" || true'"
           }
         ]
       }
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/agent_state.py"
+            "command": "bash -c 'R=$(git rev-parse --show-toplevel 2>/dev/null || echo \".\"); G=$(git rev-parse --git-dir 2>/dev/null || echo \".git\"); [ -f \"$G/commondir\" ] && R=$(cd \"$G/$(cat \"$G/commondir\")/..\" && pwd); [ -f \"$R/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$R\" python3 \"$R/.claude/hooks/agent_state.py\" || true'"
           }
         ]
       }
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/agent_state.py"
+            "command": "bash -c 'R=$(git rev-parse --show-toplevel 2>/dev/null || echo \".\"); G=$(git rev-parse --git-dir 2>/dev/null || echo \".git\"); [ -f \"$G/commondir\" ] && R=$(cd \"$G/$(cat \"$G/commondir\")/..\" && pwd); [ -f \"$R/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$R\" python3 \"$R/.claude/hooks/agent_state.py\" || true'"
           }
         ]
       }
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/agent_state.py"
+            "command": "bash -c 'R=$(git rev-parse --show-toplevel 2>/dev/null || echo \".\"); G=$(git rev-parse --git-dir 2>/dev/null || echo \".git\"); [ -f \"$G/commondir\" ] && R=$(cd \"$G/$(cat \"$G/commondir\")/..\" && pwd); [ -f \"$R/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$R\" python3 \"$R/.claude/hooks/agent_state.py\" || true'"
           }
         ]
       }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/agent_state.py"
+            "command": "bash -c 'R=$(git rev-parse --show-toplevel 2>/dev/null || echo \".\"); G=$(git rev-parse --git-dir 2>/dev/null || echo \".git\"); [ -f \"$G/commondir\" ] && R=$(cd \"$G/$(cat \"$G/commondir\")/..\" && pwd); [ -f \"$R/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$R\" python3 \"$R/.claude/hooks/agent_state.py\" || true'"
           }
         ]
       }
