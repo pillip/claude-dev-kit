@@ -464,11 +464,57 @@ class TestVerifyReviewReview:
             assert vc.verify_review_review("ISSUE-001") is False
 
 
+# ── _is_ui_issue ─────────────────────────────────────────────────────
+
+
+class TestIsUiIssue:
+    def test_detects_ui_track(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Add login\n"
+            "- Track: UI\n"
+            "- Status: doing\n",
+        )
+        assert vc._is_ui_issue("ISSUE-001") is True
+
+    def test_detects_component_in_title(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Build dashboard component\n"
+            "- Status: doing\n",
+        )
+        assert vc._is_ui_issue("ISSUE-001") is True
+
+    def test_detects_screen_keyword(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Design settings screen\n"
+            "- Status: doing\n",
+        )
+        assert vc._is_ui_issue("ISSUE-001") is True
+
+    def test_returns_false_for_backend_issue(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Add rate limiting to API\n"
+            "- Track: Backend\n"
+            "- Status: doing\n",
+        )
+        assert vc._is_ui_issue("ISSUE-001") is False
+
+    def test_returns_false_when_issue_missing(self, repo_root):
+        _setup_issues(repo_root, "### ISSUE-002: Other\n- Status: doing\n")
+        assert vc._is_ui_issue("ISSUE-001") is False
+
+
 # ── Review UI-review verifier ─────────────────────────────────────────
 
 
 class TestVerifyReviewUiReview:
-    def test_pass_with_required_sections(self, tmp_path):
+    def test_pass_with_required_sections(self, tmp_path, repo_root):
+        # Setup as UI issue
+        _setup_issues(repo_root, "### ISSUE-001: Build dashboard component\n- Status: doing\n")
+
         wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
         notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
         notes_dir.mkdir(parents=True)
@@ -482,16 +528,19 @@ class TestVerifyReviewUiReview:
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
             assert vc.verify_review_ui_review("ISSUE-001") is True
 
-    def test_fail_when_file_missing(self, tmp_path):
+    def test_fail_when_file_missing(self, tmp_path, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Build UI screen\n- Status: doing\n")
+
         wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
         wt_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
         wt_dir.mkdir(parents=True)
-        # No ui_review_notes.md created
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
             assert vc.verify_review_ui_review("ISSUE-001") is False
 
-    def test_fail_when_sections_missing(self, tmp_path):
+    def test_fail_when_sections_missing(self, tmp_path, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Build UI screen\n- Status: doing\n")
+
         wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
         notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
         notes_dir.mkdir(parents=True)
@@ -502,9 +551,21 @@ class TestVerifyReviewUiReview:
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
             assert vc.verify_review_ui_review("ISSUE-001") is False
 
-    def test_fail_when_no_worktree(self):
+    def test_fail_when_no_worktree(self, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Build UI screen\n- Status: doing\n")
+
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="worktree /main\n")):
             assert vc.verify_review_ui_review("ISSUE-001") is False
+
+    def test_auto_skip_for_non_ui_issue(self, repo_root):
+        """Non-UI issues should auto-pass the ui-review checkpoint."""
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Add rate limiting to API\n"
+            "- Track: Backend\n"
+            "- Status: doing\n",
+        )
+        assert vc.verify_review_ui_review("ISSUE-001") is True
 
 
 # ── Ship verifiers ───────────────────────────────────────────────────

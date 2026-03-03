@@ -30,8 +30,9 @@ Steps:
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
    - Output: `docs/ui_review_notes.md` with severity-classified findings.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP** (UI issues only)
-> IF this is a UI issue, run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase ui-review --issue $ARGUMENTS`
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase ui-review --issue $ARGUMENTS`
+> The script auto-detects UI issues via Track field/title keywords. Non-UI issues pass automatically.
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 4) Apply minimal fixes for Critical/High findings (code + UI); re-run tests inside `$WT/`.

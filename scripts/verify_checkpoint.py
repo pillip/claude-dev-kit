@@ -350,8 +350,38 @@ def verify_review_review(issue_id: str, **_) -> bool:
     return True
 
 
+_UI_KEYWORDS = re.compile(
+    r"\b(?:UI|screen|component|prototype|frontend|widget|layout)\b", re.IGNORECASE
+)
+
+
+def _is_ui_issue(issue_id: str) -> bool:
+    """Determine if an issue involves UI/frontend work by checking Track field and title."""
+    block = _find_issue_block(issue_id)
+    if block is None:
+        return False
+
+    track = _extract_field(block, "Track")
+    if track and _UI_KEYWORDS.search(track):
+        return True
+
+    # Check title line (### ISSUE-NNN: <title>)
+    title_match = re.match(r"^### [^:]+:\s*(.+)", block)
+    if title_match and _UI_KEYWORDS.search(title_match.group(1)):
+        return True
+
+    return False
+
+
 def verify_review_ui_review(issue_id: str, **_) -> bool:
-    """ui_review_notes.md exists with State Coverage and Copy Compliance sections."""
+    """ui_review_notes.md exists with State Coverage and Copy Compliance sections.
+
+    Automatically passes for non-UI issues (no ui_review_notes.md expected).
+    """
+    if not _is_ui_issue(issue_id):
+        print(f"PASS: {issue_id} is not a UI issue — ui-review checkpoint skipped")
+        return True
+
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
         print(f"FAIL: no worktree found for {issue_id}")

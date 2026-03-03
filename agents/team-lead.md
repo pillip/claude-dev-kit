@@ -144,7 +144,7 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 | Skill | Phases |
 |-------|--------|
 | implement | issue, worktree, code, test, push, pr, registry |
-| review | checkout, review, ui-review, test, push |
+| review | checkout, review, ui-review (UI issues only — auto-skips for non-UI), test, push |
 | ship | checks, merge, cleanup |
 
 ## Quality Criteria
