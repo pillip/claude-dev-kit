@@ -2,7 +2,7 @@
 name: ship
 description: 테스트/문서/체인지로그를 정리하고 PR을 merge 해서 배포 가능한 상태로 만듭니다.
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task
 ---
 Steps:
 1) Identify PR to merge (current branch or most recent done issue PR).
@@ -13,6 +13,14 @@ Steps:
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 3) Update docs/README.md; append CHANGELOG.md.
+
+3.5) Ask documenter subagent to review and update project documentation:
+   - Use the Task tool to launch a documenter subagent (agents/documenter.md).
+   - Pass the PR diff summary, list of changed files, and existing docs/ contents as context.
+   - Documenter checks docs/ (README, runbook, troubleshooting, contributing) against the code changes.
+   - If docs are outdated or missing coverage for the changes: update them.
+   - If no doc updates needed: skip silently.
+
    Update shared files via flock:
    ```bash
    ROOT="$(bash scripts/worktree.sh root)"

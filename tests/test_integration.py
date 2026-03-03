@@ -350,3 +350,14 @@ def test_brainstorm_skill_references_bizanalysis():
     assert "bizanalysis" in content, (
         "skills/brainstorm/SKILL.md does not reference bizanalysis"
     )
+
+
+# ── Test 16: ship skill references documenter subagent ───────────────
+
+
+def test_ship_skill_references_documenter():
+    path = SKILL_DIR / "ship" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "documenter" in content, (
+        "skills/ship/SKILL.md does not reference documenter subagent"
+    )
