@@ -350,6 +350,33 @@ def verify_review_review(issue_id: str, **_) -> bool:
     return True
 
 
+def verify_review_ui_review(issue_id: str, **_) -> bool:
+    """ui_review_notes.md exists with State Coverage and Copy Compliance sections."""
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    notes = Path(wt_path) / "docs" / "ui_review_notes.md"
+    if not notes.exists():
+        print("FAIL: docs/ui_review_notes.md not found in worktree")
+        return False
+
+    content = notes.read_text(encoding="utf-8")
+    missing = []
+    if not re.search(r"^#{1,6}\s+.*State Coverage", content, re.MULTILINE):
+        missing.append("State Coverage")
+    if not re.search(r"^#{1,6}\s+.*Copy Compliance", content, re.MULTILINE):
+        missing.append("Copy Compliance")
+
+    if missing:
+        print(f"FAIL: ui_review_notes.md missing header sections: {', '.join(missing)}")
+        return False
+
+    print("PASS: ui_review_notes.md has required sections")
+    return True
+
+
 def verify_review_test(issue_id: str, **_) -> bool:
     """pytest exits 0 (inside worktree)."""
     return verify_implement_test(issue_id)
@@ -436,6 +463,7 @@ VERIFIERS = {
     ("implement", "registry"): verify_implement_registry,
     ("review", "checkout"): verify_review_checkout,
     ("review", "review"): verify_review_review,
+    ("review", "ui-review"): verify_review_ui_review,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,
     ("ship", "checks"): verify_ship_checks,

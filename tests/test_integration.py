@@ -239,7 +239,7 @@ def test_verify_checkpoint_script_exists_and_executable():
 
 @pytest.mark.parametrize(
     "skill,min_checkpoints",
-    [("implement", 7), ("review", 4), ("ship", 3)],
+    [("implement", 7), ("review", 5), ("ship", 3)],
     ids=["implement", "review", "ship"],
 )
 def test_skill_has_checkpoint_markers(skill, min_checkpoints):
@@ -249,6 +249,33 @@ def test_skill_has_checkpoint_markers(skill, min_checkpoints):
     count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
     assert count >= min_checkpoints, (
         f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
+    )
+
+
+# ── Test 13: ui-reviewer agent ─────────────────────────────────────────
+
+
+def test_ui_reviewer_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "ui-reviewer.md"
+    assert path.exists(), "agents/ui-reviewer.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"ui-reviewer.md missing frontmatter keys: {missing}"
+
+
+def test_review_skill_references_ui_reviewer():
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "ui-reviewer" in content, (
+        "skills/review/SKILL.md does not reference ui-reviewer"
+    )
+
+
+def test_ui_reviewer_references_review_lessons():
+    path = AGENT_DIR / "ui-reviewer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "review_lessons" in content, (
+        "agents/ui-reviewer.md does not reference review_lessons"
     )
 
 

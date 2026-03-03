@@ -48,6 +48,7 @@ Determine which agent(s) to use per issue based on its content:
 | DB migration | migrator | skills/migrate/SKILL.md |
 | Architecture change needed | architect → data-modeler → developer | sequential |
 | Any completed implementation | reviewer | skills/review/SKILL.md |
+| UI implementation completed | reviewer + ui-reviewer | skills/review/SKILL.md |
 | Reviewed and approved | (ship steps) | skills/ship/SKILL.md |
 
 **How to determine**: Read the issue's title, Track field, and Implementation Notes. Keywords like "UI", "screen", "component" → UI agent. "Dockerfile", "CI", "deploy" → devops. "migrate", "schema change" → migrator.
@@ -143,7 +144,7 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 | Skill | Phases |
 |-------|--------|
 | implement | issue, worktree, code, test, push, pr, registry |
-| review | checkout, review, test, push |
+| review | checkout, review, ui-review, test, push |
 | ship | checks, merge, cleanup |
 
 ## Quality Criteria

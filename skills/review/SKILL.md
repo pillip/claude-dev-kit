@@ -22,15 +22,28 @@ Steps:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
    - Pass existing `docs/review_lessons.md` (if exists) as context so the reviewer can identify recurring patterns.
-4) Apply minimal fixes for Critical/High security findings and code issues; re-run tests inside `$WT/`.
+3.5) IF the issue involves UI/frontend work (check Track field or issue keywords: "UI", "screen", "component", "prototype"):
+   Ask ui-reviewer subagent to perform UI state review:
+   - Pass `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`,
+     `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`),
+     `docs/review_lessons.md` as context.
+   - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
+   - Output: `docs/ui_review_notes.md` with severity-classified findings.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP** (UI issues only)
+> IF this is a UI issue, run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase ui-review --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+4) Apply minimal fixes for Critical/High findings (code + UI); re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-5) Update docs/review_notes.md (inside `$WT/`) with two sections:
+5) Update docs/review_notes.md (inside `$WT/`) with sections:
    - **Code Review**: findings, changes, follow-ups.
    - **Security Findings**: severity-classified list with remediation steps.
+   - **UI Review** (from ui-reviewer, if applicable): State Coverage, Copy, Tokens, Accessibility.
 5.5) Ask reviewer subagent to update `docs/review_lessons.md`:
    - Use `$ROOT/docs/review_lessons.md` with `flock_edit.sh` for safe concurrent modification.
    - Add new preventable patterns or increment frequency of existing ones.

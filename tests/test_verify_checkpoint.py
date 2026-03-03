@@ -464,6 +464,49 @@ class TestVerifyReviewReview:
             assert vc.verify_review_review("ISSUE-001") is False
 
 
+# ── Review UI-review verifier ─────────────────────────────────────────
+
+
+class TestVerifyReviewUiReview:
+    def test_pass_with_required_sections(self, tmp_path):
+        wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
+        notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
+        notes_dir.mkdir(parents=True)
+        (notes_dir / "ui_review_notes.md").write_text(
+            "# UI Review Notes\n\n"
+            "## State Coverage\nAll screens covered.\n\n"
+            "## Copy Compliance\nAll copy matches guide.\n\n"
+            "## Design Token Compliance\nNo issues.\n"
+        )
+
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_ui_review("ISSUE-001") is True
+
+    def test_fail_when_file_missing(self, tmp_path):
+        wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
+        wt_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
+        wt_dir.mkdir(parents=True)
+        # No ui_review_notes.md created
+
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_ui_review("ISSUE-001") is False
+
+    def test_fail_when_sections_missing(self, tmp_path):
+        wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
+        notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
+        notes_dir.mkdir(parents=True)
+        (notes_dir / "ui_review_notes.md").write_text(
+            "# UI Review Notes\n\n## Some Other Section\nContent.\n"
+        )
+
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_ui_review("ISSUE-001") is False
+
+    def test_fail_when_no_worktree(self):
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout="worktree /main\n")):
+            assert vc.verify_review_ui_review("ISSUE-001") is False
+
+
 # ── Ship verifiers ───────────────────────────────────────────────────
 
 
