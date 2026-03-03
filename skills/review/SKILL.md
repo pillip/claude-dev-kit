@@ -13,18 +13,38 @@ Steps:
    WT="$(bash scripts/worktree.sh create "$BRANCH")"
    ```
    All subsequent file operations happen inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill review --phase checkout --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 3) Ask reviewer subagent to perform code review + security audit:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
    - Pass existing `docs/review_lessons.md` (if exists) as context so the reviewer can identify recurring patterns.
 4) Apply minimal fixes for Critical/High security findings and code issues; re-run tests inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill review --phase test --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 5) Update docs/review_notes.md (inside `$WT/`) with two sections:
    - **Code Review**: findings, changes, follow-ups.
    - **Security Findings**: severity-classified list with remediation steps.
 5.5) Ask reviewer subagent to update `docs/review_lessons.md`:
    - Use `$ROOT/docs/review_lessons.md` with `flock_edit.sh` for safe concurrent modification.
    - Add new preventable patterns or increment frequency of existing ones.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill review --phase review --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 6) Commit + push from `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill review --phase push --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 7) If PR is draft and ready: `gh pr ready`.
 
 ## Shared Registry Files

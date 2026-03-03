@@ -7,6 +7,11 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 Steps:
 1) Identify PR to merge (current branch or most recent done issue PR).
 2) Ensure tests pass locally and PR checks are green.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill ship --phase checks --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 3) Update docs/README.md; append CHANGELOG.md.
    Update shared files via flock:
    ```bash
@@ -14,6 +19,11 @@ Steps:
    bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
    ```
 4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill ship --phase merge --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 5) Clean up worktree if one exists for this branch.
    **CRITICAL**: `cd` and `remove` MUST run in a single shell command.
    A child process `cd` cannot change the parent shell's CWD, so if they
@@ -22,6 +32,11 @@ Steps:
    ```bash
    cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>
    ```
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill ship --phase cleanup --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 6) Post-merge smoke on main (optional).
 
 ## Shared Registry Files

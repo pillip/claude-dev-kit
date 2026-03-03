@@ -5,6 +5,9 @@ argument-hint: [ISSUE-번호]
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 ---
+## Checkpoint Rules — MANDATORY
+Every phase in this skill has a CHECKPOINT block. You MUST run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase. Skipping checkpoints is a critical violation.
+
 Hard requirements:
 - Create GitHub Issue if missing: `gh issue create`
 - Create/update PR and include `Closes #<issue_number>` in PR body.
@@ -41,17 +44,47 @@ Algorithm:
    - Capture issue number/url; write back to issues.md.
    - **File lock**: wrap the issues.md write-back with:
      `bash scripts/flock_edit.sh issues.md -- bash -c '<update command>'`
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase issue --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 5) Create worktree for the branch:
    ```bash
    WT="$(bash scripts/worktree.sh create issue/$ARGUMENTS-<slug>)"
    ```
    All subsequent file operations (code, tests) happen inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase worktree --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 6) Implement minimal code + tests inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase code --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 7) Run tests inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase test --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 8) Commit + push (from `$WT/`).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase push --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 9) Create PR (or update):
    - Title: `[$ARGUMENTS] <title>`
    - Body begins with `Closes #<issue_number>`
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase pr --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 10) Record PR URL in issues.md; set Status=done; update STATUS.md.
     Use main repo root for shared files:
     ```bash
@@ -59,6 +92,10 @@ Algorithm:
     bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
     bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
     ```
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase registry --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
