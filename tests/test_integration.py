@@ -195,3 +195,69 @@ def test_agent_references_review_lessons(agent_name):
     assert "review_lessons" in content, (
         f"agents/{agent_name}.md does not reference review_lessons"
     )
+
+
+# ── Test 10: sprint skill and team-lead agent ──────────────────────
+
+
+def test_team_lead_agent_exists_and_has_task_tool():
+    path = AGENT_DIR / "team-lead.md"
+    assert path.exists(), "agents/team-lead.md not found"
+    fm = _parse_frontmatter(path)
+    assert "Task" in fm.get("tools", ""), "team-lead must have Task tool for agent orchestration"
+
+
+def test_sprint_skill_exists():
+    path = SKILL_DIR / "sprint" / "SKILL.md"
+    assert path.exists(), "skills/sprint/SKILL.md not found"
+    fm = _parse_frontmatter(path)
+    assert fm.get("name") == "sprint"
+
+
+def test_team_lead_references_skill_files():
+    """team-lead should reference SKILL.md files it follows at runtime."""
+    path = AGENT_DIR / "team-lead.md"
+    content = path.read_text(encoding="utf-8")
+    for skill in ["implement", "review", "ship"]:
+        assert f"skills/{skill}/SKILL.md" in content, (
+            f"team-lead.md should reference skills/{skill}/SKILL.md"
+        )
+
+
+# ── Test 11: verify_checkpoint.py exists and is executable ───────────
+
+
+def test_verify_checkpoint_script_exists_and_executable():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    assert script.exists(), "scripts/verify_checkpoint.py not found"
+    mode = script.stat().st_mode
+    assert mode & stat.S_IXUSR, "scripts/verify_checkpoint.py is not executable (missing u+x)"
+
+
+# ── Test 12: SKILL.md files contain CHECKPOINT markers ───────────────
+
+
+@pytest.mark.parametrize(
+    "skill,min_checkpoints",
+    [("implement", 7), ("review", 4), ("ship", 3)],
+    ids=["implement", "review", "ship"],
+)
+def test_skill_has_checkpoint_markers(skill, min_checkpoints):
+    path = SKILL_DIR / skill / "SKILL.md"
+    assert path.exists(), f"skills/{skill}/SKILL.md not found"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= min_checkpoints, (
+        f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
+    )
+
+
+def test_team_lead_has_checkpoint_enforcement_protocol():
+    path = AGENT_DIR / "team-lead.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Checkpoint Enforcement Protocol" in content, (
+        "team-lead.md missing 'Checkpoint Enforcement Protocol' section"
+    )
+    assert "verify_checkpoint.py" in content, (
+        "team-lead.md should reference verify_checkpoint.py"
+    )
