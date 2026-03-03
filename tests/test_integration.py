@@ -288,3 +288,30 @@ def test_team_lead_has_checkpoint_enforcement_protocol():
     assert "verify_checkpoint.py" in content, (
         "team-lead.md should reference verify_checkpoint.py"
     )
+
+
+# ── Test 14: brainstormer agent and brainstorm skill ─────────────────
+
+
+def test_brainstormer_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "brainstormer.md"
+    assert path.exists(), "agents/brainstormer.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"brainstormer.md missing frontmatter keys: {missing}"
+
+
+def test_brainstorm_skill_exists_and_has_required_frontmatter():
+    path = SKILL_DIR / "brainstorm" / "SKILL.md"
+    assert path.exists(), "skills/brainstorm/SKILL.md not found"
+    fm = _parse_frontmatter(path)
+    missing = SKILL_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"brainstorm SKILL.md missing frontmatter keys: {missing}"
+
+
+def test_prd_skill_references_brainstorm_notes():
+    path = SKILL_DIR / "prd" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "brainstorm_notes" in content, (
+        "skills/prd/SKILL.md does not reference brainstorm_notes"
+    )

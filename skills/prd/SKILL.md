@@ -9,6 +9,9 @@ Steps:
 1) Determine the output path ($ARGUMENTS or PRD.md).
 2) Check if the file already exists at that path.
 3) Read `docs/example_prd.md` to load the reference PRD format.
+3.5) Check if `docs/brainstorm_notes.md` exists. If it does, read it and use as
+     additional context — problem space, target users, chosen direction. Pre-fill
+     answers to questions already covered in the brainstorm notes.
 
 ### If the file does NOT exist (New PRD):
 4a) Ask the user to freely describe their product idea.
