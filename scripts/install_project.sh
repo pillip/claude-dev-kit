@@ -14,6 +14,10 @@ python3 "$KIT_ROOT/scripts/merge_settings.py" \
   "$PROJ_ROOT/.claude/settings.json" \
   "$KIT_ROOT/project/.claude/settings.snippet.json"
 
+# Ensure settings.local.json has required sprint permissions
+python3 "$KIT_ROOT/scripts/ensure_permissions.py" \
+  "$PROJ_ROOT/.claude/settings.local.json"
+
 # Register merge=ours driver for shared registry files (issues.md, STATUS.md, CHANGELOG.md)
 git -C "$PROJ_ROOT" config merge.ours.driver true 2>/dev/null || true
 
