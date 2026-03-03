@@ -29,24 +29,73 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 
+def _find_issue_block(issue_id: str) -> str | None:
+    """Read issues.md and return the text block for the given issue, or None."""
+    issues_md = Path("issues.md")
+    if not issues_md.exists():
+        print("FAIL: issues.md not found")
+        return None
+
+    text = issues_md.read_text(encoding="utf-8")
+    # Match from ### ISSUE-NNN: to the next ### or end-of-string
+    pattern = rf"(?:^### {re.escape(issue_id)}:[^\n]*)(?:\n(?!### ).*)*"
+    match = re.search(pattern, text, re.MULTILINE)
+    if not match:
+        print(f"FAIL: {issue_id} not found in issues.md")
+        return None
+
+    return match.group(0)
+
+
+def _find_worktree_path(issue_id: str) -> str | None:
+    """Find the worktree path for an issue using word-boundary matching."""
+    result = _run(["git", "worktree", "list", "--porcelain"])
+    if result.returncode != 0:
+        print(f"FAIL: git worktree list failed: {result.stderr.strip()}")
+        return None
+
+    slug = issue_id.lower()
+    # Use word-boundary-like match: slug must be followed by - or / or end-of-path
+    # e.g. "issue-001" matches "issue/issue-001-slug" but not "issue/issue-0010-slug"
+    wt_pattern = re.compile(rf"{re.escape(slug)}(?:-|/|$)", re.IGNORECASE)
+
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            path = line.split(" ", 1)[1]
+            if wt_pattern.search(path):
+                return path
+
+    return None
+
+
+def _extract_pr_number(issue_id: str) -> str | None:
+    """Extract PR number from issues.md PR field for the given issue."""
+    block = _find_issue_block(issue_id)
+    if block is None:
+        return None
+
+    pr_field = _extract_field(block, "PR")
+    if not pr_field:
+        print(f"FAIL: {issue_id} has no PR field in issues.md")
+        return None
+
+    pr_match = re.search(r"(\d+)\s*$", pr_field)
+    if not pr_match:
+        print(f"FAIL: cannot parse PR number from: {pr_field}")
+        return None
+
+    return pr_match.group(1)
+
+
 # ── Implement skill verifiers ────────────────────────────────────────
 
 
 def verify_implement_issue(issue_id: str, **_) -> bool:
     """GH-Issue field exists in issues.md and `gh issue view` succeeds."""
-    issues_md = Path("issues.md")
-    if not issues_md.exists():
-        print(f"FAIL: issues.md not found")
+    block = _find_issue_block(issue_id)
+    if block is None:
         return False
 
-    text = issues_md.read_text(encoding="utf-8")
-    pattern = rf"(?:^### {re.escape(issue_id)}:.*?)(?=\n### |\Z)"
-    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not match:
-        print(f"FAIL: {issue_id} not found in issues.md")
-        return False
-
-    block = match.group(0)
     gh_issue = _extract_field(block, "GH-Issue")
     if not gh_issue:
         print(f"FAIL: {issue_id} has no GH-Issue field in issues.md")
@@ -74,10 +123,11 @@ def verify_implement_worktree(issue_id: str, **_) -> bool:
         print(f"FAIL: git worktree list failed: {result.stderr.strip()}")
         return False
 
-    slug = issue_id.lower().replace("-", "-")
-    pattern = rf"issue/{re.escape(slug)}"
-    if not re.search(pattern, result.stdout, re.IGNORECASE):
-        print(f"FAIL: no worktree found matching pattern '{pattern}'")
+    slug = issue_id.lower()
+    # Word-boundary match to avoid ISSUE-001 matching ISSUE-0010
+    wt_pattern = re.compile(rf"issue/{re.escape(slug)}(?:-|/|$)", re.IGNORECASE)
+    if not wt_pattern.search(result.stdout):
+        print(f"FAIL: no worktree found matching pattern 'issue/{slug}...'")
         return False
 
     print(f"PASS: worktree exists for {issue_id}")
@@ -85,31 +135,31 @@ def verify_implement_worktree(issue_id: str, **_) -> bool:
 
 
 def verify_implement_code(issue_id: str, **_) -> bool:
-    """Worktree has non-docs file changes."""
-    result = _run(["git", "worktree", "list", "--porcelain"])
-    if result.returncode != 0:
-        print(f"FAIL: git worktree list failed")
-        return False
-
-    slug = issue_id.lower()
-    wt_path = None
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree ") and slug in line.lower():
-            wt_path = line.split(" ", 1)[1]
-            break
-
+    """Worktree has non-docs file changes (committed or uncommitted)."""
+    wt_path = _find_worktree_path(issue_id)
     if not wt_path:
         print(f"FAIL: no worktree found for {issue_id}")
         return False
 
-    diff = _run(["git", "diff", "--name-only", "main"], cwd=wt_path)
-    if diff.returncode != 0:
-        print(f"FAIL: git diff failed in worktree")
-        return False
+    # Committed changes vs main
+    diff_committed = _run(["git", "diff", "--name-only", "main"], cwd=wt_path)
+    # Staged but not yet committed
+    diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
+    # Unstaged modifications
+    diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
+    # Untracked files
+    untracked = _run(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
+    )
 
-    changed = [f for f in diff.stdout.strip().splitlines() if f and not f.startswith("docs/")]
+    all_files: set[str] = set()
+    for r in (diff_committed, diff_staged, diff_unstaged, untracked):
+        if r.returncode == 0 and r.stdout.strip():
+            all_files.update(r.stdout.strip().splitlines())
+
+    changed = [f for f in all_files if f and not f.startswith("docs/")]
     if not changed:
-        print(f"FAIL: no non-docs file changes found in worktree")
+        print("FAIL: no non-docs file changes found in worktree")
         return False
 
     print(f"PASS: {len(changed)} non-docs file(s) changed")
@@ -117,28 +167,39 @@ def verify_implement_code(issue_id: str, **_) -> bool:
 
 
 def verify_implement_test(issue_id: str, **_) -> bool:
-    """pytest exits 0."""
-    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"])
+    """pytest exits 0 (runs inside the issue's worktree if one exists)."""
+    wt_path = _find_worktree_path(issue_id)
+    cwd = wt_path if wt_path else None
+
+    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd)
     if result.returncode != 0:
         print(f"FAIL: pytest failed (exit {result.returncode})")
         if result.stdout:
             print(result.stdout[-500:])
         return False
 
-    print(f"PASS: tests passed")
+    print("PASS: tests passed")
     return True
 
 
 def verify_implement_push(issue_id: str, **_) -> bool:
-    """Remote branch exists."""
-    result = _run(["git", "branch", "-r"])
+    """Remote branch exists (fetches latest refs first)."""
+    wt_path = _find_worktree_path(issue_id)
+    cwd = wt_path if wt_path else None
+
+    # Fetch to ensure local remote-tracking refs are up to date
+    _run(["git", "fetch", "--prune"], cwd=cwd)
+
+    result = _run(["git", "branch", "-r"], cwd=cwd)
     if result.returncode != 0:
-        print(f"FAIL: git branch -r failed")
+        print("FAIL: git branch -r failed")
         return False
 
     slug = issue_id.lower()
-    if not any(slug in line.lower() for line in result.stdout.splitlines()):
-        print(f"FAIL: no remote branch found containing '{slug}'")
+    # Word-boundary match: slug followed by non-alphanumeric or end-of-line
+    branch_pattern = re.compile(rf"{re.escape(slug)}(?:\D|$)", re.IGNORECASE)
+    if not any(branch_pattern.search(line) for line in result.stdout.splitlines()):
+        print(f"FAIL: no remote branch found matching '{slug}'")
         return False
 
     print(f"PASS: remote branch exists for {issue_id}")
@@ -147,31 +208,10 @@ def verify_implement_push(issue_id: str, **_) -> bool:
 
 def verify_implement_pr(issue_id: str, **_) -> bool:
     """PR exists and body contains `Closes #N`."""
-    issues_md = Path("issues.md")
-    if not issues_md.exists():
-        print(f"FAIL: issues.md not found")
+    pr_num = _extract_pr_number(issue_id)
+    if pr_num is None:
         return False
 
-    text = issues_md.read_text(encoding="utf-8")
-    pattern = rf"(?:^### {re.escape(issue_id)}:.*?)(?=\n### |\Z)"
-    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not match:
-        print(f"FAIL: {issue_id} not found in issues.md")
-        return False
-
-    block = match.group(0)
-    pr_field = _extract_field(block, "PR")
-    if not pr_field:
-        print(f"FAIL: {issue_id} has no PR field in issues.md")
-        return False
-
-    # Extract PR number
-    pr_match = re.search(r"(\d+)\s*$", pr_field)
-    if not pr_match:
-        print(f"FAIL: cannot parse PR number from: {pr_field}")
-        return False
-
-    pr_num = pr_match.group(1)
     result = _run(["gh", "pr", "view", pr_num, "--json", "body", "-q", ".body"])
     if result.returncode != 0:
         print(f"FAIL: gh pr view {pr_num} failed: {result.stderr.strip()}")
@@ -187,19 +227,10 @@ def verify_implement_pr(issue_id: str, **_) -> bool:
 
 def verify_implement_registry(issue_id: str, **_) -> bool:
     """Status=done and PR field exists in issues.md."""
-    issues_md = Path("issues.md")
-    if not issues_md.exists():
-        print(f"FAIL: issues.md not found")
+    block = _find_issue_block(issue_id)
+    if block is None:
         return False
 
-    text = issues_md.read_text(encoding="utf-8")
-    pattern = rf"(?:^### {re.escape(issue_id)}:.*?)(?=\n### |\Z)"
-    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not match:
-        print(f"FAIL: {issue_id} not found in issues.md")
-        return False
-
-    block = match.group(0)
     status = _extract_field(block, "Status")
     pr_field = _extract_field(block, "PR")
 
@@ -223,42 +254,35 @@ def verify_review_checkout(issue_id: str, **_) -> bool:
 
 
 def verify_review_review(issue_id: str, **_) -> bool:
-    """review_notes.md has Code Review and Security Findings sections."""
-    # Find worktree for issue
-    result = _run(["git", "worktree", "list", "--porcelain"])
-    slug = issue_id.lower()
-    wt_path = None
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree ") and slug in line.lower():
-            wt_path = line.split(" ", 1)[1]
-            break
-
+    """review_notes.md has Code Review and Security Findings as markdown headers."""
+    wt_path = _find_worktree_path(issue_id)
     if not wt_path:
         print(f"FAIL: no worktree found for {issue_id}")
         return False
 
     notes = Path(wt_path) / "docs" / "review_notes.md"
     if not notes.exists():
-        print(f"FAIL: docs/review_notes.md not found in worktree")
+        print("FAIL: docs/review_notes.md not found in worktree")
         return False
 
     content = notes.read_text(encoding="utf-8")
+    # Check for markdown headers (# or ##, etc.) containing the section name
     missing = []
-    if "Code Review" not in content:
+    if not re.search(r"^#{1,6}\s+.*Code Review", content, re.MULTILINE):
         missing.append("Code Review")
-    if "Security Findings" not in content:
+    if not re.search(r"^#{1,6}\s+.*Security Findings", content, re.MULTILINE):
         missing.append("Security Findings")
 
     if missing:
-        print(f"FAIL: review_notes.md missing sections: {', '.join(missing)}")
+        print(f"FAIL: review_notes.md missing header sections: {', '.join(missing)}")
         return False
 
-    print(f"PASS: review_notes.md has required sections")
+    print("PASS: review_notes.md has required sections")
     return True
 
 
 def verify_review_test(issue_id: str, **_) -> bool:
-    """pytest exits 0."""
+    """pytest exits 0 (inside worktree)."""
     return verify_implement_test(issue_id)
 
 
@@ -271,65 +295,43 @@ def verify_review_push(issue_id: str, **_) -> bool:
 
 
 def verify_ship_checks(issue_id: str, **_) -> bool:
-    """`gh pr checks` passes."""
-    issues_md = Path("issues.md")
-    if not issues_md.exists():
-        print(f"FAIL: issues.md not found")
+    """`gh pr checks` passes with at least one check present."""
+    pr_num = _extract_pr_number(issue_id)
+    if pr_num is None:
         return False
 
-    text = issues_md.read_text(encoding="utf-8")
-    pattern = rf"(?:^### {re.escape(issue_id)}:.*?)(?=\n### |\Z)"
-    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not match:
-        print(f"FAIL: {issue_id} not found in issues.md")
-        return False
-
-    pr_field = _extract_field(match.group(0), "PR")
-    pr_match = re.search(r"(\d+)\s*$", pr_field)
-    if not pr_match:
-        print(f"FAIL: cannot parse PR number for {issue_id}")
-        return False
-
-    result = _run(["gh", "pr", "checks", pr_match.group(1)])
+    result = _run(["gh", "pr", "checks", pr_num])
     if result.returncode != 0:
-        print(f"FAIL: gh pr checks failed for PR #{pr_match.group(1)}")
+        print(f"FAIL: gh pr checks failed for PR #{pr_num}")
         return False
 
-    print(f"PASS: PR checks are green")
+    # Ensure there is at least one check (not just an empty success)
+    lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+    if not lines:
+        print(f"FAIL: PR #{pr_num} has no CI checks configured")
+        return False
+
+    print("PASS: PR checks are green")
     return True
 
 
 def verify_ship_merge(issue_id: str, **_) -> bool:
     """PR is in merged state."""
-    issues_md = Path("issues.md")
-    if not issues_md.exists():
-        print(f"FAIL: issues.md not found")
+    pr_num = _extract_pr_number(issue_id)
+    if pr_num is None:
         return False
 
-    text = issues_md.read_text(encoding="utf-8")
-    pattern = rf"(?:^### {re.escape(issue_id)}:.*?)(?=\n### |\Z)"
-    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not match:
-        print(f"FAIL: {issue_id} not found in issues.md")
-        return False
-
-    pr_field = _extract_field(match.group(0), "PR")
-    pr_match = re.search(r"(\d+)\s*$", pr_field)
-    if not pr_match:
-        print(f"FAIL: cannot parse PR number for {issue_id}")
-        return False
-
-    result = _run(["gh", "pr", "view", pr_match.group(1), "--json", "state", "-q", ".state"])
+    result = _run(["gh", "pr", "view", pr_num, "--json", "state", "-q", ".state"])
     if result.returncode != 0:
-        print(f"FAIL: gh pr view failed")
+        print("FAIL: gh pr view failed")
         return False
 
     state = result.stdout.strip()
     if state != "MERGED":
-        print(f"FAIL: PR #{pr_match.group(1)} state is '{state}', expected 'MERGED'")
+        print(f"FAIL: PR #{pr_num} state is '{state}', expected 'MERGED'")
         return False
 
-    print(f"PASS: PR #{pr_match.group(1)} is merged")
+    print(f"PASS: PR #{pr_num} is merged")
     return True
 
 
@@ -337,13 +339,16 @@ def verify_ship_cleanup(issue_id: str, **_) -> bool:
     """Worktree has been removed."""
     result = _run(["git", "worktree", "list", "--porcelain"])
     if result.returncode != 0:
-        print(f"FAIL: git worktree list failed")
+        print("FAIL: git worktree list failed")
         return False
 
     slug = issue_id.lower()
-    if any(slug in line.lower() for line in result.stdout.splitlines() if line.startswith("worktree ")):
-        print(f"FAIL: worktree for {issue_id} still exists")
-        return False
+    # Word-boundary match to avoid false positives on similar issue IDs
+    wt_pattern = re.compile(rf"{re.escape(slug)}(?:-|/|$)", re.IGNORECASE)
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree ") and wt_pattern.search(line):
+            print(f"FAIL: worktree for {issue_id} still exists")
+            return False
 
     print(f"PASS: worktree cleaned up for {issue_id}")
     return True
