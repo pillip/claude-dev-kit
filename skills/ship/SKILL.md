@@ -9,7 +9,7 @@ Steps:
 2) Ensure tests pass locally and PR checks are green.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill ship --phase checks --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase checks --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 3) Update docs/README.md; append CHANGELOG.md.
@@ -21,7 +21,7 @@ Steps:
 4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill ship --phase merge --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase merge --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 5) Clean up worktree if one exists for this branch.
@@ -34,7 +34,7 @@ Steps:
    ```
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill ship --phase cleanup --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase cleanup --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 6) Post-merge smoke on main (optional).

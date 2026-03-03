@@ -15,7 +15,7 @@ Steps:
    All subsequent file operations happen inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill review --phase checkout --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase checkout --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 3) Ask reviewer subagent to perform code review + security audit:
@@ -25,7 +25,7 @@ Steps:
 4) Apply minimal fixes for Critical/High security findings and code issues; re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill review --phase test --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 5) Update docs/review_notes.md (inside `$WT/`) with two sections:
@@ -36,13 +36,13 @@ Steps:
    - Add new preventable patterns or increment frequency of existing ones.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill review --phase review --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase review --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 6) Commit + push from `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill review --phase push --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase push --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 7) If PR is draft and ready: `gh pr ready`.

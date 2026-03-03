@@ -133,7 +133,7 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 **Rules:**
 1. After completing each phase, run the corresponding checkpoint command:
    ```bash
-   python3 scripts/verify_checkpoint.py --skill <skill> --phase <phase> --issue <ISSUE-ID>
+   ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill <skill> --phase <phase> --issue <ISSUE-ID>
    ```
 2. If exit code ≠ 0: STOP immediately. Do NOT proceed to the next phase.
 3. Log the checkpoint failure in `docs/sprint_state.md` with the phase, issue ID, and error output.

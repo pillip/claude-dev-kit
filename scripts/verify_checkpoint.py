@@ -26,14 +26,73 @@ def _extract_field(text: str, field_name: str) -> str:
 
 def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     """Run a command and return the result (no exception on failure)."""
-    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    except FileNotFoundError:
+        # Command binary not found (e.g. gh or git not installed)
+        prog = cmd[0] if cmd else "<unknown>"
+        mock = subprocess.CompletedProcess(cmd, 127)
+        mock.stdout = ""
+        mock.stderr = f"{prog}: command not found"
+        return mock
+
+
+def _repo_root() -> Path:
+    """Resolve the main repository root, even from inside a worktree.
+
+    Uses `bash scripts/worktree.sh root` if available,
+    falls back to git rev-parse with commondir detection.
+    """
+    # Try worktree.sh first (handles all edge cases)
+    wt_script = Path("scripts/worktree.sh")
+    if wt_script.exists():
+        result = _run(["bash", str(wt_script), "root"])
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip())
+
+    # Fallback: git-based detection
+    result = _run(["git", "rev-parse", "--git-dir"])
+    if result.returncode != 0:
+        return Path.cwd()
+
+    git_dir = Path(result.stdout.strip())
+    commondir = git_dir / "commondir"
+    if commondir.exists():
+        # Inside a worktree — follow commondir link to main repo
+        cd = commondir.read_text().strip()
+        if not Path(cd).is_absolute():
+            cd = str(git_dir / cd)
+        return Path(cd).resolve().parent
+
+    result = _run(["git", "rev-parse", "--show-toplevel"])
+    if result.returncode == 0:
+        return Path(result.stdout.strip())
+
+    return Path.cwd()
+
+
+def _default_branch() -> str:
+    """Detect the default branch name (main, master, etc.)."""
+    result = _run(["git", "symbolic-ref", "refs/remotes/origin/HEAD"])
+    if result.returncode == 0:
+        # refs/remotes/origin/main → main
+        return result.stdout.strip().rsplit("/", 1)[-1]
+
+    # Fallback: try common names
+    for name in ("main", "master"):
+        check = _run(["git", "rev-parse", "--verify", f"refs/heads/{name}"])
+        if check.returncode == 0:
+            return name
+
+    return "main"
 
 
 def _find_issue_block(issue_id: str) -> str | None:
-    """Read issues.md and return the text block for the given issue, or None."""
-    issues_md = Path("issues.md")
+    """Read issues.md (from repo root) and return the text block for the given issue."""
+    root = _repo_root()
+    issues_md = root / "issues.md"
     if not issues_md.exists():
-        print("FAIL: issues.md not found")
+        print(f"FAIL: issues.md not found (looked at {issues_md})")
         return None
 
     text = issues_md.read_text(encoding="utf-8")
@@ -47,6 +106,11 @@ def _find_issue_block(issue_id: str) -> str | None:
     return match.group(0)
 
 
+# Shared worktree slug boundary pattern:
+# slug must be followed by -, /, end-of-string, or end-of-line
+_SLUG_BOUNDARY = r"(?:-|/|$)"
+
+
 def _find_worktree_path(issue_id: str) -> str | None:
     """Find the worktree path for an issue using word-boundary matching."""
     result = _run(["git", "worktree", "list", "--porcelain"])
@@ -55,9 +119,9 @@ def _find_worktree_path(issue_id: str) -> str | None:
         return None
 
     slug = issue_id.lower()
-    # Use word-boundary-like match: slug must be followed by - or / or end-of-path
-    # e.g. "issue-001" matches "issue/issue-001-slug" but not "issue/issue-0010-slug"
-    wt_pattern = re.compile(rf"{re.escape(slug)}(?:-|/|$)", re.IGNORECASE)
+    wt_pattern = re.compile(
+        rf"{re.escape(slug)}{_SLUG_BOUNDARY}", re.IGNORECASE
+    )
 
     for line in result.stdout.splitlines():
         if line.startswith("worktree "):
@@ -124,10 +188,11 @@ def verify_implement_worktree(issue_id: str, **_) -> bool:
         return False
 
     slug = issue_id.lower()
-    # Word-boundary match to avoid ISSUE-001 matching ISSUE-0010
-    wt_pattern = re.compile(rf"issue/{re.escape(slug)}(?:-|/|$)", re.IGNORECASE)
+    wt_pattern = re.compile(
+        rf"{re.escape(slug)}{_SLUG_BOUNDARY}", re.IGNORECASE
+    )
     if not wt_pattern.search(result.stdout):
-        print(f"FAIL: no worktree found matching pattern 'issue/{slug}...'")
+        print(f"FAIL: no worktree found matching '{slug}'")
         return False
 
     print(f"PASS: worktree exists for {issue_id}")
@@ -141,8 +206,10 @@ def verify_implement_code(issue_id: str, **_) -> bool:
         print(f"FAIL: no worktree found for {issue_id}")
         return False
 
-    # Committed changes vs main
-    diff_committed = _run(["git", "diff", "--name-only", "main"], cwd=wt_path)
+    base = _default_branch()
+
+    # Committed changes vs default branch
+    diff_committed = _run(["git", "diff", "--name-only", base], cwd=wt_path)
     # Staged but not yet committed
     diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
     # Unstaged modifications
@@ -196,8 +263,9 @@ def verify_implement_push(issue_id: str, **_) -> bool:
         return False
 
     slug = issue_id.lower()
-    # Word-boundary match: slug followed by non-alphanumeric or end-of-line
-    branch_pattern = re.compile(rf"{re.escape(slug)}(?:\D|$)", re.IGNORECASE)
+    branch_pattern = re.compile(
+        rf"{re.escape(slug)}{_SLUG_BOUNDARY}", re.IGNORECASE
+    )
     if not any(branch_pattern.search(line) for line in result.stdout.splitlines()):
         print(f"FAIL: no remote branch found matching '{slug}'")
         return False
@@ -207,7 +275,7 @@ def verify_implement_push(issue_id: str, **_) -> bool:
 
 
 def verify_implement_pr(issue_id: str, **_) -> bool:
-    """PR exists and body contains `Closes #N`."""
+    """PR exists and body contains a GitHub closing keyword (`Closes/Fixes/Resolves #N`)."""
     pr_num = _extract_pr_number(issue_id)
     if pr_num is None:
         return False
@@ -217,11 +285,12 @@ def verify_implement_pr(issue_id: str, **_) -> bool:
         print(f"FAIL: gh pr view {pr_num} failed: {result.stderr.strip()}")
         return False
 
-    if not re.search(r"Closes\s+#\d+", result.stdout):
-        print(f"FAIL: PR #{pr_num} body does not contain 'Closes #N'")
+    # GitHub recognizes: close(s/d), fix(es/ed), resolve(s/d) + #N
+    if not re.search(r"(?:Close[sd]?|Fix(?:e[sd])?|Resolve[sd]?)\s+#\d+", result.stdout, re.IGNORECASE):
+        print(f"FAIL: PR #{pr_num} body does not contain a closing keyword (Closes/Fixes/Resolves #N)")
         return False
 
-    print(f"PASS: PR #{pr_num} exists with Closes reference")
+    print(f"PASS: PR #{pr_num} exists with closing keyword reference")
     return True
 
 
@@ -343,8 +412,9 @@ def verify_ship_cleanup(issue_id: str, **_) -> bool:
         return False
 
     slug = issue_id.lower()
-    # Word-boundary match to avoid false positives on similar issue IDs
-    wt_pattern = re.compile(rf"{re.escape(slug)}(?:-|/|$)", re.IGNORECASE)
+    wt_pattern = re.compile(
+        rf"{re.escape(slug)}{_SLUG_BOUNDARY}", re.IGNORECASE
+    )
     for line in result.stdout.splitlines():
         if line.startswith("worktree ") and wt_pattern.search(line):
             print(f"FAIL: worktree for {issue_id} still exists")

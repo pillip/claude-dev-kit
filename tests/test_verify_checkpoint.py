@@ -15,6 +15,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import verify_checkpoint as vc
 
 
+# ── helpers ───────────────────────────────────────────────────────────
+
+
+def _mock_run(returncode=0, stdout="", stderr=""):
+    """Create a mock CompletedProcess."""
+    result = MagicMock(spec=subprocess.CompletedProcess)
+    result.returncode = returncode
+    result.stdout = stdout
+    result.stderr = stderr
+    return result
+
+
+def _setup_issues(tmp_path: Path, content: str) -> None:
+    """Write issues.md and patch _repo_root to return tmp_path."""
+    (tmp_path / "issues.md").write_text(content)
+
+
+@pytest.fixture()
+def repo_root(tmp_path, monkeypatch):
+    """Fixture that patches _repo_root to return tmp_path."""
+    monkeypatch.setattr(vc, "_repo_root", lambda: tmp_path)
+    return tmp_path
+
+
 # ── _extract_field ────────────────────────────────────────────────────
 
 
@@ -37,51 +61,96 @@ class TestExtractField:
         assert vc._extract_field(text, "GH-Issue") == "#55"
 
 
+# ── _run — FileNotFoundError handling ─────────────────────────────────
+
+
+class TestRun:
+    def test_returns_127_when_command_not_found(self):
+        result = vc._run(["nonexistent_binary_xyz_123"])
+        assert result.returncode == 127
+        assert "command not found" in result.stderr
+
+    def test_normal_command_works(self):
+        result = vc._run(["python3", "--version"])
+        assert result.returncode == 0
+
+
+# ── _repo_root ────────────────────────────────────────────────────────
+
+
+class TestRepoRoot:
+    def test_returns_path(self):
+        """_repo_root should return a Path (basic smoke test)."""
+        root = vc._repo_root()
+        assert isinstance(root, Path)
+
+
+# ── _default_branch ──────────────────────────────────────────────────
+
+
+class TestDefaultBranch:
+    def test_detects_main(self):
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout="refs/remotes/origin/main\n")):
+            assert vc._default_branch() == "main"
+
+    def test_detects_master(self):
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout="refs/remotes/origin/master\n")):
+            assert vc._default_branch() == "master"
+
+    def test_fallback_to_main(self):
+        """When symbolic-ref fails, fall back to checking refs/heads."""
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            call_count["n"] += 1
+            if "symbolic-ref" in cmd:
+                return _mock_run(1)
+            if "main" in cmd:
+                return _mock_run(0)
+            return _mock_run(1)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._default_branch() == "main"
+
+
 # ── _find_issue_block ─────────────────────────────────────────────────
 
 
 class TestFindIssueBlock:
-    def test_returns_block_for_existing_issue(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_returns_block_for_existing_issue(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: First issue\n"
             "- Status: doing\n"
             "- GH-Issue: #1\n"
             "\n"
             "### ISSUE-002: Second issue\n"
-            "- Status: backlog\n"
+            "- Status: backlog\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         block = vc._find_issue_block("ISSUE-001")
         assert block is not None
         assert "First issue" in block
         assert "Second issue" not in block
 
-    def test_returns_last_issue_without_trailing_newline(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_returns_last_issue_without_trailing_newline(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: First\n"
             "- Status: doing\n"
             "### ISSUE-002: Last\n"
             "- Status: done\n"
-            "- PR: #99"  # no trailing newline
+            "- PR: #99",  # no trailing newline
         )
-        monkeypatch.chdir(tmp_path)
-
         block = vc._find_issue_block("ISSUE-002")
         assert block is not None
         assert "PR: #99" in block
 
-    def test_returns_none_for_missing_issue(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text("### ISSUE-001: Only issue\n- Status: doing\n")
-        monkeypatch.chdir(tmp_path)
-
+    def test_returns_none_for_missing_issue(self, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Only issue\n- Status: doing\n")
         assert vc._find_issue_block("ISSUE-999") is None
 
-    def test_returns_none_when_file_missing(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+    def test_returns_none_when_file_missing(self, repo_root):
+        # issues.md not created — repo_root points to empty tmp_path
         assert vc._find_issue_block("ISSUE-001") is None
 
 
@@ -109,47 +178,30 @@ class TestFindWorktreePath:
 # ── Implement verifiers ──────────────────────────────────────────────
 
 
-def _mock_run(returncode=0, stdout="", stderr=""):
-    """Create a mock CompletedProcess."""
-    result = MagicMock(spec=subprocess.CompletedProcess)
-    result.returncode = returncode
-    result.stdout = stdout
-    result.stderr = stderr
-    return result
-
-
 class TestVerifyImplementIssue:
-    def test_pass_when_issue_exists(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_pass_when_issue_exists(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test issue\n"
             "- GH-Issue: https://github.com/org/repo/issues/1\n"
-            "- Status: doing\n"
+            "- Status: doing\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         with patch.object(vc, "_run", return_value=_mock_run(0)):
             assert vc.verify_implement_issue("ISSUE-001") is True
 
-    def test_fail_when_no_gh_issue_field(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text("### ISSUE-001: Test issue\n- Status: doing\n")
-        monkeypatch.chdir(tmp_path)
-
+    def test_fail_when_no_gh_issue_field(self, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Test issue\n- Status: doing\n")
         assert vc.verify_implement_issue("ISSUE-001") is False
 
-    def test_fail_when_issues_md_missing(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+    def test_fail_when_issues_md_missing(self, repo_root):
         assert vc.verify_implement_issue("ISSUE-001") is False
 
-    def test_fail_when_gh_view_fails(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_fail_when_gh_view_fails(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test issue\n"
-            "- GH-Issue: #1\n"
+            "- GH-Issue: #1\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         with patch.object(vc, "_run", return_value=_mock_run(1, stderr="not found")):
             assert vc.verify_implement_issue("ISSUE-001") is False
 
@@ -173,26 +225,24 @@ class TestVerifyImplementWorktree:
 
 
 class TestVerifyImplementCode:
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
     def test_pass_with_committed_non_docs_changes(self):
-        """git diff main shows non-docs files."""
         wt_path = "/tmp/wt/issue/issue-001-slug"
 
-        call_count = {"n": 0}
-
         def side_effect(cmd, **kwargs):
-            call_count["n"] += 1
             if cmd[:2] == ["git", "worktree"]:
                 return _mock_run(0, stdout=f"worktree {wt_path}\n")
             if cmd[:2] == ["git", "diff"] and "main" in cmd:
                 return _mock_run(0, stdout="src/main.py\ntests/test_main.py\n")
-            # staged, unstaged, untracked — empty
             return _mock_run(0, stdout="")
 
         with patch.object(vc, "_run", side_effect=side_effect):
             assert vc.verify_implement_code("ISSUE-001") is True
 
     def test_pass_with_untracked_files(self):
-        """Untracked non-docs files should also count."""
         wt_path = "/tmp/wt/issue/issue-001-slug"
 
         def side_effect(cmd, **kwargs):
@@ -275,6 +325,8 @@ class TestVerifyImplementPush:
         def side_effect(cmd, **kwargs):
             if "fetch" in cmd:
                 return _mock_run(0)
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout="worktree /tmp/wt/issue/issue-001-slug\n")
             return _mock_run(0, stdout="  origin/issue/issue-001-slug\n  origin/main\n")
 
         with patch.object(vc, "_run", side_effect=side_effect):
@@ -284,6 +336,8 @@ class TestVerifyImplementPush:
         def side_effect(cmd, **kwargs):
             if "fetch" in cmd:
                 return _mock_run(0)
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout="worktree /tmp/wt/issue/issue-001-slug\n")
             return _mock_run(0, stdout="  origin/main\n")
 
         with patch.object(vc, "_run", side_effect=side_effect):
@@ -294,6 +348,8 @@ class TestVerifyImplementPush:
         def side_effect(cmd, **kwargs):
             if "fetch" in cmd:
                 return _mock_run(0)
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout="")
             return _mock_run(0, stdout="  origin/issue/issue-0010-feature\n")
 
         with patch.object(vc, "_run", side_effect=side_effect):
@@ -301,50 +357,62 @@ class TestVerifyImplementPush:
 
 
 class TestVerifyImplementPr:
-    def test_pass_when_pr_has_closes_ref(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_pass_when_pr_has_closes_ref(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test\n"
-            "- PR: https://github.com/org/repo/pull/42\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="Closes #1\nSome description")):
             assert vc.verify_implement_pr("ISSUE-001") is True
 
-    def test_fail_when_no_closes_ref(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_pass_when_pr_has_fixes_ref(self, repo_root):
+        """GitHub also accepts 'Fixes #N' as a closing keyword."""
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test\n"
-            "- PR: https://github.com/org/repo/pull/42\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
         )
-        monkeypatch.chdir(tmp_path)
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout="Fixes #1\nSome description")):
+            assert vc.verify_implement_pr("ISSUE-001") is True
 
+    def test_pass_when_pr_has_resolves_ref(self, repo_root):
+        """GitHub also accepts 'Resolves #N' as a closing keyword."""
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Test\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
+        )
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout="Resolves #1\nSome description")):
+            assert vc.verify_implement_pr("ISSUE-001") is True
+
+    def test_fail_when_no_closing_keyword(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Test\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
+        )
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="Just a PR body")):
             assert vc.verify_implement_pr("ISSUE-001") is False
 
 
 class TestVerifyImplementRegistry:
-    def test_pass_when_done_with_pr(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_pass_when_done_with_pr(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test\n"
             "- Status: done\n"
-            "- PR: https://github.com/org/repo/pull/42\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         assert vc.verify_implement_registry("ISSUE-001") is True
 
-    def test_fail_when_status_not_done(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_fail_when_status_not_done(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test\n"
             "- Status: doing\n"
-            "- PR: https://github.com/org/repo/pull/42\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         assert vc.verify_implement_registry("ISSUE-001") is False
 
 
@@ -400,52 +468,42 @@ class TestVerifyReviewReview:
 
 
 class TestVerifyShipChecks:
-    def test_pass_when_checks_green(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text("### ISSUE-001: Test\n- PR: #42\n")
-        monkeypatch.chdir(tmp_path)
+    def test_pass_when_checks_green(self, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Test\n- PR: #42\n")
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="build\tpass\t1m\ntest\tpass\t2m\n")):
             assert vc.verify_ship_checks("ISSUE-001") is True
 
-    def test_fail_when_no_checks_configured(self, tmp_path, monkeypatch):
+    def test_fail_when_no_checks_configured(self, repo_root):
         """Empty stdout from gh pr checks means no CI — should fail."""
-        issues = tmp_path / "issues.md"
-        issues.write_text("### ISSUE-001: Test\n- PR: #42\n")
-        monkeypatch.chdir(tmp_path)
+        _setup_issues(repo_root, "### ISSUE-001: Test\n- PR: #42\n")
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="")):
             assert vc.verify_ship_checks("ISSUE-001") is False
 
-    def test_fail_when_checks_fail(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text("### ISSUE-001: Test\n- PR: #42\n")
-        monkeypatch.chdir(tmp_path)
+    def test_fail_when_checks_fail(self, repo_root):
+        _setup_issues(repo_root, "### ISSUE-001: Test\n- PR: #42\n")
 
         with patch.object(vc, "_run", return_value=_mock_run(1, stdout="build\tfail\n")):
             assert vc.verify_ship_checks("ISSUE-001") is False
 
 
 class TestVerifyShipMerge:
-    def test_pass_when_merged(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_pass_when_merged(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test\n"
-            "- PR: https://github.com/org/repo/pull/42\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="MERGED")):
             assert vc.verify_ship_merge("ISSUE-001") is True
 
-    def test_fail_when_open(self, tmp_path, monkeypatch):
-        issues = tmp_path / "issues.md"
-        issues.write_text(
+    def test_fail_when_open(self, repo_root):
+        _setup_issues(
+            repo_root,
             "### ISSUE-001: Test\n"
-            "- PR: https://github.com/org/repo/pull/42\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
         )
-        monkeypatch.chdir(tmp_path)
-
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="OPEN")):
             assert vc.verify_ship_merge("ISSUE-001") is False
 

@@ -8,6 +8,8 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 ## Checkpoint Rules — MANDATORY
 Every phase in this skill has a CHECKPOINT block. You MUST run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase. Skipping checkpoints is a critical violation.
 
+**Path convention**: Checkpoint commands use `ROOT="$(bash scripts/worktree.sh root)"` to resolve the main repo root. This ensures the script is found regardless of whether CWD is the main repo or a worktree.
+
 Hard requirements:
 - Create GitHub Issue if missing: `gh issue create`
 - Create/update PR and include `Closes #<issue_number>` in PR body.
@@ -46,7 +48,7 @@ Algorithm:
      `bash scripts/flock_edit.sh issues.md -- bash -c '<update command>'`
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase issue --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase issue --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 5) Create worktree for the branch:
@@ -56,25 +58,25 @@ Algorithm:
    All subsequent file operations (code, tests) happen inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase worktree --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase worktree --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 6) Implement minimal code + tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase code --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase code --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 7) Run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase test --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 8) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase push --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase push --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 9) Create PR (or update):
@@ -82,7 +84,7 @@ Algorithm:
    - Body begins with `Closes #<issue_number>`
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase pr --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase pr --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 10) Record PR URL in issues.md; set Status=done; update STATUS.md.
@@ -94,7 +96,7 @@ Algorithm:
     ```
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `python3 scripts/verify_checkpoint.py --skill implement --phase registry --issue $ARGUMENTS`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase registry --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 ## Shared Registry Files
