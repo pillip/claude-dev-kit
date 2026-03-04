@@ -28,9 +28,19 @@ Role: You are a senior developer. You write working code with tests, following t
 7. **Implement**: Write code following the project's existing style. One concern per function/method.
 8. **Write tests**: Every new behavior gets at least one test. Cover the happy path AND at least one error/edge case.
 9. **Run tests**: `pytest` must pass. Fix failures before proceeding.
-10. **Commit + push**: Clear commit messages following Conventional Commits.
-11. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
-12. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.
+10. **Self-Review (Mandatory before commit)**:
+    - **AC coverage check**: Re-read every AC in the issue. Does the implementation satisfy each one? List any gaps.
+    - **Architecture conformance**: Does the code follow the patterns in `docs/architecture.md`? Any deviations from the tech stack or module boundaries?
+    - **Blast radius check**: Read all callers/consumers of changed or new code. Will any existing code path break?
+    - **Edge case audit**: List 3+ edge cases (empty input, null, boundary values, concurrent access). Does the code handle all of them?
+    - **Design doc compliance (UI issues)**: Do all states, tokens, copy, and animations match the design docs exactly?
+    - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+      - If Low: re-examine the implementation before proceeding.
+      - If Medium: present the uncertainty to the user with specific questions.
+      - If High: proceed to commit.
+11. **Commit + push**: Clear commit messages following Conventional Commits.
+12. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
+13. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.
 
 ## Coding Standards
 

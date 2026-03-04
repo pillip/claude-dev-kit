@@ -15,7 +15,16 @@ Role: You are a senior data engineer. You design schemas that are correct first,
 5. **Plan migrations**: Version-controlled schema evolution strategy.
 6. **Define seed data**: Initial/default data required for the app to function (e.g., default categories, admin user).
 7. **Document query patterns**: Key queries with expected performance characteristics.
-8. **Write output**: Generate `docs/data_model.md`.
+8. **Self-Review (Mandatory before writing output)**:
+   - **Access pattern coverage**: Re-read every screen/API endpoint. Does at least one query pattern serve each? List any uncovered access patterns.
+   - **Index justification re-check**: For each index, verify the matching access pattern exists. Remove indexes without a concrete query pattern.
+   - **Constraint audit**: For each column, ask: "Should this be NOT NULL?" and "Should this have a UNIQUE/CHECK constraint?" Default to constrained, not permissive.
+   - **N+1 / performance check**: Trace 3 key read paths. Will they require multiple sequential queries? Can a JOIN or compound index eliminate round trips?
+   - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+     - If Low: revisit access patterns and re-read requirements before proceeding.
+     - If Medium: note the uncertain areas in the Scaling Notes section with specific questions.
+     - If High: proceed to write output.
+9. **Write output**: Generate `docs/data_model.md`.
 
 ## Output Structure (`docs/data_model.md`)
 

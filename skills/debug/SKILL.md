@@ -11,6 +11,16 @@ Steps:
 3) If a file path is provided, read it. If an error message is provided, use Grep to locate the source.
 4) Trace the execution path from the error backward to identify the root cause.
 5) Form 1–3 ranked hypotheses and verify each by reading relevant code.
+5.5) **Self-Review (MANDATORY)**:
+   - Re-read the root cause hypothesis and the proposed fix.
+   - Trace backward from the fix: does it address the root cause, or just a symptom?
+   - Actively search for evidence that contradicts the hypothesis.
+   - Check all callers/consumers of the modified code for unintended side effects.
+   - List 3+ edge cases and verify the fix handles them.
+   - Rate confidence (High/Medium/Low).
+     - Low → gather more info, do NOT proceed.
+     - Medium → present uncertainty to user with specific questions.
+     - High → proceed to step 6.
 6) Present the confirmed root cause and a minimal fix to the user.
 7) After user approval, apply the fix.
 8) Run `pytest` to confirm no regressions. Suggest a regression test if none exists.

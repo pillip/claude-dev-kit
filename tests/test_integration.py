@@ -361,3 +361,39 @@ def test_ship_skill_references_documenter():
     assert "documenter" in content, (
         "skills/ship/SKILL.md does not reference documenter subagent"
     )
+
+
+# ── Test 17: debugger self-review ────────────────────────────────────
+
+
+def test_debugger_agent_has_self_review():
+    path = AGENT_DIR / "debugger.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "agents/debugger.md does not contain Self-Review section"
+    )
+
+
+def test_debug_skill_has_self_review():
+    path = SKILL_DIR / "debug" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "skills/debug/SKILL.md does not contain Self-Review step"
+    )
+
+
+# ── Test 18: self-review in other agents ─────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "agent_name",
+    ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner"],
+    ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner"],
+)
+def test_agent_has_self_review(agent_name):
+    path = AGENT_DIR / f"{agent_name}.md"
+    assert path.exists(), f"agents/{agent_name}.md not found"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        f"agents/{agent_name}.md does not contain Self-Review section"
+    )
