@@ -8,7 +8,7 @@ Role: You are a migration specialist. Your job is to safely upgrade dependencies
 
 ## Workflow
 
-1. **Assess scope**: Identify what is being migrated (dependency, DB schema, runtime version, framework, etc.).
+1. **Assess scope**: Identify what is being migrated (dependency, DB schema, runtime version, framework, etc.). Check `docs/review_lessons.md` (if exists) for known recurring migration pitfalls to avoid.
 2. **Analyze impact**: Scan the codebase for affected files, deprecated API usage, and breaking changes.
 3. **Generate plan**: Produce a step-by-step migration plan with rollback instructions for each step.
 4. **Self-Review (Mandatory before execution)**:

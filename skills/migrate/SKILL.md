@@ -5,6 +5,11 @@ argument-hint: [migration target, e.g. "Django 5.0" or "Python 3.12"]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 ---
+## Checkpoint Rules — MANDATORY
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+
+**Slug convention**: After creating the worktree, store the branch slug (e.g., `migrate/django-5.0`) for use in checkpoint commands.
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Identify the migration target from $ARGUMENTS (library version, DB schema, runtime, etc.).
@@ -17,13 +22,28 @@ Steps:
    WT="$(bash scripts/worktree.sh create migrate/<slug>)"
    ```
    All subsequent file operations happen inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill migrate --phase worktree --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 8) Execute changes incrementally inside `$WT/`, running tests after each step.
 9) Run the full test suite to confirm no regressions.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill migrate --phase test --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 10) Update relevant documentation (README, CHANGELOG, architecture notes) inside `$WT/`.
 11) Create GH Issue:
     - `gh issue create --title "migrate: <target description>" --body "<body>"`
     - Body must include: migration scope, affected files/APIs, step-by-step plan, and rollback instructions.
 12) Commit + push (from `$WT/`).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill migrate --phase push --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 13) Create PR:
     - `gh pr create --title "migrate: <target description>" --body "Closes #<issue_number>\n\n<details>"`
 14) Report the PR URL to the user — continue with `/review` and `/ship`.

@@ -481,6 +481,51 @@ def verify_ship_cleanup(issue_id: str, **_) -> bool:
     return True
 
 
+# ── Generic verifiers (reused by debug/refactor/devops/migrate) ──────
+
+
+def verify_generic_worktree(issue_id: str, **_) -> bool:
+    """Worktree exists for the given slug."""
+    return verify_implement_worktree(issue_id)
+
+
+def verify_generic_test(issue_id: str, **_) -> bool:
+    """pytest exits 0 (inside worktree)."""
+    return verify_implement_test(issue_id)
+
+
+def verify_generic_push(issue_id: str, **_) -> bool:
+    """Remote branch exists for the given slug."""
+    return verify_implement_push(issue_id)
+
+
+def verify_generic_validate(issue_id: str, **_) -> bool:
+    """Worktree has file changes (committed or uncommitted)."""
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    # Check for any changed files
+    diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
+    diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
+    untracked = _run(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
+    )
+
+    all_files: set[str] = set()
+    for r in (diff_staged, diff_unstaged, untracked):
+        if r.returncode == 0 and r.stdout.strip():
+            all_files.update(r.stdout.strip().splitlines())
+
+    if not all_files:
+        print("FAIL: no file changes found in worktree")
+        return False
+
+    print(f"PASS: {len(all_files)} file(s) changed in worktree")
+    return True
+
+
 # ── Registry ─────────────────────────────────────────────────────────
 
 VERIFIERS = {
@@ -499,13 +544,25 @@ VERIFIERS = {
     ("ship", "checks"): verify_ship_checks,
     ("ship", "merge"): verify_ship_merge,
     ("ship", "cleanup"): verify_ship_cleanup,
+    ("debug", "worktree"): verify_generic_worktree,
+    ("debug", "test"): verify_generic_test,
+    ("debug", "push"): verify_generic_push,
+    ("refactor", "worktree"): verify_generic_worktree,
+    ("refactor", "test"): verify_generic_test,
+    ("refactor", "push"): verify_generic_push,
+    ("devops", "worktree"): verify_generic_worktree,
+    ("devops", "validate"): verify_generic_validate,
+    ("devops", "push"): verify_generic_push,
+    ("migrate", "worktree"): verify_generic_worktree,
+    ("migrate", "test"): verify_generic_test,
+    ("migrate", "push"): verify_generic_push,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Verify skill phase checkpoint")
-    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship"])
+    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "debug", "refactor", "devops", "migrate"])
     parser.add_argument("--phase", required=True)
     parser.add_argument("--issue", required=True, help="Issue ID (e.g. ISSUE-001)")
 

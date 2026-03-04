@@ -5,6 +5,11 @@ argument-hint: [target, e.g. "github-actions", "docker", "compose"]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 ---
+## Checkpoint Rules — MANDATORY
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+
+**Slug convention**: After creating the worktree, store the branch slug (e.g., `devops/github-actions-ci`) for use in checkpoint commands.
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Identify the target from $ARGUMENTS (github-actions, docker, compose, or general).
@@ -15,16 +20,31 @@ Steps:
    WT="$(bash scripts/worktree.sh create devops/<slug>)"
    ```
    All subsequent file operations happen inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill devops --phase worktree --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 6) Create or update the relevant files inside `$WT/`:
    - Dockerfile / docker-compose.yml
    - .github/workflows/*.yml
    - Scripts (build, deploy, seed, etc.)
 7) Validate locally where possible (e.g., docker build, syntax checks).
 8) Update README or deployment docs with setup and usage instructions inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill devops --phase validate --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 9) Create GH Issue:
     - `gh issue create --title "devops: <concise infrastructure description>" --body "<body>"`
     - Body must include: what was set up/changed, configuration details, validation results, and usage instructions.
 10) Commit + push (from `$WT/`).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill devops --phase push --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 11) Create PR:
     - `gh pr create --title "devops: <concise description>" --body "Closes #<issue_number>\n\n<details>"`
 12) Report the PR URL to the user — continue with `/review` and `/ship`.

@@ -14,25 +14,31 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 ## Workflow
 
 ```
-Idea ──▶ /prd ──▶ /kickoff ──▶ /uiux ──▶ /implement ──▶ /review ──▶ /ship
-          │        │             │           │              │            │
-          ▼        ▼             ▼           ▼              ▼            ▼
-     Interactive  Requirements  Design      Code impl      Senior        Merge & deploy
-     PRD writing  UX spec       philosophy  GH Issue       Minimal fix   CHANGELOG
-                  Architecture  Design sys  PR creation    Re-run tests  STATUS update
-                  Issue plan    Wireframes  Closes #N
-                  Test plan     Prototype
+/brainstorm ──▶ /bizanalysis ──▶ /prd ──▶ /kickoff ──▶ /uiux ──▶ /sprint or /implement ──▶ /review ──▶ /ship
+     │               │              │        │             │            │                       │            │
+     ▼               ▼              ▼        ▼             ▼            ▼                       ▼            ▼
+  Ideation     Business       Interactive  Requirements  Design      Code impl             Senior        Merge & deploy
+  Socratic     validation     PRD writing  UX spec       philosophy  GH Issue              Minimal fix   CHANGELOG
+  dialogue     Go/Pivot/No               Architecture  Design sys  PR creation            Re-run tests  STATUS update
+                                           Issue plan    Wireframes  Closes #N              Security      Documentation
+                                           Test plan     Prototype                          UI review
 ```
 
+> `/brainstorm`과 `/bizanalysis`는 선택 단계입니다. 아이디어가 명확하면 `/prd`부터 시작할 수 있습니다.
 > `/uiux`는 UI가 있는 프로젝트에서 선택적으로 사용합니다. UI가 없는 백엔드/CLI 프로젝트는 `/kickoff` → `/implement`로 바로 진행합니다.
+> `/sprint`은 여러 이슈를 team-lead가 자동 오케스트레이션합니다. 단일 이슈는 `/implement`로 직접 진행합니다.
 
 | Skill | Description | Outputs |
 |-------|-------------|---------|
+| `/brainstorm [idea]` | Interactive brainstorming via Socratic dialogue | `docs/brainstorm_notes.md` |
+| `/bizanalysis [idea]` | Business viability analysis with market research | `docs/business_analysis.md` |
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
 | `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
+| `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
+| `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
-| `/review ISSUE-001` | Senior review + security audit on PR | `docs/review_notes.md` |
+| `/review ISSUE-001` | Senior review + security audit + UI review on PR | `docs/review_notes.md`, `docs/ui_review_notes.md` |
 | `/ship` | Merge PR + update docs/changelog | `CHANGELOG.md`, `STATUS.md` updated |
 | `/debug [error]` | Analyze a bug and propose a targeted fix | Diagnosis + fix |
 | `/migrate [target]` | Plan and execute a migration | Migration plan + updated code/config |
@@ -78,8 +84,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 14 agent definitions
-│   ├── skills/          # 10 skills
+│   ├── agents/          # 21 agent definitions
+│   ├── skills/          # 14 skills
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -95,6 +101,22 @@ gh auth status
 If not authenticated, run `gh auth login`.
 
 ## Usage
+
+### Brainstorm — Explore ideas interactively
+
+```
+/brainstorm [idea description]
+```
+
+Starts a Socratic dialogue to help you explore a vague idea, define the problem space, and converge on a concrete direction. Uses web research to investigate the existing landscape and competitors. Output: `docs/brainstorm_notes.md`.
+
+### Business Analysis — Validate business viability
+
+```
+/bizanalysis [idea description]
+```
+
+Conducts a structured business analysis: market research, competitive landscape, SWOT analysis, and Go/Pivot/No-Go recommendation. Reads `docs/brainstorm_notes.md` if it exists for context. Output: `docs/business_analysis.md`.
 
 ### PRD — Co-write a PRD interactively
 
@@ -132,6 +154,22 @@ Requires `/kickoff` outputs. Builds on `docs/ux_spec.md` and `docs/requirements.
 5. **HTML/CSS Prototype** (`prototype/`) — Self-contained, opens via `file://` in any browser
 
 The skill applies [Anthropic's frontend-design guidelines](https://claude.com/blog/improving-frontend-design-through-skills) to avoid generic "AI slop" aesthetics — no Inter fonts, no purple gradients, no cookie-cutter layouts. Every design choice is intentional and driven by the product's identity.
+
+### Mobile UI/UX — Design and prototype for mobile
+
+```
+/mobile-uiux [PRD.md]
+```
+
+Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Produces mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
+
+### Sprint — Auto-orchestrate multiple issues
+
+```
+/sprint
+```
+
+Dispatches the team-lead agent to automatically pick up ready issues from `issues.md`, implement them via `/implement`, review via `/review`, and ship via `/ship`. Loops until all issues are done or max iterations reached.
 
 ### Implement — Build an issue
 
@@ -195,19 +233,26 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ## Agents
 
-14 specialized agents, each with a defined role and tool permissions:
+21 specialized agents, each with a defined role and tool permissions:
 
 | Agent | Role | Tools |
 |-------|------|-------|
+| `brainstormer` | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
+| `business-analyst` | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
 | `prd-writer` | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash |
+| `mobile-uiux-developer` | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash |
+| `copywriter` | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
 | `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
+| `data-modeler` | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
 | `planner` | Break work into issues | Read, Glob, Grep, Write, Edit |
 | `qa-designer` | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
+| `team-lead` | Sprint orchestrator — dispatch agents, manage issues | Read, Glob, Grep, Write, Edit, Bash, Task |
 | `developer` | Implement code + GH Issue/PR | Read, Glob, Grep, Write, Edit, Bash |
 | `reviewer` | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
+| `ui-reviewer` | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
 | `documenter` | Maintain documentation | Read, Glob, Grep, Write, Edit |
 | `debugger` | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
 | `migrator` | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
@@ -218,25 +263,36 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (14)
+├── agents/                  # Agent role definitions (21)
+│   ├── brainstormer.md
+│   ├── business-analyst.md
 │   ├── prd-writer.md
 │   ├── requirement-analyst.md
 │   ├── ux-designer.md
 │   ├── uiux-developer.md
+│   ├── mobile-uiux-developer.md
+│   ├── copywriter.md
 │   ├── architect.md
+│   ├── data-modeler.md
 │   ├── planner.md
 │   ├── qa-designer.md
+│   ├── team-lead.md
 │   ├── developer.md
 │   ├── reviewer.md
+│   ├── ui-reviewer.md
 │   ├── documenter.md
 │   ├── debugger.md
 │   ├── migrator.md
 │   ├── refactorer.md
 │   └── devops.md
-├── skills/                  # Workflow skills (10)
+├── skills/                  # Workflow skills (14)
+│   ├── brainstorm/SKILL.md
+│   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
 │   ├── kickoff/SKILL.md
 │   ├── uiux/SKILL.md
+│   ├── mobile-uiux/SKILL.md
+│   ├── sprint/SKILL.md
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
 │   ├── ship/SKILL.md
@@ -244,16 +300,26 @@ claude-dev-kit/
 │   ├── migrate/SKILL.md
 │   ├── refactor/SKILL.md
 │   └── devops/SKILL.md
-├── templates/               # Document templates
+├── templates/               # Document templates (19)
 │   ├── requirements.md
 │   ├── ux_spec.md
 │   ├── architecture.md
+│   ├── data_model.md
 │   ├── design_philosophy.md
 │   ├── design_system.md
+│   ├── design_system_mobile.md
 │   ├── wireframes.md
+│   ├── wireframes_mobile.md
 │   ├── interactions.md
+│   ├── interactions_mobile.md
+│   ├── copy_guide.md
 │   ├── issues.md
-│   └── test_plan.md
+│   ├── test_plan.md
+│   ├── review_lessons.md
+│   ├── review_notes.md
+│   ├── ui_review_notes.md
+│   ├── brainstorm_notes.md
+│   └── business_analysis.md
 ├── project/                 # Files installed into target project
 │   └── .claude/
 │       ├── hooks/agent_state.py
@@ -262,7 +328,10 @@ claude-dev-kit/
 │   ├── install_user.sh
 │   ├── install_project.sh
 │   ├── ensure_gh.sh
+│   ├── ensure_permissions.py
 │   ├── merge_settings.py
+│   ├── validate_issues.py   # issues.md format validator
+│   ├── verify_checkpoint.py # Skill phase gate verification
 │   ├── worktree.sh          # git worktree lifecycle (create/path/remove/root)
 │   └── flock_edit.sh        # file-lock wrapper for shared files
 ├── user/                    # User-level tools
@@ -271,7 +340,8 @@ claude-dev-kit/
 │   ├── test_merge_settings.py
 │   ├── test_agent_state.py
 │   ├── test_worktree.py
-│   └── test_flock_edit.py
+│   ├── test_flock_edit.py
+│   └── test_integration.py
 ├── docs/                    # Kit documentation
 │   └── PRD_agent_system_v0.md
 └── README.md
@@ -298,6 +368,7 @@ Current test coverage:
 - `test_agent_state.py` — Agent state hook lifecycle
 - `test_worktree.py` — git worktree create/path/remove/root
 - `test_flock_edit.py` — file-lock wrapper serialization
+- `test_integration.py` — Agent/skill frontmatter, template existence, cross-references, checkpoint markers, self-review sections
 
 ## Updating
 

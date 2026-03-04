@@ -5,6 +5,11 @@ argument-hint: [file or module path to refactor]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 ---
+## Checkpoint Rules — MANDATORY
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+
+**Slug convention**: After creating the worktree, store the branch slug (e.g., `refactor/extract-views-helpers`) for use in checkpoint commands.
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Read the target file or module from $ARGUMENTS.
@@ -16,12 +21,27 @@ Steps:
    WT="$(bash scripts/worktree.sh create refactor/<slug>)"
    ```
    All subsequent file operations happen inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill refactor --phase worktree --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 7) Apply refactorings one at a time inside `$WT/`, running tests after each step.
 8) Confirm all tests pass after the final change.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill refactor --phase test --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 9) Create GH Issue:
     - `gh issue create --title "refactor: <concise description>" --body "<body>"`
     - Body must include: identified code smells, applied refactoring patterns, affected files, and test results.
 10) Commit + push (from `$WT/`).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill refactor --phase push --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 11) Create PR:
     - `gh pr create --title "refactor: <concise description>" --body "Closes #<issue_number>\n\n<details>"`
 12) Report the PR URL to the user — continue with `/review` and `/ship`.

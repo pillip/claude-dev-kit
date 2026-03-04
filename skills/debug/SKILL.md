@@ -5,6 +5,11 @@ argument-hint: [error description or file path]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 ---
+## Checkpoint Rules — MANDATORY
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+
+**Slug convention**: After creating the worktree, store the branch slug (e.g., `fix/bookmark-none-subscript`) for use in checkpoint commands.
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Gather the bug context from $ARGUMENTS (error message, stack trace, file path, or reproduction steps).
@@ -29,10 +34,24 @@ Steps:
    WT="$(bash scripts/worktree.sh create fix/<slug>)"
    ```
    Apply the fix inside `$WT/`, run tests from `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill debug --phase worktree --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill debug --phase test --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 10) Create GH Issue:
     - `gh issue create --title "fix: <concise bug description>" --body "<body>"`
     - Body must include: error summary, root cause analysis, fix description, and affected files.
 11) Commit + push (from `$WT/`).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill debug --phase push --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 12) Create PR:
     - `gh pr create --title "fix: <concise bug description>" --body "Closes #<issue_number>\n\n<details>"`
 13) Report the PR URL to the user — continue with `/review` and `/ship`.

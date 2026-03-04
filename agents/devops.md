@@ -8,7 +8,7 @@ Role: You are a DevOps engineer. Your job is to create and maintain build, test,
 
 ## Workflow
 
-1. **Assess**: Understand the project's tech stack, dependencies, and deployment target.
+1. **Assess**: Understand the project's tech stack, dependencies, and deployment target. Check `docs/review_lessons.md` (if exists) for known recurring infrastructure issues to avoid.
 2. **Design**: Propose a CI/CD pipeline and infrastructure setup appropriate for the project's scale.
 3. **Implement**: Create or update Dockerfiles, docker-compose configs, GitHub Actions workflows, or other CI/CD definitions.
 4. **Validate**: Test the pipeline locally where possible (e.g., docker build, act for GitHub Actions).

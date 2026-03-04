@@ -397,3 +397,90 @@ def test_agent_has_self_review(agent_name):
     assert "Self-Review" in content, (
         f"agents/{agent_name}.md does not contain Self-Review section"
     )
+
+
+# ── Test 19: review_lessons references in agents ────────────────────
+
+
+@pytest.mark.parametrize(
+    "agent_name",
+    ["debugger", "refactorer", "devops", "migrator"],
+    ids=["debugger", "refactorer", "devops", "migrator"],
+)
+def test_agent_references_review_lessons_extended(agent_name):
+    path = AGENT_DIR / f"{agent_name}.md"
+    assert path.exists(), f"agents/{agent_name}.md not found"
+    content = path.read_text(encoding="utf-8")
+    assert "review_lessons" in content, (
+        f"agents/{agent_name}.md does not reference review_lessons"
+    )
+
+
+# ── Test 20: new templates exist with expected sections ──────────────
+
+
+EXPECTED_NEW_TEMPLATES = {
+    "brainstorm_notes.md": ["Problem Space", "Existing Landscape", "Idea Candidates", "Decisions"],
+    "business_analysis.md": ["Executive Summary", "Market Analysis", "Competitive Landscape", "Risks"],
+    "review_notes.md": ["Code Review", "Security Findings"],
+    "ui_review_notes.md": ["State Coverage", "Copy Compliance", "Design Token Compliance", "Accessibility"],
+}
+
+
+@pytest.mark.parametrize(
+    "name,headers",
+    EXPECTED_NEW_TEMPLATES.items(),
+    ids=EXPECTED_NEW_TEMPLATES.keys(),
+)
+def test_new_template_exists_and_has_headers(name, headers):
+    path = TEMPLATE_DIR / name
+    assert path.exists(), f"Template {name} not found"
+    content = path.read_text(encoding="utf-8")
+    for header in headers:
+        assert header in content, f"Template {name} missing section: {header}"
+
+
+# ── Test 21: additional agent existence checks ───────────────────────
+
+
+@pytest.mark.parametrize(
+    "agent_name",
+    ["data-modeler", "copywriter", "mobile-uiux-developer"],
+    ids=["data-modeler", "copywriter", "mobile-uiux-developer"],
+)
+def test_additional_agent_exists_and_has_required_frontmatter(agent_name):
+    path = AGENT_DIR / f"{agent_name}.md"
+    assert path.exists(), f"agents/{agent_name}.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"{agent_name}.md missing frontmatter keys: {missing}"
+
+
+# ── Test 22: checkpoint markers in secondary skills ──────────────────
+
+
+@pytest.mark.parametrize(
+    "skill,min_checkpoints",
+    [("debug", 3), ("refactor", 3), ("devops", 3), ("migrate", 3)],
+    ids=["debug", "refactor", "devops", "migrate"],
+)
+def test_secondary_skill_has_checkpoint_markers(skill, min_checkpoints):
+    path = SKILL_DIR / skill / "SKILL.md"
+    assert path.exists(), f"skills/{skill}/SKILL.md not found"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= min_checkpoints, (
+        f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
+    )
+
+
+# ── Test 23: verify_checkpoint.py supports new skills ────────────────
+
+
+def test_verify_checkpoint_supports_all_skills():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    content = script.read_text(encoding="utf-8")
+    for skill in ["implement", "review", "ship", "debug", "refactor", "devops", "migrate"]:
+        assert f'"{skill}"' in content, (
+            f"verify_checkpoint.py does not support skill: {skill}"
+        )
