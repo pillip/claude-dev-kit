@@ -43,7 +43,7 @@ Determine which agent(s) to use per issue based on its content:
 | UI/frontend (web) | uiux-developer | skills/implement/SKILL.md + UI context |
 | UI/frontend (mobile) | mobile-uiux-developer | skills/implement/SKILL.md + mobile context |
 | Infrastructure/CI/CD | devops | skills/devops/SKILL.md |
-| Bug fix | debugger | skills/debug/SKILL.md |
+| Bug fix | diagnostician | skills/diagnose/SKILL.md |
 | Refactoring | refactorer | skills/refactor/SKILL.md |
 | DB migration | migrator | skills/migrate/SKILL.md |
 | Architecture change needed | architect → data-modeler → developer | sequential |

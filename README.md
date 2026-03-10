@@ -40,7 +40,7 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review + security audit + UI review on PR | `docs/review_notes.md`, `docs/ui_review_notes.md` |
 | `/ship` | Merge PR + update docs/changelog | `CHANGELOG.md`, `STATUS.md` updated |
-| `/debug [error]` | Analyze a bug and propose a targeted fix | Diagnosis + fix |
+| `/diagnose [error]` | Analyze a bug and propose a targeted fix | Diagnosis + fix |
 | `/migrate [target]` | Plan and execute a migration | Migration plan + updated code/config |
 | `/refactor [path]` | Improve code structure without changing behavior | Refactored code |
 | `/devops [target]` | Set up CI/CD, Dockerfiles, deployment configs | Infrastructure files |
@@ -199,10 +199,10 @@ Performs a senior code review with an integrated security audit. Checks correctn
 
 Verifies tests pass, updates documentation, and merges the PR.
 
-### Debug — Analyze and fix bugs
+### Diagnose — Analyze and fix bugs
 
 ```
-/debug [error description or file path]
+/diagnose [error description or file path]
 ```
 
 Traces an error from stack trace or reproduction steps back to the root cause, proposes a minimal fix, and runs tests to confirm no regressions.
@@ -254,7 +254,7 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 | `reviewer` | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
 | `ui-reviewer` | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
 | `documenter` | Maintain documentation | Read, Glob, Grep, Write, Edit |
-| `debugger` | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
+| `diagnostician` | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
 | `migrator` | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
 | `refactorer` | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
 | `devops` | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
@@ -281,7 +281,7 @@ claude-dev-kit/
 │   ├── reviewer.md
 │   ├── ui-reviewer.md
 │   ├── documenter.md
-│   ├── debugger.md
+│   ├── diagnostician.md
 │   ├── migrator.md
 │   ├── refactorer.md
 │   └── devops.md
@@ -296,7 +296,7 @@ claude-dev-kit/
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
 │   ├── ship/SKILL.md
-│   ├── debug/SKILL.md
+│   ├── diagnose/SKILL.md
 │   ├── migrate/SKILL.md
 │   ├── refactor/SKILL.md
 │   └── devops/SKILL.md

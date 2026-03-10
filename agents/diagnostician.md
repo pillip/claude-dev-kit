@@ -1,5 +1,5 @@
 ---
-name: debugger
+name: diagnostician
 description: Analyze bugs from error logs, stack traces, or reproduction steps and propose targeted fixes.
 tools: Read, Glob, Grep, Write, Edit, Bash
 model: opus

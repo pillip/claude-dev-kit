@@ -366,19 +366,19 @@ def test_ship_skill_references_documenter():
 # ── Test 17: debugger self-review ────────────────────────────────────
 
 
-def test_debugger_agent_has_self_review():
-    path = AGENT_DIR / "debugger.md"
+def test_diagnostician_agent_has_self_review():
+    path = AGENT_DIR / "diagnostician.md"
     content = path.read_text(encoding="utf-8")
     assert "Self-Review" in content, (
-        "agents/debugger.md does not contain Self-Review section"
+        "agents/diagnostician.md does not contain Self-Review section"
     )
 
 
-def test_debug_skill_has_self_review():
-    path = SKILL_DIR / "debug" / "SKILL.md"
+def test_diagnose_skill_has_self_review():
+    path = SKILL_DIR / "diagnose" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
     assert "Self-Review" in content, (
-        "skills/debug/SKILL.md does not contain Self-Review step"
+        "skills/diagnose/SKILL.md does not contain Self-Review step"
     )
 
 
@@ -404,8 +404,8 @@ def test_agent_has_self_review(agent_name):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["debugger", "refactorer", "devops", "migrator"],
-    ids=["debugger", "refactorer", "devops", "migrator"],
+    ["diagnostician", "refactorer", "devops", "migrator"],
+    ids=["diagnostician", "refactorer", "devops", "migrator"],
 )
 def test_agent_references_review_lessons_extended(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
@@ -461,8 +461,8 @@ def test_additional_agent_exists_and_has_required_frontmatter(agent_name):
 
 @pytest.mark.parametrize(
     "skill,min_checkpoints",
-    [("debug", 3), ("refactor", 3), ("devops", 3), ("migrate", 3)],
-    ids=["debug", "refactor", "devops", "migrate"],
+    [("diagnose", 3), ("refactor", 3), ("devops", 3), ("migrate", 3)],
+    ids=["diagnose", "refactor", "devops", "migrate"],
 )
 def test_secondary_skill_has_checkpoint_markers(skill, min_checkpoints):
     path = SKILL_DIR / skill / "SKILL.md"
@@ -480,7 +480,7 @@ def test_secondary_skill_has_checkpoint_markers(skill, min_checkpoints):
 def test_verify_checkpoint_supports_all_skills():
     script = SCRIPTS_DIR / "verify_checkpoint.py"
     content = script.read_text(encoding="utf-8")
-    for skill in ["implement", "review", "ship", "debug", "refactor", "devops", "migrate"]:
+    for skill in ["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate"]:
         assert f'"{skill}"' in content, (
             f"verify_checkpoint.py does not support skill: {skill}"
         )

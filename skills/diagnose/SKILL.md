@@ -1,5 +1,5 @@
 ---
-name: debug
+name: diagnose
 description: Analyze a bug from error logs or reproduction steps, fix it, and create a GH Issue + PR.
 argument-hint: [error description or file path]
 disable-model-invocation: false
@@ -36,11 +36,11 @@ Steps:
    Apply the fix inside `$WT/`, run tests from `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill debug --phase worktree --issue "$SLUG"`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill diagnose --phase worktree --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill debug --phase test --issue "$SLUG"`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill diagnose --phase test --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 10) Create GH Issue:
@@ -49,7 +49,7 @@ Steps:
 11) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill debug --phase push --issue "$SLUG"`
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill diagnose --phase push --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 12) Create PR:

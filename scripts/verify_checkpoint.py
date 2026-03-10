@@ -544,9 +544,9 @@ VERIFIERS = {
     ("ship", "checks"): verify_ship_checks,
     ("ship", "merge"): verify_ship_merge,
     ("ship", "cleanup"): verify_ship_cleanup,
-    ("debug", "worktree"): verify_generic_worktree,
-    ("debug", "test"): verify_generic_test,
-    ("debug", "push"): verify_generic_push,
+    ("diagnose", "worktree"): verify_generic_worktree,
+    ("diagnose", "test"): verify_generic_test,
+    ("diagnose", "push"): verify_generic_push,
     ("refactor", "worktree"): verify_generic_worktree,
     ("refactor", "test"): verify_generic_test,
     ("refactor", "push"): verify_generic_push,
@@ -562,7 +562,7 @@ VERIFIERS = {
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Verify skill phase checkpoint")
-    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "debug", "refactor", "devops", "migrate"])
+    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate"])
     parser.add_argument("--phase", required=True)
     parser.add_argument("--issue", required=True, help="Issue ID (e.g. ISSUE-001)")
 
