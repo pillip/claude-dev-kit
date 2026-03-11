@@ -484,3 +484,14 @@ def test_verify_checkpoint_supports_all_skills():
         assert f'"{skill}"' in content, (
             f"verify_checkpoint.py does not support skill: {skill}"
         )
+
+
+# ── Test 24: design_philosophy template has Decision Matrix and Reference Anchors
+
+
+def test_design_philosophy_template_has_decision_matrix():
+    path = TEMPLATE_DIR / "design_philosophy.md"
+    assert path.exists(), "Template design_philosophy.md not found"
+    content = path.read_text(encoding="utf-8")
+    assert "Decision Matrix" in content, "design_philosophy.md missing Decision Matrix section"
+    assert "Reference Anchors" in content, "design_philosophy.md missing Reference Anchors section"

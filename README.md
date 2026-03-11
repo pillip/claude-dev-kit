@@ -145,7 +145,7 @@ Reads the PRD and runs 5 subagents to generate planning documents:
 /uiux [PRD.md]
 ```
 
-Requires `/kickoff` outputs. Builds on `docs/ux_spec.md` and `docs/requirements.md` to produce:
+Requires `/kickoff` outputs. Design Interview를 통해 프로젝트 고유의 디자인 방향을 수립한 뒤, 레퍼런스 리서치를 거쳐 차별화된 디자인 시스템을 생성합니다. Builds on `docs/ux_spec.md` and `docs/requirements.md` to produce:
 
 1. **Design Philosophy** (`docs/design_philosophy.md`) — Named aesthetic direction with visual philosophy
 2. **Design System** (`docs/design_system.md`) — Colors, typography (Google Fonts), spacing, components as CSS custom properties
@@ -161,7 +161,7 @@ The skill applies [Anthropic's frontend-design guidelines](https://claude.com/bl
 /mobile-uiux [PRD.md]
 ```
 
-Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Produces mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
+Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Design Interview를 통해 프로젝트 고유의 디자인 방향을 수립한 뒤, 레퍼런스 리서치를 거쳐 차별화된 모바일 디자인 시스템을 생성합니다. Produces mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
 
 ### Sprint — Auto-orchestrate multiple issues
 
@@ -242,8 +242,8 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 | `prd-writer` | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
-| `uiux-developer` | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash |
-| `mobile-uiux-developer` | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash |
+| `uiux-developer` | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `mobile-uiux-developer` | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `copywriter` | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
 | `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |

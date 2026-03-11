@@ -3,7 +3,7 @@ name: mobile-uiux
 description: kickoff 산출물 기반으로 모바일 디자인 철학을 수립하고, 모바일 디자인 시스템/와이어프레임/React Native(Expo) 프로토타입을 생성합니다. 권장 흐름: /prd → /kickoff → /mobile-uiux
 argument-hint: [PRD.md 경로 (선택)]
 disable-model-invocation: false
-allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 ---
 
 ## Prerequisites
@@ -31,6 +31,45 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
    - Glob for `**/*.tsx`, `**/*.ts`, `app.json`, `app.config.js`, `app.config.ts`
    - If found, read key files to understand current patterns, navigation structure, and tech stack.
 
+### Phase 1.5 — Design Interview (조건부)
+5.5) Check if `docs/design_philosophy.md` already exists AND contains a "Decision Matrix" section:
+   - **If exists with Decision Matrix**: Skip interview — reuse web decisions. Present to user for confirmation.
+   - **If not exists or missing Decision Matrix**: Run the Design Interview below.
+
+   Ask the user the following questions to anchor the design direction.
+   These answers become binding constraints for Phase 2.
+   Present all questions at once (not one-by-one) and wait for answers.
+   Also tell the user: "지금 답하기 어려우면 '스킵'이라고 해주세요. 인터뷰 전체를 건너뛸 수도 있습니다."
+
+   a) **Brand Personality**: "이 제품을 사람에 비유하면 어떤 사람인가요?"
+      (예: 고급 호텔 컨시어지, 동네 단골 카페 바리스타, 엄격한 수술실 간호사, 장난기 많은 친구)
+
+   b) **Emotional Target**: "사용자가 첫 화면을 봤을 때 느꼈으면 하는 감정 1가지는?"
+      (예: 신뢰감, 호기심, 안도감, 흥분, 차분함)
+
+   c) **Anti-Reference**: "절대 이렇게 되면 안 되는 경쟁 제품이나 디자인은?"
+      (피하고 싶은 느낌이나 구체적 제품명)
+
+   d) **Aspiration Reference**: "디자인적으로 참고하고 싶은 제품이나 브랜드가 있나요? (같은 도메인이 아니어도 됨)"
+      (예: Stripe의 깔끔함, 닌텐도의 장난기, Aesop의 고급스러움)
+
+5.6) Handle user response:
+
+   **Case A — User answers (partially or fully)**:
+   Record answers in memory — these become HARD CONSTRAINTS for Phase 2.
+   If the user skips individual questions, note them as "unconstrained" but still avoid generic defaults.
+
+   **Case B — User skips the entire interview** (says "스킵", "넘어가", "pass", etc.):
+   - Do NOT silently proceed with generic defaults.
+   - Instead, the agent MUST auto-derive initial constraints from the PRD/UX spec:
+     a) Brand Personality → infer from target user personas and product category in PRD
+     b) Emotional Target → infer from the product's core value proposition
+     c) Anti-Reference → infer from competitor analysis in PRD (if any), otherwise mark "unconstrained"
+     d) Aspiration Reference → mark "unconstrained"
+   - Present the auto-derived constraints to the user: "인터뷰를 스킵하셨으므로 PRD에서 다음과 같이 추론했습니다: [constraints]. 이대로 진행할까요?"
+   - If approved, proceed with these as soft constraints (not hard).
+   - If rejected, re-offer the interview questions or accept corrections.
+
 ### Phase 2 — Design Philosophy (조건부 — CRITICAL before any code)
 6) Check if `docs/design_philosophy.md` already exists:
    - **If exists**: Read the file, present it to the user, and ask: "웹에서 생성된 디자인 철학이 있습니다. 모바일에도 동일하게 적용할까요, 아니면 모바일에 맞게 수정할까요?"
@@ -41,6 +80,12 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
    - Who are the users? What's the emotional tone?
    - What category does this product belong to?
    - Are there competitor/reference apps mentioned?
+7.5) **Reference Research** (uses WebSearch):
+   - Search for the aspiration reference's design (if provided): "[brand/product] UI design"
+   - Search for the anti-reference to understand what to avoid: "[anti-reference] UI criticism"
+   - Search for the product domain's design trends: "[domain] mobile app design 2025/2026"
+   - Synthesize 3-5 concrete design cues to adopt and 3-5 to explicitly avoid
+   - Document these in the design philosophy as "Reference Anchors"
 8) Commit to a BOLD aesthetic direction with mobile lens:
    - Apply the mobile design lens: 한 손 조작감, 첫 3초 인상, 기억에 남는 제스처
 9) Generate `docs/design_philosophy.md`:
