@@ -22,7 +22,7 @@ Steps:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
    - Pass existing `docs/review_lessons.md` (if exists) as context so the reviewer can identify recurring patterns.
-3.5) IF the issue involves UI/frontend work (check Track field or issue keywords: "UI", "screen", "component", "prototype"):
+3.5) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
    Ask ui-reviewer subagent to perform UI state review:
    - Pass `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`,
      `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`),

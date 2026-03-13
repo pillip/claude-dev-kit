@@ -17,19 +17,20 @@ Hard requirements:
 Algorithm:
 1) Ensure `gh` authenticated (gh auth status).
 2) Locate $ARGUMENTS in issues.md. Read the issue's Goal, Scope, AC, and Implementation Notes.
-2b) Gather context — read the following docs (if they exist, skip silently if not):
+2b) Gather context — read the following docs (if they exist, skip silently if not).
+   **Read all applicable documents via parallel Read tool calls in a single message. Do NOT read them sequentially.**
    - `docs/architecture.md` — tech stack, modules, API design
    - `docs/data_model.md` — schema, indexes, query patterns, seed data, migrations
    - `docs/requirements.md` — related FRs/NFRs referenced by the issue
    - `docs/review_lessons.md` — known recurring review findings to proactively avoid
-   - **UI context** (when the issue involves UI/frontend work):
+   - **UI context** — read all of the following in parallel (when the issue has `UI: true`, or contains UI keywords in Track/title):
      - `docs/design_system.md` — CSS tokens, component specs
      - `docs/design_philosophy.md` — aesthetic direction
      - `docs/wireframes.md` — layout for the relevant screen
      - `docs/interactions.md` — states, transitions, animations for the relevant flow
      - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary
      - `prototype/screens/*.html` — visual reference for the relevant screen
-   - **Mobile UI context** (when the issue involves mobile/React Native work):
+   - **Mobile UI context** — read all of the following in parallel (when the issue involves mobile/React Native work):
      - `docs/design_system_mobile.md` — React Native 디자인 토큰, 컴포넌트 스펙
      - `docs/design_philosophy.md` — 미적 방향 (웹과 공유)
      - `docs/wireframes_mobile.md` — 모바일 레이아웃, 제스처, safe area

@@ -51,6 +51,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 ```markdown
 ### ISSUE-NNN: [title — imperative verb + object]
 - Track: product | platform
+- UI: true | false
 - PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
 - Estimate: 0.5d | 1d | 1.5d

@@ -356,11 +356,22 @@ _UI_KEYWORDS = re.compile(
 
 
 def _is_ui_issue(issue_id: str) -> bool:
-    """Determine if an issue involves UI/frontend work by checking Track field and title."""
+    """Determine if an issue involves UI/frontend work.
+
+    Priority:
+      1. Explicit ``UI: true`` / ``UI: false`` field (set by planner at kickoff)
+      2. Keyword fallback — Track field and title scanning (backward-compat)
+    """
     block = _find_issue_block(issue_id)
     if block is None:
         return False
 
+    # 1) Explicit UI field — authoritative when present
+    ui_field = _extract_field(block, "UI")
+    if ui_field:
+        return ui_field.lower() == "true"
+
+    # 2) Fallback: keyword matching on Track and title
     track = _extract_field(block, "Track")
     if track and _UI_KEYWORDS.search(track):
         return True

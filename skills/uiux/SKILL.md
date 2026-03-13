@@ -24,6 +24,8 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 3) If `docs/ux_spec.md` does not exist:
    - Stop and tell the user: "kickoff 산출물이 없습니다. 먼저 `/kickoff PRD.md`를 실행해주세요."
    - Exception: if the user explicitly wants to skip kickoff, proceed with PRD only (warn about limited context).
+**Caching rule**: Phase 1에서 읽은 모든 문서(`docs/ux_spec.md`, `docs/requirements.md`, `docs/architecture.md`, PRD)의 내용은 이후 Phase 전체에서 재사용한다. 동일 파일을 다시 Read tool로 읽지 않는다.
+
 4) Scan the project for existing UI code:
    - Glob for `**/*.html`, `**/*.css`, `**/*.tsx`, `**/*.jsx`, `**/*.vue`, `**/*.svelte`
    - If found, read key files to understand current design patterns and tech stack.
@@ -122,7 +124,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 12.5) Run the **copywriter** agent to generate `docs/copy_guide.md`:
     - Input: `docs/ux_spec.md`, `docs/design_philosophy.md`, `docs/wireframes.md`, `docs/interactions.md`, PRD
     - Output: Voice & tone definition, copy inventory per screen (labels, placeholders, empty/error/success states, confirmations, toasts), patterns, glossary
-    - Include FULL CONTENT of input documents in the subagent prompt.
+    - Phase 1에서 이미 읽은 `docs/ux_spec.md`, PRD 내용과 Phase 2-4에서 생성한 문서 내용을 메모리에서 가져와 subagent prompt에 포함한다 — 파일을 다시 읽지 않는다.
     - The copy guide must align with the design philosophy's tone (e.g., "Ink & Paper" → restrained, precise language).
     - This step MUST complete before Phase 5 so the prototype uses real copy, not placeholder text.
 

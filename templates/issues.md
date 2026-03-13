@@ -32,6 +32,7 @@
 
 ### ISSUE-<NNN>: [imperative verb + object]
 - Track: product | platform
+- UI: true | false
 - PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
 - Estimate: 0.5d | 1d | 1.5d
