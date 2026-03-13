@@ -35,7 +35,7 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
 | `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
-| `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
+| `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_philosophy.md`, `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
 | `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review + security audit + UI review on PR | `docs/review_notes.md`, `docs/ui_review_notes.md` |
@@ -161,7 +161,7 @@ The skill applies [Anthropic's frontend-design guidelines](https://claude.com/bl
 /mobile-uiux [PRD.md]
 ```
 
-Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Design Interview를 통해 프로젝트 고유의 디자인 방향을 수립한 뒤, 레퍼런스 리서치를 거쳐 차별화된 모바일 디자인 시스템을 생성합니다. Produces mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
+Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Design Interview를 통해 프로젝트 고유의 디자인 방향을 수립한 뒤, 레퍼런스 리서치를 거쳐 차별화된 모바일 디자인 시스템을 생성합니다. If `docs/design_philosophy.md` already exists (from `/uiux`), reuses it with user confirmation; otherwise generates it from scratch. Produces design philosophy, mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
 
 ### Sprint — Auto-orchestrate multiple issues
 
