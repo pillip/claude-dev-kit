@@ -137,6 +137,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - Background & depth effects: gradient meshes, noise textures, layered transparencies, grain overlays (as appropriate for the aesthetic)
     - Dark mode via `prefers-color-scheme` (if appropriate for the aesthetic)
     - CSS keyframe animations for page-load reveals, stagger effects, hover transitions
+    - **Layout positioning rule**: `.sidebar`, `.nav`, and similar layout-structural elements MUST use `position: static` (or `relative`/`sticky` if scroll-pinning is intended) — NEVER `position: fixed` or `position: absolute`. Fixed/absolute positioning pulls the element out of the document flow, collapsing the grid column it occupied. Sidebars participate in grid/flex layout as normal flow children; scroll-pinning should use `position: sticky` with a `top` value.
 15) Generate screen HTML files in `prototype/screens/`:
     - One HTML file per screen identified in wireframes
     - Semantic HTML5 structure (`<nav>`, `<main>`, `<section>`, `<article>`, `<aside>`, `<header>`, `<footer>`)
