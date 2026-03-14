@@ -668,3 +668,17 @@ def test_validate_issues_has_dangling_reference_check():
     assert "does not exist" in content, (
         "validate_issues.py does not check for dangling Depends-On references"
     )
+
+
+# ── Test 30: implement skill Manual field check ───────────────────────
+
+
+def test_implement_skill_checks_manual_field():
+    path = SKILL_DIR / "implement" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Manual" in content, (
+        "skills/implement/SKILL.md does not check Manual field"
+    )
+    assert "Manual: true" in content, (
+        "skills/implement/SKILL.md missing Manual: true stop condition"
+    )
