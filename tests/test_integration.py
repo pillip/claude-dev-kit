@@ -704,3 +704,11 @@ def test_skill_specifies_parallel_context_loading(skill):
     assert "parallel" in content.lower(), (
         f"skills/{skill}/SKILL.md does not specify parallel context loading"
     )
+
+
+def test_kickoff_has_ux_architect_parallel():
+    path = SKILL_DIR / "kickoff" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "ux-designer + architect" in content.lower() or "ux + architecture in parallel" in content.lower(), (
+        "kickoff SKILL.md does not specify ux-designer + architect parallel execution"
+    )
