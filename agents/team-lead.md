@@ -93,7 +93,12 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
 
 - **Max iterations**: Default 20. Configurable via sprint arguments.
 - **Max parallel**: Default 3. Configurable via `--parallel N`.
-- **Failure escalation**: If the same issue fails 3 consecutive times → mark as `waiting`, log reason in sprint_state.md, continue with other issues.
+- **Per-phase failure recovery**: Track which phase (implement/review/ship) each issue is in:
+  - If implement succeeds but review fails → retry review only (do NOT re-implement). Set Phase=review-retry.
+  - If review fails 2 consecutive times → mark Status=waiting, Reason=review-rework, defer to next iteration.
+  - If ship fails → retry ship once, then escalate.
+  - Never re-run a phase that already succeeded.
+- **Failure escalation**: If the same issue fails 3 consecutive times across all phases → mark as `waiting`, log reason in sprint_state.md, continue with other issues.
 - **Manual issue handling**: `Manual: true` issues are never dispatched to agents. They appear in the sprint summary as "awaiting human action". If all remaining non-manual issues are blocked by unresolved manual issues, escalate to the user with a clear list of manual tasks that need completion.
 - **Human escalation**: After max iterations or when all remaining issues are blocked, report to user with clear summary of what's done and what needs attention.
 - **Worktree cleanup**: At sprint end, clean up any remaining worktrees.

@@ -713,3 +713,22 @@ def test_kickoff_has_ux_architect_parallel():
     assert "ux-designer + architect" in content.lower() or "ux + architecture in parallel" in content.lower(), (
         "kickoff SKILL.md does not specify ux-designer + architect parallel execution"
     )
+
+
+# ── Test 32: per-phase failure recovery in sprint ─────────────────────
+
+
+def test_team_lead_has_per_phase_recovery():
+    path = AGENT_DIR / "team-lead.md"
+    content = path.read_text(encoding="utf-8")
+    assert "per-phase" in content.lower() or "review-rework" in content.lower(), (
+        "team-lead.md does not contain per-phase failure recovery logic"
+    )
+
+
+def test_sprint_skill_has_per_phase_recovery():
+    path = SKILL_DIR / "sprint" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "per-phase" in content.lower(), (
+        "sprint SKILL.md does not mention per-phase recovery"
+    )

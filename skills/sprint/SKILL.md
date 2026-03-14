@@ -53,6 +53,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 - If team-lead agent fails (Task tool returns error): report error and current sprint_state.md status.
 - If pre-conditions fail: stop with clear instructions on how to fix.
 - Sprint state file ensures progress is never lost — user can re-run `/sprint` to resume.
+- **Per-phase recovery**: team-lead tracks per-phase progress (implement/review/ship) in sprint_state.md. On failure, only the failed phase is retried — successful phases are never re-run. After 2 consecutive review failures, the issue is deferred with Status=waiting, Reason=review-rework.
 
 ## Rollback
 - Sprint is composed of individual implement→review→ship cycles, each with their own rollback.
