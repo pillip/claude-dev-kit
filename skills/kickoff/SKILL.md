@@ -23,12 +23,20 @@ PRD 길이에 관계없이 항상 다음 구조로 요약을 생성하여 `docs/
 
 이후 subagent에 context 전달 시: PRD 원문 + `docs/prd_digest.md`를 함께 전달.
 
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/prd_digest.md` exists and contains all required sections (Goals, Target User, Must-have Features, Key NFRs, Scope Boundaries).
+> If the file is missing or any section is empty: STOP and regenerate before proceeding.
+
 ### Phase 2 — Run Subagents (dependency-aware, parallel where possible)
 
 **Step 1: requirement-analyst → `docs/requirements.md`**
 - Context to pass: Full PRD content + `docs/prd_digest.md`
 - Agent produces: Goals, prioritized user stories with AC, FRs, NFRs with measurable targets, scope, assumptions, risks
 - Verify output exists before proceeding
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/requirements.md` exists and contains Goals, User Stories, and NFRs sections.
+> If missing or incomplete: STOP and retry the requirement-analyst subagent before proceeding.
 
 **Step 2 & 3 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message:**
 Both agents depend on requirements but NOT on each other. Run them in parallel to save ~5-8 minutes.
@@ -44,10 +52,20 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 
 **After both Task calls return**, verify both outputs exist before proceeding.
 
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify both `docs/ux_spec.md` and `docs/architecture.md` exist.
+> - `docs/ux_spec.md` must contain Key Flows and screen definitions.
+> - `docs/architecture.md` must contain tech stack and module design.
+> If either file is missing or empty: STOP and retry the failed subagent before proceeding.
+
 **Step 4: data-modeler → `docs/data_model.md`**
 - Context to pass: PRD + `docs/prd_digest.md` + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
 - Agent produces: Access patterns, detailed schema (tables, columns, types, constraints), indexes with justification, migration strategy, seed data, query patterns, scaling notes
 - Verify output exists before proceeding
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/data_model.md` exists and contains schema definitions with tables, columns, and types.
+> If missing or incomplete: STOP and retry the data-modeler subagent before proceeding.
 
 **Step 5 & 6 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message (no dependency between them):**
 
@@ -61,6 +79,12 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 - Agent produces: Risk matrix, critical flow test cases, edge cases, fixtures, automation candidates, smoke checklist
 
 **After both Task calls return**, verify both outputs exist before proceeding to Phase 3.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify both `issues.md` and `docs/test_plan.md` exist.
+> - `issues.md` must contain at least one `### ISSUE-` block with AC and metadata fields.
+> - `docs/test_plan.md` must contain Strategy and Critical Flows sections.
+> If either file is missing or empty: STOP and retry the failed subagent before proceeding.
 
 ### Phase 3 — Supporting Documents
 4) Create/update `docs/README.md`:

@@ -14,6 +14,12 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 - `--parallel N`: Max parallel issues (default: 3)
 - `--max-iterations N`: Max loop iterations (default: 20)
 
+## Argument Validation (run before anything else)
+1) Parse `$ARGUMENTS` for `--parallel N` and `--max-iterations N`:
+   - If `--parallel` is present, validate N is an integer between 1 and 10. If invalid, stop with: "Invalid --parallel value: must be an integer between 1 and 10."
+   - If `--max-iterations` is present, validate N is an integer between 1 and 100. If invalid, stop with: "Invalid --max-iterations value: must be an integer between 1 and 100."
+   - Unknown flags should be warned but not block execution.
+
 ## Algorithm
 
 1) Validate pre-conditions:

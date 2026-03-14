@@ -15,6 +15,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -24,10 +25,22 @@ def _extract_field(text: str, field_name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """Run a command and return the result (no exception on failure)."""
+def _run(cmd: list[str], timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
+    """Run a command and return the result (no exception on failure).
+
+    Args:
+        cmd: Command and arguments to run.
+        timeout: Maximum seconds to wait (default 30). 0 means no timeout.
+    """
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+        t = timeout if timeout > 0 else None
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=t, **kwargs)
+    except subprocess.TimeoutExpired:
+        prog = cmd[0] if cmd else "<unknown>"
+        mock = subprocess.CompletedProcess(cmd, 124)
+        mock.stdout = ""
+        mock.stderr = f"{prog}: timed out after {timeout}s"
+        return mock
     except FileNotFoundError:
         # Command binary not found (e.g. gh or git not installed)
         prog = cmd[0] if cmd else "<unknown>"
@@ -35,6 +48,21 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
         mock.stdout = ""
         mock.stderr = f"{prog}: command not found"
         return mock
+
+
+def _run_with_retry(cmd: list[str], max_retries: int = 2, delay: float = 1.0, **kwargs) -> subprocess.CompletedProcess:
+    """Run a command with retry logic for transient network failures.
+
+    Retries on non-zero exit codes up to max_retries times with a delay between attempts.
+    Useful for network-dependent commands like `gh`.
+    """
+    result = _run(cmd, **kwargs)
+    attempt = 1
+    while result.returncode != 0 and attempt < max_retries:
+        time.sleep(delay)
+        result = _run(cmd, **kwargs)
+        attempt += 1
+    return result
 
 
 def _repo_root() -> Path:
@@ -171,7 +199,7 @@ def verify_implement_issue(issue_id: str, **_) -> bool:
         print(f"FAIL: cannot parse issue number from GH-Issue: {gh_issue}")
         return False
 
-    result = _run(["gh", "issue", "view", num_match.group(1)])
+    result = _run_with_retry(["gh", "issue", "view", num_match.group(1)])
     if result.returncode != 0:
         print(f"FAIL: gh issue view {num_match.group(1)} failed: {result.stderr.strip()}")
         return False
@@ -280,7 +308,7 @@ def verify_implement_pr(issue_id: str, **_) -> bool:
     if pr_num is None:
         return False
 
-    result = _run(["gh", "pr", "view", pr_num, "--json", "body", "-q", ".body"])
+    result = _run_with_retry(["gh", "pr", "view", pr_num, "--json", "body", "-q", ".body"])
     if result.returncode != 0:
         print(f"FAIL: gh pr view {pr_num} failed: {result.stderr.strip()}")
         return False
@@ -437,7 +465,7 @@ def verify_ship_checks(issue_id: str, **_) -> bool:
     if pr_num is None:
         return False
 
-    result = _run(["gh", "pr", "checks", pr_num])
+    result = _run_with_retry(["gh", "pr", "checks", pr_num])
     if result.returncode != 0:
         print(f"FAIL: gh pr checks failed for PR #{pr_num}")
         return False
@@ -458,7 +486,7 @@ def verify_ship_merge(issue_id: str, **_) -> bool:
     if pr_num is None:
         return False
 
-    result = _run(["gh", "pr", "view", pr_num, "--json", "state", "-q", ".state"])
+    result = _run_with_retry(["gh", "pr", "view", pr_num, "--json", "state", "-q", ".state"])
     if result.returncode != 0:
         print("FAIL: gh pr view failed")
         return False

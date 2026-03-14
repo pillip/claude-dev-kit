@@ -647,3 +647,62 @@ class TestMain:
 
     def test_returns_2_on_missing_args(self):
         assert vc.main([]) == 2
+
+
+# ── Timeout handling ──────────────────────────────────────────────────
+
+
+class TestRunTimeout:
+    def test_timeout_returns_124(self):
+        """_run should return exit code 124 on timeout."""
+        # Use a command that sleeps longer than the timeout
+        result = vc._run(["sleep", "10"], timeout=1)
+        assert result.returncode == 124
+        assert "timed out" in result.stderr
+
+    def test_default_timeout_is_30(self):
+        """_run should accept timeout parameter with default of 30."""
+        import inspect
+        sig = inspect.signature(vc._run)
+        assert "timeout" in sig.parameters
+        assert sig.parameters["timeout"].default == 30
+
+
+# ── Retry helper ──────────────────────────────────────────────────────
+
+
+class TestRunWithRetry:
+    def test_retries_on_failure(self):
+        """_run_with_retry should retry failed commands."""
+        call_count = {"n": 0}
+        original_run = vc._run
+
+        def counting_run(cmd, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] < 2:
+                return _mock_run(1, stderr="transient error")
+            return _mock_run(0, stdout="success")
+
+        with patch.object(vc, "_run", side_effect=counting_run):
+            result = vc._run_with_retry(["some", "cmd"], max_retries=2, delay=0)
+            assert result.returncode == 0
+            assert call_count["n"] == 2
+
+    def test_gives_up_after_max_retries(self):
+        """_run_with_retry should stop retrying after max_retries."""
+        with patch.object(vc, "_run", return_value=_mock_run(1, stderr="persistent error")):
+            result = vc._run_with_retry(["some", "cmd"], max_retries=3, delay=0)
+            assert result.returncode == 1
+
+    def test_no_retry_on_success(self):
+        """_run_with_retry should not retry on success."""
+        call_count = {"n": 0}
+
+        def counting_run(cmd, **kwargs):
+            call_count["n"] += 1
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=counting_run):
+            result = vc._run_with_retry(["some", "cmd"], max_retries=3, delay=0)
+            assert result.returncode == 0
+            assert call_count["n"] == 1

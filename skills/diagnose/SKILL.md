@@ -10,6 +10,10 @@ Every phase in this skill that has a CHECKPOINT block must be verified. Run the 
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `fix/bookmark-none-subscript`) for use in checkpoint commands.
 
+## Argument Validation (run before anything else)
+1) If `$ARGUMENTS` is empty or blank, ask the user: "Please provide an error description, stack trace, or file path to diagnose."
+2) Do NOT proceed until the user provides diagnostic context.
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Gather the bug context from $ARGUMENTS (error message, stack trace, file path, or reproduction steps).

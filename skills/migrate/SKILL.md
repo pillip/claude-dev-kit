@@ -10,6 +10,10 @@ Every phase in this skill that has a CHECKPOINT block must be verified. Run the 
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `migrate/django-5.0`) for use in checkpoint commands.
 
+## Argument Validation (run before anything else)
+1) If `$ARGUMENTS` is empty or blank, ask the user: "Please specify the migration target (e.g., 'Django 5.0', 'Python 3.12', 'PostgreSQL 16')."
+2) Do NOT proceed until the user provides a migration target.
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Identify the migration target from $ARGUMENTS (library version, DB schema, runtime, etc.).

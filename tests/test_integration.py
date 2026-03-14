@@ -4,6 +4,7 @@ import json
 import os
 import re
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -809,3 +810,193 @@ def test_readme_has_decision_tree():
                   "/sprint", "/implement", "/review", "/ship", "/diagnose",
                   "/migrate", "/refactor", "/devops", "/issue"]:
         assert skill in content, f"Decision Tree missing reference to {skill}"
+
+
+# ── Test 37: kickoff CHECKPOINT markers ────────────────────────────────
+
+
+def test_kickoff_has_checkpoint_markers():
+    path = SKILL_DIR / "kickoff" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= 5, (
+        f"skills/kickoff/SKILL.md has {count} CHECKPOINT markers, expected >= 5"
+    )
+
+
+# ── Test 38: verify_checkpoint.py timeout and retry ────────────────────
+
+
+def test_verify_checkpoint_has_timeout_and_retry():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    content = script.read_text(encoding="utf-8")
+    assert "timeout" in content, (
+        "verify_checkpoint.py does not contain timeout parameter"
+    )
+    assert "_run_with_retry" in content, (
+        "verify_checkpoint.py does not contain _run_with_retry helper"
+    )
+    assert "TimeoutExpired" in content, (
+        "verify_checkpoint.py does not handle TimeoutExpired"
+    )
+
+
+# ── Test 39: new templates (sprint_state, runbook, troubleshooting, contributing)
+
+
+EXPECTED_PHASE2_TEMPLATES = {
+    "sprint_state.md": ["Meta", "Issue Progress", "Discovered Issues", "Escalations"],
+    "runbook.md": ["Health Checks", "Scaling", "Rollback", "Disaster Recovery"],
+    "troubleshooting.md": ["Problem", "Solution"],
+    "contributing.md": ["Branch", "Commit", "Pull Request", "Code Style"],
+}
+
+
+@pytest.mark.parametrize(
+    "name,headers",
+    EXPECTED_PHASE2_TEMPLATES.items(),
+    ids=EXPECTED_PHASE2_TEMPLATES.keys(),
+)
+def test_phase2_template_exists_and_has_headers(name, headers):
+    path = TEMPLATE_DIR / name
+    assert path.exists(), f"Template {name} not found"
+    content = path.read_text(encoding="utf-8")
+    for header in headers:
+        assert header in content, f"Template {name} missing section: {header}"
+
+
+# ── Test 40: developer parallel context loading ────────────────────────
+
+
+def test_developer_has_parallel_context_loading():
+    path = AGENT_DIR / "developer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "parallel Read" in content, (
+        "agents/developer.md does not specify parallel Read tool calls"
+    )
+
+
+# ── Test 41: validate_issues negative test cases ──────────────────────
+
+
+def test_validate_issues_rejects_malformed_input():
+    """validate_issues.py should report violations for issues missing required fields."""
+    sys.path.insert(0, str(SCRIPTS_DIR))
+    import validate_issues as vi
+
+    malformed = (
+        "### ISSUE-001: Missing fields\n"
+        "- Estimate: 5d\n"
+        "- PRD-Ref:\n"
+        "- Depends-On:\n"
+        "#### Acceptance Criteria\n"
+        "- [ ] Only one AC\n"
+    )
+    issues = vi.parse_issues(malformed)
+    warnings = vi.validate(issues)
+    assert len(warnings) >= 3, (
+        f"Expected at least 3 violations for malformed input, got {len(warnings)}: {warnings}"
+    )
+
+
+def test_validate_issues_detects_cycles():
+    """validate_issues.py should detect circular dependencies."""
+    sys.path.insert(0, str(SCRIPTS_DIR))
+    import validate_issues as vi
+
+    cyclic = (
+        "### ISSUE-001: First\n"
+        "- Estimate: 1d\n"
+        "- PRD-Ref: FR-001\n"
+        "- Depends-On: ISSUE-002\n"
+        "#### Acceptance Criteria\n"
+        "- [ ] Given X, when Y, then Z\n"
+        "- [ ] Given A, when B, then C\n"
+        "\n"
+        "### ISSUE-002: Second\n"
+        "- Estimate: 1d\n"
+        "- PRD-Ref: FR-002\n"
+        "- Depends-On: ISSUE-001\n"
+        "#### Acceptance Criteria\n"
+        "- [ ] Given X, when Y, then Z\n"
+        "- [ ] Given A, when B, then C\n"
+    )
+    issues = vi.parse_issues(cyclic)
+    warnings = vi.validate(issues)
+    cycle_warnings = [w for w in warnings if "circular" in w.lower()]
+    assert len(cycle_warnings) >= 1, (
+        f"Expected at least 1 cycle warning, got: {warnings}"
+    )
+
+
+# ── Test 42: skill prerequisite documentation ──────────────────────────
+
+
+@pytest.mark.parametrize(
+    "skill",
+    ["implement", "review"],
+    ids=["implement", "review"],
+)
+def test_skill_requires_prerequisites_documented(skill):
+    path = SKILL_DIR / skill / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    has_pre = (
+        "pre-condition" in content.lower()
+        or "prerequisite" in content.lower()
+        or "before" in content.lower()
+        or "checkpoint rules" in content.lower()
+        or "must exist" in content.lower()
+        or "find pr" in content.lower()
+    )
+    assert has_pre, (
+        f"skills/{skill}/SKILL.md does not document prerequisites or pre-conditions"
+    )
+
+
+# ── Test 43: test_plan.md E2E sub-sections ─────────────────────────────
+
+
+def test_test_plan_has_e2e_subsections():
+    path = TEMPLATE_DIR / "test_plan.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Test Independence" in content, "test_plan.md missing Test Independence subsection"
+    assert "Network Mocking" in content, "test_plan.md missing Network Mocking subsection"
+    assert "Flaky Test Protocol" in content, "test_plan.md missing Flaky Test Protocol subsection"
+
+
+# ── Test 44: skill argument validation ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "skill",
+    ["sprint", "refactor", "diagnose", "migrate"],
+    ids=["sprint", "refactor", "diagnose", "migrate"],
+)
+def test_skill_has_argument_validation(skill):
+    path = SKILL_DIR / skill / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Argument Validation" in content, (
+        f"skills/{skill}/SKILL.md missing Argument Validation section"
+    )
+
+
+# ── Test 45: execution-model.md ────────────────────────────────────────
+
+
+def test_execution_model_doc_exists():
+    path = ROOT / "docs" / "execution-model.md"
+    assert path.exists(), "docs/execution-model.md not found"
+    content = path.read_text(encoding="utf-8")
+    for section in ["Skill", "Agent", "Worktree", "flock_edit", "Checkpoint"]:
+        assert section in content, f"docs/execution-model.md missing section about {section}"
+
+
+# ── Test 46: kit troubleshooting doc ───────────────────────────────────
+
+
+def test_kit_troubleshooting_doc_exists():
+    path = ROOT / "docs" / "troubleshooting.md"
+    assert path.exists(), "docs/troubleshooting.md not found"
+    content = path.read_text(encoding="utf-8")
+    for keyword in ["checkpoint", "gh auth", "worktree", "validate_issues"]:
+        assert keyword in content, f"docs/troubleshooting.md missing keyword: {keyword}"

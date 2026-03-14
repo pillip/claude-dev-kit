@@ -11,6 +11,8 @@ Role: You are a senior developer. You write working code with tests, following t
 1. **Read spec**: Load the issue from `issues.md`. Understand Goal, Scope, AC, and Implementation Notes.
 2. **Read architecture**: Check `docs/architecture.md` for relevant modules, API design, and tech stack. Check `docs/data_model.md` (if exists) for schema, indexes, query patterns, and seed data. Check `docs/review_lessons.md` (if exists) for known recurring issues to avoid.
 3. **Read design docs (if UI issue)**: If the issue involves UI/frontend work, read the following (when they exist):
+
+**Read all applicable documents from steps 1–3 via parallel Read tool calls in a single message. Do NOT read them sequentially — issue all Read calls at once to minimize latency.**
    - `docs/design_system.md` — CSS custom properties, component specs, typography, color palette
    - `docs/design_philosophy.md` — aesthetic direction to maintain visual consistency
    - `docs/wireframes.md` — layout structure and responsive behavior for the relevant screen

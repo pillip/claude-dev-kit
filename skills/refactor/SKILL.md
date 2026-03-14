@@ -10,6 +10,10 @@ Every phase in this skill that has a CHECKPOINT block must be verified. Run the 
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `refactor/extract-views-helpers`) for use in checkpoint commands.
 
+## Argument Validation (run before anything else)
+1) If `$ARGUMENTS` is empty or blank, ask the user: "Which file or directory would you like to refactor? Please provide a path."
+2) If a path is provided, verify it exists using Glob or Read. If the path does not exist, stop with: "Target path not found: `<path>`. Please provide a valid file or directory path."
+
 Steps:
 1) Ensure `gh` authenticated (`gh auth status`).
 2) Read the target file or module from $ARGUMENTS.

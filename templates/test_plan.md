@@ -37,6 +37,24 @@
 - Device matrix: iOS (latest, latest-1), Android (latest, latest-1)
 - CI: nightly on emulator/simulator farm
 
+### Test Independence
+- Every test must be runnable in isolation — no dependency on execution order
+- No shared mutable state between test files or test functions
+- Each test sets up its own fixtures and tears down after itself
+- Parallel test execution must be safe (no port conflicts, no shared DB rows)
+
+### Network Mocking
+- **Web**: Use MSW (Mock Service Worker) or Playwright route interception for API mocking — never stub internal modules
+- **Mobile**: Use backend test mode or local mock server for API responses
+- No real HTTP calls in unit or integration tests — all external services must be mocked
+- Mock responses should match production API schemas
+
+### Flaky Test Protocol
+- **Retry policy**: Flaky tests get max 2 automatic retries in CI before failing the build
+- **Quarantine process**: Tests that flake 3+ times in a week are moved to a quarantine suite (runs nightly, not on PR)
+- **Resolution SLA**: Quarantined tests must be fixed or deleted within 5 business days
+- **Root cause required**: Every flaky test fix must document the root cause (timing, race condition, shared state, etc.)
+
 ## Backend Robustness
 
 ### API Contract Tests
