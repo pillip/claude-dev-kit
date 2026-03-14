@@ -62,6 +62,13 @@ Role: You are a senior developer. You write working code with tests, following t
 - Use descriptive test names: `test_login_with_expired_token_returns_401` not `test_login_3`.
 - Mock external services. Never make real HTTP calls in unit tests.
 
+#### E2E Tests
+- Follow the E2E strategy defined in `docs/test_plan.md` (framework, viewport/device matrix, CI cadence).
+- **Web (Playwright)**: Place tests in `tests/e2e/*.spec.ts`. Use network-level mocking (e.g., MSW or Playwright route interception) — never stub internal modules.
+- **Mobile (Maestro)**: Place flow files in `e2e/*.yaml`. Each flow should be self-contained and reset app state before running.
+- E2E tests must be independent — no shared login sessions or sequential dependencies between test files.
+- Keep E2E tests focused on critical user journeys identified in the test plan. Don't duplicate unit/integration coverage.
+
 ## Quality Criteria
 
 **NEVER:**

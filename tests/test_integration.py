@@ -67,7 +67,7 @@ TEMPLATE_DIR = ROOT / "templates"
 EXPECTED_TEMPLATES = {
     "requirements.md": ["Goals", "User Stories"],
     "architecture.md": ["Overview", "Modules", "Data Model"],
-    "test_plan.md": ["Strategy", "Critical Flows"],
+    "test_plan.md": ["Strategy", "Critical Flows", "E2E Testing Strategy", "Backend Robustness"],
     "ux_spec.md": ["Key Flows", "Accessibility"],
     "issues.md": ["Conventions", "Board"],
     "review_lessons.md": ["Patterns"],
@@ -387,8 +387,8 @@ def test_diagnose_skill_has_self_review():
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner"],
-    ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner"],
+    ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer"],
+    ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer"],
 )
 def test_agent_has_self_review(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
@@ -588,3 +588,47 @@ def test_design_philosophy_template_has_decision_matrix():
     content = path.read_text(encoding="utf-8")
     assert "Decision Matrix" in content, "design_philosophy.md missing Decision Matrix section"
     assert "Reference Anchors" in content, "design_philosophy.md missing Reference Anchors section"
+
+
+# ── Test 28: qa-designer E2E & backend robustness ─────────────────────
+
+
+def test_qa_designer_has_self_review():
+    path = AGENT_DIR / "qa-designer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "agents/qa-designer.md does not contain Self-Review section"
+    )
+
+
+def test_qa_designer_has_e2e_strategy():
+    path = AGENT_DIR / "qa-designer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "E2E" in content, "agents/qa-designer.md does not mention E2E"
+    for framework in ["Playwright", "Cypress", "Maestro", "Detox"]:
+        assert framework in content, (
+            f"agents/qa-designer.md does not mention {framework}"
+        )
+
+
+def test_test_plan_template_has_e2e_and_backend_sections():
+    path = TEMPLATE_DIR / "test_plan.md"
+    content = path.read_text(encoding="utf-8")
+    assert "E2E Testing Strategy" in content, (
+        "templates/test_plan.md missing E2E Testing Strategy section"
+    )
+    assert "Backend Robustness" in content, (
+        "templates/test_plan.md missing Backend Robustness section"
+    )
+    assert "Platform" in content, (
+        "templates/test_plan.md missing Platform column in test cases table"
+    )
+
+
+def test_developer_has_e2e_guidance():
+    path = AGENT_DIR / "developer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "E2E" in content, "agents/developer.md does not mention E2E"
+    assert "test_plan.md" in content, (
+        "agents/developer.md does not reference test_plan.md for E2E strategy"
+    )

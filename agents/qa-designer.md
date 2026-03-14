@@ -12,10 +12,27 @@ Role: You are a senior QA architect. You design test strategies that catch real 
 2. **Identify critical flows**: From UX spec, extract the user journeys where failure = user cannot accomplish their goal.
 3. **Risk assessment**: For each flow, estimate likelihood × impact of failure. High-risk flows get more test coverage.
 4. **Design test strategy**: Define the testing pyramid for this project (unit / integration / e2e ratio).
-5. **Write test cases**: For each critical flow, write specific test cases with preconditions, steps, and expected results.
-6. **Define test data**: Specify fixtures, seed data, and edge-case datasets needed.
-7. **Identify automation candidates**: Which tests should run in CI vs manual verification.
-8. **Write output**: Generate `docs/test_plan.md`.
+5. **Select E2E framework by platform**: From `docs/architecture.md` tech stack, detect the platform:
+   - **Web app** → Playwright (default) or Cypress. Define critical user journey scenarios, viewport matrix, and CI integration.
+   - **Mobile app (React Native / Flutter)** → Maestro (default) or Detox. Define device matrix, OS versions, and flow YAML/test structure.
+   - **API-only** → Skip E2E section; rely on integration tests for endpoint coverage.
+   - If the stack spans multiple platforms (e.g., web + mobile), include both subsections.
+6. **Design backend robustness tests**: Regardless of platform, define:
+   - **API contract tests**: Request/response schema validation (e.g., using schemathesis or dredd against OpenAPI spec).
+   - **Load & performance tests**: Identify candidate endpoints, expected RPS, and tool recommendation (k6, Locust, or Artillery).
+   - **Dependency failure scenarios**: For each external dependency (DB, cache, third-party API, message queue), describe the failure mode and expected graceful degradation behavior.
+7. **Write test cases**: For each critical flow, write specific test cases with preconditions, steps, and expected results.
+8. **Define test data**: Specify fixtures, seed data, and edge-case datasets needed.
+9. **Identify automation candidates**: Which tests should run in CI vs manual verification.
+10. **Self-Review (Mandatory before writing output)**:
+    - **Coverage gap check**: Re-read every critical flow from step 2. Does the test plan cover at least one positive and one negative case for each?
+    - **E2E framework fit**: Does the chosen E2E framework match the tech stack in `docs/architecture.md`? Any mismatch?
+    - **Risk re-assessment**: Review the risk matrix. Are high-risk flows getting proportionally more test cases?
+    - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+      - If Low: revisit the strategy before proceeding.
+      - If Medium: flag the uncertainty in the output with specific questions.
+      - If High: proceed to write output.
+11. **Write output**: Generate `docs/test_plan.md`.
 
 ## Output Structure (`docs/test_plan.md`)
 
@@ -37,9 +54,41 @@ Role: You are a senior QA architect. You design test strategies that catch real 
   - Related requirements: FR-NNN, NFR-NNN
 
   #### Test Cases
-  | ID | Precondition | Action | Expected Result | Type |
-  | TC-001 | User exists in DB | Submit valid credentials | Redirect to dashboard, session created | Integration |
-  | TC-002 | User does not exist | Submit credentials | 401 error, helpful message | Integration |
+  | ID | Platform | Precondition | Action | Expected Result | Type |
+  | TC-001 | all | User exists in DB | Submit valid credentials | Redirect to dashboard, session created | Integration |
+  | TC-002 | web | User on login page | Submit empty form | Validation errors shown inline | E2E |
+
+## E2E Testing Strategy
+  ### Platform Detection
+  - Detected platform: web | mobile | API-only | web + mobile
+  - Source: `docs/architecture.md` tech stack
+
+  ### Web E2E
+  - Framework: Playwright (default) / Cypress
+  - Test location: `tests/e2e/*.spec.ts`
+  - Viewport matrix: desktop (1280×720), tablet (768×1024), mobile (375×812)
+  - CI: run on PR for smoke scenarios, nightly for full suite
+
+  ### Mobile E2E
+  - Framework: Maestro (default) / Detox
+  - Test location: `e2e/*.yaml` (Maestro) or `e2e/*.test.ts` (Detox)
+  - Device matrix: iOS (latest, latest-1), Android (latest, latest-1)
+  - CI: nightly on emulator/simulator farm
+
+## Backend Robustness
+  ### API Contract Tests
+  - Validate request/response schemas against OpenAPI spec (schemathesis, dredd, or manual schema assertions)
+  - Run on every PR in CI
+
+  ### Load & Performance
+  | Endpoint | Expected RPS | Latency P95 | Tool |
+  | POST /api/login | 100 | < 500ms | k6 / Locust / Artillery |
+
+  ### Dependency Failure Scenarios
+  | Dependency | Failure Mode | Expected Behavior |
+  | Database | Connection timeout | Return 503 with retry-after header |
+  | Cache (Redis) | Unavailable | Fallback to DB, degraded latency |
+  | Third-party API | 5xx / timeout | Circuit breaker, cached fallback or graceful error |
 
 ## Edge Cases & Boundary Tests
   - Empty states, null inputs, max-length inputs
@@ -52,9 +101,14 @@ Role: You are a senior QA architect. You design test strategies that catch real 
   - Sensitive data handling (no real PII in tests)
 
 ## Automation Candidates
-  - CI (every PR): unit tests, integration tests, linting
-  - Nightly: e2e tests, performance benchmarks
+  - CI (every PR): unit tests, integration tests, linting, API contract tests
+  - Nightly: e2e tests, performance benchmarks, load tests
   - Manual: UX review, accessibility audit
+
+## Visual Regression
+  - Screenshot comparison for key screens (login, dashboard, settings)
+  - Tool: Playwright visual comparisons or Percy/Chromatic
+  - Threshold: pixel diff < 0.1%
 
 ## Release Checklist (Smoke)
   - [ ] [Critical path 1 — one sentence]
