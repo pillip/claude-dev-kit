@@ -78,6 +78,12 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 6) Run `scripts/validate_issues.py issues.md` to validate issue quality:
    - If violations are found, re-invoke the planner subagent once with the violation list and ask it to fix the issues.
    - If violations remain after the retry, log them in `STATUS.md` under `## Warnings` and proceed.
+6.5) **Cross-document validation** — verify consistency between subagent outputs:
+   - **data_model ↔ architecture**: Entity names in `docs/data_model.md` should match the data model overview in `docs/architecture.md`. Flag mismatches.
+   - **issues ↔ requirements**: Every FR/NFR referenced in `issues.md` (PRD-Ref field) should exist in `docs/requirements.md`. Flag dangling references.
+   - **test_plan ↔ requirements**: Critical flows in `docs/test_plan.md` should map to high-priority requirements. Flag uncovered Must-have FRs.
+   - **ux_spec ↔ requirements**: Every user story in `docs/requirements.md` should have at least one screen or flow in `docs/ux_spec.md`. Flag orphans.
+   - If mismatches are found: log them in `STATUS.md` under `## Cross-Validation Warnings` and proceed. These are informational — they do NOT block the pipeline.
 7) Verify all required outputs exist:
    - `docs/requirements.md`
    - `docs/ux_spec.md`

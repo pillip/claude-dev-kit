@@ -781,3 +781,18 @@ def test_verify_checkpoint_supports_design_skills():
         assert f'"{skill}"' in content, (
             f"verify_checkpoint.py does not support skill: {skill}"
         )
+
+
+# ── Test 35: kickoff cross-document validation ────────────────────────
+
+
+def test_kickoff_has_cross_document_validation():
+    path = SKILL_DIR / "kickoff" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Cross-document validation" in content or "cross-validation" in content.lower(), (
+        "kickoff SKILL.md missing cross-document validation step"
+    )
+    for check in ["data_model", "architecture", "requirements"]:
+        assert check in content, (
+            f"kickoff cross-validation does not reference {check}"
+        )
