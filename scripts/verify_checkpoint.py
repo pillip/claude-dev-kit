@@ -537,6 +537,65 @@ def verify_generic_validate(issue_id: str, **_) -> bool:
     return True
 
 
+# ── uiux / mobile-uiux verifiers ─────────────────────────────────────
+
+
+def verify_uiux_context(issue_id: str) -> bool:
+    """Verify Phase 1 context: ux_spec.md exists."""
+    root = _repo_root()
+    ux_spec = root / "docs" / "ux_spec.md"
+    if not ux_spec.exists():
+        print(f"FAIL: docs/ux_spec.md not found — run /kickoff first")
+        return False
+    print("OK: ux_spec.md exists")
+    return True
+
+
+def verify_uiux_philosophy(issue_id: str) -> bool:
+    """Verify Phase 2: design_philosophy.md exists with Decision Matrix."""
+    root = _repo_root()
+    phil = root / "docs" / "design_philosophy.md"
+    if not phil.exists():
+        print(f"FAIL: docs/design_philosophy.md not found")
+        return False
+    content = phil.read_text(encoding="utf-8")
+    if "Decision Matrix" not in content:
+        print("FAIL: design_philosophy.md missing Decision Matrix section")
+        return False
+    print("OK: design_philosophy.md exists with Decision Matrix")
+    return True
+
+
+def verify_uiux_system(issue_id: str) -> bool:
+    """Verify Phase 4 (web): all design docs exist."""
+    root = _repo_root()
+    required = ["design_system.md", "wireframes.md", "interactions.md", "copy_guide.md"]
+    ok = True
+    for name in required:
+        path = root / "docs" / name
+        if not path.exists():
+            print(f"FAIL: docs/{name} not found")
+            ok = False
+    if ok:
+        print("OK: all web design docs exist")
+    return ok
+
+
+def verify_mobile_uiux_system(issue_id: str) -> bool:
+    """Verify Phase 4 (mobile): all mobile design docs exist."""
+    root = _repo_root()
+    required = ["design_system_mobile.md", "wireframes_mobile.md", "interactions_mobile.md", "copy_guide.md"]
+    ok = True
+    for name in required:
+        path = root / "docs" / name
+        if not path.exists():
+            print(f"FAIL: docs/{name} not found")
+            ok = False
+    if ok:
+        print("OK: all mobile design docs exist")
+    return ok
+
+
 # ── Registry ─────────────────────────────────────────────────────────
 
 VERIFIERS = {
@@ -567,13 +626,19 @@ VERIFIERS = {
     ("migrate", "worktree"): verify_generic_worktree,
     ("migrate", "test"): verify_generic_test,
     ("migrate", "push"): verify_generic_push,
+    ("uiux", "context"): verify_uiux_context,
+    ("uiux", "philosophy"): verify_uiux_philosophy,
+    ("uiux", "system"): verify_uiux_system,
+    ("mobile-uiux", "context"): verify_uiux_context,
+    ("mobile-uiux", "philosophy"): verify_uiux_philosophy,
+    ("mobile-uiux", "system"): verify_mobile_uiux_system,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Verify skill phase checkpoint")
-    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate"])
+    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate", "uiux", "mobile-uiux"])
     parser.add_argument("--phase", required=True)
     parser.add_argument("--issue", required=True, help="Issue ID (e.g. ISSUE-001)")
 

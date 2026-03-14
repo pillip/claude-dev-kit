@@ -65,6 +65,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    - If approved, proceed with these as soft constraints (not hard).
    - If rejected, re-offer the interview questions or accept corrections.
 
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify Phase 1 outputs: `docs/ux_spec.md` exists, PRD was read, interview answers (or auto-derived constraints) are recorded.
+> If any required input is missing: STOP and report to user.
+
 ### Phase 2 — Design Philosophy (CRITICAL — before any code)
 6) Analyze the product's identity from PRD and UX spec:
    - Who are the users? What's the emotional tone?
@@ -87,6 +91,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    - What makes this design UNFORGETTABLE — the one thing someone will remember
 9) Present the design philosophy to the user and ask for approval before proceeding.
    - If rejected, iterate on the direction.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/design_philosophy.md` exists with Decision Matrix and Reference Anchors populated.
+> If missing or incomplete: STOP and fix before proceeding.
 
 ### Phase 3 — Design System
 9) Generate `docs/design_system.md` reflecting the chosen aesthetic:
@@ -127,6 +135,11 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - Phase 1에서 이미 읽은 `docs/ux_spec.md`, PRD 내용과 Phase 2-4에서 생성한 문서 내용을 메모리에서 가져와 subagent prompt에 포함한다 — 파일을 다시 읽지 않는다.
     - The copy guide must align with the design philosophy's tone (e.g., "Ink & Paper" → restrained, precise language).
     - This step MUST complete before Phase 5 so the prototype uses real copy, not placeholder text.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, and `docs/copy_guide.md` all exist.
+> Cross-check: every component in wireframes has a definition in design_system.md.
+> If any output is missing: STOP and generate it before proceeding.
 
 ### Phase 5 — HTML/CSS Prototype
 13) Ensure `prototype/` and `prototype/screens/` directories exist.

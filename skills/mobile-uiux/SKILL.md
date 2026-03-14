@@ -70,6 +70,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    - If approved, proceed with these as soft constraints (not hard).
    - If rejected, re-offer the interview questions or accept corrections.
 
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify Phase 1 outputs: `docs/ux_spec.md` exists, PRD was read, interview answers (or auto-derived/reused constraints) are recorded.
+> If any required input is missing: STOP and report to user.
+
 ### Phase 2 — Design Philosophy (조건부 — CRITICAL before any code)
 6) Check if `docs/design_philosophy.md` already exists:
    - **If exists**: Read the file, present it to the user, and ask: "웹에서 생성된 디자인 철학이 있습니다. 모바일에도 동일하게 적용할까요, 아니면 모바일에 맞게 수정할까요?"
@@ -94,6 +98,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    - What makes this design UNFORGETTABLE
 10) Present the design philosophy to the user and ask for approval before proceeding.
     - If rejected, iterate on the direction.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/design_philosophy.md` exists with Decision Matrix and Reference Anchors populated.
+> If missing or incomplete: STOP and fix before proceeding.
 
 ### Phase 3 — Mobile Design System
 11) Generate `docs/design_system_mobile.md` reflecting the chosen aesthetic:
@@ -145,6 +153,11 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
       - Include FULL CONTENT of input documents in the subagent prompt.
       - This step MUST complete before Phase 5 so the prototype uses real copy.
 16-a) **Accessibility labels (REQUIRED)**: Ensure `copy_guide.md` includes `accessibilityLabel` for EVERY interactive element (buttons, toggles, list items, navigation items, form inputs). Also include state-change announcement strings for VoiceOver/TalkBack (e.g., "달리기 완료", "달리기 체크 해제"). This is mandatory per NFR accessibility requirements.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Verify `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, and `docs/copy_guide.md` all exist.
+> Cross-check: every component in wireframes has a definition in design_system_mobile.md.
+> If any output is missing: STOP and generate it before proceeding.
 
 ### Phase 5 — React Native Prototype
 16) Create the `prototype-mobile/` directory structure:

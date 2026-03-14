@@ -754,3 +754,30 @@ def test_sprint_skill_has_agent_selection_table():
     assert "developer" in content and "diagnostician" in content, (
         "sprint SKILL.md Agent Selection table is incomplete"
     )
+
+
+# ── Test 34: checkpoints in design skills ─────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "skill,min_checkpoints",
+    [("uiux", 3), ("mobile-uiux", 3)],
+    ids=["uiux", "mobile-uiux"],
+)
+def test_design_skill_has_checkpoint_markers(skill, min_checkpoints):
+    path = SKILL_DIR / skill / "SKILL.md"
+    assert path.exists(), f"skills/{skill}/SKILL.md not found"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= min_checkpoints, (
+        f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
+    )
+
+
+def test_verify_checkpoint_supports_design_skills():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    content = script.read_text(encoding="utf-8")
+    for skill in ["uiux", "mobile-uiux"]:
+        assert f'"{skill}"' in content, (
+            f"verify_checkpoint.py does not support skill: {skill}"
+        )
