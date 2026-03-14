@@ -20,6 +20,7 @@ Algorithm:
    - **Manual check**: If the issue has `Manual: true`, STOP immediately. Report to the user: "This issue requires manual action — see Implementation Notes." Do NOT proceed with automated implementation.
 2b) Gather context — read the following docs (if they exist, skip silently if not).
    **Read all applicable documents via parallel Read tool calls in a single message. Do NOT read them sequentially.**
+   - `docs/prd_digest.md` — quick PRD context (goals, features, NFRs, scope)
    - `docs/architecture.md` — tech stack, modules, API design
    - `docs/data_model.md` — schema, indexes, query patterns, seed data, migrations
    - `docs/requirements.md` — related FRs/NFRs referenced by the issue

@@ -20,7 +20,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    - `docs/ux_spec.md` — 화면 목록, IA, 플로우 추출
    - `docs/requirements.md` — 기능 요구사항에서 UI 요소 식별
    - `docs/architecture.md` — 기술 스택, API 엔드포인트 확인
-2) Read PRD (`$ARGUMENTS` or `PRD.md`) as supplementary context.
+2) Read PRD (`$ARGUMENTS` or `PRD.md`) as supplementary context. If `docs/prd_digest.md` exists, read it for quick PRD summary.
 3) If `docs/ux_spec.md` does not exist:
    - Stop and tell the user: "kickoff 산출물이 없습니다. 먼저 `/kickoff PRD.md`를 실행해주세요."
    - Exception: if the user explicitly wants to skip kickoff, proceed with PRD only (warn about limited context).

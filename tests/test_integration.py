@@ -68,6 +68,7 @@ EXPECTED_TEMPLATES = {
     "requirements.md": ["Goals", "User Stories"],
     "architecture.md": ["Overview", "Modules", "Data Model"],
     "test_plan.md": ["Strategy", "Critical Flows", "E2E Testing Strategy", "Backend Robustness"],
+    "prd_digest.md": ["Goals", "Target User", "Must-have Features"],
     "ux_spec.md": ["Key Flows", "Accessibility"],
     "issues.md": ["Conventions", "Board"],
     "review_lessons.md": ["Patterns"],
