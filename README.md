@@ -30,6 +30,47 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 > `/uiux`는 UI가 있는 프로젝트에서 선택적으로 사용합니다. UI가 없는 백엔드/CLI 프로젝트는 `/kickoff` → `/implement`로 바로 진행합니다.
 > `/sprint`은 여러 이슈를 team-lead가 자동 오케스트레이션합니다. 단일 이슈는 `/implement`로 직접 진행합니다.
 
+### Decision Tree — Which skill should I use?
+
+```
+START
+ │
+ ├─ 아이디어만 있고 방향이 불확실?
+ │   └─ YES → /brainstorm → 사업성 검증 필요? → /bizanalysis → /prd
+ │
+ ├─ PRD가 없다?
+ │   └─ YES → /prd
+ │
+ ├─ PRD는 있지만 planning docs가 없다?
+ │   └─ YES → /kickoff PRD.md
+ │
+ ├─ Planning docs 완료, UI가 있는 프로젝트?
+ │   ├─ 웹 → /uiux
+ │   └─ 모바일 → /mobile-uiux
+ │
+ ├─ 이슈를 추가로 만들고 싶다?
+ │   └─ YES → /issue "설명"
+ │
+ ├─ 구현할 이슈가 여러 개?
+ │   ├─ YES → /sprint (team-lead가 자동 오케스트레이션)
+ │   └─ 단일 이슈 → /implement ISSUE-001
+ │
+ ├─ PR이 올라왔다?
+ │   └─ YES → /review ISSUE-001 → /ship
+ │
+ ├─ 버그가 발생했다?
+ │   └─ YES → /diagnose "에러 설명"
+ │
+ ├─ 의존성/런타임 업그레이드?
+ │   └─ YES → /migrate "target"
+ │
+ ├─ 코드 구조 개선?
+ │   └─ YES → /refactor path/to/module
+ │
+ └─ CI/CD, Docker, 배포 설정?
+     └─ YES → /devops "target"
+```
+
 | Skill | Description | Outputs |
 |-------|-------------|---------|
 | `/brainstorm [idea]` | Interactive brainstorming via Socratic dialogue | `docs/brainstorm_notes.md` |

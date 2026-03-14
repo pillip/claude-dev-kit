@@ -796,3 +796,16 @@ def test_kickoff_has_cross_document_validation():
         assert check in content, (
             f"kickoff cross-validation does not reference {check}"
         )
+
+
+# ── Test 36: README Decision Tree ─────────────────────────────────────
+
+
+def test_readme_has_decision_tree():
+    """README should contain a Decision Tree guiding users to the right skill."""
+    content = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "Decision Tree" in content, "README missing Decision Tree section"
+    for skill in ["/brainstorm", "/prd", "/kickoff", "/uiux", "/mobile-uiux",
+                  "/sprint", "/implement", "/review", "/ship", "/diagnose",
+                  "/migrate", "/refactor", "/devops", "/issue"]:
+        assert skill in content, f"Decision Tree missing reference to {skill}"
