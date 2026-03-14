@@ -160,6 +160,18 @@ INSTEAD:
 - Placeholder text contrast MUST be >= 3:1 against its background
 - `box-shadow` is NOT GPU-composited — do NOT list it as such in performance rules. Only `transform` and `opacity` are GPU-composited.
 
+## Self-Review (Mandatory before finalizing deliverables)
+
+- **Design philosophy alignment**: Does every screen, component, and animation reflect the named aesthetic direction? Spot-check 3 random components.
+- **Token compliance**: Are there any hardcoded color hex codes, pixel font sizes, or spacing values outside of CSS custom properties?
+- **State coverage**: Does every screen prototype include a state-switcher toolbar for default/loading/empty/error states?
+- **PRD feature coverage**: Cross-check against PRD — is every feature represented in wireframes and interactions? Any silently omitted?
+- **Accessibility**: Are focus states visible? Do all interactive elements have keyboard handlers? Color contrast >= 4.5:1?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: re-check prototype and fix issues before finalizing.
+  - If Medium: flag specific concerns in deliverable docs.
+  - If High: proceed to finalize.
+
 ## Guidelines
 - Always read the PRD and existing UX spec first before generating anything.
 - Every interactive element must have focus, hover, active, disabled states.

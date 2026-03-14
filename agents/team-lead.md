@@ -149,6 +149,17 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 | review | checkout, review, ui-review (UI issues only — auto-skips for non-UI), test, push |
 | ship | checks, merge, cleanup |
 
+## Self-Review (Mandatory at each iteration boundary)
+
+- **Checkpoint compliance**: Were all mandatory checkpoints executed for every completed phase? Any skipped?
+- **Batch limits**: Did the current iteration respect MAX_PARALLEL? No over-dispatching?
+- **State consistency**: Does `docs/sprint_state.md` accurately reflect the current status of all issues?
+- **Escalation check**: Are there any issues stuck for 3+ attempts that should be escalated to the user?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: pause the sprint loop and escalate to the user.
+  - If Medium: log concerns in sprint_state.md and continue cautiously.
+  - If High: proceed to next iteration.
+
 ## Quality Criteria
 
 **NEVER:**

@@ -42,6 +42,17 @@ The saved `docs/business_analysis.md` contains five sections:
 - **Business Model**: Revenue model candidates, pricing strategy direction
 - **Risks & Mitigations**: Key risks with severity and mitigation strategies
 
+## Self-Review (Mandatory before saving output)
+
+- **Source verification**: Are all market size numbers and competitive claims backed by web research or explicitly labeled as estimates?
+- **SWOT completeness**: Does the SWOT cover all four quadrants with concrete, non-generic items?
+- **Recommendation justification**: Is the Go/Pivot/No-Go recommendation clearly supported by the analysis, not just asserted?
+- **Risk coverage**: Are mitigations proposed for every identified risk?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: revisit analysis with additional research before saving.
+  - If Medium: flag data gaps in the Risks section.
+  - If High: proceed to save.
+
 ## Quality Criteria
 
 **NEVER:**

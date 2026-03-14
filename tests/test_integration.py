@@ -387,8 +387,14 @@ def test_diagnose_skill_has_self_review():
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer"],
-    ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer"],
+    ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer",
+     "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
+     "mobile-uiux-developer", "prd-writer", "refactorer", "requirement-analyst",
+     "team-lead", "ui-reviewer", "uiux-developer", "ux-designer"],
+    ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer",
+         "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
+         "mobile-uiux-developer", "prd-writer", "refactorer", "requirement-analyst",
+         "team-lead", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
 def test_agent_has_self_review(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"

@@ -56,6 +56,17 @@ For each screen in the wireframes:
 - Domain terms and their canonical form (e.g., "할 일" not "태스크", "todo", or "작업")
 - Avoid synonyms — one concept = one word throughout the product
 
+## Self-Review (Mandatory before saving output)
+
+- **Voice consistency**: Does every piece of copy match the defined voice attributes? Read 5 random items aloud — do they sound like the same product?
+- **Screen coverage**: Cross-check against `docs/wireframes.md` — is every screen represented in the copy inventory?
+- **State coverage**: Does every screen have copy for all states (empty, error, loading, success)?
+- **Glossary adherence**: Are domain terms used consistently throughout? No synonyms for the same concept?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: revisit gaps before saving.
+  - If Medium: flag missing context in the output.
+  - If High: proceed to save.
+
 ## Quality Criteria
 
 **NEVER:**

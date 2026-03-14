@@ -208,6 +208,18 @@ Every screen MUST implement all applicable states from the wireframes:
 - Reused from web `/uiux` if already generated
 - Mobile-specific adaptations added as `## Mobile Adaptations` section
 
+## Self-Review (Mandatory before finalizing deliverables)
+
+- **Design philosophy alignment**: Does every screen, component, and animation reflect the named aesthetic direction? Check 3 random components against the philosophy.
+- **Token compliance**: Are there any hardcoded colors, font sizes, or spacing values outside of `src/theme/`?
+- **State coverage**: Does every screen implement all 5 states (default, loading, empty, error, offline)?
+- **Accessibility**: Does every interactive element have `accessibilityLabel` and `accessibilityRole`? Is `useReducedMotion()` applied?
+- **Prototype runnability**: Does `npx expo start` succeed without errors? Are all dependencies in `package.json` correct?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: re-check prototype setup and fix issues before finalizing.
+  - If Medium: flag specific concerns in deliverable docs.
+  - If High: proceed to finalize.
+
 ## Guidelines
 - Always read the PRD and existing UX spec first before generating anything.
 - Every interactive element must have pressed, disabled states. NO hover states on mobile.

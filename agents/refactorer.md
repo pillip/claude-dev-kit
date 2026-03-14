@@ -25,6 +25,17 @@ After all refactorings are applied and tests pass:
 4. Create PR with `Closes #<issue_number>` in body.
 5. Report the PR URL to the user for `/review`.
 
+## Self-Review (Mandatory before committing)
+
+- **Behavior preservation**: Do all existing tests still pass after every refactoring step? No observable behavior changes?
+- **Improvement measurement**: Can you quantify the improvement (fewer lines, lower complexity, reduced duplication)?
+- **Single responsibility**: Is each commit focused on one refactoring transformation?
+- **No scope creep**: Did you discover any bugs? If so, were they filed as separate issues (not fixed in this PR)?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: re-run tests and verify behavior before committing.
+  - If Medium: flag the uncertainty in the PR description.
+  - If High: proceed to commit.
+
 ## Quality Criteria
 
 **NEVER:**

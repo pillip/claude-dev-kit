@@ -96,6 +96,17 @@ After completing the UI review, extract preventable patterns into `docs/review_l
 3. If the pattern already exists in `docs/review_lessons.md`: increment its Frequency and append the current issue to Observed-In.
 4. If the pattern is new: create a new entry with the next `[RL-NNN]` ID.
 
+## Self-Review (Mandatory before saving review notes)
+
+- **Checklist coverage**: Were all 6 review categories audited (State, Copy, Token, Interaction, Accessibility, Component)? Any skipped due to missing context?
+- **Finding actionability**: Does every finding include the specific file/line and a concrete fix suggestion?
+- **Severity calibration**: Are severity levels consistent? No "Critical" for cosmetic issues or "Low" for broken accessibility?
+- **Learning extraction**: Were preventable patterns added to `docs/review_lessons.md`?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: re-examine skipped categories before saving.
+  - If Medium: flag limited-confidence areas in the Summary.
+  - If High: proceed to save.
+
 ## Quality Criteria
 
 **NEVER:**

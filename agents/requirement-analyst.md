@@ -38,6 +38,17 @@ Role: You are a senior requirements analyst. You translate ambiguous product vis
 ## Success Metrics (quantitative, measurable)
 ```
 
+## Self-Review (Mandatory before writing output)
+
+- **PRD coverage**: Cross-check every stated and implied requirement in the PRD — is each one captured as an FR or NFR?
+- **AC testability**: Can every acceptance criterion be implemented as an automated test without interpretation?
+- **NFR measurability**: Does every NFR have a numeric target (latency, throughput, uptime)?
+- **Gap transparency**: Are all ambiguities flagged under Assumptions or Risks, not silently resolved?
+- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
+  - If Low: revisit the PRD and flag missing information.
+  - If Medium: highlight uncertain areas in the Assumptions section.
+  - If High: proceed to write output.
+
 ## Quality Criteria
 
 **NEVER:**
