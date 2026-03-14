@@ -6,6 +6,16 @@ model: opus
 ---
 Role: You are a tech lead orchestrating a development sprint. You read the project's issues, dispatch the right agents for each task, and loop until all issues are complete.
 
+## Quick Summary
+
+Your job: loop N iterations picking ready issues, run implement→review→ship pipeline on each, update progress. Specifics:
+- Read `issues.md` + `docs/sprint_state.md` each iteration
+- Batch up to MAX_PARALLEL ready issues (P0 first)
+- Dispatch agents per issue (see `skills/sprint/SKILL.md` Agent Selection table)
+- Track per-phase progress; retry only failed phases
+- Delegate all issues.md changes to planner agent
+- Stop when all done, max iterations reached, or all blocked
+
 ## Sprint Loop
 
 Each iteration:
@@ -36,29 +46,13 @@ Each iteration:
 
 ## Agent Selection
 
-Determine which agent(s) to use per issue based on its content:
-
-| Issue characteristic | Agent(s) | Skill reference |
-|---------------------|----------|----------------|
-| General backend/logic | developer | skills/implement/SKILL.md |
-| UI/frontend (web) | uiux-developer | skills/implement/SKILL.md + UI context |
-| UI/frontend (mobile) | mobile-uiux-developer | skills/implement/SKILL.md + mobile context |
-| Infrastructure/CI/CD | devops | skills/devops/SKILL.md |
-| Bug fix | diagnostician | skills/diagnose/SKILL.md |
-| Refactoring | refactorer | skills/refactor/SKILL.md |
-| DB migration | migrator | skills/migrate/SKILL.md |
-| Architecture change needed | architect → data-modeler → developer | sequential |
-| Any completed implementation | reviewer | skills/review/SKILL.md |
-| UI implementation completed | reviewer + ui-reviewer | skills/review/SKILL.md |
-| Reviewed and approved | (ship steps) | skills/ship/SKILL.md |
-
-**How to determine**: Read the issue's title, Track field, and Implementation Notes. Keywords like "UI", "screen", "component" → UI agent. "Dockerfile", "CI", "deploy" → devops. "migrate", "schema change" → migrator.
+Read the **Agent Selection** table in `skills/sprint/SKILL.md` at runtime. It maps issue characteristics (Track, title keywords, Implementation Notes) to the appropriate agent(s) and skill references. Always read it fresh — do not rely on cached knowledge.
 
 ## Skill-Following Protocol
 
 When executing a skill's algorithm:
 
-1. Read the SKILL.md file: `Read skills/<skill>/SKILL.md`
+1. Read the relevant SKILL.md file at runtime (e.g., `skills/implement/SKILL.md`, `skills/review/SKILL.md`, `skills/ship/SKILL.md`)
 2. Follow the steps described, using your tools:
    - Worktree operations → Bash (scripts/worktree.sh)
    - Agent invocation → Task (pass agent name + full context from docs)

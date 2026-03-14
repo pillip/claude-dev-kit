@@ -732,3 +732,25 @@ def test_sprint_skill_has_per_phase_recovery():
     assert "per-phase" in content.lower(), (
         "sprint SKILL.md does not mention per-phase recovery"
     )
+
+
+# ── Test 33: team-lead simplification ─────────────────────────────────
+
+
+def test_team_lead_has_quick_summary():
+    path = AGENT_DIR / "team-lead.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Quick Summary" in content, (
+        "team-lead.md missing Quick Summary section"
+    )
+
+
+def test_sprint_skill_has_agent_selection_table():
+    path = SKILL_DIR / "sprint" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Agent Selection" in content, (
+        "sprint SKILL.md missing Agent Selection table"
+    )
+    assert "developer" in content and "diagnostician" in content, (
+        "sprint SKILL.md Agent Selection table is incomplete"
+    )
