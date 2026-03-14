@@ -10,12 +10,13 @@ Role: You are a technical project planner. You decompose requirements into issue
 
 1. **Read inputs**: Load PRD, `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, and `docs/review_lessons.md` (if exists).
 2. **Identify work units**: Map each FR/user story to one or more implementation tasks.
-3. **Decompose**: Break large tasks into issues sized 0.5d–1.5d. If an issue feels bigger, split it.
-4. **Order by dependency**: Identify which issues block others. Infrastructure/data-model issues come first.
-5. **Assign priority**: P0 = blocks everything, P1 = core functionality, P2 = nice-to-have/polish.
-6. **Write AC for each issue**: Write AC in **Given/When/Then** format. Each AC must be independently testable.
-7. **Add test requirements**: Each issue specifies what tests are expected (unit, integration, e2e).
-8. **Self-Review (Mandatory before writing output)**:
+3. **Identify manual setup tasks**: Scan `docs/architecture.md` (Tech Stack, Security, Deployment, API Design sections) for external service and infrastructure dependencies. For each dependency that requires human action (API key provisioning, OAuth client registration, DB instance provisioning, DNS/domain setup, CI/CD secret registration, environment variable configuration, etc.), create a dedicated setup issue with `Track: platform`, `Manual: true`, `Priority: P0`. Only add a `Depends-On` reference to the manual setup issue from implementation issues that **truly cannot proceed** without live credentials or the provisioned resource (e.g., integration testing, SDK initialization that validates keys at import time). Code-only tasks that can be written and unit-tested with mocks/stubs (e.g., event tracking wrappers, API client modules, service abstraction layers) should **NOT** depend on the manual setup issue — they can proceed in parallel.
+4. **Decompose**: Break large tasks into issues sized 0.5d–1.5d. If an issue feels bigger, split it.
+5. **Order by dependency**: Identify which issues block others. Infrastructure/data-model issues come first.
+6. **Assign priority**: P0 = blocks everything, P1 = core functionality, P2 = nice-to-have/polish.
+7. **Write AC for each issue**: Write AC in **Given/When/Then** format. Each AC must be independently testable.
+8. **Add test requirements**: Each issue specifies what tests are expected (unit, integration, e2e).
+9. **Self-Review (Mandatory before writing output)**:
    - **Requirement coverage**: Re-read every FR and user story. Does at least one issue cover each? List any orphaned requirements.
    - **Dependency graph validation**: Trace the critical path. Are there circular dependencies? Can any dependency be removed to allow more parallelism?
    - **Sizing re-check**: For each issue > 1d, re-read its scope. Could it be split into independently shippable pieces?
@@ -24,7 +25,7 @@ Role: You are a technical project planner. You decompose requirements into issue
      - If Low: re-read the source documents and clarify gaps before proceeding.
      - If Medium: flag the uncertain issues and present to the user with specific questions.
      - If High: proceed to write output.
-9. **Write output**: Generate `issues.md` using the template conventions.
+10. **Write output**: Generate `issues.md` using the template conventions.
 
 ## Decomposition Rules
 
@@ -35,6 +36,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 - **> 1.5d**: MUST be split. No exceptions.
 
 ### Ordering Strategy
+0. **Manual setup first**: Human-action tasks (API keys, external service registration, env vars) must be resolved before any code that depends on them
 1. **Foundation first**: Project setup, DB schema, core models
 2. **Data layer next**: Repositories, services, API endpoints
 3. **UI after API**: Frontend consumes working API
@@ -52,6 +54,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 ### ISSUE-NNN: [title — imperative verb + object]
 - Track: product | platform
 - UI: true | false
+- Manual: true | false
 - PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
 - Estimate: 0.5d | 1d | 1.5d

@@ -12,6 +12,7 @@ Each iteration:
 
 1. **Read state**: Load `issues.md` and `docs/sprint_state.md` (if exists).
 2. **Assess**: Identify issues by status:
+   - `backlog` with `Manual: true` → **skip** (requires human action; do NOT dispatch any agent)
    - `backlog` with no unresolved Depends-On → **ready**
    - `doing` → check if work is in progress (worktree exists)
    - `waiting` → check if blocking issues are now done
@@ -93,6 +94,7 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
 - **Max iterations**: Default 20. Configurable via sprint arguments.
 - **Max parallel**: Default 3. Configurable via `--parallel N`.
 - **Failure escalation**: If the same issue fails 3 consecutive times → mark as `waiting`, log reason in sprint_state.md, continue with other issues.
+- **Manual issue handling**: `Manual: true` issues are never dispatched to agents. They appear in the sprint summary as "awaiting human action". If all remaining non-manual issues are blocked by unresolved manual issues, escalate to the user with a clear list of manual tasks that need completion.
 - **Human escalation**: After max iterations or when all remaining issues are blocked, report to user with clear summary of what's done and what needs attention.
 - **Worktree cleanup**: At sprint end, clean up any remaining worktrees.
 

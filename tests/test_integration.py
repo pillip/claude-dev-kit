@@ -535,6 +535,53 @@ def test_issue_skill_references_validate_issues():
 # ── Test 26: design_philosophy template has Decision Matrix and Reference Anchors
 
 
+# ── Test 26: Manual setup field ───────────────────────────────────────
+
+
+def test_planner_has_manual_setup_detection():
+    path = AGENT_DIR / "planner.md"
+    content = path.read_text(encoding="utf-8")
+    assert "manual" in content.lower(), (
+        "agents/planner.md does not contain manual setup detection logic"
+    )
+    assert "Manual" in content, (
+        "agents/planner.md does not reference Manual field"
+    )
+
+
+def test_issue_template_has_manual_field():
+    path = TEMPLATE_DIR / "issues.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Manual" in content, (
+        "templates/issues.md does not contain Manual field"
+    )
+    assert "Manual: true | false" in content, (
+        "templates/issues.md missing 'Manual: true | false' in issue detail"
+    )
+
+
+def test_issue_writer_has_manual_field():
+    path = AGENT_DIR / "issue-writer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Manual" in content, (
+        "agents/issue-writer.md does not reference Manual field"
+    )
+
+
+def test_team_lead_skips_manual_issues():
+    path = AGENT_DIR / "team-lead.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Manual" in content, (
+        "agents/team-lead.md does not handle Manual issues"
+    )
+    assert "skip" in content.lower(), (
+        "agents/team-lead.md should skip Manual: true issues"
+    )
+
+
+# ── Test 27: design_philosophy template ──────────────────────────────
+
+
 def test_design_philosophy_template_has_decision_matrix():
     path = TEMPLATE_DIR / "design_philosophy.md"
     assert path.exists(), "Template design_philosophy.md not found"

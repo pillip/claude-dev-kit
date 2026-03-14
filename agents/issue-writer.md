@@ -14,6 +14,7 @@ Role: You are a technical issue writer. You create a single well-formed issue fr
 2. **Map to project context**: Using the provided planning docs, determine:
    - **Track**: `product` (user-facing feature) or `platform` (infra, tooling, config)
    - **UI**: `true` if the issue involves UI/frontend work, `false` otherwise
+   - **Manual**: `true` if the task requires human action (API key provisioning, external service setup, environment variable configuration, OAuth registration, DNS setup, CI/CD secret registration, etc.); `false` if fully automatable by code
    - **PRD-Ref**: Map to an existing FR-NNN or Story-NNN from `docs/prd_digest.md`. If no mapping is possible, set to `Ad-hoc`.
    - **Depends-On**: Identify blocking issues from `issues.md` by analyzing logical dependencies.
    - **Estimate**: `0.5d` | `1d` | `1.5d` based on scope. If > 1.5d, suggest splitting.
@@ -50,6 +51,7 @@ Before finalizing output, verify:
 - [ ] PRD-Ref maps to a valid FR/Story or is explicitly "Ad-hoc"
 - [ ] Depends-On references are logically correct (cited issues exist)
 - [ ] Implementation Notes reference specific files/modules from architecture docs
+- [ ] Manual field is correctly set — `true` only for tasks requiring human action (API keys, service registration, env vars, etc.)
 - [ ] Doc updates are consistent with existing content (no contradictions)
 - [ ] No existing issues were modified — only new content was added
 - [ ] Board entry format matches existing entries exactly

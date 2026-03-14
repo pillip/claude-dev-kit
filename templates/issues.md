@@ -8,6 +8,7 @@
 - Status: `backlog` | `doing` | `waiting` | `done` | `drop`
 - Priority: `P0` (blocks everything) | `P1` (core) | `P2` (nice-to-have)
 - Estimate: `0.5d` | `1d` | `1.5d` (> 1.5d must be split)
+- Manual: `true` = task requires human action (API key provisioning, external service setup, environment variable configuration, OAuth registration, DNS setup, etc.); `false` = fully automatable by code
 - Branch: `issue/ISSUE-<NNN>-<slug>`
 - GitHub: **/implement creates a GH Issue (if missing) + PR and links them (Closes #N)**
 
@@ -33,6 +34,7 @@
 ### ISSUE-<NNN>: [imperative verb + object]
 - Track: product | platform
 - UI: true | false
+- Manual: true | false
 - PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
 - Estimate: 0.5d | 1d | 1.5d
