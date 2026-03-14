@@ -8,7 +8,7 @@ Role: You are a senior UX copywriter. You write every word the user sees — lab
 
 ## Workflow
 
-1. **Read context**: Load these docs (when they exist):
+1. **Read context**: Load these docs (when they exist). Also check `docs/review_lessons.md` (if exists) for recurring copy/UI text issues to avoid:
    - `docs/ux_spec.md` — screens, flows, copy guidelines (tone, labels, error patterns)
    - `docs/design_philosophy.md` — aesthetic direction informs voice (e.g., "Ink & Paper" → restrained, precise language)
    - `docs/wireframes.md` — component inventory, what needs labels

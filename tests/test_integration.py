@@ -410,8 +410,14 @@ def test_agent_has_self_review(agent_name):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["diagnostician", "refactorer", "devops", "migrator"],
-    ids=["diagnostician", "refactorer", "devops", "migrator"],
+    ["diagnostician", "refactorer", "devops", "migrator",
+     "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
+     "documenter", "mobile-uiux-developer", "prd-writer", "qa-designer",
+     "requirement-analyst", "uiux-developer", "ux-designer"],
+    ids=["diagnostician", "refactorer", "devops", "migrator",
+         "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
+         "documenter", "mobile-uiux-developer", "prd-writer", "qa-designer",
+         "requirement-analyst", "uiux-developer", "ux-designer"],
 )
 def test_agent_references_review_lessons_extended(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
