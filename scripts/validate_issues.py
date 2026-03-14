@@ -8,6 +8,9 @@ Checks each issue for:
 - Depends-On not empty ("none" is valid)
 - No duplicate ISSUE numbers
 - AC uses Given/When/Then format
+- Depends-On references exist (no dangling references)
+- No circular dependencies (DAG validation)
+- Dependency chain depth ≤ 3 (warning if exceeded)
 
 Exit code is always 0 (non-blocking). Violations are printed to stdout.
 """
@@ -115,7 +118,94 @@ def validate(issues: list[dict]) -> list[str]:
         if not issue["depends_on"]:
             warnings.append(f"{iid}: Depends-On is empty")
 
+    # Cross-issue validations
+    all_ids = {issue["id"] for issue in issues}
+    dep_graph = _build_dependency_graph(issues)
+
+    # Check for dangling references
+    for issue in issues:
+        deps = _parse_depends_on(issue["depends_on"])
+        for dep in deps:
+            if dep not in all_ids:
+                warnings.append(f"{issue['id']}: Depends-On references {dep} which does not exist")
+
+    # Check for cycles
+    cycles = _detect_cycles(dep_graph)
+    for cycle in cycles:
+        warnings.append(f"circular dependency detected: {' → '.join(cycle)}")
+
+    # Check for deep dependency chains
+    for issue in issues:
+        depth = _max_chain_depth(issue["id"], dep_graph, all_ids)
+        if depth > 3:
+            warnings.append(
+                f"{issue['id']}: dependency chain depth is {depth} (warning: > 3)"
+            )
+
     return warnings
+
+
+def _parse_depends_on(depends_on: str) -> list[str]:
+    """Parse Depends-On field into a list of issue IDs."""
+    if not depends_on or depends_on.strip().lower() == "none":
+        return []
+    return [d.strip() for d in depends_on.split(",") if d.strip().startswith("ISSUE-")]
+
+
+def _build_dependency_graph(issues: list[dict]) -> dict[str, list[str]]:
+    """Build adjacency list: issue -> list of issues it depends on."""
+    graph: dict[str, list[str]] = {}
+    for issue in issues:
+        graph[issue["id"]] = _parse_depends_on(issue["depends_on"])
+    return graph
+
+
+def _detect_cycles(graph: dict[str, list[str]]) -> list[list[str]]:
+    """Detect cycles in the dependency graph using DFS."""
+    cycles: list[list[str]] = []
+    visited: set[str] = set()
+    rec_stack: set[str] = set()
+
+    def _dfs(node: str, path: list[str]) -> None:
+        visited.add(node)
+        rec_stack.add(node)
+        path.append(node)
+
+        for neighbor in graph.get(node, []):
+            if neighbor not in visited:
+                _dfs(neighbor, path)
+            elif neighbor in rec_stack:
+                # Found cycle: extract the cycle from path
+                cycle_start = path.index(neighbor)
+                cycle = path[cycle_start:] + [neighbor]
+                cycles.append(cycle)
+
+        path.pop()
+        rec_stack.discard(node)
+
+    for node in graph:
+        if node not in visited:
+            _dfs(node, [])
+
+    return cycles
+
+
+def _max_chain_depth(
+    issue_id: str, graph: dict[str, list[str]], all_ids: set[str]
+) -> int:
+    """Calculate the maximum dependency chain depth for an issue."""
+    visited: set[str] = set()
+
+    def _depth(node: str) -> int:
+        if node in visited or node not in all_ids:
+            return 0
+        visited.add(node)
+        deps = graph.get(node, [])
+        if not deps:
+            return 0
+        return 1 + max(_depth(d) for d in deps)
+
+    return _depth(issue_id)
 
 
 def main(argv: list[str] | None = None) -> int:

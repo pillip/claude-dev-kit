@@ -638,3 +638,33 @@ def test_developer_has_e2e_guidance():
     assert "test_plan.md" in content, (
         "agents/developer.md does not reference test_plan.md for E2E strategy"
     )
+
+
+# ── Test 29: validate_issues.py dependency validation ─────────────────
+
+
+def test_validate_issues_has_cycle_detection():
+    script = SCRIPTS_DIR / "validate_issues.py"
+    content = script.read_text(encoding="utf-8")
+    assert "circular" in content.lower() or "cycle" in content.lower(), (
+        "validate_issues.py does not contain cycle detection logic"
+    )
+    assert "_detect_cycles" in content or "detect_cycle" in content, (
+        "validate_issues.py missing cycle detection function"
+    )
+
+
+def test_validate_issues_has_depth_warning():
+    script = SCRIPTS_DIR / "validate_issues.py"
+    content = script.read_text(encoding="utf-8")
+    assert "depth" in content.lower(), (
+        "validate_issues.py does not contain dependency depth check"
+    )
+
+
+def test_validate_issues_has_dangling_reference_check():
+    script = SCRIPTS_DIR / "validate_issues.py"
+    content = script.read_text(encoding="utf-8")
+    assert "does not exist" in content, (
+        "validate_issues.py does not check for dangling Depends-On references"
+    )
