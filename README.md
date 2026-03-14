@@ -15,6 +15,8 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 
 ```
 /brainstorm ──▶ /bizanalysis ──▶ /prd ──▶ /kickoff ──▶ /uiux ──▶ /sprint or /implement ──▶ /review ──▶ /ship
+                                              │
+                                              ├──▶ /issue (ad-hoc)
      │               │              │        │             │            │                       │            │
      ▼               ▼              ▼        ▼             ▼            ▼                       ▼            ▼
   Ideation     Business       Interactive  Requirements  Design      Code impl             Senior        Merge & deploy
@@ -34,6 +36,7 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 | `/bizanalysis [idea]` | Business viability analysis with market research | `docs/business_analysis.md` |
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
+| `/issue [description]` | 자연어로 단일 이슈 생성 + planning docs 자동 업데이트 | `issues.md`, `STATUS.md`, 관련 `docs/*.md` |
 | `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
 | `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_philosophy.md`, `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
 | `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
@@ -84,8 +87,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 21 agent definitions
-│   ├── skills/          # 14 skills
+│   ├── agents/          # 22 agent definitions
+│   ├── skills/          # 15 skills
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -233,7 +236,7 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ## Agents
 
-21 specialized agents, each with a defined role and tool permissions:
+22 specialized agents, each with a defined role and tool permissions:
 
 | Agent | Role | Tools |
 |-------|------|-------|
@@ -248,6 +251,7 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 | `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
 | `planner` | Break work into issues | Read, Glob, Grep, Write, Edit |
+| `issue-writer` | 자연어 → 단일 이슈 생성 + docs 업데이트 | Read, Glob, Grep, Write, Edit, Bash |
 | `qa-designer` | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
 | `team-lead` | Sprint orchestrator — dispatch agents, manage issues | Read, Glob, Grep, Write, Edit, Bash, Task |
 | `developer` | Implement code + GH Issue/PR | Read, Glob, Grep, Write, Edit, Bash |
@@ -263,7 +267,7 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (21)
+├── agents/                  # Agent role definitions (22)
 │   ├── brainstormer.md
 │   ├── business-analyst.md
 │   ├── prd-writer.md
@@ -275,6 +279,7 @@ claude-dev-kit/
 │   ├── architect.md
 │   ├── data-modeler.md
 │   ├── planner.md
+│   ├── issue-writer.md
 │   ├── qa-designer.md
 │   ├── team-lead.md
 │   ├── developer.md
@@ -285,11 +290,12 @@ claude-dev-kit/
 │   ├── migrator.md
 │   ├── refactorer.md
 │   └── devops.md
-├── skills/                  # Workflow skills (14)
+├── skills/                  # Workflow skills (15)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
 │   ├── kickoff/SKILL.md
+│   ├── issue/SKILL.md
 │   ├── uiux/SKILL.md
 │   ├── mobile-uiux/SKILL.md
 │   ├── sprint/SKILL.md

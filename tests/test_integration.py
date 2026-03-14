@@ -489,6 +489,52 @@ def test_verify_checkpoint_supports_all_skills():
 # ── Test 24: design_philosophy template has Decision Matrix and Reference Anchors
 
 
+# ── Test 25: issue-writer agent and issue skill ─────────────────────
+
+
+def test_issue_writer_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "issue-writer.md"
+    assert path.exists(), "agents/issue-writer.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"issue-writer.md missing frontmatter keys: {missing}"
+
+
+def test_issue_skill_exists_and_has_required_frontmatter():
+    path = SKILL_DIR / "issue" / "SKILL.md"
+    assert path.exists(), "skills/issue/SKILL.md not found"
+    fm = _parse_frontmatter(path)
+    missing = SKILL_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"issue SKILL.md missing frontmatter keys: {missing}"
+
+
+def test_issue_skill_references_issue_writer():
+    path = SKILL_DIR / "issue" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "issue-writer" in content, (
+        "skills/issue/SKILL.md does not reference issue-writer agent"
+    )
+
+
+def test_issue_writer_has_self_review():
+    path = AGENT_DIR / "issue-writer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "agents/issue-writer.md does not contain Self-Review section"
+    )
+
+
+def test_issue_skill_references_validate_issues():
+    path = SKILL_DIR / "issue" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "validate_issues" in content, (
+        "skills/issue/SKILL.md does not reference validate_issues"
+    )
+
+
+# ── Test 26: design_philosophy template has Decision Matrix and Reference Anchors
+
+
 def test_design_philosophy_template_has_decision_matrix():
     path = TEMPLATE_DIR / "design_philosophy.md"
     assert path.exists(), "Template design_philosophy.md not found"
