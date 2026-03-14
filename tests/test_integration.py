@@ -688,3 +688,19 @@ def test_implement_skill_checks_manual_field():
     assert "Manual: true" in content, (
         "skills/implement/SKILL.md missing Manual: true stop condition"
     )
+
+
+# ── Test 31: parallel context loading in skills ──────────────────────
+
+
+@pytest.mark.parametrize(
+    "skill",
+    ["sprint", "review", "implement"],
+    ids=["sprint", "review", "implement"],
+)
+def test_skill_specifies_parallel_context_loading(skill):
+    path = SKILL_DIR / skill / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "parallel" in content.lower(), (
+        f"skills/{skill}/SKILL.md does not specify parallel context loading"
+    )

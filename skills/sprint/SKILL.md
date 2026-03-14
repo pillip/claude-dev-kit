@@ -27,11 +27,13 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
    - If fresh, delete old sprint_state.md.
 
 3) Gather context for team-lead:
+   **Read all context files via parallel Read tool calls in a single message. Do NOT read them sequentially.**
    - `issues.md` — full content
    - `docs/sprint_state.md` — if resuming
    - `docs/review_lessons.md` — if exists
    - `docs/architecture.md` — if exists
    - `docs/data_model.md` — if exists
+   - `docs/prd_digest.md` — if exists (use as quick PRD context instead of full PRD)
    - Parse --parallel and --max-iterations from arguments
 
 4) Invoke team-lead agent via Task tool:

@@ -18,15 +18,19 @@ Steps:
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase checkout --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-3) Ask reviewer subagent to perform code review + security audit:
+3) Gather review context:
+   **Read all applicable context files via parallel Read tool calls in a single message.**
+   - `docs/review_lessons.md` — if exists (for recurring pattern detection)
+   - `docs/architecture.md` — if exists (for conformance checks)
+   - For UI issues, also read in parallel: `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`, `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`).
+
+   Ask reviewer subagent to perform code review + security audit:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
-   - Pass existing `docs/review_lessons.md` (if exists) as context so the reviewer can identify recurring patterns.
+   - Pass gathered context (review_lessons, architecture) so the reviewer can identify recurring patterns.
 3.5) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
    Ask ui-reviewer subagent to perform UI state review:
-   - Pass `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`,
-     `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`),
-     `docs/review_lessons.md` as context.
+   - Pass the UI context files gathered in step 3 plus `docs/review_lessons.md`.
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
    - Output: `docs/ui_review_notes.md` with severity-classified findings.
 
