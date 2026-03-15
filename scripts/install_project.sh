@@ -27,4 +27,23 @@ python3 "$KIT_ROOT/scripts/ensure_permissions.py" \
 # Register merge=ours driver for shared registry files (issues.md, STATUS.md, CHANGELOG.md)
 git -C "$PROJ_ROOT" config merge.ours.driver true 2>/dev/null || true
 
+# ── Linter / Formatter tools ──────────────────────────────────────────
+# ruff (Python)
+if ! command -v ruff &>/dev/null; then
+  if command -v uv &>/dev/null; then
+    uv tool install ruff 2>/dev/null || true
+  else
+    pip install ruff 2>/dev/null || pip3 install ruff 2>/dev/null || true
+  fi
+fi
+
+# prettier (JS/TS/CSS/JSON)
+if ! command -v prettier &>/dev/null; then
+  npm install -g prettier 2>/dev/null || true
+fi
+
+# ── Linter config symlinks ────────────────────────────────────────────
+ln -sfn "$KIT_ROOT/linters/ruff.toml" "$PROJ_ROOT/ruff.toml"
+ln -sfn "$KIT_ROOT/linters/.prettierrc.json" "$PROJ_ROOT/.prettierrc.json"
+
 echo "✅ Installed kit into: $PROJ_ROOT/.claude"
