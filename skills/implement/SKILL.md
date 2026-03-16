@@ -64,25 +64,36 @@ Algorithm:
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase worktree --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-6) Implement minimal code + tests inside `$WT/`.
+6) Implement minimal code inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase code --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-7) Run tests inside `$WT/`.
+7) **Write tests** inside `$WT/`.
+   - Every new behavior MUST have at least one test. No exceptions.
+   - Each AC (Acceptance Criterion) in the issue maps to at least one test case.
+   - Cover the happy path AND at least one error/edge case.
+   - Test files must follow project conventions (e.g., `test_*.py` in `tests/`).
+   - Do NOT skip this step. Code without tests will be rejected at checkpoint.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase tests-written --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+8) Run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-8) Commit + push (from `$WT/`).
+9) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase push --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-9) Create PR (or update):
+10) Create PR (or update):
    - Title: `[$ARGUMENTS] <title>`
    - Body begins with `Closes #<issue_number>`
 
@@ -90,7 +101,7 @@ Algorithm:
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase pr --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-10) Record PR URL in issues.md; set Status=done; update STATUS.md.
+11) Record PR URL in issues.md; set Status=done; update STATUS.md.
     Use main repo root for shared files:
     ```bash
     ROOT="$(bash scripts/worktree.sh root)"

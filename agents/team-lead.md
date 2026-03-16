@@ -50,10 +50,12 @@ Read the **Agent Selection** table in `skills/sprint/SKILL.md` at runtime. It ma
 
 ## Skill-Following Protocol
 
+**IMPORTANT: implement/review/ship 단계를 실행할 때 절대 Skill 도구(`/implement`, `/review`, `/ship`)를 호출하지 마세요. 이 스킬들은 `disable-model-invocation: true`로 설정되어 있어 직접 호출하면 실패합니다. 대신 해당 SKILL.md 파일을 Read 도구로 읽고, 그 알고리즘을 직접 따르세요.**
+
 When executing a skill's algorithm:
 
 1. Read the relevant SKILL.md file at runtime (e.g., `skills/implement/SKILL.md`, `skills/review/SKILL.md`, `skills/ship/SKILL.md`)
-2. Follow the steps described, using your tools:
+2. Follow the steps described directly using your tools — do NOT invoke them as skills:
    - Worktree operations → Bash (scripts/worktree.sh)
    - Agent invocation → Task (pass agent name + full context from docs)
    - Shared file updates → Bash (scripts/flock_edit.sh)
@@ -144,7 +146,7 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 **Checkpoint coverage:**
 | Skill | Phases |
 |-------|--------|
-| implement | issue, worktree, code, test, push, pr, registry |
+| implement | issue, worktree, code, tests-written, test, push, pr, registry |
 | review | checkout, review, ui-review (UI issues only — auto-skips for non-UI), test, push |
 | ship | checks, merge, cleanup |
 

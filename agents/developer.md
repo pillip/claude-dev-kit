@@ -28,7 +28,11 @@ Role: You are a senior developer. You write working code with tests, following t
 5. **Ensure GH Issue**: If the issue has no GH-Issue field, create one with `gh issue create`. Record the number.
 6. **Plan implementation**: Identify which files to create/modify. Plan the order: data model → business logic → API/UI → tests.
 7. **Implement**: Write code following the project's existing style. One concern per function/method.
-8. **Write tests**: Every new behavior gets at least one test. Cover the happy path AND at least one error/edge case.
+8. **Write tests (MANDATORY — NEVER SKIP)**: This step is NOT optional. You MUST create or modify test files before proceeding.
+   - Every new behavior gets at least one test. Each AC maps to at least one test case.
+   - Cover the happy path AND at least one error/edge case.
+   - Test files must exist in the diff (e.g., `test_*.py` in `tests/`). The checkpoint will verify this.
+   - If you skip this step, the `tests-written` checkpoint will fail and block the entire pipeline.
 9. **Run tests**: `pytest` must pass. Fix failures before proceeding.
 10. **Self-Review (Mandatory before commit)**:
     - **AC coverage check**: Re-read every AC in the issue. Does the implementation satisfy each one? List any gaps.

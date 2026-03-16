@@ -261,6 +261,53 @@ def verify_implement_code(issue_id: str, **_) -> bool:
     return True
 
 
+def verify_implement_tests_written(issue_id: str, **_) -> bool:
+    """Verify that test files were actually created or modified for this issue."""
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    base = _default_branch()
+
+    # Committed changes vs default branch
+    diff_committed = _run(["git", "diff", "--name-only", base], cwd=wt_path)
+    # Staged but not yet committed
+    diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
+    # Unstaged modifications
+    diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
+    # Untracked files
+    untracked = _run(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
+    )
+
+    all_files: set[str] = set()
+    for r in (diff_committed, diff_staged, diff_unstaged, untracked):
+        if r.returncode == 0 and r.stdout.strip():
+            all_files.update(r.stdout.strip().splitlines())
+
+    # Match test files: test_*.py, *_test.py, *.spec.ts, *.test.ts, etc.
+    test_pattern = re.compile(
+        r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
+    )
+    test_files = [f for f in all_files if test_pattern.search(f)]
+
+    # Also match files inside tests/ or __tests__/ directories
+    test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
+    test_dir_files = [f for f in all_files if test_dir_pattern.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+
+    all_test_files = sorted(set(test_files + test_dir_files))
+
+    if not all_test_files:
+        print("FAIL: no test files were created or modified.")
+        print("  Every new behavior must have at least one test.")
+        print("  Expected: test_*.py, *_test.py, *.spec.ts, or files in tests/ directory")
+        return False
+
+    print(f"PASS: {len(all_test_files)} test file(s) created/modified: {', '.join(all_test_files)}")
+    return True
+
+
 def verify_implement_test(issue_id: str, **_) -> bool:
     """pytest exits 0 (runs inside the issue's worktree if one exists)."""
     wt_path = _find_worktree_path(issue_id)
@@ -630,6 +677,7 @@ VERIFIERS = {
     ("implement", "issue"): verify_implement_issue,
     ("implement", "worktree"): verify_implement_worktree,
     ("implement", "code"): verify_implement_code,
+    ("implement", "tests-written"): verify_implement_tests_written,
     ("implement", "test"): verify_implement_test,
     ("implement", "push"): verify_implement_push,
     ("implement", "pr"): verify_implement_pr,
