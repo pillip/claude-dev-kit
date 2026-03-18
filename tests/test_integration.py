@@ -392,11 +392,11 @@ def test_diagnose_skill_has_self_review():
     ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer",
      "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
      "mobile-uiux-developer", "prd-writer", "refactorer", "requirement-analyst",
-     "team-lead", "ui-reviewer", "uiux-developer", "ux-designer"],
+     "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer",
          "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
          "mobile-uiux-developer", "prd-writer", "refactorer", "requirement-analyst",
-         "team-lead", "ui-reviewer", "uiux-developer", "ux-designer"],
+         "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
 def test_agent_has_self_review(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
@@ -415,11 +415,11 @@ def test_agent_has_self_review(agent_name):
     ["diagnostician", "refactorer", "devops", "migrator",
      "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
      "documenter", "mobile-uiux-developer", "prd-writer", "qa-designer",
-     "requirement-analyst", "uiux-developer", "ux-designer"],
+     "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
     ids=["diagnostician", "refactorer", "devops", "migrator",
          "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
          "documenter", "mobile-uiux-developer", "prd-writer", "qa-designer",
-         "requirement-analyst", "uiux-developer", "ux-designer"],
+         "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )
 def test_agent_references_review_lessons_extended(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
@@ -494,7 +494,7 @@ def test_secondary_skill_has_checkpoint_markers(skill, min_checkpoints):
 def test_verify_checkpoint_supports_all_skills():
     script = SCRIPTS_DIR / "verify_checkpoint.py"
     content = script.read_text(encoding="utf-8")
-    for skill in ["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate"]:
+    for skill in ["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate", "testgen"]:
         assert f'"{skill}"' in content, (
             f"verify_checkpoint.py does not support skill: {skill}"
         )
@@ -808,7 +808,8 @@ def test_readme_has_decision_tree():
     assert "Decision Tree" in content, "README missing Decision Tree section"
     for skill in ["/brainstorm", "/prd", "/kickoff", "/uiux", "/mobile-uiux",
                   "/sprint", "/implement", "/review", "/ship", "/diagnose",
-                  "/migrate", "/refactor", "/devops", "/issue"]:
+                  "/migrate", "/refactor", "/devops", "/issue", "/testgen",
+                  ]:
         assert skill in content, f"Decision Tree missing reference to {skill}"
 
 
@@ -1000,3 +1001,382 @@ def test_kit_troubleshooting_doc_exists():
     content = path.read_text(encoding="utf-8")
     for keyword in ["checkpoint", "gh auth", "worktree", "validate_issues"]:
         assert keyword in content, f"docs/troubleshooting.md missing keyword: {keyword}"
+
+
+# ── Test 47: testgen skill and test-generator agent ─────────────────
+
+
+def test_testgen_skill_exists_and_has_required_frontmatter():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    assert path.exists(), "skills/testgen/SKILL.md not found"
+    fm = _parse_frontmatter(path)
+    missing = SKILL_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"testgen SKILL.md missing frontmatter keys: {missing}"
+
+
+def test_test_generator_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "test-generator.md"
+    assert path.exists(), "agents/test-generator.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"test-generator.md missing frontmatter keys: {missing}"
+
+
+def test_testgen_skill_references_test_generator():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "test-generator" in content, (
+        "skills/testgen/SKILL.md does not reference test-generator agent"
+    )
+
+
+def test_test_generator_has_self_review():
+    path = AGENT_DIR / "test-generator.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "agents/test-generator.md does not contain Self-Review section"
+    )
+
+
+def test_testgen_skill_has_checkpoint_markers():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= 3, (
+        f"skills/testgen/SKILL.md has {count} CHECKPOINT markers, expected >= 3"
+    )
+
+
+def test_testgen_skill_has_gap_report():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Gap Report" in content or "gap report" in content.lower(), (
+        "skills/testgen/SKILL.md should present a gap report to the user"
+    )
+
+
+def test_testgen_skill_references_test_plan():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "test_plan.md" in content, (
+        "skills/testgen/SKILL.md does not reference test_plan.md"
+    )
+
+
+def test_test_generator_references_review_lessons():
+    path = AGENT_DIR / "test-generator.md"
+    content = path.read_text(encoding="utf-8")
+    assert "review_lessons" in content, (
+        "agents/test-generator.md does not reference review_lessons"
+    )
+
+
+def test_testgen_skill_has_e2e_support():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "E2E" in content, "skills/testgen/SKILL.md does not mention E2E"
+
+
+def test_testgen_skill_has_argument_validation():
+    path = SKILL_DIR / "testgen" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Argument Validation" in content, (
+        "skills/testgen/SKILL.md missing Argument Validation section"
+    )
+
+
+# ── Test 48: Implement skill TDD flow ──────────────────────────────────
+
+
+def test_implement_skill_has_tdd_flow():
+    """Implement skill should follow TDD: tests-written → red → code → test."""
+    path = SKILL_DIR / "implement" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "TDD" in content, "skills/implement/SKILL.md does not mention TDD"
+    assert "RED" in content or "red" in content, (
+        "skills/implement/SKILL.md does not mention RED phase"
+    )
+    # Verify checkpoint order: tests-written before red before code before test
+    tw_pos = content.find("--phase tests-written")
+    red_pos = content.find("--phase red")
+    code_pos = content.find("--phase code")
+    # Use regex to find "--phase test " (with space/end) to avoid matching "--phase tests-written"
+    import re as _re
+    test_match = _re.search(r"--phase test\b(?!s)", content)
+    test_pos = test_match.start() if test_match else -1
+    assert tw_pos < red_pos < code_pos < test_pos, (
+        "Implement skill checkpoints not in TDD order: tests-written → red → code → test"
+    )
+
+
+def test_implement_skill_has_red_checkpoint():
+    """Implement skill must have a RED checkpoint marker."""
+    path = SKILL_DIR / "implement" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "--phase red" in content, (
+        "skills/implement/SKILL.md missing --phase red checkpoint"
+    )
+
+
+def test_developer_has_tdd_workflow():
+    """Developer agent should follow TDD workflow."""
+    path = AGENT_DIR / "developer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "TDD" in content, "agents/developer.md does not mention TDD"
+    assert "RED" in content or "Verify RED" in content, (
+        "agents/developer.md does not mention RED/Verify RED phase"
+    )
+
+
+# ── Test 49: Developer Detox support ───────────────────────────────────
+
+
+def test_developer_has_detox_support():
+    """Developer agent should mention Detox for mobile E2E testing."""
+    path = AGENT_DIR / "developer.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Detox" in content, "agents/developer.md does not mention Detox"
+
+
+# ── Test 50: Review skill test-quality checkpoint ──────────────────────
+
+
+def test_review_skill_has_test_quality_checkpoint():
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "--phase test-quality" in content, (
+        "skills/review/SKILL.md missing --phase test-quality checkpoint"
+    )
+
+
+def test_review_skill_has_qa_designer_recheck():
+    """Review skill should re-invoke qa-designer to update test_plan.md."""
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "qa-designer" in content, (
+        "skills/review/SKILL.md does not reference qa-designer"
+    )
+    assert "test_plan.md" in content, (
+        "skills/review/SKILL.md does not reference test_plan.md"
+    )
+
+
+# ── Test 51: Ship skill post-merge smoke ───────────────────────────────
+
+
+def test_ship_skill_has_smoke_checkpoint():
+    path = SKILL_DIR / "ship" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "--phase smoke" in content, (
+        "skills/ship/SKILL.md missing --phase smoke checkpoint"
+    )
+
+
+def test_ship_skill_smoke_is_mandatory():
+    """Post-merge smoke test should be MANDATORY, not optional."""
+    path = SKILL_DIR / "ship" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "optional" not in content.lower() or "MANDATORY" in content, (
+        "skills/ship/SKILL.md post-merge smoke should be mandatory"
+    )
+
+
+# ── Test 52: verify_checkpoint.py supports new phases ──────────────────
+
+
+def test_verify_checkpoint_supports_red_phase():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    content = script.read_text(encoding="utf-8")
+    assert '"red"' in content or "'red'" in content, (
+        "verify_checkpoint.py does not support implement red phase"
+    )
+
+
+def test_verify_checkpoint_supports_test_quality_phase():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    content = script.read_text(encoding="utf-8")
+    assert "test-quality" in content, (
+        "verify_checkpoint.py does not support review test-quality phase"
+    )
+
+
+def test_verify_checkpoint_supports_smoke_phase():
+    script = SCRIPTS_DIR / "verify_checkpoint.py"
+    content = script.read_text(encoding="utf-8")
+    assert '"smoke"' in content or "'smoke'" in content, (
+        "verify_checkpoint.py does not support ship smoke phase"
+    )
+
+
+# ── Test 53: E2E auto-execution in autotest hook ──────────────────────
+
+
+def test_autotest_has_e2e_support():
+    """autotest.py should support E2E test detection and execution."""
+    path = ROOT / "project" / ".claude" / "hooks" / "autotest.py"
+    content = path.read_text(encoding="utf-8")
+    for framework in ["playwright", "detox", "maestro", "cypress"]:
+        assert framework in content.lower(), (
+            f"autotest.py does not mention {framework}"
+        )
+
+
+def test_autotest_has_e2e_timeout():
+    """autotest.py should have a longer timeout for E2E tests."""
+    path = ROOT / "project" / ".claude" / "hooks" / "autotest.py"
+    content = path.read_text(encoding="utf-8")
+    assert "E2E_TIMEOUT" in content, "autotest.py missing E2E_TIMEOUT constant"
+
+
+# ── Test 54: GitHub Actions CI workflow ────────────────────────────────
+
+
+def test_ci_workflow_exists():
+    path = ROOT / ".github" / "workflows" / "ci.yml"
+    assert path.exists(), ".github/workflows/ci.yml not found"
+    content = path.read_text(encoding="utf-8")
+    assert "pytest" in content, "CI workflow does not run pytest"
+    assert "cov-fail-under" in content, "CI workflow does not enforce coverage"
+
+
+# ── Test 55: Implement skill checkpoint count updated ─────────────────
+
+
+def test_implement_skill_has_enough_checkpoints():
+    """Implement skill should have 8+ checkpoints after TDD conversion."""
+    path = SKILL_DIR / "implement" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= 8, (
+        f"skills/implement/SKILL.md has {count} CHECKPOINT markers, expected >= 8 after TDD"
+    )
+
+
+# ── Test 56: Ship skill checkpoint count updated ─────────────────────
+
+
+def test_ship_skill_has_enough_checkpoints():
+    """Ship skill should have 4+ checkpoints after smoke addition."""
+    path = SKILL_DIR / "ship" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= 4, (
+        f"skills/ship/SKILL.md has {count} CHECKPOINT markers, expected >= 4 after smoke"
+    )
+
+
+# ── Test 57: Review skill checkpoint count updated ───────────────────
+
+
+def test_review_skill_has_enough_checkpoints():
+    """Review skill should have 6+ checkpoints after test-quality addition."""
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    assert count >= 6, (
+        f"skills/review/SKILL.md has {count} CHECKPOINT markers, expected >= 6 after test-quality"
+    )
+
+
+# ── Test 58: design-auditor agent ─────────────────────────────────────
+
+
+def test_design_auditor_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "design-auditor.md"
+    assert path.exists(), "agents/design-auditor.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"design-auditor.md missing frontmatter keys: {missing}"
+
+
+def test_design_auditor_has_self_review():
+    path = AGENT_DIR / "design-auditor.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "agents/design-auditor.md does not contain Self-Review section"
+    )
+
+
+def test_design_auditor_checks_accessibility():
+    path = AGENT_DIR / "design-auditor.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Accessibility" in content or "accessibility" in content, (
+        "agents/design-auditor.md does not check accessibility"
+    )
+
+
+# ── Test 59: a11y-auditor agent ──────────────────────────────────────
+
+
+def test_a11y_auditor_agent_exists_and_has_required_frontmatter():
+    path = AGENT_DIR / "a11y-auditor.md"
+    assert path.exists(), "agents/a11y-auditor.md not found"
+    fm = _parse_frontmatter(path)
+    missing = AGENT_REQUIRED_KEYS - fm.keys()
+    assert not missing, f"a11y-auditor.md missing frontmatter keys: {missing}"
+
+
+def test_a11y_auditor_has_self_review():
+    path = AGENT_DIR / "a11y-auditor.md"
+    content = path.read_text(encoding="utf-8")
+    assert "Self-Review" in content, (
+        "agents/a11y-auditor.md does not contain Self-Review section"
+    )
+
+
+def test_a11y_auditor_covers_wcag():
+    """A11y auditor should cover WCAG 2.1 criteria."""
+    path = AGENT_DIR / "a11y-auditor.md"
+    content = path.read_text(encoding="utf-8")
+    assert "WCAG" in content, "agents/a11y-auditor.md does not mention WCAG"
+    for criterion in ["Perceivable", "Operable", "Understandable", "Robust"]:
+        assert criterion in content, (
+            f"agents/a11y-auditor.md does not cover WCAG principle: {criterion}"
+        )
+
+
+# ── Test 60: review skill integrates design-auditor and a11y-auditor ─
+
+
+def test_review_skill_invokes_design_auditor():
+    """Review skill should invoke design-auditor subagent for UI issues."""
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "design-auditor" in content, (
+        "review SKILL.md does not invoke design-auditor subagent"
+    )
+
+
+def test_review_skill_invokes_a11y_auditor():
+    """Review skill should invoke a11y-auditor subagent for UI issues."""
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "a11y-auditor" in content, (
+        "review SKILL.md does not invoke a11y-auditor subagent"
+    )
+
+
+def test_review_skill_outputs_design_audit():
+    """Review skill should produce design_audit.md output."""
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "design_audit.md" in content, (
+        "review SKILL.md does not mention design_audit.md output"
+    )
+
+
+def test_review_skill_outputs_a11y_audit():
+    """Review skill should produce a11y_audit.md output."""
+    path = SKILL_DIR / "review" / "SKILL.md"
+    content = path.read_text(encoding="utf-8")
+    assert "a11y_audit.md" in content, (
+        "review SKILL.md does not mention a11y_audit.md output"
+    )
+
+
+def test_no_standalone_design_skills():
+    """Standalone design skills should not exist (integrated into review)."""
+    assert not (SKILL_DIR / "design-audit").exists(), "skills/design-audit should not exist"
+    assert not (SKILL_DIR / "design-refactor").exists(), "skills/design-refactor should not exist"
+    assert not (SKILL_DIR / "a11y-audit").exists(), "skills/a11y-audit should not exist"
+    assert not (AGENT_DIR / "design-refactorer.md").exists(), "agents/design-refactorer.md should not exist"

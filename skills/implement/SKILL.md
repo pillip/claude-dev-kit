@@ -25,6 +25,7 @@ Algorithm:
    - `docs/data_model.md` — schema, indexes, query patterns, seed data, migrations
    - `docs/requirements.md` — related FRs/NFRs referenced by the issue
    - `docs/review_lessons.md` — known recurring review findings to proactively avoid
+   - `docs/test_plan.md` — test strategy, risk matrix, critical flows to guide test writing
    - **UI context** — read all of the following in parallel (when the issue has `UI: true`, or contains UI keywords in Track/title):
      - `docs/design_system.md` — CSS tokens, component specs
      - `docs/design_philosophy.md` — aesthetic direction
@@ -64,36 +65,53 @@ Algorithm:
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase worktree --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-6) Implement minimal code inside `$WT/`.
-
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase code --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
-
-7) **Write tests** inside `$WT/`.
+6) **Write tests FIRST (TDD Red phase)** inside `$WT/`.
+   This project follows TDD: write failing tests before writing implementation code.
+   - **Read test_plan.md first**: If `docs/test_plan.md` exists, read it. Use the Risk Matrix and Critical Flows to prioritize which scenarios to test. Map your tests to the test cases defined there (TC-NNN).
    - Every new behavior MUST have at least one test. No exceptions.
    - Each AC (Acceptance Criterion) in the issue maps to at least one test case.
-   - Cover the happy path AND at least one error/edge case.
+   - Cover the happy path AND at least one error/edge case per AC.
    - Test files must follow project conventions (e.g., `test_*.py` in `tests/`).
-   - Do NOT skip this step. Code without tests will be rejected at checkpoint.
+   - Tests must contain **real assertions** — empty test functions, `pass`-only bodies, or tests without `assert`/`expect` will be rejected at checkpoint.
+   - **E2E tests**: If the issue involves a critical user journey (as defined in `docs/test_plan.md` Risk Matrix), write an E2E test. Web: `tests/e2e/*.spec.ts`. Mobile: `e2e/*.yaml` or `e2e/*.test.ts`.
+   - Do NOT skip this step. Code without meaningful tests will be rejected at checkpoint.
+6b) **Verify test coverage** (self-check before checkpoint):
+   - Cross-reference your test files against the issue's AC list. Each AC should have a corresponding test.
+   - If `docs/test_plan.md` exists, check that any High-risk flows affected by your changes have test coverage.
+   - The checkpoint will warn about potential AC coverage gaps.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase tests-written --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-8) Run tests inside `$WT/`.
+7) **Verify RED** — Run tests to confirm they FAIL (no implementation yet).
+   Tests should fail because the implementation code doesn't exist yet. This ensures tests are testing real behavior, not vacuously passing.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase red --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+8) **Implement minimal code** inside `$WT/`.
+   Write the minimum code needed to make all tests pass. Follow existing project patterns.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase code --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+9) **Run tests (GREEN phase)** inside `$WT/`.
+   All tests must pass. If any fail, fix the implementation (not the tests) until green.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-9) Commit + push (from `$WT/`).
+10) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase push --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-10) Create PR (or update):
+11) Create PR (or update):
    - Title: `[$ARGUMENTS] <title>`
    - Body begins with `Closes #<issue_number>`
 
@@ -101,13 +119,13 @@ Algorithm:
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase pr --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-11) Record PR URL in issues.md; set Status=done; update STATUS.md.
-    Use main repo root for shared files:
-    ```bash
-    ROOT="$(bash scripts/worktree.sh root)"
-    bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
-    bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
-    ```
+12) Record PR URL in issues.md; set Status=done; update STATUS.md.
+   Use main repo root for shared files:
+   ```bash
+   ROOT="$(bash scripts/worktree.sh root)"
+   bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
+   bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
+   ```
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase registry --issue $ARGUMENTS`

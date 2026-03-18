@@ -45,7 +45,17 @@ Steps:
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase cleanup --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-6) Post-merge smoke on main (optional).
+6) Post-merge smoke test on main (MANDATORY):
+   ```bash
+   git checkout main && git pull
+   ```
+   - Python: `pytest -q --tb=short`
+   - JS/TS: `npm test`
+   - If tests fail: alert the user immediately with failing output and suggest `git revert -m 1 <merge_commit>`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase smoke --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.

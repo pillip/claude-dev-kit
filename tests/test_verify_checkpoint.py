@@ -280,9 +280,176 @@ class TestVerifyImplementCode:
             assert vc.verify_implement_code("ISSUE-001") is False
 
 
+class TestHasRealTests:
+    """Tests for _has_real_tests() — hollow test detection."""
+
+    def test_empty_python_file_fails(self, tmp_path):
+        (tmp_path / "test_empty.py").write_text("")
+        assert vc._has_real_tests("test_empty.py", str(tmp_path)) is False
+
+    def test_pass_only_python_file_fails(self, tmp_path):
+        (tmp_path / "test_stub.py").write_text("def test_nothing():\n    pass\n")
+        assert vc._has_real_tests("test_stub.py", str(tmp_path)) is False
+
+    def test_python_file_with_assert_passes(self, tmp_path):
+        (tmp_path / "test_real.py").write_text(
+            "def test_addition():\n    assert 1 + 1 == 2\n"
+        )
+        assert vc._has_real_tests("test_real.py", str(tmp_path)) is True
+
+    def test_python_file_with_mock_passes(self, tmp_path):
+        (tmp_path / "test_mock.py").write_text(
+            "from unittest.mock import mock\n"
+            "def test_with_mock():\n    mock.call()\n"
+        )
+        assert vc._has_real_tests("test_mock.py", str(tmp_path)) is True
+
+    def test_python_file_with_pytest_raises_passes(self, tmp_path):
+        (tmp_path / "test_raises.py").write_text(
+            "import pytest\n"
+            "def test_error():\n    with pytest.raises(ValueError): pass\n"
+        )
+        assert vc._has_real_tests("test_raises.py", str(tmp_path)) is True
+
+    def test_python_file_without_test_functions_fails(self, tmp_path):
+        (tmp_path / "test_no_funcs.py").write_text(
+            "# Just a comment\nprint('hello')\n"
+        )
+        assert vc._has_real_tests("test_no_funcs.py", str(tmp_path)) is False
+
+    def test_js_file_with_expect_passes(self, tmp_path):
+        (tmp_path / "app.test.ts").write_text(
+            "describe('app', () => {\n"
+            "  it('works', () => { expect(true).toBe(true); });\n"
+            "});\n"
+        )
+        assert vc._has_real_tests("app.test.ts", str(tmp_path)) is True
+
+    def test_js_file_without_expect_fails(self, tmp_path):
+        (tmp_path / "app.test.ts").write_text(
+            "describe('app', () => {\n"
+            "  it('empty', () => {});\n"
+            "});\n"
+        )
+        assert vc._has_real_tests("app.test.ts", str(tmp_path)) is False
+
+    def test_js_file_without_test_block_fails(self, tmp_path):
+        (tmp_path / "app.test.js").write_text("console.log('no tests');\n")
+        assert vc._has_real_tests("app.test.js", str(tmp_path)) is False
+
+    def test_nonexistent_file_fails(self, tmp_path):
+        assert vc._has_real_tests("missing.py", str(tmp_path)) is False
+
+    def test_unknown_extension_passes(self, tmp_path):
+        (tmp_path / "test_file.rb").write_text("# ruby file")
+        assert vc._has_real_tests("test_file.rb", str(tmp_path)) is True
+
+
+class TestCheckAcTestCoverage:
+    """Tests for _check_ac_test_coverage() — advisory AC matching."""
+
+    def test_warns_on_uncovered_ac(self, repo_root, capsys):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Login feature\n"
+            "- Status: doing\n"
+            "#### AC\n"
+            "- [ ] User should authenticate with valid credentials\n"
+            "- [ ] Invalid password returns error message\n",
+        )
+        # Write a test that only covers authentication
+        tests_dir = repo_root / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_login.py").write_text(
+            "def test_authenticate():\n    assert True\n"
+        )
+        vc._check_ac_test_coverage(
+            "ISSUE-001", str(repo_root), ["tests/test_login.py"]
+        )
+        captured = capsys.readouterr()
+        # Should warn about the uncovered AC
+        assert "WARN" in captured.out
+
+    def test_no_warning_when_all_covered(self, repo_root, capsys):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Login feature\n"
+            "- Status: doing\n"
+            "- [ ] authenticate with credentials\n",
+        )
+        tests_dir = repo_root / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_login.py").write_text(
+            "def test_authenticate_with_credentials():\n    assert True\n"
+        )
+        vc._check_ac_test_coverage(
+            "ISSUE-001", str(repo_root), ["tests/test_login.py"]
+        )
+        captured = capsys.readouterr()
+        assert "WARN" not in captured.out
+
+    def test_no_crash_when_issue_missing(self, repo_root, capsys):
+        _setup_issues(repo_root, "### ISSUE-002: Other\n- Status: doing\n")
+        vc._check_ac_test_coverage("ISSUE-001", str(repo_root), [])
+        # Should not crash, just return silently
+
+
+class TestVerifyImplementTestsWrittenStrengthened:
+    """Tests for strengthened verify_implement_tests_written — hollow test rejection."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+    def test_fail_with_hollow_test_file(self, repo_root, tmp_path):
+        """Test file exists but contains no assertions — should FAIL."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_hollow.py").write_text("def test_nothing():\n    pass\n")
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt_path}\n")
+            if cmd[:2] == ["git", "diff"] and "main" in cmd:
+                return _mock_run(0, stdout="tests/test_hollow.py\n")
+            return _mock_run(0, stdout="")
+
+        _setup_issues(repo_root, "### ISSUE-001: Test\n- Status: doing\n")
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_tests_written("ISSUE-001") is False
+
+    def test_pass_with_real_test_file(self, repo_root, tmp_path):
+        """Test file with real assertions — should PASS."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_real.py").write_text(
+            "def test_addition():\n    assert 1 + 1 == 2\n"
+        )
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt_path}\n")
+            if cmd[:2] == ["git", "diff"] and "main" in cmd:
+                return _mock_run(0, stdout="tests/test_real.py\n")
+            return _mock_run(0, stdout="")
+
+        _setup_issues(repo_root, "### ISSUE-001: Test\n- Status: doing\n")
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_tests_written("ISSUE-001") is True
+
+
 class TestVerifyImplementTest:
-    def test_pass_when_pytest_succeeds(self):
-        wt_stdout = "worktree /tmp/wt/issue/issue-001-slug\n"
+    def test_pass_when_pytest_succeeds(self, tmp_path):
+        wt_path = str(tmp_path)
+        # Create markers so the function detects Python project
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        wt_stdout = f"worktree {wt_path}\n"
 
         def side_effect(cmd, **kwargs):
             if cmd[:2] == ["git", "worktree"]:
@@ -292,8 +459,10 @@ class TestVerifyImplementTest:
         with patch.object(vc, "_run", side_effect=side_effect):
             assert vc.verify_implement_test("ISSUE-001") is True
 
-    def test_fail_when_pytest_fails(self):
-        wt_stdout = "worktree /tmp/wt/issue/issue-001-slug\n"
+    def test_fail_when_pytest_fails(self, tmp_path):
+        wt_path = str(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        wt_stdout = f"worktree {wt_path}\n"
 
         def side_effect(cmd, **kwargs):
             if cmd[:2] == ["git", "worktree"]:
@@ -303,21 +472,46 @@ class TestVerifyImplementTest:
         with patch.object(vc, "_run", side_effect=side_effect):
             assert vc.verify_implement_test("ISSUE-001") is False
 
-    def test_runs_in_worktree_cwd(self):
+    def test_runs_in_worktree_cwd(self, tmp_path):
         """Verify pytest is invoked with cwd set to the worktree path."""
-        wt_stdout = "worktree /tmp/wt/issue/issue-001-slug\n"
-        captured_kwargs = {}
+        # Create a worktree-like path that contains the issue slug
+        wt_dir = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_dir.mkdir(parents=True)
+        (wt_dir / "pyproject.toml").write_text("[tool.pytest]\n")
+        wt_path = str(wt_dir)
+        wt_stdout = f"worktree {wt_path}\n"
+        captured_cwds = []
 
         def side_effect(cmd, **kwargs):
             if cmd[:2] == ["git", "worktree"]:
                 return _mock_run(0, stdout=wt_stdout)
-            captured_kwargs.update(kwargs)
+            captured_cwds.append(kwargs.get("cwd"))
             return _mock_run(0)
 
         with patch.object(vc, "_run", side_effect=side_effect):
             vc.verify_implement_test("ISSUE-001")
 
-        assert captured_kwargs.get("cwd") == "/tmp/wt/issue/issue-001-slug"
+        # At least one call should use the worktree path as cwd
+        assert wt_path in captured_cwds
+
+    def test_fallback_when_pytest_cov_missing(self, tmp_path):
+        """When pytest-cov is not installed, should fall back to plain pytest."""
+        wt_path = str(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        wt_stdout = f"worktree {wt_path}\n"
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=wt_stdout)
+            call_count["n"] += 1
+            if call_count["n"] == 1 and "--cov=." in cmd:
+                # First call with coverage fails
+                return _mock_run(1, stderr="unrecognized arguments: --cov")
+            return _mock_run(0)  # Fallback plain pytest passes
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_test("ISSUE-001") is True
 
 
 class TestVerifyImplementPush:
@@ -569,6 +763,166 @@ class TestVerifyReviewUiReview:
 
 
 # ── Ship verifiers ───────────────────────────────────────────────────
+
+
+class TestVerifyImplementRed:
+    """Tests for TDD Red phase verifier — tests should exist but FAIL."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+    def test_pass_when_tests_fail(self, tmp_path):
+        """Tests exist with assertions and pytest fails — RED phase PASS."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+        (wt_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_feature.py").write_text(
+            "def test_new_feature():\n    assert False  # not implemented yet\n"
+        )
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt_path}\n")
+            if cmd[:2] == ["git", "diff"] and "main" in cmd:
+                return _mock_run(0, stdout="tests/test_feature.py\n")
+            if "pytest" in cmd:
+                return _mock_run(1, stdout="FAILED")  # Tests fail = good for RED
+            return _mock_run(0, stdout="")
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+    def test_fail_when_tests_pass(self, tmp_path):
+        """Tests exist and pass — RED phase FAIL (tests should fail before implementation)."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+        (wt_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_feature.py").write_text(
+            "def test_trivial():\n    assert True  # passes without implementation\n"
+        )
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt_path}\n")
+            if cmd[:2] == ["git", "diff"] and "main" in cmd:
+                return _mock_run(0, stdout="tests/test_feature.py\n")
+            if "pytest" in cmd:
+                return _mock_run(0)  # Tests pass = bad for RED
+            return _mock_run(0, stdout="")
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+    def test_fail_when_no_test_files(self, tmp_path):
+        """No test files found — RED phase FAIL."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt_path}\n")
+            return _mock_run(0, stdout="")
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+    def test_fail_when_tests_are_hollow(self, tmp_path):
+        """Test files exist but have no assertions — RED phase FAIL."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_empty.py").write_text("def test_nothing():\n    pass\n")
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt_path}\n")
+            if cmd[:2] == ["git", "diff"] and "main" in cmd:
+                return _mock_run(0, stdout="tests/test_empty.py\n")
+            return _mock_run(0, stdout="")
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+
+class TestVerifyReviewTestQuality:
+    """Tests for verify_review_test_quality — hollow test detection during review."""
+
+    def test_pass_with_real_tests(self, tmp_path):
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_good.py").write_text(
+            "def test_addition():\n    assert 1 + 1 == 2\n"
+        )
+
+        wt_stdout = f"worktree {wt_path}\n"
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_test_quality("ISSUE-001") is True
+
+    def test_fail_with_hollow_tests(self, tmp_path):
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+        tests_dir = wt_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_hollow.py").write_text("def test_nothing():\n    pass\n")
+
+        wt_stdout = f"worktree {wt_path}\n"
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_test_quality("ISSUE-001") is False
+
+    def test_pass_when_no_test_files(self, tmp_path):
+        """No test files at all — should still pass (some repos may not have tests)."""
+        wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt_path.mkdir(parents=True)
+
+        wt_stdout = f"worktree {wt_path}\n"
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_test_quality("ISSUE-001") is True
+
+
+class TestVerifyShipSmoke:
+    """Tests for verify_ship_smoke — post-merge regression test on main."""
+
+    def test_pass_when_tests_pass_on_main(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vc, "_repo_root", lambda: tmp_path)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+
+        def side_effect(cmd, **kwargs):
+            if cmd == ["git", "branch", "--show-current"]:
+                return _mock_run(0, stdout="main\n")
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_ship_smoke("ISSUE-001") is True
+
+    def test_fail_when_not_on_main(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout="feature-branch\n")):
+            assert vc.verify_ship_smoke("ISSUE-001") is False
+
+    def test_fail_when_tests_fail(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vc, "_repo_root", lambda: tmp_path)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+
+        def side_effect(cmd, **kwargs):
+            if cmd == ["git", "branch", "--show-current"]:
+                return _mock_run(0, stdout="main\n")
+            if "pytest" in cmd:
+                return _mock_run(1, stdout="FAILED")
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_ship_smoke("ISSUE-001") is False
 
 
 class TestVerifyShipChecks:

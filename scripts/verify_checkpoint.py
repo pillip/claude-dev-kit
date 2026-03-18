@@ -12,6 +12,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -261,6 +262,160 @@ def verify_implement_code(issue_id: str, **_) -> bool:
     return True
 
 
+def _has_real_tests(filepath: str, wt_path: str) -> bool:
+    """Check that a test file contains at least one real test with assertions."""
+    full_path = Path(wt_path) / filepath
+    if not full_path.exists():
+        return False
+
+    try:
+        content = full_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
+    # Python test files
+    if filepath.endswith(".py"):
+        test_defs = re.findall(r"def (test_\w+)\s*\(", content)
+        if not test_defs:
+            return False
+        has_assert = bool(re.search(
+            r"\b(?:assert\b|assertEqual|assertTrue|assertFalse|assertRaises"
+            r"|assertIn|assertIs|mock|patch|raises|pytest\.raises)\b",
+            content,
+        ))
+        return has_assert
+
+    # JS/TS test files
+    if filepath.endswith((".ts", ".tsx", ".js", ".jsx")):
+        has_test_block = bool(re.search(r"\b(?:it|test|describe)\s*\(", content))
+        has_expect = bool(re.search(
+            r"\b(?:expect|assert|should|toEqual|toBe|toThrow|toHaveBeenCalled"
+            r"|toContain|toMatch|rejects|resolves)\b",
+            content,
+        ))
+        return has_test_block and has_expect
+
+    return True  # Unknown language, pass through
+
+
+def _check_ac_test_coverage(issue_id: str, wt_path: str, test_files: list[str]) -> None:
+    """Warn if AC items don't appear to have corresponding tests (advisory only)."""
+    block = _find_issue_block(issue_id)
+    if not block:
+        return
+
+    # Extract AC lines: lines starting with "- [ ]" or "- [x]" or numbered items under AC
+    ac_lines = re.findall(r"(?:^[-*]\s+\[.\]\s+|^\s+\d+\.\s+)(.+)", block, re.MULTILINE)
+    if not ac_lines:
+        return
+
+    # Read all test content
+    test_content = ""
+    for tf in test_files:
+        full = Path(wt_path) / tf
+        if full.exists():
+            try:
+                test_content += full.read_text(encoding="utf-8", errors="replace") + "\n"
+            except OSError:
+                continue
+
+    test_content_lower = test_content.lower()
+
+    uncovered = []
+    for ac in ac_lines:
+        keywords = [w.lower() for w in re.findall(r"\b\w{5,}\b", ac)]
+        if keywords and not any(kw in test_content_lower for kw in keywords[:5]):
+            uncovered.append(ac.strip()[:80])
+
+    if uncovered:
+        print(f"WARN: {len(uncovered)} AC item(s) may lack test coverage:")
+        for ac in uncovered[:3]:
+            print(f"  - {ac}")
+        print("  Consider adding tests that cover these acceptance criteria.")
+
+
+def verify_implement_red(issue_id: str, **_) -> bool:
+    """TDD Red phase: tests exist with real assertions but FAIL (no implementation yet).
+
+    This verifier has inverted logic — pytest returning non-zero is the expected outcome.
+    If tests pass, it means they were written after implementation (not TDD).
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    wt = Path(wt_path)
+
+    # First, verify test files exist and have real assertions
+    base = _default_branch()
+    diff_committed = _run(["git", "diff", "--name-only", base], cwd=wt_path)
+    diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
+    diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
+    untracked = _run(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
+    )
+
+    all_files: set[str] = set()
+    for r in (diff_committed, diff_staged, diff_unstaged, untracked):
+        if r.returncode == 0 and r.stdout.strip():
+            all_files.update(r.stdout.strip().splitlines())
+
+    test_pattern = re.compile(
+        r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
+    )
+    test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
+
+    test_files = [f for f in all_files if test_pattern.search(f)]
+    test_dir_files = [f for f in all_files if test_dir_pattern.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+    all_test_files = sorted(set(test_files + test_dir_files))
+
+    if not all_test_files:
+        print("FAIL: no test files found — write tests before RED phase")
+        return False
+
+    # Check tests have real assertions
+    shallow = [f for f in all_test_files if not _has_real_tests(f, wt_path)]
+    if shallow:
+        print(f"FAIL: test files have no real assertions: {', '.join(shallow)}")
+        return False
+
+    # Now run tests — they SHOULD FAIL (exit code != 0)
+    has_python = (
+        (wt / "pyproject.toml").exists()
+        or (wt / "setup.py").exists()
+        or (wt / "tests").is_dir()
+    )
+
+    if has_python:
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=60)
+        if result.returncode == 0:
+            print("FAIL: RED phase — tests passed but should fail before implementation.")
+            print("  TDD requires: write failing tests first, then implement to make them pass.")
+            return False
+        print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
+        return True
+
+    # JS/TS fallback
+    has_js = (wt / "package.json").exists()
+    if has_js:
+        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=wt_path, timeout=60)
+        if result.returncode == 0:
+            print("FAIL: RED phase — tests passed but should fail before implementation.")
+            return False
+        print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
+        return True
+
+    # Fallback: try pytest
+    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=60)
+    if result.returncode == 0:
+        print("FAIL: RED phase — tests passed but should fail before implementation.")
+        return False
+
+    print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
+    return True
+
+
 def verify_implement_tests_written(issue_id: str, **_) -> bool:
     """Verify that test files were actually created or modified for this issue."""
     wt_path = _find_worktree_path(issue_id)
@@ -304,24 +459,115 @@ def verify_implement_tests_written(issue_id: str, **_) -> bool:
         print("  Expected: test_*.py, *_test.py, *.spec.ts, or files in tests/ directory")
         return False
 
-    print(f"PASS: {len(all_test_files)} test file(s) created/modified: {', '.join(all_test_files)}")
+    # Verify test files contain real assertions (not hollow tests)
+    shallow_files = [f for f in all_test_files if not _has_real_tests(f, wt_path)]
+    if shallow_files:
+        print(f"FAIL: test files exist but contain no real assertions: {', '.join(shallow_files)}")
+        print("  Each test file must contain at least one test function with assertions.")
+        print("  Python: def test_*() with assert/assertEqual/raises/mock")
+        print("  JS/TS: it()/test() with expect/toBe/toEqual/toThrow")
+        return False
+
+    # Advisory: check AC coverage (warns but does not fail)
+    _check_ac_test_coverage(issue_id, wt_path, all_test_files)
+
+    print(f"PASS: {len(all_test_files)} test file(s) with real assertions: {', '.join(all_test_files)}")
     return True
 
 
-def verify_implement_test(issue_id: str, **_) -> bool:
-    """pytest exits 0 (runs inside the issue's worktree if one exists)."""
-    wt_path = _find_worktree_path(issue_id)
-    cwd = wt_path if wt_path else None
+_MIN_COVERAGE = 60  # Minimum line coverage percentage
 
-    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd)
+
+def _run_python_tests_with_coverage(cwd: str | None) -> bool:
+    """Run pytest with coverage and enforce minimum threshold."""
+    result = _run(
+        [
+            "python3", "-m", "pytest", "-q", "--tb=short",
+            "--cov=.", "--cov-report=term-missing",
+            f"--cov-fail-under={_MIN_COVERAGE}",
+        ],
+        cwd=cwd,
+        timeout=60,
+    )
+
     if result.returncode != 0:
+        stderr_lower = (result.stderr or "").lower()
+        # pytest-cov not installed — fall back to plain pytest
+        if "no module named" in stderr_lower or "unrecognized arguments: --cov" in stderr_lower:
+            print(f"WARN: pytest-cov not available, running without coverage enforcement")
+            result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd, timeout=60)
+            if result.returncode != 0:
+                print(f"FAIL: pytest failed (exit {result.returncode})")
+                if result.stdout:
+                    print(result.stdout[-500:])
+                return False
+            return True
+
         print(f"FAIL: pytest failed (exit {result.returncode})")
         if result.stdout:
             print(result.stdout[-500:])
         return False
 
-    print("PASS: tests passed")
     return True
+
+
+def _run_js_tests_in_worktree(cwd: str | None) -> bool:
+    """Run JS/TS test suite if package.json has a test script."""
+    wt = Path(cwd) if cwd else Path.cwd()
+    pkg_json = wt / "package.json"
+    if not pkg_json.exists():
+        return True
+
+    try:
+        pkg = json.loads(pkg_json.read_text(encoding="utf-8"))
+        if "test" not in pkg.get("scripts", {}):
+            return True  # No test script defined
+    except (OSError, json.JSONDecodeError):
+        return True
+
+    result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=cwd, timeout=60)
+    if result.returncode != 0:
+        print(f"FAIL: npm test failed (exit {result.returncode})")
+        if result.stdout:
+            print(result.stdout[-500:])
+        return False
+    return True
+
+
+def verify_implement_test(issue_id: str, **_) -> bool:
+    """Tests pass AND meet minimum coverage threshold."""
+    wt_path = _find_worktree_path(issue_id)
+    cwd = wt_path if wt_path else None
+    wt = Path(cwd) if cwd else Path.cwd()
+
+    has_python = (
+        (wt / "pyproject.toml").exists()
+        or (wt / "setup.py").exists()
+        or any(wt.glob("*.py"))
+        or (wt / "tests").is_dir()
+    )
+    has_js = (wt / "package.json").exists()
+
+    ok = True
+
+    if has_python:
+        ok = ok and _run_python_tests_with_coverage(cwd)
+
+    if has_js:
+        ok = ok and _run_js_tests_in_worktree(cwd)
+
+    if not has_python and not has_js:
+        # Fallback: try pytest anyway
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd, timeout=60)
+        if result.returncode != 0:
+            print(f"FAIL: pytest failed (exit {result.returncode})")
+            if result.stdout:
+                print(result.stdout[-500:])
+            return False
+
+    if ok:
+        print("PASS: tests passed")
+    return ok
 
 
 def verify_implement_push(issue_id: str, **_) -> bool:
@@ -493,6 +739,53 @@ def verify_review_ui_review(issue_id: str, **_) -> bool:
     return True
 
 
+def verify_review_test_quality(issue_id: str, **_) -> bool:
+    """Verify test quality: no hollow tests and coverage threshold met."""
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    wt = Path(wt_path)
+
+    # Find all test files in worktree
+    test_files: list[str] = []
+    tests_dir = wt / "tests"
+    if tests_dir.is_dir():
+        for f in tests_dir.rglob("*.py"):
+            rel = str(f.relative_to(wt))
+            if f.name.startswith("test_") or f.name.endswith("_test.py"):
+                test_files.append(rel)
+
+    # Also check for JS/TS test files
+    for f in wt.rglob("*.test.*"):
+        if "node_modules" not in str(f):
+            test_files.append(str(f.relative_to(wt)))
+    for f in wt.rglob("*.spec.*"):
+        if "node_modules" not in str(f):
+            test_files.append(str(f.relative_to(wt)))
+
+    test_files = sorted(set(test_files))
+
+    if not test_files:
+        # No test files at all — this is a warning but not necessarily a failure
+        # (some repos may not have tests yet)
+        print("WARN: no test files found in worktree")
+        print("PASS: test-quality check (no test files to validate)")
+        return True
+
+    # Check for hollow tests
+    hollow = [f for f in test_files if not _has_real_tests(f, wt_path)]
+    if hollow:
+        print(f"FAIL: hollow test files found (no real assertions):")
+        for f in hollow[:5]:
+            print(f"  - {f}")
+        return False
+
+    print(f"PASS: {len(test_files)} test file(s) have real assertions")
+    return True
+
+
 def verify_review_test(issue_id: str, **_) -> bool:
     """pytest exits 0 (inside worktree)."""
     return verify_implement_test(issue_id)
@@ -545,6 +838,54 @@ def verify_ship_merge(issue_id: str, **_) -> bool:
 
     print(f"PASS: PR #{pr_num} is merged")
     return True
+
+
+def verify_ship_smoke(issue_id: str, **_) -> bool:
+    """Post-merge smoke test: run tests on main branch to verify no regression."""
+    # Verify we're on the default branch
+    result = _run(["git", "branch", "--show-current"])
+    if result.returncode != 0:
+        print("FAIL: cannot determine current branch")
+        return False
+
+    current = result.stdout.strip()
+    default = _default_branch()
+    if current != default:
+        print(f"FAIL: expected to be on '{default}' but on '{current}'")
+        print(f"  Run: git checkout {default} && git pull")
+        return False
+
+    # Run tests on main
+    root = _repo_root()
+    has_python = (
+        (root / "pyproject.toml").exists()
+        or (root / "setup.py").exists()
+        or (root / "tests").is_dir()
+    )
+    has_js = (root / "package.json").exists()
+
+    ok = True
+
+    if has_python:
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=str(root), timeout=120)
+        if result.returncode != 0:
+            print("FAIL: post-merge smoke test failed on main")
+            if result.stdout:
+                print(result.stdout[-500:])
+            print("  Consider reverting: git revert -m 1 <merge_commit>")
+            ok = False
+
+    if has_js:
+        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=str(root), timeout=120)
+        if result.returncode != 0:
+            print("FAIL: npm test failed on main")
+            if result.stdout:
+                print(result.stdout[-500:])
+            ok = False
+
+    if ok:
+        print("PASS: post-merge smoke test passed on main")
+    return ok
 
 
 def verify_ship_cleanup(issue_id: str, **_) -> bool:
@@ -678,6 +1019,7 @@ VERIFIERS = {
     ("implement", "worktree"): verify_implement_worktree,
     ("implement", "code"): verify_implement_code,
     ("implement", "tests-written"): verify_implement_tests_written,
+    ("implement", "red"): verify_implement_red,
     ("implement", "test"): verify_implement_test,
     ("implement", "push"): verify_implement_push,
     ("implement", "pr"): verify_implement_pr,
@@ -685,10 +1027,12 @@ VERIFIERS = {
     ("review", "checkout"): verify_review_checkout,
     ("review", "review"): verify_review_review,
     ("review", "ui-review"): verify_review_ui_review,
+    ("review", "test-quality"): verify_review_test_quality,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,
     ("ship", "checks"): verify_ship_checks,
     ("ship", "merge"): verify_ship_merge,
+    ("ship", "smoke"): verify_ship_smoke,
     ("ship", "cleanup"): verify_ship_cleanup,
     ("diagnose", "worktree"): verify_generic_worktree,
     ("diagnose", "test"): verify_generic_test,
@@ -702,6 +1046,9 @@ VERIFIERS = {
     ("migrate", "worktree"): verify_generic_worktree,
     ("migrate", "test"): verify_generic_test,
     ("migrate", "push"): verify_generic_push,
+    ("testgen", "worktree"): verify_generic_worktree,
+    ("testgen", "test"): verify_generic_test,
+    ("testgen", "push"): verify_generic_push,
     ("uiux", "context"): verify_uiux_context,
     ("uiux", "philosophy"): verify_uiux_philosophy,
     ("uiux", "system"): verify_uiux_system,
@@ -714,7 +1061,7 @@ VERIFIERS = {
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Verify skill phase checkpoint")
-    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate", "uiux", "mobile-uiux"])
+    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate", "testgen", "uiux", "mobile-uiux"])
     parser.add_argument("--phase", required=True)
     parser.add_argument("--issue", required=True, help="Issue ID (e.g. ISSUE-001)")
 

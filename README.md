@@ -67,6 +67,9 @@ START
  ├─ 코드 구조 개선?
  │   └─ YES → /refactor path/to/module
  │
+ ├─ 테스트가 부족하다?
+ │   └─ YES → /testgen [path] (전체 또는 특정 경로 스캔)
+ │
  └─ CI/CD, Docker, 배포 설정?
      └─ YES → /devops "target"
 ```
@@ -82,11 +85,12 @@ START
 | `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_philosophy.md`, `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
 | `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
-| `/review ISSUE-001` | Senior review + security audit + UI review on PR | `docs/review_notes.md`, `docs/ui_review_notes.md` |
+| `/review ISSUE-001` | Senior review + security audit + UI review + design audit + a11y audit on PR | `docs/review_notes.md`, `docs/ui_review_notes.md`, `docs/design_audit.md`, `docs/a11y_audit.md` |
 | `/ship` | Merge PR + update docs/changelog | `CHANGELOG.md`, `STATUS.md` updated |
 | `/diagnose [error]` | Analyze a bug and propose a targeted fix | Diagnosis + fix |
 | `/migrate [target]` | Plan and execute a migration | Migration plan + updated code/config |
 | `/refactor [path]` | Improve code structure without changing behavior | Refactored code |
+| `/testgen [path]` | Scan for missing/hollow tests and generate unit/integration/E2E tests | Generated tests, PR |
 | `/devops [target]` | Set up CI/CD, Dockerfiles, deployment configs | Infrastructure files |
 
 ## Requirements

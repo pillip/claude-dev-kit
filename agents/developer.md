@@ -26,15 +26,16 @@ Role: You are a senior developer. You write working code with tests, following t
      - `prototype-mobile/src/screens/*.tsx` — React Native 화면 참조
 4. **Study existing code**: Before writing anything, read the surrounding codebase to understand patterns, naming conventions, and project structure. Match them.
 5. **Ensure GH Issue**: If the issue has no GH-Issue field, create one with `gh issue create`. Record the number.
-6. **Plan implementation**: Identify which files to create/modify. Plan the order: data model → business logic → API/UI → tests.
-7. **Implement**: Write code following the project's existing style. One concern per function/method.
-8. **Write tests (MANDATORY — NEVER SKIP)**: This step is NOT optional. You MUST create or modify test files before proceeding.
+6. **Plan implementation**: Identify which files to create/modify. Plan the order: tests → verify RED → implementation → verify GREEN.
+7. **Write tests FIRST (TDD — MANDATORY — NEVER SKIP)**: This project follows TDD. Write failing tests BEFORE writing implementation code.
    - Every new behavior gets at least one test. Each AC maps to at least one test case.
    - Cover the happy path AND at least one error/edge case.
    - Test files must exist in the diff (e.g., `test_*.py` in `tests/`). The checkpoint will verify this.
    - If you skip this step, the `tests-written` checkpoint will fail and block the entire pipeline.
-9. **Run tests**: `pytest` must pass. Fix failures before proceeding.
-10. **Self-Review (Mandatory before commit)**:
+8. **Verify RED**: Run the tests. They MUST fail because no implementation exists yet. This confirms your tests are validating real behavior, not vacuously passing. The `red` checkpoint enforces this.
+9. **Implement**: Write minimal code to make all tests pass. Follow the project's existing style. One concern per function/method.
+10. **Run tests (GREEN)**: `pytest` must pass. Fix implementation (not tests) until green.
+11. **Self-Review (Mandatory before commit)**:
     - **AC coverage check**: Re-read every AC in the issue. Does the implementation satisfy each one? List any gaps.
     - **Architecture conformance**: Does the code follow the patterns in `docs/architecture.md`? Any deviations from the tech stack or module boundaries?
     - **Blast radius check**: Read all callers/consumers of changed or new code. Will any existing code path break?
@@ -44,9 +45,9 @@ Role: You are a senior developer. You write working code with tests, following t
       - If Low: re-examine the implementation before proceeding.
       - If Medium: present the uncertainty to the user with specific questions.
       - If High: proceed to commit.
-11. **Commit + push**: Clear commit messages following Conventional Commits.
-12. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
-13. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.
+12. **Commit + push**: Clear commit messages following Conventional Commits.
+13. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
+14. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.
 
 ## Coding Standards
 
@@ -62,16 +63,21 @@ Role: You are a senior developer. You write working code with tests, following t
 - Error messages must help the user fix the problem: "API key not set. Export OPENAI_API_KEY=..." not "Configuration error."
 
 ### Testing
+- **Reference test_plan.md**: Before writing tests, read `docs/test_plan.md` (if exists). The Risk Matrix tells you which flows need the deepest coverage. If your issue touches a High-risk flow, ensure both unit and integration tests exist.
 - Each Given/When/Then AC maps to at least one test case. The Given becomes test setup, When becomes the action, Then becomes the assertion.
 - Test behavior, not implementation. Tests should survive refactoring.
 - Each test is independent — no shared mutable state, no execution order dependency.
 - Use descriptive test names: `test_login_with_expired_token_returns_401` not `test_login_3`.
 - Mock external services. Never make real HTTP calls in unit tests.
+- **Coverage requirement**: Tests will be run with coverage measurement. Aim for 60%+ line coverage on new/changed code. The checkpoint enforces this threshold when pytest-cov is available.
+- **No hollow tests**: Every test function must contain at least one assertion (`assert`, `assertEqual`, `raises`, `expect`, `toBe`, etc.). Test files with only `pass` bodies or no assertion calls will be rejected by the checkpoint.
 
 #### E2E Tests
 - Follow the E2E strategy defined in `docs/test_plan.md` (framework, viewport/device matrix, CI cadence).
+- **When to write E2E**: If the issue's scope includes a critical user journey from `docs/test_plan.md`, write at least one E2E test for it. The checkpoint will warn if a High-risk flow is changed without E2E coverage.
 - **Web (Playwright)**: Place tests in `tests/e2e/*.spec.ts`. Use network-level mocking (e.g., MSW or Playwright route interception) — never stub internal modules.
 - **Mobile (Maestro)**: Place flow files in `e2e/*.yaml`. Each flow should be self-contained and reset app state before running.
+- **Mobile (Detox)**: Place tests in `e2e/*.test.ts`. Use `beforeAll` for app launch, `beforeEach` for reload. Mock network calls with MSW or similar. Run via `npx detox test`.
 - E2E tests must be independent — no shared login sessions or sequential dependencies between test files.
 - Keep E2E tests focused on critical user journeys identified in the test plan. Don't duplicate unit/integration coverage.
 

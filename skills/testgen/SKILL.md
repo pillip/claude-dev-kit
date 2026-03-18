@@ -1,0 +1,137 @@
+---
+name: testgen
+description: Scan the codebase for missing or hollow tests, generate unit/integration/E2E tests, and create a PR.
+argument-hint: [file or directory path, or omit for full scan]
+disable-model-invocation: false
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash
+---
+## Checkpoint Rules — MANDATORY
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+
+**Slug convention**: After creating the worktree, store the branch slug (e.g., `testgen/add-missing-tests`) for use in checkpoint commands.
+
+## Argument Validation (run before anything else)
+1) If `$ARGUMENTS` is provided, verify it exists as a file or directory using Glob or Read.
+   - If the path does not exist: stop with "Target path not found: `<path>`. Please provide a valid file or directory path."
+2) If `$ARGUMENTS` is empty: scan the entire project (all source files).
+
+Algorithm:
+1) Ensure `gh` authenticated (`gh auth status`).
+2) Gather context — read the following docs (if they exist, skip silently if not).
+   **Read all applicable documents via parallel Read tool calls in a single message.**
+   - `docs/test_plan.md` — test strategy, risk matrix, critical flows for E2E prioritization
+   - `docs/architecture.md` — tech stack, modules, dependencies
+   - `docs/review_lessons.md` — known recurring quality issues
+
+3) **Scan phase — Identify test gaps**:
+   a) Detect project language(s):
+      - **Python**: Look for `pyproject.toml`, `setup.py`, or `*.py` source files. Test convention: `tests/test_*.py`.
+      - **JS/TS**: Look for `package.json`. Test convention: `*.test.ts`, `*.spec.ts`, `__tests__/`.
+   b) For the target path (or entire project), find all source files excluding:
+      - Test files themselves (`test_*`, `*_test.*`, `*.spec.*`, `*.test.*`)
+      - Config files (`.json`, `.toml`, `.yaml`, `.yml`, `.md`, `.css`, `.html`, `.lock`)
+      - Generated files, `node_modules/`, `__pycache__/`, `.git/`, `dist/`, `build/`
+      - `__init__.py` files that are empty or import-only
+   c) For each source file, check if a corresponding test file exists:
+      - Python `src/module.py` → `tests/test_module.py`
+      - JS/TS `src/component.ts` → `src/component.test.ts` or `src/component.spec.ts` or `__tests__/component.test.ts`
+   d) For source files that have test files, check for **hollow tests**:
+      - Python: test file must contain `def test_` functions with `assert`/`mock`/`raises`
+      - JS/TS: test file must contain `it(`/`test(` with `expect`/`toBe`/`toEqual`
+   e) **E2E gap analysis** (if `docs/test_plan.md` exists):
+      - Read the Critical Flows from the Risk Matrix
+      - Check if `tests/e2e/` or `e2e/` directory has test files covering those flows
+      - Identify High-risk flows without E2E coverage
+
+4) **Present gap report** to the user:
+   ```
+   ## Test Coverage Gap Report
+
+   ### Missing Unit Tests (N files)
+   | Source File | Expected Test | Priority |
+   |-------------|--------------|----------|
+   | src/auth.py | tests/test_auth.py | High (auth = critical) |
+
+   ### Hollow Tests (N files)
+   | Test File | Issue |
+   |-----------|-------|
+   | tests/test_utils.py | No assertions found |
+
+   ### Missing E2E Tests (N flows)
+   | Critical Flow | Risk | Status |
+   |--------------|------|--------|
+   | User login | High | No E2E test |
+   ```
+   Ask user to confirm which gaps to fill (all, or a subset).
+
+5) After user approval, create worktree:
+   ```bash
+   WT="$(bash scripts/worktree.sh create testgen/add-missing-tests)"
+   ```
+   All subsequent file operations happen inside `$WT/`.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill testgen --phase worktree --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+6) **Generate tests** inside `$WT/`:
+   For each approved gap, ask test-generator subagent to:
+   a) Read the source file thoroughly — understand all public functions, classes, methods
+   b) Read existing tests in the project to match style and patterns
+   c) Write test file with:
+      - **Unit tests**: happy path + at least one edge case per public function
+      - **Integration tests**: if the source involves API endpoints or DB queries
+      - **E2E tests**: for Critical Flows from test_plan.md (Playwright for web, Maestro for mobile)
+   d) Use descriptive test names: `test_login_with_expired_token_returns_401`
+   e) Mock external dependencies — no real HTTP calls or DB connections in unit tests
+   f) Each test must have real assertions (not `pass` or empty bodies)
+
+7) **Run all generated tests** inside `$WT/`:
+   - Python: `pytest tests/ -q --tb=short`
+   - JS/TS: `npm test`
+   - If any test fails: fix the test (not the source code). Re-run until all pass.
+   - If a test cannot be fixed after 2 attempts: remove it and log a warning.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill testgen --phase test --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+8) Create GH Issue:
+   - `gh issue create --title "test: add missing tests for [scope]" --body "<body>"`
+   - Body must include: gap report summary, number of tests generated, coverage improvement.
+9) Commit + push (from `$WT/`).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill testgen --phase push --issue "$SLUG"`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+10) Create PR:
+    - `gh pr create --title "test: add missing tests for [scope]" --body "Closes #<issue_number>\n\n<gap report summary>"`
+11) Report the PR URL to the user.
+
+## Error Handling
+- If `gh auth status` fails: stop and instruct the user to run `gh auth login`.
+- If no test gaps found: report "All source files have corresponding tests with real assertions. No action needed." and stop.
+- If tests fail after generation: attempt to fix the test (2 tries max). If still failing, remove the test and report.
+- If `git push` fails: check for upstream conflicts; report and stop.
+
+## Rollback
+- **CRITICAL**: `cd` and `remove` MUST run in a single shell command (`&&`).
+  A child process `cd` cannot change the parent shell's CWD — separate calls
+  leave the shell in a deleted directory, breaking all subsequent commands.
+- If failure occurs after worktree creation but before PR:
+  1. `cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>`
+  2. `git push origin --delete <branch>` (remote cleanup, if pushed)
+- If failure occurs after PR creation: `gh pr close <pr_number>` then clean up as above.
+
+## Shared Registry Files
+**IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
+These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+
+## Guidelines
+- Prioritize by risk: test critical paths first (auth, payments, data mutations).
+- Match existing test style — read at least 2 existing test files before writing new ones.
+- Don't generate tests for trivial code (empty `__init__.py`, pure config, type-only files).
+- E2E tests should focus on critical user journeys, not duplicate unit test coverage.
+- If `docs/test_plan.md` exists, use its framework recommendations (Playwright, Maestro, pytest).
+- Keep generated tests independent — no shared mutable state between tests.

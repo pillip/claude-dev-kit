@@ -39,19 +39,45 @@ Steps:
 > The script auto-detects UI issues via Track field/title keywords. Non-UI issues pass automatically.
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-4) Apply minimal fixes for Critical/High findings (code + UI); re-run tests inside `$WT/`.
+3.6) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
+   Ask design-auditor subagent to audit the design system:
+   - Pass all design context files gathered in step 3.
+   - Auditor checks: token consistency, component completeness, cross-platform alignment, philosophy compliance, copy coverage.
+   - Output: `docs/design_audit.md` with severity-classified findings.
+
+3.7) IF UI issue:
+   Ask a11y-auditor subagent to perform WCAG 2.1 AA accessibility audit:
+   - Pass design context files + source code files from the PR diff.
+   - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
+   - Output: `docs/a11y_audit.md` with findings and fix suggestions.
+
+4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit); re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase test --issue $ARGUMENTS`
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+4.5) **Test quality verification**: Validate that all test files in the branch contain real assertions (no hollow tests). This catches test files that exist to satisfy checkpoints but don't actually verify behavior.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase test-quality --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 5) Update docs/review_notes.md (inside `$WT/`) with sections:
    - **Code Review**: findings, changes, follow-ups.
    - **Security Findings**: severity-classified list with remediation steps.
    - **UI Review** (from ui-reviewer, if applicable): State Coverage, Copy, Tokens, Accessibility.
+   - **Design Audit** (from design-auditor, if applicable): Token Consistency, Component Completeness, Philosophy Compliance.
+   - **Accessibility Audit** (from a11y-auditor, if applicable): WCAG 2.1 AA findings and remediation.
 5.5) Ask reviewer subagent to update `docs/review_lessons.md`:
    - Use `$ROOT/docs/review_lessons.md` with `flock_edit.sh` for safe concurrent modification.
    - Add new preventable patterns or increment frequency of existing ones.
+5.7) **Update test plan** (if `docs/test_plan.md` exists):
+   - Ask qa-designer subagent to review and update `docs/test_plan.md` based on the PR changes.
+   - Pass: PR diff summary, list of changed files, and current `docs/test_plan.md` content.
+   - qa-designer evaluates: new flows requiring test coverage, risk level changes, E2E gap updates.
+   - Update `$ROOT/docs/test_plan.md` via `flock_edit.sh` for safe concurrent modification.
+   - If no updates needed: skip silently.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase review --issue $ARGUMENTS`
