@@ -60,6 +60,26 @@ Steps:
     - `gh pr create --title "fix: <concise bug description>" --body "Closes #<issue_number>\n\n<details>"`
 13) Report the PR URL to the user — continue with `/review` and `/ship`.
 
+## Sprint Integration (optional)
+If `issues.md` exists in the project root, register this work in the sprint ecosystem:
+1) Read `issues.md` to find the next available ISSUE-NNN number.
+2) Append a new issue entry via flock_edit.sh:
+   ```bash
+   ROOT="$(bash scripts/worktree.sh root)"
+   bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<append issue entry>'
+   ```
+   Issue fields:
+   - Title: same as GH Issue title
+   - Track: platform
+   - Priority: P2
+   - Status: done (PR already created)
+   - GH-Issue: `<number>`
+   - PR: `<pr_url>`
+   - Depends-On: none
+3) This allows team-lead to track standalone skill work in sprint_state.md.
+
+If `issues.md` does not exist, skip this step silently.
+
 ## Error Handling
 - If `gh auth status` fails: stop and instruct the user to run `gh auth login`.
 - If the error cannot be located in the codebase: ask the user for more context (full stack trace, reproduction steps).

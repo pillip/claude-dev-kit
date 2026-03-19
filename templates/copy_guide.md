@@ -6,7 +6,7 @@
 - [3 adjectives, e.g., "concise, warm, confident"]
 
 ### Formality
-- [존댓말/반말, formal/casual]
+- [formal/informal speech, formal/casual]
 
 ### We sound like…
 - [description]

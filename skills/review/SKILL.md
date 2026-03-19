@@ -1,7 +1,7 @@
 ---
 name: review
-description: PR 기준 시니어 리뷰를 수행하고 최소 수정/테스트/리뷰노트를 남깁니다.
-argument-hint: [ISSUE-번호]
+description: Performs a senior-level review against the PR, applying minimal fixes/tests/review notes.
+argument-hint: [ISSUE-number]
 disable-model-invocation: true
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ---

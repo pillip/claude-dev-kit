@@ -1,7 +1,7 @@
 ---
 name: prd
-description: 자유 대화를 통해 PRD를 함께 작성합니다.
-argument-hint: [출력 파일 경로, 기본값 PRD.md]
+description: Collaboratively writes a PRD through free-form conversation.
+argument-hint: [output file path, default PRD.md]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit
 ---

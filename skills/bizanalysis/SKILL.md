@@ -1,7 +1,7 @@
 ---
 name: bizanalysis
-description: 사업적 타당성을 분석하고 크리틱합니다. /brainstorm 이후, /prd 전에 사용하세요.
-argument-hint: [출력 파일 경로, 기본값 docs/business_analysis.md]
+description: Analyzes and critiques business viability. Use after /brainstorm and before /prd.
+argument-hint: [output file path, default docs/business_analysis.md]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch
 ---

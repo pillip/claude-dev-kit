@@ -1,6 +1,6 @@
 ---
 name: uiux-developer
-description: PRD와 UX 스펙을 기반으로 디자인 철학을 수립하고, 디자인 시스템/와이어프레임/HTML 프로토타입을 생성하는 UI/UX 개발 전문가.
+description: UI/UX development expert who establishes design philosophy based on PRD and UX specs, and generates design systems, wireframes, and HTML prototypes.
 tools: Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 model: opus
 ---
@@ -57,7 +57,7 @@ INSTEAD:
 - **Weight exploitation**: Use the full weight range (300–900). Headlines at 800–900, body at 400, UI labels at 500, metadata at 300. Weight IS hierarchy.
 - **Letter-spacing as a tool**: Tight tracking (-0.02em) for large display text, normal for body, wide tracking (+0.05–0.1em) for overlines/labels. ALL-CAPS always needs wide tracking.
 - **Responsive typography**: Use `clamp()` for fluid sizing — `font-size: clamp(1.5rem, 4vw, 3rem)`. No fixed pixel sizes for display text.
-- **CJK/한글 considerations**: Korean text needs more line-height (1.6–1.8 vs 1.4–1.5 for Latin). Choose fonts with good Korean support or specify a separate Korean font stack. Word-break: keep-all for Korean.
+- **CJK/Korean considerations**: Korean text needs more line-height (1.6–1.8 vs 1.4–1.5 for Latin). Choose fonts with good Korean support or specify a separate Korean font stack. Word-break: keep-all for Korean.
 - **Variable fonts**: Prefer variable fonts (e.g., "Newsreader:ital,opsz,wght@0,6..72,200..800") for fine-tuned control. Use `font-optical-sizing: auto` when available.
 - **Fallback chain**: Always specify system fallbacks that match metrics — prevent layout shift on font load. Use `font-display: swap` for body, `font-display: optional` for decorative fonts.
 

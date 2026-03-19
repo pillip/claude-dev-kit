@@ -10,6 +10,46 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 - **GitHub-first**: Issues and PRs are the single source of truth
 - **1 Issue = 1 PR**: Each issue maps to exactly one pull request
 - **`issues.md` as SSOT**: Progress and completion are tracked by Status in this file
+- **Skill orchestration**: Skills feed back into each other — review findings auto-create issues, shipped code triggers test gap detection, standalone skills register in the sprint ecosystem
+
+## Core Use Cases
+
+### 1. Build a product from scratch
+```
+/brainstorm → /bizanalysis → /prd → /kickoff → /uiux → /sprint
+```
+Start with an idea, validate it, write a PRD, generate planning docs, design the UI, and let the team-lead auto-implement everything.
+
+### 2. Implement a single feature
+```
+/implement ISSUE-001 → /review ISSUE-001 → /ship
+```
+Pick an issue from `issues.md`, implement it with TDD, review with security audit, and merge.
+
+### 3. Run a full sprint
+```
+/sprint
+```
+Team-lead picks up all ready issues, implements them in parallel, reviews each PR, ships merged code, and auto-creates follow-up issues from review findings.
+
+### 4. Fix a bug
+```
+/diagnose "TypeError in auth.py line 42" → /review → /ship
+```
+Trace the root cause, apply a minimal fix with regression test, review, and ship.
+
+### 5. Improve test coverage
+```
+/testgen src/auth/
+```
+Scan for missing or hollow tests, generate unit/integration/E2E tests, and create a PR.
+
+### 6. Maintain and evolve
+```
+/refactor src/legacy_module.py    # Improve code structure
+/migrate "Django 5.0"             # Upgrade dependencies
+/devops "github-actions"          # Set up CI/CD
+```
 
 ## Workflow
 
@@ -23,54 +63,77 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
   Socratic     validation     PRD writing  UX spec       philosophy  GH Issue              Minimal fix   CHANGELOG
   dialogue     Go/Pivot/No               Architecture  Design sys  PR creation            Re-run tests  STATUS update
                                            Issue plan    Wireframes  Closes #N              Security      Documentation
-                                           Test plan     Prototype                          UI review
+                                           Test plan     Prototype                          UI review     Test gap advisory
 ```
 
-> `/brainstorm`과 `/bizanalysis`는 선택 단계입니다. 아이디어가 명확하면 `/prd`부터 시작할 수 있습니다.
-> `/uiux`는 UI가 있는 프로젝트에서 선택적으로 사용합니다. UI가 없는 백엔드/CLI 프로젝트는 `/kickoff` → `/implement`로 바로 진행합니다.
-> `/sprint`은 여러 이슈를 team-lead가 자동 오케스트레이션합니다. 단일 이슈는 `/implement`로 직접 진행합니다.
+> `/brainstorm` and `/bizanalysis` are optional. If your idea is clear, start from `/prd`.
+> `/uiux` is optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/implement`.
+> `/sprint` auto-orchestrates multiple issues via team-lead. For a single issue, use `/implement` directly.
+
+### Skill Orchestration
+
+Skills automatically feed into each other within `/sprint`:
+
+```
+implement → developer reports Discovered Findings
+         → team-lead invokes planner to create follow-up issues
+
+review   → review_notes.md with severity-classified findings
+         → team-lead triages Critical/High findings → auto-creates issues
+
+ship     → post-ship test gap scan
+         → team-lead auto-triggers /testgen for uncovered files
+
+test failure → team-lead invokes diagnostician for root cause analysis
+            → diagnostician fix applied before retry
+
+review_lessons.md → patterns with Frequency ≥ 3 + Critical/High severity
+                  → team-lead creates preventive issues via planner
+```
+
+Standalone skills (`/testgen`, `/diagnose`, `/refactor`) register their work in `issues.md` when it exists, so team-lead can track all work in `sprint_state.md`.
 
 ### Decision Tree — Which skill should I use?
 
 ```
 START
  │
- ├─ 아이디어만 있고 방향이 불확실?
- │   └─ YES → /brainstorm → 사업성 검증 필요? → /bizanalysis → /prd
+ ├─ Have an idea but direction is unclear?
+ │   └─ YES → /brainstorm → Need business validation? → /bizanalysis → /prd
  │
- ├─ PRD가 없다?
+ ├─ No PRD yet?
  │   └─ YES → /prd
  │
- ├─ PRD는 있지만 planning docs가 없다?
+ ├─ PRD exists but no planning docs?
  │   └─ YES → /kickoff PRD.md
  │
- ├─ Planning docs 완료, UI가 있는 프로젝트?
- │   ├─ 웹 → /uiux
- │   └─ 모바일 → /mobile-uiux
+ ├─ Planning docs ready, project has UI?
+ │   ├─ Web → /uiux
+ │   └─ Mobile → /mobile-uiux
  │
- ├─ 이슈를 추가로 만들고 싶다?
- │   └─ YES → /issue "설명"
+ ├─ Want to add more issues?
+ │   └─ YES → /issue "description"
  │
- ├─ 구현할 이슈가 여러 개?
- │   ├─ YES → /sprint (team-lead가 자동 오케스트레이션)
- │   └─ 단일 이슈 → /implement ISSUE-001
+ ├─ Multiple issues to implement?
+ │   ├─ YES → /sprint (team-lead auto-orchestrates)
+ │   └─ Single issue → /implement ISSUE-001
  │
- ├─ PR이 올라왔다?
+ ├─ PR is ready for review?
  │   └─ YES → /review ISSUE-001 → /ship
  │
- ├─ 버그가 발생했다?
- │   └─ YES → /diagnose "에러 설명"
+ ├─ Bug occurred?
+ │   └─ YES → /diagnose "error description"
  │
- ├─ 의존성/런타임 업그레이드?
+ ├─ Dependency/runtime upgrade?
  │   └─ YES → /migrate "target"
  │
- ├─ 코드 구조 개선?
+ ├─ Code structure needs improvement?
  │   └─ YES → /refactor path/to/module
  │
- ├─ 테스트가 부족하다?
- │   └─ YES → /testgen [path] (전체 또는 특정 경로 스캔)
+ ├─ Tests are insufficient?
+ │   └─ YES → /testgen [path] (full scan or specific path)
  │
- └─ CI/CD, Docker, 배포 설정?
+ └─ CI/CD, Docker, deployment setup?
      └─ YES → /devops "target"
 ```
 
@@ -80,13 +143,13 @@ START
 | `/bizanalysis [idea]` | Business viability analysis with market research | `docs/business_analysis.md` |
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
-| `/issue [description]` | 자연어로 단일 이슈 생성 + planning docs 자동 업데이트 | `issues.md`, `STATUS.md`, 관련 `docs/*.md` |
+| `/issue [description]` | Create a single issue from natural language + auto-update planning docs | `issues.md`, `STATUS.md`, related `docs/*.md` |
 | `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
 | `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_philosophy.md`, `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
 | `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review + security audit + UI review + design audit + a11y audit on PR | `docs/review_notes.md`, `docs/ui_review_notes.md`, `docs/design_audit.md`, `docs/a11y_audit.md` |
-| `/ship` | Merge PR + update docs/changelog | `CHANGELOG.md`, `STATUS.md` updated |
+| `/ship` | Merge PR + update docs/changelog + test gap advisory | `CHANGELOG.md`, `STATUS.md` updated |
 | `/diagnose [error]` | Analyze a bug and propose a targeted fix | Diagnosis + fix |
 | `/migrate [target]` | Plan and execute a migration | Migration plan + updated code/config |
 | `/refactor [path]` | Improve code structure without changing behavior | Refactored code |
@@ -132,8 +195,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 22 agent definitions
-│   ├── skills/          # 15 skills
+│   ├── agents/          # 26 agent definitions
+│   ├── skills/          # 17 skills
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -180,10 +243,11 @@ Starts an interactive conversation to help you create or update a PRD. If the fi
 /kickoff PRD.md
 ```
 
-Reads the PRD and runs 5 subagents to generate planning documents:
+Reads the PRD and runs 6 subagents to generate planning documents:
 - `requirement-analyst` → `docs/requirements.md`
 - `ux-designer` → `docs/ux_spec.md`
 - `architect` → `docs/architecture.md`
+- `data-modeler` → `docs/data_model.md`
 - `planner` → `issues.md`
 - `qa-designer` → `docs/test_plan.md`
 
@@ -193,7 +257,7 @@ Reads the PRD and runs 5 subagents to generate planning documents:
 /uiux [PRD.md]
 ```
 
-Requires `/kickoff` outputs. Design Interview를 통해 프로젝트 고유의 디자인 방향을 수립한 뒤, 레퍼런스 리서치를 거쳐 차별화된 디자인 시스템을 생성합니다. Builds on `docs/ux_spec.md` and `docs/requirements.md` to produce:
+Requires `/kickoff` outputs. Conducts a Design Interview to establish the project's unique design direction, then performs reference research to generate a differentiated design system. Builds on `docs/ux_spec.md` and `docs/requirements.md` to produce:
 
 1. **Design Philosophy** (`docs/design_philosophy.md`) — Named aesthetic direction with visual philosophy
 2. **Design System** (`docs/design_system.md`) — Colors, typography (Google Fonts), spacing, components as CSS custom properties
@@ -209,7 +273,7 @@ The skill applies [Anthropic's frontend-design guidelines](https://claude.com/bl
 /mobile-uiux [PRD.md]
 ```
 
-Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Design Interview를 통해 프로젝트 고유의 디자인 방향을 수립한 뒤, 레퍼런스 리서치를 거쳐 차별화된 모바일 디자인 시스템을 생성합니다. If `docs/design_philosophy.md` already exists (from `/uiux`), reuses it with user confirmation; otherwise generates it from scratch. Produces design philosophy, mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
+Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Conducts a Design Interview to establish the project's unique design direction, then performs reference research to generate a differentiated mobile design system. If `docs/design_philosophy.md` already exists (from `/uiux`), reuses it with user confirmation; otherwise generates it from scratch. Produces design philosophy, mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
 
 ### Sprint — Auto-orchestrate multiple issues
 
@@ -217,7 +281,7 @@ Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile app
 /sprint
 ```
 
-Dispatches the team-lead agent to automatically pick up ready issues from `issues.md`, implement them via `/implement`, review via `/review`, and ship via `/ship`. Loops until all issues are done or max iterations reached.
+Dispatches the team-lead agent to automatically pick up ready issues from `issues.md`, implement them via `/implement`, review via `/review`, and ship via `/ship`. Loops until all issues are done or max iterations reached. Includes automated feedback loops: review findings create follow-up issues, test failures trigger diagnostician, and shipped code gets test gap detection.
 
 ### Implement — Build an issue
 
@@ -245,7 +309,7 @@ Performs a senior code review with an integrated security audit. Checks correctn
 /ship
 ```
 
-Verifies tests pass, updates documentation, and merges the PR.
+Verifies tests pass, updates documentation, merges the PR, and reports test coverage gaps in shipped code with suggestions to run `/testgen`.
 
 ### Diagnose — Analyze and fix bugs
 
@@ -281,7 +345,7 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ## Agents
 
-22 specialized agents, each with a defined role and tool permissions:
+26 specialized agents, each with a defined role and tool permissions:
 
 | Agent | Role | Tools |
 |-------|------|-------|
@@ -292,16 +356,20 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 | `ux-designer` | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `mobile-uiux-developer` | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `desktop-uiux-developer` | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `copywriter` | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
 | `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
-| `planner` | Break work into issues | Read, Glob, Grep, Write, Edit |
-| `issue-writer` | 자연어 → 단일 이슈 생성 + docs 업데이트 | Read, Glob, Grep, Write, Edit, Bash |
+| `planner` | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
+| `issue-writer` | Natural language → single issue creation + docs update | Read, Glob, Grep, Write, Edit, Bash |
 | `qa-designer` | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
-| `team-lead` | Sprint orchestrator — dispatch agents, manage issues | Read, Glob, Grep, Write, Edit, Bash, Task |
-| `developer` | Implement code + GH Issue/PR | Read, Glob, Grep, Write, Edit, Bash |
+| `team-lead` | Sprint orchestrator — dispatch agents, manage issues, triage review findings | Read, Glob, Grep, Write, Edit, Bash, Task |
+| `developer` | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
+| `test-generator` | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
 | `reviewer` | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
 | `ui-reviewer` | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
+| `design-auditor` | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
+| `a11y-auditor` | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
 | `documenter` | Maintain documentation | Read, Glob, Grep, Write, Edit |
 | `diagnostician` | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
 | `migrator` | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
@@ -312,30 +380,8 @@ Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (22)
-│   ├── brainstormer.md
-│   ├── business-analyst.md
-│   ├── prd-writer.md
-│   ├── requirement-analyst.md
-│   ├── ux-designer.md
-│   ├── uiux-developer.md
-│   ├── mobile-uiux-developer.md
-│   ├── copywriter.md
-│   ├── architect.md
-│   ├── data-modeler.md
-│   ├── planner.md
-│   ├── issue-writer.md
-│   ├── qa-designer.md
-│   ├── team-lead.md
-│   ├── developer.md
-│   ├── reviewer.md
-│   ├── ui-reviewer.md
-│   ├── documenter.md
-│   ├── diagnostician.md
-│   ├── migrator.md
-│   ├── refactorer.md
-│   └── devops.md
-├── skills/                  # Workflow skills (15)
+├── agents/                  # Agent role definitions (26)
+├── skills/                  # Workflow skills (17)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
@@ -343,6 +389,7 @@ claude-dev-kit/
 │   ├── issue/SKILL.md
 │   ├── uiux/SKILL.md
 │   ├── mobile-uiux/SKILL.md
+│   ├── desktop-uiux/SKILL.md
 │   ├── sprint/SKILL.md
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
@@ -350,27 +397,9 @@ claude-dev-kit/
 │   ├── diagnose/SKILL.md
 │   ├── migrate/SKILL.md
 │   ├── refactor/SKILL.md
+│   ├── testgen/SKILL.md
 │   └── devops/SKILL.md
 ├── templates/               # Document templates (19)
-│   ├── requirements.md
-│   ├── ux_spec.md
-│   ├── architecture.md
-│   ├── data_model.md
-│   ├── design_philosophy.md
-│   ├── design_system.md
-│   ├── design_system_mobile.md
-│   ├── wireframes.md
-│   ├── wireframes_mobile.md
-│   ├── interactions.md
-│   ├── interactions_mobile.md
-│   ├── copy_guide.md
-│   ├── issues.md
-│   ├── test_plan.md
-│   ├── review_lessons.md
-│   ├── review_notes.md
-│   ├── ui_review_notes.md
-│   ├── brainstorm_notes.md
-│   └── business_analysis.md
 ├── project/                 # Files installed into target project
 │   └── .claude/
 │       ├── hooks/agent_state.py

@@ -35,8 +35,28 @@ Each iteration:
    - Select agent(s) based on issue characteristics (see Agent Selection below)
 6. **Collect results**: After each batch, check outcomes:
    - Success → issue Status=done, proceed to review/ship
-   - Test failure → retry once, then flag for human escalation
+   - Test failure → invoke **diagnostician** agent with the failing test output and relevant source files. If diagnostician identifies a fix with High confidence, apply it and re-run tests. If diagnostician reports Low/Medium confidence or the fix doesn't resolve the failure, flag for human escalation.
    - New issues discovered → queue for planner in next iteration
+   - **Developer findings**: Parse the developer agent's response for a "Discovered Findings" table. For each finding with severity Critical or High, invoke **planner** agent to create a follow-up issue. Log in sprint_state.md > Discovered Issues.
+6.5. **Review Artifact Triage** (after each review phase completes):
+   a) Read `docs/review_notes.md` from the worktree (`$WT/`).
+   b) Extract findings with severity Critical or High that were NOT auto-fixed in review step 4.
+   c) For each unresolved Critical/High finding:
+      - Invoke **planner** agent with: finding description + existing `issues.md` + `docs/review_lessons.md`
+      - Planner creates follow-up issue (Priority: P0 for Critical, P1 for High)
+      - Set Depends-On to the current issue if the fix requires it to ship first
+   d) Log created follow-up issues in `docs/sprint_state.md` > Discovered Issues section.
+   e) If no unresolved Critical/High findings exist, skip silently.
+6.7. **Post-ship test gap auto-fill** (after each ship phase completes successfully):
+   a) Identify source files changed in the shipped PR: `git diff --name-only HEAD~1 HEAD` on main.
+   b) Filter to source files only (exclude tests, configs, docs, generated files).
+   c) For each changed source file, check if a corresponding test file exists.
+   d) If test gaps found:
+      - Read `skills/testgen/SKILL.md` and follow its algorithm for the gap files.
+      - Scope the testgen run to only the changed files with missing tests (not a full scan).
+      - The testgen flow will create a GH Issue + PR and register in `issues.md` via Sprint Integration.
+      - Log the testgen invocation in `docs/sprint_state.md` > Discovered Issues.
+   e) If no gaps found, skip silently.
 7. **Update checkpoint**: Write `docs/sprint_state.md` with current progress.
 8. **Update STATUS.md**: Reflect overall sprint progress (via flock_edit.sh).
 9. **Loop or stop**:
@@ -50,7 +70,7 @@ Read the **Agent Selection** table in `skills/sprint/SKILL.md` at runtime. It ma
 
 ## Skill-Following Protocol
 
-**IMPORTANT: implement/review/ship 단계를 실행할 때 절대 Skill 도구(`/implement`, `/review`, `/ship`)를 호출하지 마세요. 이 스킬들은 `disable-model-invocation: true`로 설정되어 있어 직접 호출하면 실패합니다. 대신 해당 SKILL.md 파일을 Read 도구로 읽고, 그 알고리즘을 직접 따르세요.**
+**IMPORTANT: When executing implement/review/ship phases, NEVER invoke the Skill tools (`/implement`, `/review`, `/ship`). These skills are configured with `disable-model-invocation: true` and will fail if called directly. Instead, read the corresponding SKILL.md file with the Read tool and follow its algorithm yourself.**
 
 When executing a skill's algorithm:
 
@@ -156,6 +176,7 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 - **Batch limits**: Did the current iteration respect MAX_PARALLEL? No over-dispatching?
 - **State consistency**: Does `docs/sprint_state.md` accurately reflect the current status of all issues?
 - **Escalation check**: Are there any issues stuck for 3+ attempts that should be escalated to the user?
+- **Lessons escalation**: Read `docs/review_lessons.md`. Any pattern with Frequency ≥ 3 and Severity Critical or High → invoke planner to create a preventive issue (e.g., "Add input validation middleware" for recurring SQL injection patterns). Only create if no existing backlog issue already addresses the pattern.
 - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
   - If Low: pause the sprint loop and escalate to the user.
   - If Medium: log concerns in sprint_state.md and continue cautiously.

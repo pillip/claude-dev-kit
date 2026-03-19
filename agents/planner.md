@@ -110,3 +110,16 @@ Role: You are a technical project planner. You decompose requirements into issue
 - Group related issues together but keep them independently shippable.
 - If the PRD is large, focus on the critical path first (P0 issues) and note P1/P2 as backlog.
 - `/implement` will fill in Branch, GH-Issue, PR, and Status fields — leave them empty.
+
+## Finding-to-Issue Creation (when invoked by team-lead with review findings)
+
+When team-lead invokes you with review findings or review_lessons.md patterns:
+1) Read the finding's severity, description, and affected files.
+2) Check existing `issues.md` for duplicates — if an issue already covers this area, skip.
+3) Create a new issue with:
+   - Title: imperative verb describing the fix (e.g., "Add input validation to auth endpoints")
+   - Track: product (if user-facing) or platform (if infra/security)
+   - Priority: P0 for Critical severity, P1 for High, P2 for Medium
+   - PRD-Ref: RL-NNN (from review_lessons.md) if applicable
+   - Implementation Notes: include the original finding, affected files, and suggested approach
+4) If the finding references a review_lessons.md pattern (RL-NNN), include the pattern ID and prevention method in the AC.

@@ -1,7 +1,7 @@
 ---
 name: kickoff
-description: PRD 기반으로 요구사항/UX 스펙/아키텍처/데이터 모델/이슈/테스트 플랜을 생성합니다. 6개 서브에이전트를 순서대로 실행합니다.
-argument-hint: [PRD.md 경로]
+description: Generates requirements/UX spec/architecture/data model/issues/test plan from a PRD. Runs 6 subagents in sequence.
+argument-hint: [PRD.md path]
 disable-model-invocation: true
 allowed-tools: Task, Read, Glob, Grep, Write, Edit
 ---
@@ -13,15 +13,15 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit
 2) Read PRD (`$ARGUMENTS` or `PRD.md`). If not found, stop immediately and report.
 3) Read existing project files if any (README, pyproject.toml, etc.) to understand tech stack context.
 
-### Phase 1.5 — PRD Digest (Phase 2 전에 반드시 실행)
-PRD 길이에 관계없이 항상 다음 구조로 요약을 생성하여 `docs/prd_digest.md`에 저장:
-  - Goals (3줄 이내)
-  - Target User (1줄)
-  - Must-have Features (번호 목록, 각 1줄)
-  - Key NFRs (번호 목록, 각 1줄)
-  - Scope Boundaries (In/Out 각 3줄 이내)
+### Phase 1.5 — PRD Digest (MUST run before Phase 2)
+Regardless of PRD length, always generate a summary with the following structure and save it to `docs/prd_digest.md`:
+  - Goals (3 lines or fewer)
+  - Target User (1 line)
+  - Must-have Features (numbered list, 1 line each)
+  - Key NFRs (numbered list, 1 line each)
+  - Scope Boundaries (In/Out, 3 lines or fewer each)
 
-이후 subagent에 context 전달 시: PRD 원문 + `docs/prd_digest.md`를 함께 전달.
+When passing context to subsequent subagents: include both the original PRD and `docs/prd_digest.md`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Verify `docs/prd_digest.md` exists and contains all required sections (Goals, Target User, Must-have Features, Key NFRs, Scope Boundaries).
@@ -121,7 +121,7 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
    - Number of screens in UX spec
    - Architecture style chosen
    - Number of issues created
-   - Suggest next step: `/uiux` (웹 UI 프로젝트), `/mobile-uiux` (모바일 앱 프로젝트), or `/implement ISSUE-001`
+   - Suggest next step: `/uiux` (web UI project), `/mobile-uiux` (mobile app project), or `/implement ISSUE-001`
 
 ## Subagent Invocation Pattern
 
@@ -147,8 +147,8 @@ When invoking each subagent via the Task tool:
 
 ## Guidelines
 - The dependency order is critical: requirements → (UX + architecture in parallel) → data model → (planner + QA in parallel).
-- **ux-designer + architect는 반드시 병렬 호출**: 두 subagent 모두 requirements만 필요하고 서로 의존하지 않음.
-- **planner + QA는 반드시 병렬 호출**: 두 subagent는 서로 의존성이 없으므로, 단일 메시지에서 두 개의 Task tool call을 동시에 실행해야 합니다.
+- **ux-designer + architect MUST be invoked in parallel**: Both subagents only need requirements and have no dependency on each other.
+- **planner + QA MUST be invoked in parallel**: Both subagents have no dependency on each other, so they must be executed as two Task tool calls simultaneously in a single message.
 - Each subagent should receive ALL prior outputs as context for maximum coherence.
 - Do NOT modify subagent outputs after they are written — each agent owns its document.
-- PRD Digest는 Phase 1.5에서 항상 생성됨 (길이 조건 없음). 개별 subagent가 임의로 요약하지 말 것.
+- PRD Digest is always generated in Phase 1.5 (no length condition). Individual subagents should not create their own summaries.

@@ -1,7 +1,7 @@
 ---
 name: brainstorm
-description: 자유 대화를 통해 아이디어를 탐색하고 문제를 정의합니다. /prd 전에 방향이 잡히지 않았을 때 사용하세요.
-argument-hint: [출력 파일 경로, 기본값 docs/brainstorm_notes.md]
+description: Explores ideas and defines problems through free-form conversation. Use before /prd when direction is unclear.
+argument-hint: [output file path, default docs/brainstorm_notes.md]
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch
 ---
@@ -45,7 +45,7 @@ Steps:
 - Mirror the user's words and terminology
 - Propose concrete examples to spark thinking
 - Clearly separate problem exploration from solution exploration
-- Use "what if…" prompts when the user seems stuck
+- Use "what if..." prompts when the user seems stuck
 
 ## Guidelines
 - This is an interactive, conversational skill — engage naturally.

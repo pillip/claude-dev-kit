@@ -1,6 +1,6 @@
 ---
 name: sprint
-description: issues.md의 모든 이슈를 자율적으로 implement → review → ship 하며, 동적 이슈 관리를 수행합니다.
+description: Autonomously implements, reviews, and ships all issues in issues.md, with dynamic issue management.
 argument-hint: [--parallel N] [--max-iterations N]
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ---

@@ -1,7 +1,7 @@
 ---
 name: issue
-description: 자연어 설명으로 단일 이슈를 생성하고 관련 planning docs를 자동 업데이트합니다.
-argument-hint: [이슈 설명]
+description: Creates a single issue from a natural language description and auto-updates related planning docs.
+argument-hint: [issue description]
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ---

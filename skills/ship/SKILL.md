@@ -1,6 +1,6 @@
 ---
 name: ship
-description: 테스트/문서/체인지로그를 정리하고 PR을 merge 해서 배포 가능한 상태로 만듭니다.
+description: Finalizes tests/docs/changelog and merges the PR to make it deployment-ready.
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task
 ---
@@ -56,6 +56,22 @@ Steps:
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase smoke --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
+7) **Post-ship test gap advisory** (optional, non-blocking):
+   - Identify files changed in the merged PR: `git diff --name-only HEAD~1 HEAD`
+   - Filter to source files only (exclude test files, configs, docs, generated files)
+   - For each changed source file, check if a corresponding test file exists:
+     - Python `src/module.py` → `tests/test_module.py`
+     - JS/TS `src/component.ts` → `src/component.test.ts` or `src/component.spec.ts`
+   - If gaps found, report to user:
+     ```
+     Test coverage gaps detected in shipped code:
+     - src/auth.py → no corresponding test file
+     - src/webhook.py → test exists but may lack coverage for new functions
+     Suggestion: run `/testgen <path>` to generate missing tests.
+     ```
+   - This step is advisory only — it does NOT block the ship or fail the pipeline.
+   - If no gaps found, skip silently.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.

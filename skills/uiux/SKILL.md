@@ -1,30 +1,30 @@
 ---
 name: uiux
-description: kickoff 산출물 기반으로 디자인 철학을 수립하고, 디자인 시스템/와이어프레임/HTML 프로토타입을 생성합니다. 권장 흐름: /prd → /kickoff → /uiux
-argument-hint: [PRD.md 경로 (선택)]
+description: Establishes a design philosophy based on kickoff outputs, and generates a design system/wireframes/HTML prototype. Recommended flow: /prd → /kickoff → /uiux
+argument-hint: [PRD.md path (optional)]
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 ---
 
 ## Prerequisites
-- `/kickoff`이 먼저 실행되어 아래 파일들이 존재해야 합니다:
-  - `docs/ux_spec.md` (핵심 입력 — IA, 플로우, 화면 목록)
-  - `docs/requirements.md` (기능/비기능 요구사항)
-  - `docs/architecture.md` (기술 스택 참조)
-- PRD 파일은 보조 참고용입니다. kickoff 산출물이 없으면 사용자에게 `/kickoff` 실행을 안내합니다.
+- `/kickoff` must be run first so that the following files exist:
+  - `docs/ux_spec.md` (core input — IA, flows, screen inventory)
+  - `docs/requirements.md` (functional/non-functional requirements)
+  - `docs/architecture.md` (tech stack reference)
+- The PRD file is supplementary reference. If kickoff outputs are missing, guide the user to run `/kickoff`.
 
 ## Algorithm
 
 ### Phase 1 — Context Gathering
-1) Read kickoff outputs (필수):
-   - `docs/ux_spec.md` — 화면 목록, IA, 플로우 추출
-   - `docs/requirements.md` — 기능 요구사항에서 UI 요소 식별
-   - `docs/architecture.md` — 기술 스택, API 엔드포인트 확인
+1) Read kickoff outputs (required):
+   - `docs/ux_spec.md` — extract screen inventory, IA, flows
+   - `docs/requirements.md` — identify UI elements from functional requirements
+   - `docs/architecture.md` — confirm tech stack, API endpoints
 2) Read PRD (`$ARGUMENTS` or `PRD.md`) as supplementary context. If `docs/prd_digest.md` exists, read it for quick PRD summary.
 3) If `docs/ux_spec.md` does not exist:
-   - Stop and tell the user: "kickoff 산출물이 없습니다. 먼저 `/kickoff PRD.md`를 실행해주세요."
+   - Stop and tell the user: "Kickoff outputs are missing. Please run `/kickoff PRD.md` first."
    - Exception: if the user explicitly wants to skip kickoff, proceed with PRD only (warn about limited context).
-**Caching rule**: Phase 1에서 읽은 모든 문서(`docs/ux_spec.md`, `docs/requirements.md`, `docs/architecture.md`, PRD)의 내용은 이후 Phase 전체에서 재사용한다. 동일 파일을 다시 Read tool로 읽지 않는다.
+**Caching rule**: All documents read in Phase 1 (`docs/ux_spec.md`, `docs/requirements.md`, `docs/architecture.md`, PRD) are reused across all subsequent Phases. Do not re-read the same file with the Read tool.
 
 4) Scan the project for existing UI code:
    - Glob for `**/*.html`, `**/*.css`, `**/*.tsx`, `**/*.jsx`, `**/*.vue`, `**/*.svelte`
@@ -34,19 +34,19 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 4.5) Ask the user the following questions to anchor the design direction.
      These answers become binding constraints for Phase 2.
      Present all questions at once (not one-by-one) and wait for answers.
-     Also tell the user: "지금 답하기 어려우면 '스킵'이라고 해주세요. 인터뷰 전체를 건너뛸 수도 있습니다."
+     Also tell the user: "If any of these are hard to answer right now, just say 'skip'. You can also skip the entire interview."
 
-   a) **Brand Personality**: "이 제품을 사람에 비유하면 어떤 사람인가요?"
-      (예: 고급 호텔 컨시어지, 동네 단골 카페 바리스타, 엄격한 수술실 간호사, 장난기 많은 친구)
+   a) **Brand Personality**: "If this product were a person, who would they be?"
+      (e.g., a luxury hotel concierge, a neighborhood cafe barista, a strict operating room nurse, a playful friend)
 
-   b) **Emotional Target**: "사용자가 첫 화면을 봤을 때 느꼈으면 하는 감정 1가지는?"
-      (예: 신뢰감, 호기심, 안도감, 흥분, 차분함)
+   b) **Emotional Target**: "What one emotion do you want users to feel when they see the first screen?"
+      (e.g., trust, curiosity, relief, excitement, calm)
 
-   c) **Anti-Reference**: "절대 이렇게 되면 안 되는 경쟁 제품이나 디자인은?"
-      (피하고 싶은 느낌이나 구체적 제품명)
+   c) **Anti-Reference**: "What competing product or design should this absolutely NOT look like?"
+      (a feeling you want to avoid, or a specific product name)
 
-   d) **Aspiration Reference**: "디자인적으로 참고하고 싶은 제품이나 브랜드가 있나요? (같은 도메인이 아니어도 됨)"
-      (예: Stripe의 깔끔함, 닌텐도의 장난기, Aesop의 고급스러움)
+   d) **Aspiration Reference**: "Is there a product or brand you'd like to reference for design? (doesn't have to be the same domain)"
+      (e.g., Stripe's cleanliness, Nintendo's playfulness, Aesop's luxury)
 
 5) Handle user response:
 
@@ -54,14 +54,14 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    Record answers in memory — these become HARD CONSTRAINTS for Phase 2.
    If the user skips individual questions, note them as "unconstrained" but still avoid generic defaults.
 
-   **Case B — User skips the entire interview** (says "스킵", "넘어가", "pass", etc.):
+   **Case B — User skips the entire interview** (says "skip", "pass", etc.):
    - Do NOT silently proceed with generic defaults.
    - Instead, the agent MUST auto-derive initial constraints from the PRD/UX spec:
      a) Brand Personality → infer from target user personas and product category in PRD
      b) Emotional Target → infer from the product's core value proposition
      c) Anti-Reference → infer from competitor analysis in PRD (if any), otherwise mark "unconstrained"
      d) Aspiration Reference → mark "unconstrained"
-   - Present the auto-derived constraints to the user: "인터뷰를 스킵하셨으므로 PRD에서 다음과 같이 추론했습니다: [constraints]. 이대로 진행할까요?"
+   - Present the auto-derived constraints to the user: "Since you skipped the interview, here's what I inferred from the PRD: [constraints]. Shall I proceed with these?"
    - If approved, proceed with these as soft constraints (not hard).
    - If rejected, re-offer the interview questions or accept corrections.
 
@@ -132,7 +132,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 12.5) Run the **copywriter** agent to generate `docs/copy_guide.md`:
     - Input: `docs/ux_spec.md`, `docs/design_philosophy.md`, `docs/wireframes.md`, `docs/interactions.md`, PRD
     - Output: Voice & tone definition, copy inventory per screen (labels, placeholders, empty/error/success states, confirmations, toasts), patterns, glossary
-    - Phase 1에서 이미 읽은 `docs/ux_spec.md`, PRD 내용과 Phase 2-4에서 생성한 문서 내용을 메모리에서 가져와 subagent prompt에 포함한다 — 파일을 다시 읽지 않는다.
+    - Retrieve the contents of `docs/ux_spec.md` and PRD already read in Phase 1, and the documents generated in Phase 2-4, from memory and include them in the subagent prompt — do not re-read the files.
     - The copy guide must align with the design philosophy's tone (e.g., "Ink & Paper" → restrained, precise language).
     - This step MUST complete before Phase 5 so the prototype uses real copy, not placeholder text.
 
@@ -211,7 +211,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 
 ## Shared Registry Files
 - None. This skill produces standalone deliverables — no `issues.md` or `STATUS.md` updates.
-- `/kickoff`이 이미 이슈를 생성했으므로, UI/UX 관련 추가 이슈가 필요하면 수동으로 `issues.md`에 추가하거나 `/kickoff`을 다시 실행.
+- Since `/kickoff` has already created issues, if additional UI/UX-related issues are needed, add them manually to `issues.md` or re-run `/kickoff`.
 
 ## Error Handling
 - If `docs/ux_spec.md` not found: stop and suggest running `/kickoff` first (unless user explicitly opts to skip).

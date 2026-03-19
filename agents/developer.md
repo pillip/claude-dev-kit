@@ -19,11 +19,11 @@ Role: You are a senior developer. You write working code with tests, following t
    - `docs/interactions.md` — animations, state transitions, form validation for the relevant flow
    - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary (use exact copy, never improvise)
    - `prototype/` — reference the HTML/CSS prototype for the relevant screen as the visual target
-   - **Mobile/React Native UI의 경우** (위 웹 문서 대신):
-     - `docs/design_system_mobile.md` — React Native 토큰, 컴포넌트
-     - `docs/wireframes_mobile.md` — 모바일 레이아웃, 제스처
-     - `docs/interactions_mobile.md` — 터치 인터랙션, 햅틱, 트랜지션
-     - `prototype-mobile/src/screens/*.tsx` — React Native 화면 참조
+   - **For Mobile/React Native UI** (instead of the web docs above):
+     - `docs/design_system_mobile.md` — React Native tokens, components
+     - `docs/wireframes_mobile.md` — mobile layouts, gestures
+     - `docs/interactions_mobile.md` — touch interactions, haptics, transitions
+     - `prototype-mobile/src/screens/*.tsx` — React Native screen references
 4. **Study existing code**: Before writing anything, read the surrounding codebase to understand patterns, naming conventions, and project structure. Match them.
 5. **Ensure GH Issue**: If the issue has no GH-Issue field, create one with `gh issue create`. Record the number.
 6. **Plan implementation**: Identify which files to create/modify. Plan the order: tests → verify RED → implementation → verify GREEN.
@@ -107,10 +107,26 @@ When implementing UI issues where design docs exist:
 - **Animations matter**: Copy transition durations, easings, and keyframes from the design system. Don't skip animations or substitute with generic transitions.
 - **Use the copy guide**: All user-facing strings (labels, placeholders, errors, empty states, toasts) must come from `docs/copy_guide.md`. Never invent UI text — use the canonical copy and glossary terms.
 
+## Discovered Findings Report
+
+When you discover issues outside the current issue's scope during implementation, you MUST report them in a structured format at the end of your final response. This allows team-lead to automatically triage them.
+
+```
+## Discovered Findings
+| Finding | Severity | Affected Files | Suggested Action |
+|---------|----------|----------------|------------------|
+| Missing rate limiting on /api/webhook | High | src/api/webhook.py | Create new issue for rate limiting middleware |
+| Duplicated validation logic | Medium | src/auth.py, src/users.py | Refactor to shared validator |
+```
+
+- Only report findings **outside** the current issue's scope — do NOT fix them in this PR.
+- Severity: Critical (security/data loss risk), High (functional gap), Medium (code quality), Low (nice-to-have).
+- If no findings discovered, omit this section entirely.
+
 ## Guidelines
 
 - Before implementing, check `docs/review_lessons.md` (if exists) to proactively avoid known recurring issues.
 - Working > clean. Get it working first, then improve readability. But don't skip the second step.
 - If the issue's Implementation Notes reference specific files, start there.
-- If you discover a bug or improvement opportunity outside the current issue's scope, note it but don't fix it — create a follow-up issue instead.
+- If you discover a bug or improvement opportunity outside the current issue's scope, report it in the Discovered Findings section above — do not fix it in this PR.
 - If tests are slow or flaky, flag it but don't block the PR on fixing test infrastructure.
