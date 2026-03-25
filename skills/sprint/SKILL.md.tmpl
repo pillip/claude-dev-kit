@@ -21,6 +21,23 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
    - If `--max-iterations` is present, validate N is an integer between 1 and 100. If invalid, stop with: "Invalid --max-iterations value: must be an integer between 1 and 100."
    - Unknown flags should be warned but not block execution.
 
+## IRON LAW: implement → review → ship (NEVER SKIP)
+
+**Every issue MUST pass through all three phases in order. No exceptions.**
+
+- An issue is NOT "done" until it is **shipped** (PR merged + smoke test passed).
+- An issue that is only implemented is **incomplete** — it MUST be reviewed and shipped.
+- You MUST NOT start implementing a new issue if there are issues stuck in `implemented` or `reviewed` status. **Clear the pipeline first.**
+- After each implement phase completes, the **immediate next action** for that issue is review. Not another implement.
+- After each review phase completes (approved), the **immediate next action** is ship. Not another implement.
+
+**Pipeline priority order** (always follow this):
+1. Ship any issues in `reviewed` status (highest priority)
+2. Review any issues in `implemented` status
+3. Only then: implement new `backlog` issues
+
+**Violation = sprint failure**: If at sprint end, ANY issue has Status=implemented or Status=reviewed (not shipped), the sprint is considered **incomplete**. Report these as unfinished pipeline items.
+
 ## Algorithm
 
 1) Validate pre-conditions:
@@ -75,6 +92,26 @@ Team-lead uses this table to determine which agent(s) to dispatch per issue:
 | Reviewed and approved | (ship steps) | skills/ship/SKILL.md |
 
 **How to determine**: Read the issue's title, Track field, and Implementation Notes. Keywords like "UI", "screen", "component" → UI agent. "Dockerfile", "CI", "deploy" → devops. "migrate", "schema change" → migrator.
+
+## Pipeline Phase Tracking
+
+Each issue progresses through these phases in `docs/sprint_state.md`:
+
+```
+backlog → implementing → implemented → reviewing → reviewed → shipping → shipped
+```
+
+**Phase meanings:**
+- `implementing`: implement in progress
+- `implemented`: implement done, checkpoint passed — **MUST review next**
+- `reviewing`: review in progress
+- `reviewed`: review approved — **MUST ship next**
+- `shipping`: ship in progress
+- `shipped`: PR merged, smoke test passed — **done**
+
+The team-lead reads these phases to enforce pipeline ordering:
+- Any issue in `implemented` → team-lead MUST review before implementing new issues
+- Any issue in `reviewed` → team-lead MUST ship before reviewing or implementing
 
 ## Error Handling
 - If team-lead agent fails (Task tool returns error): report error and current sprint_state.md status.

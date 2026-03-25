@@ -29,12 +29,25 @@ Each iteration:
    - `done` but not shipped → needs /ship
 3. **Triage new work**: If previous iteration produced feedback (review rejections, discovered issues):
    - Invoke **planner** agent to add/modify/drop issues in issues.md (via flock_edit.sh)
-4. **Batch ready issues**: Group up to MAX_PARALLEL (default 3) ready issues by priority (P0 first).
-5. **Dispatch per issue**: For each issue in the batch, determine the pipeline:
-   - Read the relevant SKILL.md at runtime and follow its algorithm
-   - Select agent(s) based on issue characteristics (see Agent Selection below)
-6. **Collect results**: After each batch, check outcomes:
-   - Success → issue Status=done, proceed to review/ship
+4. **Pipeline-first dispatch (MANDATORY — NEVER SKIP)**:
+   The pipeline MUST be drained in this exact order before new work starts:
+
+   **a) SHIP FIRST**: Find all issues with Phase=reviewed (review passed, not yet shipped).
+      - Ship them NOW. For each: read `skills/ship/SKILL.md`, follow its algorithm, run all checkpoints.
+      - Do NOT proceed to step b until all shippable issues are shipped or logged as failed.
+
+   **b) REVIEW SECOND**: Find all issues with Phase=implemented (code done, not yet reviewed).
+      - Review them NOW. For each: read `skills/review/SKILL.md`, follow its algorithm, run all checkpoints.
+      - Do NOT proceed to step c until all reviewable issues are reviewed or logged as failed.
+
+   **c) IMPLEMENT LAST**: Only after steps a and b are clear, batch up to MAX_PARALLEL `backlog` issues by priority (P0 first).
+      - For each: read `skills/implement/SKILL.md`, follow its algorithm, run all checkpoints.
+      - Select agent(s) based on issue characteristics (see Agent Selection below)
+
+   **WHY**: This prevents the common failure mode where many issues get implemented but none get reviewed or shipped. Always clear the pipeline before adding new work.
+
+5. **Collect results**: After each batch, check outcomes:
+   - Success → update Phase in sprint_state.md (implemented→needs review, reviewed→needs ship, shipped→done)
    - Test failure → invoke **diagnostician** agent with the failing test output and relevant source files. If diagnostician identifies a fix with High confidence, apply it and re-run tests. If diagnostician reports Low/Medium confidence or the fix doesn't resolve the failure, flag for human escalation.
    - New issues discovered → queue for planner in next iteration
    - **Developer findings**: Parse the developer agent's response for a "Discovered Findings" table. For each finding with severity Critical or High, invoke **planner** agent to create a follow-up issue. Log in sprint_state.md > Discovered Issues.
@@ -131,11 +144,14 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
 - Status: running | paused | completed
 
 ## Issue Progress
-| Issue | Status | Attempts | Last Error | Phase |
-|-------|--------|----------|------------|-------|
-| ISSUE-001 | shipped | 1 | — | done |
-| ISSUE-002 | implementing | 2 | test_auth failed | implement |
-| ISSUE-003 | blocked | 0 | — | waiting on ISSUE-002 |
+| Issue | Phase | Attempts | Last Error |
+|-------|-------|----------|------------|
+| ISSUE-001 | shipped | 1 | — |
+| ISSUE-002 | implemented | 2 | test_auth failed |
+| ISSUE-003 | backlog | 0 | waiting on ISSUE-002 |
+
+Phase values: backlog → implementing → **implemented** → reviewing → **reviewed** → shipping → **shipped**
+Bold phases = pipeline bottleneck. Must be cleared before new implements.
 
 ## Discovered Issues
 - [iteration 3] ISSUE-010: Add rate limiting (from ISSUE-002 implementation)
@@ -170,8 +186,18 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 | review | checkout, review, ui-review (UI issues only — auto-skips for non-UI), test, push |
 | ship | checks, merge, cleanup |
 
+## Pipeline Completion Gate (Mandatory before sprint ends)
+
+Before printing the sprint summary, verify:
+1. Count issues with Phase=implemented (reviewed but NOT shipped): must be 0.
+2. Count issues with Phase=reviewed (implemented but NOT reviewed): must be 0.
+3. If either count > 0, run additional iterations to clear the pipeline (ship first, review second).
+4. Only if the pipeline is clear OR max iterations are exhausted, print the summary.
+5. In the summary, explicitly list any issues stuck in `implemented` or `reviewed` as **INCOMPLETE PIPELINE** items.
+
 ## Self-Review (Mandatory at each iteration boundary)
 
+- **Pipeline drainage**: Are there issues stuck in `implemented` or `reviewed`? If yes, the next iteration MUST prioritize them over new implementations.
 - **Checkpoint compliance**: Were all mandatory checkpoints executed for every completed phase? Any skipped?
 - **Batch limits**: Did the current iteration respect MAX_PARALLEL? No over-dispatching?
 - **State consistency**: Does `docs/sprint_state.md` accurately reflect the current status of all issues?
@@ -189,10 +215,14 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 - Continue after max iterations — report and stop
 - Force-push or destructive git operations
 - Skip review for any issue — every implementation gets reviewed
+- Skip ship for any reviewed issue — every approved review gets shipped
+- Implement new issues while reviewed or implemented issues are waiting in the pipeline
 - Proceed to the next phase without running the checkpoint verification
 - Run more than MAX_PARALLEL issues simultaneously
+- Mark an issue as "done" unless it has been shipped (PR merged)
 
 **INSTEAD:**
+- Always drain the pipeline: ship → review → implement (in that priority order)
 - Read SKILL.md files at runtime to stay in sync with skill changes
 - Clean up worktrees after each issue completes (success or failure)
 - Log every decision (agent selection, retry, escalation) in sprint_state.md
