@@ -122,20 +122,33 @@ def _write_cache(local: str, remote: str | None) -> None:
 
 
 def _is_snoozed() -> bool:
-    """Check if update notifications are snoozed."""
+    """Check if update notifications are snoozed.
+
+    Even during snooze, refreshes the cache if expired so we can detect
+    new versions. If a newer version than the snoozed one appears, the
+    snooze is automatically reset.
+    """
     if not SNOOZE_FILE.exists():
         return False
     try:
         data = json.loads(SNOOZE_FILE.read_text(encoding="utf-8"))
         until = data.get("until", 0)
         snoozed_version = data.get("version", "")
-        if time.time() < until:
-            # Check if a newer version appeared (reset snooze)
-            cache = _read_cache()
-            if cache and cache.get("remote_version") != snoozed_version:
-                return False  # new version, reset snooze
-            return True
-        return False  # expired
+        if time.time() >= until:
+            return False  # expired
+
+        # Refresh cache if expired, even during snooze
+        cache = _read_cache()
+        if cache is None:
+            remote = _remote_version()
+            local = _local_version()
+            _write_cache(local, remote)
+            if remote and remote != snoozed_version:
+                return False  # new version found, reset snooze
+        elif cache.get("remote_version") and cache["remote_version"] != snoozed_version:
+            return False  # cached version differs, reset snooze
+
+        return True
     except Exception:
         return False
 
