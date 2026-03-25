@@ -9,6 +9,13 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash
 
 ## Kit Preamble — implement
 
+### Kit Update Check
+Run silently at the start:
+```bash
+python3 scripts/kit_update_check.py 2>/dev/null
+```
+If exit code is 1 (update available), show the output to the user once. Do not block the workflow.
+
 ### Project Context Detection
 Run these checks silently at the start. Use results to adapt behavior:
 - `[ -f issues.md ]` — if true, this project uses the sprint system. Respect issue numbering and STATUS.md.

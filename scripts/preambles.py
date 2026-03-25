@@ -28,6 +28,14 @@ SKILL_TIERS: dict[str, int] = {
 
 # -- Tier 1 sections --------------------------------------------------------
 
+_UPDATE_CHECK = """\
+### Kit Update Check
+Run silently at the start:
+```bash
+python3 scripts/kit_update_check.py 2>/dev/null
+```
+If exit code is 1 (update available), show the output to the user once. Do not block the workflow."""
+
 _PROJECT_CONTEXT = """\
 ### Project Context Detection
 Run these checks silently at the start. Use results to adapt behavior:
@@ -119,6 +127,7 @@ def preamble_tier1(skill_name: str) -> str:
     """Generate Tier 1 preamble (lightweight skills)."""
     sections = [
         f"## Kit Preamble — {skill_name}",
+        _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
         _CONTRIBUTOR_MODE,
@@ -130,6 +139,7 @@ def preamble_tier2(skill_name: str) -> str:
     """Generate Tier 2 preamble (pipeline skills). Includes all of Tier 1."""
     sections = [
         f"## Kit Preamble — {skill_name}",
+        _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
         _CHECKPOINT_PATTERN,
@@ -145,6 +155,7 @@ def preamble_tier3(skill_name: str) -> str:
     """Generate Tier 3 preamble (orchestration skills). Includes all of Tier 2."""
     sections = [
         f"## Kit Preamble — {skill_name}",
+        _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
         _CHECKPOINT_PATTERN,
