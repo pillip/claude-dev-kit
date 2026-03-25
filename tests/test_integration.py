@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def _parse_frontmatter(path: Path) -> dict:
     """Parse YAML-like frontmatter between --- delimiters into a dict."""
     text = path.read_text(encoding="utf-8")
-    match = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
+    match = re.search(r"^---\n(.*?)\n---", text, re.DOTALL | re.MULTILINE)
     assert match, f"No frontmatter found in {path}"
     fm = {}
     for line in match.group(1).strip().splitlines():

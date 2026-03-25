@@ -31,6 +31,9 @@ jobs:
       - name: Run tests with coverage
         run: pytest --cov=. --cov-fail-under=60 --cov-report=term-missing -q
 
+      - name: Check SKILL.md freshness
+        run: python3 scripts/gen_skills.py --dry-run
+
       - name: Validate issues.md (if exists)
         run: |
           if [ -f issues.md ]; then
