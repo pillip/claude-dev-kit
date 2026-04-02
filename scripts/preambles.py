@@ -21,6 +21,7 @@ SKILL_TIERS: dict[str, int] = {
     "implement": 2,
     "review": 2,
     "ship": 2,
+    "scan": 1,
     "kickoff": 2,
     "diagnose": 2,
     "sprint": 3,

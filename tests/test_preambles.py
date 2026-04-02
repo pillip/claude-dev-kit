@@ -112,7 +112,7 @@ class TestGeneratePreamble:
         expected_skills = {
             "brainstorm", "prd", "bizanalysis", "issue",
             "uiux", "mobile-uiux", "desktop-uiux", "testgen",
-            "devops", "migrate", "refactor",
+            "devops", "migrate", "refactor", "scan",
             "implement", "review", "ship", "kickoff", "diagnose",
             "sprint",
         }

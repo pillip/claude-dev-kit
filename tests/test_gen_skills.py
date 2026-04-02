@@ -19,7 +19,7 @@ from gen_skills import (
 class TestDiscovery:
     def test_finds_all_templates(self):
         templates = discover_templates()
-        assert len(templates) >= 17
+        assert len(templates) >= 18
 
     def test_all_templates_have_skill_name(self):
         for tmpl in discover_templates():
