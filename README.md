@@ -44,7 +44,13 @@ Trace the root cause, apply a minimal fix with regression test, review, and ship
 ```
 Scan for missing or hollow tests, generate unit/integration/E2E tests, and create a PR.
 
-### 6. Maintain and evolve
+### 6. Analyze an existing codebase
+```
+/scan
+```
+Reverse-engineer docs from code: architecture, requirements, test plan, and improvement issues — then feed into `/sprint` or `/implement`.
+
+### 7. Maintain and evolve
 ```
 /refactor src/legacy_module.py    # Improve code structure
 /migrate "Django 5.0"             # Upgrade dependencies
@@ -64,11 +70,19 @@ Scan for missing or hollow tests, generate unit/integration/E2E tests, and creat
   dialogue     Go/Pivot/No               Architecture  Design sys  PR creation            Re-run tests  STATUS update
                                            Issue plan    Wireframes  Closes #N              Security      Documentation
                                            Test plan     Prototype                          UI review     Test gap advisory
+
+Existing codebase (no PRD):
+/scan ──▶ /sprint or /implement ──▶ /review ──▶ /ship
+  │
+  ▼
+  Reverse-engineer docs from code:
+  requirements, architecture, test plan, issues
 ```
 
 > `/brainstorm` and `/bizanalysis` are optional. If your idea is clear, start from `/prd`.
 > `/uiux` is optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/implement`.
 > `/sprint` auto-orchestrates multiple issues via team-lead. For a single issue, use `/implement` directly.
+> `/scan` is for existing codebases without a PRD. It reverse-engineers planning docs from code.
 
 ### Skill Orchestration
 
@@ -133,8 +147,11 @@ START
  ├─ Tests are insufficient?
  │   └─ YES → /testgen [path] (full scan or specific path)
  │
- └─ CI/CD, Docker, deployment setup?
-     └─ YES → /devops "target"
+ ├─ CI/CD, Docker, deployment setup?
+ │   └─ YES → /devops "target"
+ │
+ └─ Existing codebase, no PRD?
+     └─ YES → /scan → /sprint or /implement
 ```
 
 | Skill | Description | Outputs |
@@ -154,7 +171,11 @@ START
 | `/migrate [target]` | Plan and execute a migration | Migration plan + updated code/config |
 | `/refactor [path]` | Improve code structure without changing behavior | Refactored code |
 | `/testgen [path]` | Scan for missing/hollow tests and generate unit/integration/E2E tests | Generated tests, PR |
+| `/scan` | Reverse-engineer docs from existing codebase | `docs/prd_digest.md`, `docs/requirements.md`, `docs/architecture.md`, `docs/test_plan.md`, `issues.md`, `STATUS.md` |
 | `/devops [target]` | Set up CI/CD, Dockerfiles, deployment configs | Infrastructure files |
+| `/careful` | Activate destructive command warnings for current session | Safety guardrail |
+| `/freeze` | Block file edits outside a specified directory boundary | Safety guardrail |
+| `/guard` | Activate both careful + freeze modes | Safety guardrail |
 
 ## Requirements
 
@@ -195,8 +216,8 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 26 agent definitions
-│   ├── skills/          # 17 skills
+│   ├── agents/          # 32 agent definitions
+│   ├── skills/          # 21 skills
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
 ├── .claude-kit/         # submodule (source)
@@ -335,6 +356,22 @@ Scans the codebase for impact, generates a step-by-step migration plan with roll
 
 Identifies code smells, proposes prioritized refactorings, and applies them one at a time while running tests after each step. Never changes observable behavior.
 
+### Scan — Reverse-engineer docs from existing codebase
+
+```
+/scan
+```
+
+Analyzes an existing codebase (no PRD required) and generates planning documents by running 6 scan agents:
+- `codebase-scanner` — 4-pass analysis (identity, architecture, requirements, quality)
+- `scan-analyst` → `docs/requirements.md` (CONFIRMED/INFERRED requirements)
+- `scan-architect` → `docs/architecture.md` (as-is architecture)
+- `scan-data-modeler` → `docs/data_model.md` (conditional, only if DB detected)
+- `scan-qa-designer` → `docs/test_plan.md` (coverage gaps, risk matrix)
+- `scan-planner` → `issues.md` (improvement issues from observations)
+
+Output is compatible with `/sprint` and `/implement` — scan a codebase, then start working on improvement issues immediately.
+
 ### DevOps — Set up infrastructure
 
 ```
@@ -343,45 +380,61 @@ Identifies code smells, proposes prioritized refactorings, and applies them one 
 
 Creates or updates Dockerfiles, docker-compose configs, GitHub Actions workflows, and deployment scripts.
 
+### Safety Guardrails
+
+```
+/careful    # Warn before destructive commands (rm -rf, git reset --hard, etc.)
+/freeze     # Block edits outside a specified directory
+/guard      # Both careful + freeze combined
+```
+
+Session-scoped safety modes for working in sensitive environments or scoping edits to a specific module.
+
 ## Agents
 
-26 specialized agents, each with a defined role and tool permissions:
+32 specialized agents with optimized model assignments (opus for judgment/creativity, sonnet for structured extraction):
 
-| Agent | Role | Tools |
-|-------|------|-------|
-| `brainstormer` | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
-| `business-analyst` | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
-| `prd-writer` | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
-| `requirement-analyst` | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
-| `ux-designer` | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
-| `uiux-developer` | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `mobile-uiux-developer` | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `desktop-uiux-developer` | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `copywriter` | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
-| `architect` | Design software architecture | Read, Glob, Grep, Write, Edit |
-| `data-modeler` | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
-| `planner` | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
-| `issue-writer` | Natural language → single issue creation + docs update | Read, Glob, Grep, Write, Edit, Bash |
-| `qa-designer` | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
-| `team-lead` | Sprint orchestrator — dispatch agents, manage issues, triage review findings | Read, Glob, Grep, Write, Edit, Bash, Task |
-| `developer` | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
-| `test-generator` | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
-| `reviewer` | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
-| `ui-reviewer` | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
-| `design-auditor` | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
-| `a11y-auditor` | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
-| `documenter` | Maintain documentation | Read, Glob, Grep, Write, Edit |
-| `diagnostician` | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
-| `migrator` | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
-| `refactorer` | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
-| `devops` | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
+| Agent | Model | Role | Tools |
+|-------|-------|------|-------|
+| `brainstormer` | opus | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
+| `business-analyst` | opus | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
+| `prd-writer` | opus | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
+| `requirement-analyst` | sonnet | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
+| `ux-designer` | opus | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
+| `uiux-developer` | opus | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `mobile-uiux-developer` | opus | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `desktop-uiux-developer` | opus | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `copywriter` | opus | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
+| `architect` | opus | Design software architecture | Read, Glob, Grep, Write, Edit |
+| `data-modeler` | opus | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
+| `planner` | opus | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
+| `issue-writer` | sonnet | Natural language → single issue creation + docs update | Read, Glob, Grep, Write, Edit, Bash |
+| `qa-designer` | opus | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
+| `team-lead` | opus | Sprint orchestrator — dispatch agents, manage issues, triage review findings | Read, Glob, Grep, Write, Edit, Bash, Task |
+| `developer` | opus | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
+| `test-generator` | opus | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
+| `reviewer` | opus | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
+| `ui-reviewer` | sonnet | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
+| `design-auditor` | sonnet | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
+| `a11y-auditor` | sonnet | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
+| `documenter` | sonnet | Maintain documentation | Read, Glob, Grep, Write, Edit |
+| `diagnostician` | opus | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
+| `migrator` | opus | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
+| `refactorer` | opus | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
+| `devops` | sonnet | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
+| `codebase-scanner` | sonnet | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
+| `scan-analyst` | sonnet | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |
+| `scan-architect` | sonnet | Document as-is architecture from scan context | Read, Glob, Grep, Write, Edit |
+| `scan-data-modeler` | sonnet | Extract data models from ORM/migration/schema declarations | Read, Glob, Grep, Write, Edit |
+| `scan-qa-designer` | sonnet | Assess existing test coverage and identify gaps | Read, Glob, Grep, Write, Edit |
+| `scan-planner` | opus | Generate improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
 
 ## Project Structure
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (26)
-├── skills/                  # Workflow skills (17)
+├── agents/                  # Agent role definitions (32)
+├── skills/                  # Workflow skills (21)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
@@ -390,6 +443,7 @@ claude-dev-kit/
 │   ├── uiux/SKILL.md
 │   ├── mobile-uiux/SKILL.md
 │   ├── desktop-uiux/SKILL.md
+│   ├── scan/SKILL.md        # Reverse-engineer docs from existing codebase
 │   ├── sprint/SKILL.md
 │   ├── implement/SKILL.md
 │   ├── review/SKILL.md
@@ -398,8 +452,11 @@ claude-dev-kit/
 │   ├── migrate/SKILL.md
 │   ├── refactor/SKILL.md
 │   ├── testgen/SKILL.md
-│   └── devops/SKILL.md
-├── templates/               # Document templates (19)
+│   ├── devops/SKILL.md
+│   ├── careful/SKILL.md     # Safety guardrail: destructive command warnings
+│   ├── freeze/SKILL.md      # Safety guardrail: edit boundary enforcement
+│   └── guard/SKILL.md       # Safety guardrail: careful + freeze combined
+├── templates/               # Document templates (24)
 ├── project/                 # Files installed into target project
 │   └── .claude/
 │       ├── hooks/agent_state.py
@@ -410,6 +467,8 @@ claude-dev-kit/
 │   ├── ensure_gh.sh
 │   ├── ensure_permissions.py
 │   ├── merge_settings.py
+│   ├── gen_skills.py        # Template → SKILL.md generator
+│   ├── preambles.py         # Tiered preamble injection
 │   ├── validate_issues.py   # issues.md format validator
 │   ├── verify_checkpoint.py # Skill phase gate verification
 │   ├── worktree.sh          # git worktree lifecycle (create/path/remove/root)
@@ -417,11 +476,6 @@ claude-dev-kit/
 ├── user/                    # User-level tools
 │   └── kit/bin/cc-statusline.py
 ├── tests/                   # Tests
-│   ├── test_merge_settings.py
-│   ├── test_agent_state.py
-│   ├── test_worktree.py
-│   ├── test_flock_edit.py
-│   └── test_integration.py
 ├── docs/                    # Kit documentation
 │   └── PRD_agent_system_v0.md
 └── README.md
@@ -443,12 +497,7 @@ Shows the current model, active agents, last tool used, token usage, and cumulat
 pytest tests/ -q
 ```
 
-Current test coverage:
-- `test_merge_settings.py` — JSON deep merge logic
-- `test_agent_state.py` — Agent state hook lifecycle
-- `test_worktree.py` — git worktree create/path/remove/root
-- `test_flock_edit.py` — file-lock wrapper serialization
-- `test_integration.py` — Agent/skill frontmatter, template existence, cross-references, checkpoint markers, self-review sections
+Tests cover merge logic, agent state hooks, worktree lifecycle, file locking, integration checks (frontmatter, templates, cross-references), scan pipeline validation, skill generation, preamble injection, safety guardrails, and more.
 
 ## Updating
 
@@ -490,7 +539,7 @@ locking on macOS.
 
 - macOS/Linux only
 - Default architecture preference: Django monolith + Postgres
-- All subagents use model: `opus`
+- Model mix: opus (20 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
 
 ## License
 
