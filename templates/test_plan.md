@@ -89,6 +89,24 @@
 - Tool: Playwright visual comparisons or Percy/Chromatic
 - Threshold: pixel diff < 0.1%
 
+## Verify Gates Configuration
+- Server start command: [e.g., `npm run dev` or `uvicorn main:app`]
+- Server health URL: [e.g., `http://localhost:3000/health`]
+- Server startup timeout: 30s
+- Mobile test framework: [maestro/detox — auto-detected if omitted]
+- Mobile build command: [e.g., `npx detox build -c ios.sim.debug` — skip if omitted]
+- Mobile Detox config: [e.g., `ios.sim.debug` — only for Detox]
+
+### Gate Overrides
+| Gate | Enabled | Blocking | Notes |
+|------|---------|----------|-------|
+| unit | yes | yes | Always enabled |
+| integration | [yes/no] | yes | |
+| e2e-web | [yes/no] | yes | |
+| e2e-mobile | [yes/no] | no | |
+| api | [yes/no] | yes | |
+| load | [yes/no] | no | Non-blocking by default |
+
 ## Release Checklist (Smoke)
 - [ ] [Critical path 1 — one sentence]
 - [ ] [Critical path 2 — one sentence]
