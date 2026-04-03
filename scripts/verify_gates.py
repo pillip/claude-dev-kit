@@ -65,6 +65,37 @@ def _tail(text: str, max_chars: int = 2000) -> str:
     return text[-max_chars:] if len(text) > max_chars else text
 
 
+def _ensure_tool(
+    tool_name: str,
+    check_cmd: list[str],
+    install_cmds: list[tuple[str, list[str]]],
+    project_path: Path | None = None,
+) -> bool:
+    """도구가 없으면 자동 설치 시도. 성공 시 True, 실패 시 False."""
+    # Already installed?
+    cwd = str(project_path) if project_path else None
+    result = _run(check_cmd, timeout=15, **({} if cwd is None else {"cwd": cwd}))
+    if result.returncode == 0:
+        return True
+
+    if not install_cmds:
+        return False
+
+    # Try each install command in order
+    for _label, cmd in install_cmds:
+        kw: dict = {"timeout": 300}
+        if cwd is not None:
+            kw["cwd"] = cwd
+        inst = _run(cmd, **kw)
+        if inst.returncode == 0:
+            # Verify installation
+            verify = _run(check_cmd, timeout=15, **({} if cwd is None else {"cwd": cwd}))
+            if verify.returncode == 0:
+                return True
+
+    return False
+
+
 # ── platform detection ───────────────────────────────────────────────
 
 
@@ -385,14 +416,21 @@ def run_gate_e2e_web(project_path: Path, config: dict | None = None, **_kwargs) 
             duration_s=time.monotonic() - start,
         )
 
-    # Check Playwright is installed
-    pw_check = _run(["npx", "playwright", "--version"], timeout=15, cwd=str(pp))
-    if pw_check.returncode != 0:
+    # Check Playwright is installed — auto-install if missing
+    if not _ensure_tool(
+        "Playwright",
+        ["npx", "playwright", "--version"],
+        [
+            ("npm", ["npm", "install", "-D", "@playwright/test"]),
+            ("browsers", ["npx", "playwright", "install", "--with-deps"]),
+        ],
+        project_path=pp,
+    ):
         return GateResult(
             gate="e2e-web",
             status="skip",
             blocking=True,
-            output="Playwright not installed. Run: npx playwright install",
+            output="Playwright not installed and auto-install failed",
             duration_s=time.monotonic() - start,
         )
 
@@ -577,24 +615,31 @@ def run_gate_e2e_mobile(
             duration_s=time.monotonic() - start,
         )
 
-    # 2. Check CLI availability
+    # 2. Check CLI availability — auto-install if missing
     if framework == "maestro":
-        if not shutil.which("maestro"):
+        maestro_install: list[tuple[str, list[str]]] = []
+        if sys.platform == "darwin":
+            maestro_install.append(("brew", ["brew", "install", "maestro"]))
+        if not _ensure_tool("Maestro", ["maestro", "--version"], maestro_install):
             return GateResult(
                 gate="e2e-mobile",
                 status="skip",
                 blocking=True,
-                output="Maestro CLI not installed. Install: https://maestro.mobile.dev",
+                output="Maestro CLI not installed and auto-install failed",
                 duration_s=time.monotonic() - start,
             )
     elif framework == "detox":
-        detox_check = _run(["npx", "detox", "--version"], timeout=15, cwd=str(pp))
-        if detox_check.returncode != 0:
+        if not _ensure_tool(
+            "Detox",
+            ["npx", "detox", "--version"],
+            [("npm", ["npm", "install", "-D", "detox"])],
+            project_path=pp,
+        ):
             return GateResult(
                 gate="e2e-mobile",
                 status="skip",
                 blocking=True,
-                output="Detox not installed. Run: npm install detox --save-dev",
+                output="Detox not installed and auto-install failed",
                 duration_s=time.monotonic() - start,
             )
 
@@ -673,6 +718,18 @@ def run_gate_api(project_path: Path, config: dict | None = None, **_kwargs) -> G
             duration_s=time.monotonic() - start,
         )
 
+    # Try to install schemathesis if missing
+    if has_openapi and not shutil.which("schemathesis"):
+        _ensure_tool(
+            "schemathesis",
+            ["schemathesis", "--version"],
+            [
+                ("uv", ["uv", "add", "--dev", "schemathesis"]),
+                ("pip", ["pip3", "install", "schemathesis"]),
+            ],
+            project_path=pp,
+        )
+
     # Prefer schemathesis if openapi spec exists and tool is available
     if has_openapi and shutil.which("schemathesis"):
         spec_file = "openapi.yaml" if (pp / "openapi.yaml").exists() else "openapi.json"
@@ -718,12 +775,31 @@ def run_gate_load(project_path: Path, config: dict | None = None, **_kwargs) -> 
     has_k6 = shutil.which("k6")
     has_locust = shutil.which("locust")
 
+    # Auto-install if missing
+    if not has_k6:
+        k6_install: list[tuple[str, list[str]]] = []
+        if sys.platform == "darwin":
+            k6_install.append(("brew", ["brew", "install", "k6"]))
+        if _ensure_tool("k6", ["k6", "version"], k6_install):
+            has_k6 = True
+    if not has_locust:
+        if _ensure_tool(
+            "locust",
+            ["locust", "--version"],
+            [
+                ("uv", ["uv", "add", "--dev", "locust"]),
+                ("pip", ["pip3", "install", "locust"]),
+            ],
+            project_path=pp,
+        ):
+            has_locust = True
+
     if not has_k6 and not has_locust:
         return GateResult(
             gate="load",
             status="skip",
             blocking=False,
-            output="Neither k6 nor locust installed",
+            output="Neither k6 nor locust installed and auto-install failed",
             duration_s=time.monotonic() - start,
         )
 

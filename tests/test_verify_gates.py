@@ -42,6 +42,78 @@ def _write_test_plan(project: Path, content: str):
     (docs / "test_plan.md").write_text(content)
 
 
+# ── TestEnsureTool ───────────────────────────────────────────────────
+
+
+class TestEnsureTool:
+    @patch.object(vg, "_run")
+    def test_returns_true_when_tool_exists(self, mock_run):
+        mock_run.return_value = _mock_run(0, "v1.0\n", "")
+        result = vg._ensure_tool("mytool", ["mytool", "--version"], [("pip", ["pip", "install", "mytool"])])
+        assert result is True
+        # Only check_cmd called, no install
+        mock_run.assert_called_once()
+
+    @patch.object(vg, "_run")
+    def test_installs_and_verifies(self, mock_run):
+        mock_run.side_effect = [
+            _mock_run(127, "", "not found"),  # check → missing
+            _mock_run(0, "", ""),              # install → success
+            _mock_run(0, "v1.0\n", ""),        # verify → success
+        ]
+        result = vg._ensure_tool("mytool", ["mytool", "--version"], [("pip", ["pip", "install", "mytool"])])
+        assert result is True
+        assert mock_run.call_count == 3
+
+    @patch.object(vg, "_run")
+    def test_returns_false_when_install_fails(self, mock_run):
+        mock_run.side_effect = [
+            _mock_run(127, "", "not found"),  # check → missing
+            _mock_run(1, "", "error"),         # install → fail
+        ]
+        result = vg._ensure_tool("mytool", ["mytool", "--version"], [("pip", ["pip", "install", "mytool"])])
+        assert result is False
+
+    @patch.object(vg, "_run")
+    def test_tries_multiple_install_cmds(self, mock_run):
+        mock_run.side_effect = [
+            _mock_run(127, "", "not found"),  # check → missing
+            _mock_run(1, "", "error"),         # first install → fail
+            _mock_run(0, "", ""),              # second install → success
+            _mock_run(0, "v1.0\n", ""),        # verify → success
+        ]
+        result = vg._ensure_tool(
+            "mytool",
+            ["mytool", "--version"],
+            [("brew", ["brew", "install", "mytool"]), ("pip", ["pip", "install", "mytool"])],
+        )
+        assert result is True
+        assert mock_run.call_count == 4
+
+    @patch.object(vg, "_run")
+    def test_no_install_cmds_returns_false(self, mock_run):
+        mock_run.return_value = _mock_run(127, "", "not found")
+        result = vg._ensure_tool("mytool", ["mytool", "--version"], [])
+        assert result is False
+
+    @patch.object(vg, "_run")
+    def test_install_succeeds_but_verify_fails(self, mock_run):
+        mock_run.side_effect = [
+            _mock_run(127, "", "not found"),  # check → missing
+            _mock_run(0, "", ""),              # install → success
+            _mock_run(1, "", "still broken"),  # verify → fail
+        ]
+        result = vg._ensure_tool("mytool", ["mytool", "--version"], [("pip", ["pip", "install", "mytool"])])
+        assert result is False
+
+    @patch.object(vg, "_run")
+    def test_passes_project_path_as_cwd(self, mock_run, tmp_path):
+        mock_run.return_value = _mock_run(0, "v1.0\n", "")
+        vg._ensure_tool("mytool", ["mytool", "--version"], [], project_path=tmp_path)
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs.get("cwd") == str(tmp_path)
+
+
 # ── TestDetectPlatforms ──────────────────────────────────────────────
 
 
@@ -446,14 +518,14 @@ class TestRunGateE2EMobile:
         assert result.status == "skip"
         assert "No mobile test files found" in result.output
 
-    @patch("shutil.which", return_value=None)
-    def test_skips_when_maestro_not_installed(self, mock_which, tmp_path):
+    @patch.object(vg, "_ensure_tool", return_value=False)
+    def test_skips_when_maestro_not_installed(self, mock_ensure, tmp_path):
         e2e = tmp_path / "e2e"
         e2e.mkdir()
         (e2e / "login.yaml").write_text("- tapOn: 'Login'")
         result = vg.run_gate_e2e_mobile(tmp_path)
         assert result.status == "skip"
-        assert "Maestro CLI not installed" in result.output
+        assert "auto-install failed" in result.output
 
     def test_detects_maestro_by_yaml_files(self, tmp_path):
         e2e = tmp_path / "e2e"
@@ -481,9 +553,9 @@ class TestRunGateE2EMobile:
 
     @patch.object(vg, "_boot_mobile_device", return_value=("", ""))
     @patch.object(vg, "_check_mobile_device", return_value=("", ""))
-    @patch("shutil.which", return_value="/usr/local/bin/maestro")
+    @patch.object(vg, "_ensure_tool", return_value=True)
     def test_skips_when_no_simulator_and_autoboot_fails(
-        self, mock_which, mock_device, mock_boot, tmp_path
+        self, mock_ensure, mock_device, mock_boot, tmp_path
     ):
         e2e = tmp_path / "e2e"
         e2e.mkdir()
@@ -496,9 +568,9 @@ class TestRunGateE2EMobile:
     @patch.object(vg, "_run")
     @patch.object(vg, "_boot_mobile_device", return_value=("ios", "Auto-booted simulator ABC"))
     @patch.object(vg, "_check_mobile_device", return_value=("", ""))
-    @patch("shutil.which", return_value="/usr/local/bin/maestro")
+    @patch.object(vg, "_ensure_tool", return_value=True)
     def test_autoboots_simulator_and_runs(
-        self, mock_which, mock_device, mock_boot, mock_run, tmp_path
+        self, mock_ensure, mock_device, mock_boot, mock_run, tmp_path
     ):
         e2e = tmp_path / "e2e"
         e2e.mkdir()
@@ -510,8 +582,8 @@ class TestRunGateE2EMobile:
 
     @patch.object(vg, "_run")
     @patch.object(vg, "_check_mobile_device", return_value=("ios", "iPhone 15 (Booted)"))
-    @patch("shutil.which", return_value="/usr/local/bin/maestro")
-    def test_runs_build_cmd_when_configured(self, mock_which, mock_device, mock_run, tmp_path):
+    @patch.object(vg, "_ensure_tool", return_value=True)
+    def test_runs_build_cmd_when_configured(self, mock_ensure, mock_device, mock_run, tmp_path):
         e2e = tmp_path / "e2e"
         e2e.mkdir()
         (e2e / "login.yaml").write_text("- tapOn: 'Login'")
@@ -527,8 +599,8 @@ class TestRunGateE2EMobile:
 
     @patch.object(vg, "_run")
     @patch.object(vg, "_check_mobile_device", return_value=("ios", "iPhone 15 (Booted)"))
-    @patch("shutil.which", return_value="/usr/local/bin/maestro")
-    def test_maestro_passes(self, mock_which, mock_device, mock_run, tmp_path):
+    @patch.object(vg, "_ensure_tool", return_value=True)
+    def test_maestro_passes(self, mock_ensure, mock_device, mock_run, tmp_path):
         e2e = tmp_path / "e2e"
         e2e.mkdir()
         (e2e / "login.yaml").write_text("- tapOn: 'Login'")
