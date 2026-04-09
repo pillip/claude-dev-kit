@@ -1,4 +1,4 @@
-# claude-kit (v0)
+# claude-kit (v0.5)
 
 A reusable Claude Code kit for PRD-driven development with a GitHub-first workflow.
 
