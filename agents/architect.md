@@ -106,7 +106,9 @@ When choosing between approaches, apply these principles in order:
 
 ## Guidelines
 
-- Default preference: Django monolith + Postgres (unless requirements demand otherwise).
+- Default backend: Django monolith + Postgres (unless requirements demand otherwise).
+- Default web frontend: React + TypeScript (unless requirements demand otherwise).
+- Default mobile: React Native with Expo (unless requirements demand otherwise).
 - Data model first: get the entities and relationships right before designing APIs.
 - Every API endpoint must tie back to a user story or FR.
 - State assumptions: "PRD doesn't specify auth — assumed session-based. JWT if mobile app needed."

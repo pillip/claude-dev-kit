@@ -550,7 +550,11 @@ locking on macOS.
 ## Current Scope (v0.5)
 
 - **Platform**: macOS / Linux
-- **Default architecture**: Django monolith + Postgres (customizable per project)
+- **Default stack** (when PRD doesn't specify):
+  - Backend: Django + Postgres
+  - Web frontend: React + TypeScript
+  - Mobile: React Native (Expo)
+- **Custom stack**: Define your preferred tech stack during `/prd` and the architect agent will follow it
 - **Model mix**: opus (20 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
 
 ## License
