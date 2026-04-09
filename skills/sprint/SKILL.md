@@ -128,31 +128,93 @@ If the result is `true`:
 
 2) Check for existing sprint state:
    - If `docs/sprint_state.md` exists with Status=running, ask user: resume or start fresh?
-   - If resuming, pass existing state to team-lead.
-   - If fresh, delete old sprint_state.md.
+   - If resuming, load existing state.
+   - If fresh, delete old sprint_state.md and create a new one from `templates/sprint_state.md`.
 
-3) Gather context for team-lead:
+3) Gather context (read once, reuse across iterations):
    **Read all context files via parallel Read tool calls in a single message. Do NOT read them sequentially.**
    - `issues.md` — full content
-   - `docs/sprint_state.md` — if resuming
+   - `docs/sprint_state.md` — current state
    - `docs/review_lessons.md` — if exists
    - `docs/architecture.md` — if exists
    - `docs/data_model.md` — if exists
    - `docs/prd_digest.md` — if exists (use as quick PRD context instead of full PRD)
    - Parse --parallel and --max-iterations from arguments
 
-4) Invoke team-lead agent via Task tool:
-   - Pass all gathered context as prompt content (not file paths)
-   - Include parsed arguments (parallel count, max iterations)
-   - Include: "You are the team-lead agent. Follow your agent guidelines precisely."
+4) **Sprint loop** (iteration = 0; repeat while iteration < max-iterations):
 
-5) On team-lead completion:
-   - Read final `docs/sprint_state.md` for summary
-   - Report sprint results to user:
-     - Issues completed
-     - Issues remaining
-     - Issues escalated
-     - New issues discovered
+   **a) Read fresh state**: Re-read `docs/sprint_state.md` and `issues.md` every iteration.
+
+   **b) Compute pipeline queues** from sprint_state.md Phase column:
+      - `ship_ready`    = issues where Phase = `reviewed`
+      - `review_ready`  = issues where Phase = `implemented`
+      - `implement_ready` = issues in `backlog` where Manual ≠ true AND all Depends-On are resolved
+      - `in_flight`     = issues where Phase ∈ {`implementing`, `reviewing`, `shipping`}
+
+   **c) Choose ONE action (strict priority — never skip a higher-priority queue):**
+
+      **IF** `ship_ready` is not empty →
+        action = **SHIP**, targets = first MAX_PARALLEL ship_ready issues
+
+      **ELSE IF** `review_ready` is not empty →
+        action = **REVIEW**, targets = first MAX_PARALLEL review_ready issues
+
+      **ELSE IF** `implement_ready` is not empty →
+        action = **IMPLEMENT**, targets = first MAX_PARALLEL implement_ready issues sorted by priority (P0 first)
+
+      **ELSE IF** `in_flight` is not empty →
+        These issues are stuck mid-phase. Log warning: "Issues stuck in progress: {list}".
+        Increment their attempt count. If attempts ≥ 3, escalate. Otherwise retry.
+
+      **ELSE** →
+        All issues are either `shipped`, `waiting`, or `dropped`. **Go to step 5.**
+
+   **d) Invoke team-lead agent via Task tool** with this exact prompt structure:
+      ```
+      You are the team-lead agent. Execute ONLY the {action} phase for these issues.
+
+      ## Phase: {SHIP | REVIEW | IMPLEMENT}
+
+      ## Target Issues
+      {For each target: full issue spec from issues.md — ID, title, AC, all fields}
+
+      ## Current Sprint State
+      {Full content of docs/sprint_state.md}
+
+      ## Max Parallel: {N}
+
+      ## Project Context
+      {Content of architecture.md, data_model.md, review_lessons.md, prd_digest.md}
+
+      Execute this phase, update docs/sprint_state.md with results, then STOP.
+      Do NOT execute any other phase. Do NOT loop.
+      ```
+
+   **e) After team-lead returns**:
+      - Re-read `docs/sprint_state.md` to confirm phase transitions happened
+      - Log: `=== Iteration {N} complete: {action} phase for {count} issues ===`
+      - Increment iteration
+
+   **f) Validate phase transition** (catch stuck issues):
+      - For SHIP action: verify targets moved from `reviewed` → `shipped` (or logged as failed)
+      - For REVIEW action: verify targets moved from `implemented` → `reviewed` (or logged as failed)
+      - For IMPLEMENT action: verify targets moved from `backlog` → `implemented` (or logged as failed)
+      - If a target did NOT transition and has no logged error, log a warning and retry in next iteration
+
+   **Continue loop from step 4a.**
+
+5) **Pipeline completion gate** (before exiting):
+   - Read final `docs/sprint_state.md`
+   - Count issues still in `implemented` or `reviewed` (not shipped)
+   - If count > 0 AND iteration < max-iterations: **return to step 4** to drain the pipeline
+   - If count > 0 AND iterations exhausted: report as **INCOMPLETE PIPELINE** items
+
+6) Report sprint results to user:
+   - Issues shipped (completed)
+   - Issues stuck in pipeline (implemented/reviewed but not shipped) — flagged as **INCOMPLETE**
+   - Issues escalated (3+ failures)
+   - Issues waiting (blocked/deferred)
+   - New issues discovered during sprint
 
 ## Agent Selection
 
@@ -195,10 +257,12 @@ The team-lead reads these phases to enforce pipeline ordering:
 - Any issue in `reviewed` → team-lead MUST ship before reviewing or implementing
 
 ## Error Handling
-- If team-lead agent fails (Task tool returns error): report error and current sprint_state.md status.
+- If team-lead Task fails (returns error): log the error in sprint_state.md, then **continue the sprint loop** with the next iteration. The failed issues remain in their current phase and will be retried.
 - If pre-conditions fail: stop with clear instructions on how to fix.
 - Sprint state file ensures progress is never lost — user can re-run `/sprint` to resume.
-- **Per-phase recovery**: team-lead tracks per-phase progress (implement/review/ship) in sprint_state.md. On failure, only the failed phase is retried — successful phases are never re-run. After 2 consecutive review failures, the issue is deferred with Status=waiting, Reason=review-rework.
+- **Per-phase recovery**: Each team-lead invocation handles one phase. If it fails, the sprint loop retries that phase in the next iteration. Successful phases are never re-run.
+- **Escalation**: If the same issue fails the same phase 3 times (tracked via Attempts column in sprint_state.md), mark as `waiting` with escalation reason and skip it. Report at sprint end.
+- **Review rework**: After 2 consecutive review failures on the same issue, mark Status=waiting, Reason=review-rework, defer to human.
 
 ## Rollback
 - Sprint is composed of individual implement→review→ship cycles, each with their own rollback.
