@@ -53,12 +53,12 @@ try_mkdir() {
     elif [ -d "$lockdir" ]; then
       # No pidfile but lockdir exists — check age
       local lock_age=0
-      if stat -f %m "$lockdir" >/dev/null 2>&1; then
-        # macOS stat
-        lock_age=$(( $(date +%s) - $(stat -f %m "$lockdir") ))
-      elif stat -c %Y "$lockdir" >/dev/null 2>&1; then
-        # Linux stat
-        lock_age=$(( $(date +%s) - $(stat -c %Y "$lockdir") ))
+      local lock_mtime=""
+      lock_mtime="$(stat -f %m "$lockdir" 2>/dev/null)" \
+        || lock_mtime="$(stat -c %Y "$lockdir" 2>/dev/null)" \
+        || lock_mtime=""
+      if [ -n "$lock_mtime" ]; then
+        lock_age=$(( $(date +%s) - lock_mtime ))
       fi
       if [ "$lock_age" -ge "$STALE_LOCK_SECONDS" ]; then
         echo "warning: removing stale lock (age ${lock_age}s >= ${STALE_LOCK_SECONDS}s)" >&2

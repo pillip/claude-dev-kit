@@ -26,6 +26,7 @@ def isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(kit_update_check, "STATE_DIR", tmp_path)
     monkeypatch.setattr(kit_update_check, "CACHE_FILE", tmp_path / "update-cache.json")
     monkeypatch.setattr(kit_update_check, "SNOOZE_FILE", tmp_path / "update-snooze.json")
+    monkeypatch.setattr(kit_update_check, "_remote_version", lambda: None)
     yield tmp_path
 
 
