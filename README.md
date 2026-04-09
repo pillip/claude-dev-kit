@@ -75,29 +75,24 @@ Reverse-engineer docs from code: architecture, requirements, test plan, and impr
 
 ## Workflow
 
+**New project:**
 ```
-/brainstorm ──▶ /bizanalysis ──▶ /prd ──▶ /kickoff ──▶ /uiux ──▶ /sprint or /implement ──▶ /review ──▶ /ship
-                                              │
-                                              ├──▶ /issue (ad-hoc)
-     │               │              │        │             │            │                       │            │
-     ▼               ▼              ▼        ▼             ▼            ▼                       ▼            ▼
-  Ideation     Business       Interactive  Requirements  Design      Code impl             Senior        Merge & deploy
-  Socratic     validation     PRD writing  UX spec       philosophy  GH Issue              Minimal fix   CHANGELOG
-  dialogue     Go/Pivot/No               Architecture  Design sys  PR creation            Re-run tests  STATUS update
-                                           Issue plan    Wireframes  Closes #N              Security      Documentation
-                                           Test plan     Prototype                          UI review     Test gap advisory
+/brainstorm → /bizanalysis → /prd → /kickoff → /uiux → /sprint
+```
 
-Existing codebase (no PRD):
-/scan ──▶ /sprint or /implement ──▶ /review ──▶ /ship
-  │
-  ▼
-  Reverse-engineer docs from code:
-  requirements, architecture, test plan, issues
+**Existing codebase (no PRD):**
+```
+/scan → /sprint
+```
+
+**Single issue:**
+```
+/implement ISSUE-001 → /review ISSUE-001 → /ship
 ```
 
 > `/brainstorm` and `/bizanalysis` are optional. If your idea is clear, start from `/prd`.
-> `/uiux` is optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/implement`.
-> `/sprint` auto-orchestrates multiple issues via team-lead. For a single issue, use `/implement` directly.
+> `/uiux` is optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/sprint`.
+> `/sprint` auto-orchestrates multiple issues. For a single issue, use `/implement` directly.
 > `/scan` is for existing codebases without a PRD. It reverse-engineers planning docs from code.
 
 ### Skill Orchestration
