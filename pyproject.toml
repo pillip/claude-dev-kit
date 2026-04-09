@@ -1,6 +1,6 @@
 [project]
 name = "claude-dev-kit"
-version = "0.5.0"
+version = "0.1.0"
 description = "A reusable Claude Code kit for PRD-driven development with a GitHub-first workflow"
 readme = "README.md"
 license = {text = "MIT"}

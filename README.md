@@ -1,4 +1,4 @@
-# claude-kit (v0.5)
+# claude-kit (v0.1)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
@@ -547,7 +547,7 @@ bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c 'echo "update" >> "$ROOT
 `flock_edit.sh` uses `flock(1)` when available, falling back to `mkdir`-based
 locking on macOS.
 
-## Current Scope (v0.5)
+## Current Scope (v0.1)
 
 - **Platform**: macOS / Linux
 - **Default stack** (when PRD doesn't specify):
