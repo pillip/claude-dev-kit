@@ -1,6 +1,22 @@
 # claude-kit (v0.5)
 
-A reusable Claude Code kit for PRD-driven development with a GitHub-first workflow.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
+[![Tests](https://img.shields.io/badge/Tests-530%20passing-brightgreen.svg)]()
+
+Turn a PRD into shipped code. 32 AI agents and 21 skills that handle the entire development lifecycle — from brainstorming to code review to deployment — so you can focus on what to build, not how.
+
+## Why claude-kit?
+
+Claude Code is powerful on its own, but without structure it produces inconsistent results — skipped tests, forgotten reviews, PRs that drift from requirements. claude-kit solves this by giving Claude Code **a repeatable process**:
+
+- **Structured pipeline**: Every issue goes through implement → review → ship. No shortcuts, no skipped phases.
+- **Specialized agents**: Instead of one generalist prompt, 32 agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans.
+- **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
+- **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
+- **Zero configuration**: Install as a git submodule, run one script, and all agents/skills/hooks are ready.
+
+In short: claude-kit turns Claude Code from a smart assistant into a **development team that follows engineering best practices**.
 
 ## Overview
 
@@ -179,6 +195,7 @@ START
 
 ## Requirements
 
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — CLI, desktop app, or IDE extension
 - macOS / Linux
 - Python 3.11+
 - Git
@@ -302,7 +319,7 @@ Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile app
 /sprint
 ```
 
-Dispatches the team-lead agent to automatically pick up ready issues from `issues.md`, implement them via `/implement`, review via `/review`, and ship via `/ship`. Loops until all issues are done or max iterations reached. Includes automated feedback loops: review findings create follow-up issues, test failures trigger diagnostician, and shipped code gets test gap detection.
+Runs a phase-based sprint loop: each iteration reads `sprint_state.md`, picks the highest-priority phase (ship first, review second, implement last), and dispatches the team-lead agent for that single phase. This structural enforcement guarantees every issue completes the full implement → review → ship pipeline — no phase gets skipped. Includes automated feedback loops: review findings create follow-up issues, test failures trigger diagnostician, and shipped code gets test gap detection.
 
 ### Implement — Build an issue
 
@@ -410,7 +427,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `planner` | opus | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
 | `issue-writer` | sonnet | Natural language → single issue creation + docs update | Read, Glob, Grep, Write, Edit, Bash |
 | `qa-designer` | opus | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
-| `team-lead` | opus | Sprint orchestrator — dispatch agents, manage issues, triage review findings | Read, Glob, Grep, Write, Edit, Bash, Task |
+| `team-lead` | opus | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task |
 | `developer` | opus | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
 | `test-generator` | opus | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
 | `reviewer` | opus | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
@@ -535,11 +552,11 @@ bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c 'echo "update" >> "$ROOT
 `flock_edit.sh` uses `flock(1)` when available, falling back to `mkdir`-based
 locking on macOS.
 
-## v0 Scope & Limitations
+## Current Scope (v0.5)
 
-- macOS/Linux only
-- Default architecture preference: Django monolith + Postgres
-- Model mix: opus (20 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
+- **Platform**: macOS / Linux
+- **Default architecture**: Django monolith + Postgres (customizable per project)
+- **Model mix**: opus (20 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
 
 ## License
 
