@@ -21,6 +21,15 @@ Role: You are a senior QA architect. You design test strategies that catch real 
    - **API contract tests**: Request/response schema validation (e.g., using schemathesis or dredd against OpenAPI spec).
    - **Load & performance tests**: Identify candidate endpoints, expected RPS, and tool recommendation (k6, Locust, or Artillery).
    - **Dependency failure scenarios**: For each external dependency (DB, cache, third-party API, message queue), describe the failure mode and expected graceful degradation behavior.
+6b. **Configure verify_gates**: The kit's `scripts/verify_gates.py` engine runs automatically during `/implement` (as warnings) and `/ship` (as blocking checks). It parses a `## Verify Gates Configuration` section from `docs/test_plan.md` — if the section is missing, defaults are used. Always generate this section so the user can tune blocking/non-blocking semantics and wire up server lifecycles without editing Python. Required subfields:
+   - **Server start command**: shell command that starts the app server for e2e-web / api gates (e.g., `` `npm run dev` ``, `` `uvicorn app.main:app` ``). Leave blank if the gate runs without a server.
+   - **Server health URL**: URL that returns 2xx once the server is ready (e.g., `` `http://localhost:3000` `` or `` `http://localhost:8000/health` ``).
+   - **Server startup timeout**: integer seconds to wait for health (default `30`).
+   - **Mobile test framework**: `maestro` or `detox` (only for mobile platforms; leave blank otherwise).
+   - **Mobile build command**: shell command to produce the debug build Detox needs (e.g., `` `npm run build:ios` ``). Maestro does not need this.
+   - **Mobile Detox config**: Detox configuration name (default `ios.sim.debug`). Only relevant if framework = detox.
+   - **Gate Overrides**: a markdown table with columns `Gate | Enabled | Blocking` letting the user toggle individual gates (`unit`, `integration`, `e2e-web`, `e2e-mobile`, `api`, `load`). Defaults: all enabled; all blocking except `load` which is non-blocking.
+   Emit each field as a literal `Key: value` line (backticks around values are allowed). Use the exact labels above — they are parsed by regex in `verify_gates.py`.
 7. **Write test cases**: For each critical flow, write specific test cases with preconditions, steps, and expected results.
 8. **Define test data**: Specify fixtures, seed data, and edge-case datasets needed.
 9. **Identify automation candidates**: Which tests should run in CI vs manual verification.
@@ -113,6 +122,28 @@ Role: You are a senior QA architect. You design test strategies that catch real 
 ## Release Checklist (Smoke)
   - [ ] [Critical path 1 — one sentence]
   - [ ] [Critical path 2 — one sentence]
+
+## Verify Gates Configuration
+  <!--
+  Parsed by scripts/verify_gates.py. Key names are literal — do not rename.
+  If this section is omitted entirely, verify_gates uses defaults.
+  -->
+  Server start command: `npm run dev`
+  Server health URL: `http://localhost:3000`
+  Server startup timeout: 30
+  Mobile test framework: `maestro`
+  Mobile build command: `npm run build:ios`
+  Mobile Detox config: `ios.sim.debug`
+
+  ### Gate Overrides
+  | Gate        | Enabled | Blocking |
+  |-------------|---------|----------|
+  | unit        | yes     | yes      |
+  | integration | yes     | yes      |
+  | e2e-web     | yes     | yes      |
+  | e2e-mobile  | yes     | yes      |
+  | api         | yes     | yes      |
+  | load        | yes     | no       |
 ```
 
 ## Quality Criteria

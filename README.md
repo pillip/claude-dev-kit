@@ -482,8 +482,14 @@ claude-dev-kit/
 │   ├── gen_skills.py        # Template → SKILL.md generator
 │   ├── preambles.py         # Tiered preamble injection
 │   ├── validate_issues.py   # issues.md format validator
-│   ├── verify_checkpoint.py # Skill phase gate verification
+│   ├── verify_checkpoint.py # Skill phase checkpoint verification
+│   ├── verify_gates.py      # Platform gate engine (e2e-web, e2e-mobile, api, load, …)
+│   ├── gate_server.sh       # Server lifecycle wrapper for e2e/api gates
+│   ├── checkpoint.sh        # Wrapper: resolve repo root + run verify_checkpoint.py
 │   ├── worktree.sh          # git worktree lifecycle (create/path/remove/root)
+│   ├── wt_setup.sh          # Wrapper: worktree create + freeze marker in one step
+│   ├── wt_cleanup.sh        # Wrapper: safe cd-to-root + worktree remove
+│   ├── registry_edit.sh     # Wrapper: flock_edit on main-rooted registry files
 │   └── flock_edit.sh        # file-lock wrapper for shared files
 ├── user/                    # User-level tools
 │   └── kit/bin/cc-statusline.py
@@ -492,6 +498,64 @@ claude-dev-kit/
 │   └── PRD_agent_system_v0.md
 └── README.md
 ```
+
+## Platform Gates
+
+`/implement` and `/ship` automatically run platform-specific test gates via
+`scripts/verify_gates.py`. Gates are detected from the project layout —
+no manual wiring required if you use the default conventions.
+
+| Gate          | Detected when…                                                                                  | Default blocking |
+|---------------|-------------------------------------------------------------------------------------------------|------------------|
+| `unit`        | `tests/` directory or `test_*.py` / `*.test.ts` / `*.spec.ts` files exist                       | yes              |
+| `integration` | `tests/integration/` directory exists                                                           | yes              |
+| `e2e-web`     | `playwright.config.*` exists or `package.json` lists React/Vue/Svelte/Next/Angular/Nuxt         | yes              |
+| `e2e-mobile`  | `app.json` / `android/` / `ios/` exists or `package.json` lists `react-native`                  | yes              |
+| `api`         | `openapi.{yaml,json}` exists or `pyproject.toml` lists FastAPI/Flask/Django (or Express in JS)  | yes              |
+| `load`        | Locust / k6 / Artillery config present                                                          | **no** (warn)    |
+
+Gate behavior by phase:
+
+- **`/implement` → non-blocking**: failing gates surface as warnings during
+  implementation, flagging integration risks early without stopping the
+  TDD loop.
+- **`/ship` → blocking**: failing a real gate must stop ship. `load` stays
+  non-blocking even here, since perf work is typically out-of-band.
+
+Missing tools (Playwright browsers, Maestro, Detox) are auto-installed
+before the gate runs. Server-based gates (e2e-web, api) use
+`scripts/gate_server.sh` to start the app, poll a health endpoint, run
+the test command, and clean up the process group on exit.
+
+### Configuring gates via `docs/test_plan.md`
+
+`qa-designer` generates a `## Verify Gates Configuration` section in
+`docs/test_plan.md`. Users can edit it to override defaults without
+touching Python:
+
+```markdown
+## Verify Gates Configuration
+
+Server start command: `npm run dev`
+Server health URL: `http://localhost:3000`
+Server startup timeout: 30
+Mobile test framework: `maestro`
+Mobile build command: `npm run build:ios`
+Mobile Detox config: `ios.sim.debug`
+
+### Gate Overrides
+| Gate        | Enabled | Blocking |
+|-------------|---------|----------|
+| unit        | yes     | yes      |
+| integration | yes     | yes      |
+| e2e-web     | yes     | yes      |
+| e2e-mobile  | yes     | yes      |
+| api         | yes     | yes      |
+| load        | yes     | no       |
+```
+
+Key names are parsed literally by `scripts/verify_gates.py` — do not
+rename them. If the section is absent, defaults are used.
 
 ## Status Line
 
