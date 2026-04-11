@@ -534,6 +534,51 @@ def _run_js_tests_in_worktree(cwd: str | None) -> bool:
     return True
 
 
+def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
+    """Run verify_gates.py and report results.
+
+    If blocking=True, gate failures cause checkpoint failure.
+    If blocking=False, gate failures are warnings only.
+    """
+    try:
+        import verify_gates
+    except ImportError:
+        # verify_gates.py not available — skip silently
+        return True
+
+    pp = Path(project_path)
+    try:
+        results = verify_gates.run_applicable_gates(pp)
+    except Exception as exc:
+        print(f"WARN: verify_gates raised an error: {exc}")
+        return True  # Don't block on unexpected errors
+
+    if not results:
+        return True
+
+    has_blocking_failure = False
+    for r in results:
+        icon = {"pass": "PASS", "fail": "FAIL", "skip": "SKIP", "warn": "WARN"}[r.status]
+        blocking_tag = " [blocking]" if r.blocking else ""
+        print(f"  GATE {icon}: {r.gate}{blocking_tag} ({r.duration_s:.1f}s)")
+        if r.status == "fail":
+            if r.blocking:
+                has_blocking_failure = True
+            # Show last few lines of output for failures
+            lines = r.output.strip().splitlines()
+            for line in lines[-3:]:
+                print(f"        {line}")
+
+    if has_blocking_failure:
+        if blocking:
+            print("FAIL: one or more blocking gates failed")
+            return False
+        else:
+            print("WARN: gate failures detected (non-blocking during implement phase)")
+
+    return True
+
+
 def verify_implement_test(issue_id: str, **_) -> bool:
     """Tests pass AND meet minimum coverage threshold."""
     wt_path = _find_worktree_path(issue_id)
@@ -567,6 +612,11 @@ def verify_implement_test(issue_id: str, **_) -> bool:
 
     if ok:
         print("PASS: tests passed")
+
+    # Run verify_gates as non-blocking warning (gate failures don't block implement)
+    if ok:
+        _run_verify_gates(str(wt), blocking=False)
+
     return ok
 
 
@@ -882,6 +932,10 @@ def verify_ship_smoke(issue_id: str, **_) -> bool:
             if result.stdout:
                 print(result.stdout[-500:])
             ok = False
+
+    # Run verify_gates as blocking (gate failures block ship)
+    if ok:
+        ok = ok and _run_verify_gates(str(root), blocking=True)
 
     if ok:
         print("PASS: post-merge smoke test passed on main")

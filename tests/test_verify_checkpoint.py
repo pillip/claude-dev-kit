@@ -1060,3 +1060,144 @@ class TestRunWithRetry:
             result = vc._run_with_retry(["some", "cmd"], max_retries=3, delay=0)
             assert result.returncode == 0
             assert call_count["n"] == 1
+
+
+# ── verify_gates integration ──────────────────────────────────────────
+
+
+# Import verify_gates for mocking
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import verify_gates as vg
+
+
+def _make_gate_result(gate: str, status: str, blocking: bool = True) -> vg.GateResult:
+    """Create a GateResult for testing."""
+    return vg.GateResult(gate=gate, status=status, blocking=blocking, output="test output", duration_s=0.1)
+
+
+class TestRunVerifyGates:
+    """Tests for _run_verify_gates() — gate integration helper."""
+
+    def test_returns_true_when_import_fails(self, monkeypatch):
+        """If verify_gates can't be imported, skip silently."""
+        import builtins
+        original_import = builtins.__import__
+
+        def fail_import(name, *args, **kwargs):
+            if name == "verify_gates":
+                raise ImportError("no verify_gates")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fail_import)
+        assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+
+    def test_returns_true_when_no_gates(self):
+        """Empty results → pass."""
+        with patch.object(vg, "run_applicable_gates", return_value=[]):
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+
+    def test_non_blocking_returns_true_on_gate_failure(self):
+        """Non-blocking mode: gate failure is a warning, returns True."""
+        results = [_make_gate_result("e2e-web", "fail", blocking=True)]
+        with patch.object(vg, "run_applicable_gates", return_value=results):
+            assert vc._run_verify_gates("/tmp/fake", blocking=False) is True
+
+    def test_blocking_returns_false_on_gate_failure(self):
+        """Blocking mode: gate failure returns False."""
+        results = [_make_gate_result("e2e-web", "fail", blocking=True)]
+        with patch.object(vg, "run_applicable_gates", return_value=results):
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is False
+
+    def test_blocking_returns_true_when_all_pass(self):
+        """All gates pass → True regardless of blocking mode."""
+        results = [
+            _make_gate_result("unit", "pass"),
+            _make_gate_result("e2e-web", "pass"),
+        ]
+        with patch.object(vg, "run_applicable_gates", return_value=results):
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+
+    def test_skip_gates_dont_block(self):
+        """Skipped gates should not cause failures."""
+        results = [_make_gate_result("e2e-mobile", "skip", blocking=True)]
+        with patch.object(vg, "run_applicable_gates", return_value=results):
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+
+    def test_non_blocking_gate_failure_doesnt_block(self):
+        """A non-blocking gate failure shouldn't block even in blocking mode."""
+        results = [_make_gate_result("load", "fail", blocking=False)]
+        with patch.object(vg, "run_applicable_gates", return_value=results):
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+
+    def test_exception_in_gates_returns_true(self):
+        """Unexpected exception in gates → warning, return True."""
+        with patch.object(vg, "run_applicable_gates", side_effect=RuntimeError("boom")):
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+
+
+class TestVerifyGatesIntegration:
+    """Integration tests: gates are called from implement_test and ship_smoke."""
+
+    def test_implement_test_runs_gates_as_warning(self, tmp_path):
+        """verify_implement_test calls _run_verify_gates with blocking=False."""
+        wt_path = str(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        wt_stdout = f"worktree {wt_path}\n"
+
+        def run_side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=wt_stdout)
+            return _mock_run(0)
+
+        gate_calls = []
+
+        def mock_gates(project_path, blocking=False):
+            gate_calls.append({"path": str(project_path), "blocking": blocking})
+            return True
+
+        with patch.object(vc, "_run", side_effect=run_side_effect), \
+             patch.object(vc, "_run_verify_gates", side_effect=mock_gates):
+            result = vc.verify_implement_test("ISSUE-001")
+            assert result is True
+            assert len(gate_calls) == 1
+            assert gate_calls[0]["blocking"] is False
+
+    def test_ship_smoke_runs_gates_blocking(self, tmp_path, monkeypatch):
+        """verify_ship_smoke calls _run_verify_gates with blocking=True."""
+        monkeypatch.setattr(vc, "_repo_root", lambda: tmp_path)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+
+        def run_side_effect(cmd, **kwargs):
+            if cmd == ["git", "branch", "--show-current"]:
+                return _mock_run(0, stdout="main\n")
+            return _mock_run(0)
+
+        gate_calls = []
+
+        def mock_gates(project_path, blocking=False):
+            gate_calls.append({"path": str(project_path), "blocking": blocking})
+            return True
+
+        with patch.object(vc, "_run", side_effect=run_side_effect), \
+             patch.object(vc, "_run_verify_gates", side_effect=mock_gates):
+            result = vc.verify_ship_smoke("ISSUE-001")
+            assert result is True
+            assert len(gate_calls) == 1
+            assert gate_calls[0]["blocking"] is True
+
+    def test_gates_skip_gracefully_when_no_platforms(self, tmp_path):
+        """When verify_gates detects no platforms, gates return empty and pass."""
+        wt_path = str(tmp_path)
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        wt_stdout = f"worktree {wt_path}\n"
+
+        def run_side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=wt_stdout)
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=run_side_effect), \
+             patch.object(vg, "run_applicable_gates", return_value=[]):
+            result = vc.verify_implement_test("ISSUE-001")
+            assert result is True
