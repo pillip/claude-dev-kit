@@ -3,7 +3,7 @@
 name: ship
 description: Finalizes tests/docs/changelog and merges the PR to make it deployment-ready.
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task
+allowed-tools: Read, Glob, Grep, Write, Edit, Task, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(bash scripts/kit_update_check.py *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *)
 ---
 
 ## Kit Preamble — ship
@@ -33,23 +33,28 @@ Every phase has a mandatory checkpoint. Run the verification command and check e
 If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
 Standard prefix:
 ```
-ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py"
+bash scripts/checkpoint.sh
 ```
 Append `--skill <name> --phase <phase> --issue <ID>` for the specific check.
+`checkpoint.sh` resolves the main repo root internally, so the command stays
+a single prefix-matchable form (safe to allowlist as `Bash(bash scripts/checkpoint.sh *)`).
 
 ### Worktree Setup Pattern
 Pipeline skills operate in git worktrees to isolate changes from main.
-- Create: `WT="$(bash scripts/worktree.sh create <branch>)"`
+- Create + freeze: `WT="$(bash scripts/wt_setup.sh <branch>)"` — creates the
+  worktree via `scripts/worktree.sh create` and writes `.claude-kit/freeze-dir.txt`
+  inside it in a single step.
 - Resolve main root: `bash scripts/worktree.sh root`
-- Remove after ship: `bash scripts/worktree.sh remove <branch>`
+- Remove safely: `bash scripts/wt_cleanup.sh <branch>` — cd's to main root
+  inside a subshell, then removes the worktree (never leaves CWD dangling).
 All file operations happen inside `$WT/`. Shared files live on main only.
 
 ### Registry Update Pattern
 Shared files (`issues.md`, `STATUS.md`, `CHANGELOG.md`) are managed on main only.
-Always use flock_edit.sh for concurrent-safe writes:
+Always use `registry_edit.sh` for concurrent-safe writes — it resolves the
+main repo root internally and delegates to `flock_edit.sh`:
 ```bash
-ROOT="$(bash scripts/worktree.sh root)"
-bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
+bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
 
@@ -79,7 +84,7 @@ Steps:
 2) Ensure tests pass locally and PR checks are green.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase checks --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill ship --phase checks --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 3) Update docs/README.md; append CHANGELOG.md.
@@ -91,28 +96,26 @@ Steps:
    - If docs are outdated or missing coverage for the changes: update them.
    - If no doc updates needed: skip silently.
 
-   Update shared files via flock:
+   Update shared files via the registry wrapper:
    ```bash
-   ROOT="$(bash scripts/worktree.sh root)"
-   bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
+   bash scripts/registry_edit.sh STATUS.md -- bash -c '<update command>'
    ```
 4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase merge --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill ship --phase merge --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 5) Clean up worktree if one exists for this branch.
-   **CRITICAL**: `cd` and `remove` MUST run in a single shell command.
-   A child process `cd` cannot change the parent shell's CWD, so if they
-   are separate calls the shell CWD remains in the deleted directory and
-   ALL subsequent commands (including hooks) will fail.
+   Use the `wt_cleanup.sh` wrapper — it cd's to the main repo root and
+   removes the worktree in a single subshell, so the caller's CWD is
+   never left inside a deleted directory:
    ```bash
-   cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>
+   bash scripts/wt_cleanup.sh <branch>
    ```
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase cleanup --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill ship --phase cleanup --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 6) Post-merge smoke test on main (MANDATORY):
@@ -121,10 +124,12 @@ Steps:
    ```
    - Python: `pytest -q --tb=short`
    - JS/TS: `npm test`
-   - If tests fail: alert the user immediately with failing output and suggest `git revert -m 1 <merge_commit>`.
+   - **Platform gates**: `verify_gates.py` runs automatically via checkpoint
+     (e2e-web, e2e-mobile, api, integration, load — as configured in `docs/test_plan.md`).
+   - If tests or gates fail: alert the user immediately with failing output and suggest `git revert -m 1 <merge_commit>`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill ship --phase smoke --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill ship --phase smoke --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 7) **Post-ship test gap advisory** (optional, non-blocking):
@@ -145,7 +150,7 @@ Steps:
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
-These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Error Handling
 - Pre-merge checks (must all pass before merging):

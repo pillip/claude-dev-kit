@@ -4,7 +4,7 @@ name: testgen
 description: Scan the codebase for missing or hollow tests, generate unit/integration/E2E tests, and create a PR.
 argument-hint: [file or directory path, or omit for full scan]
 disable-model-invocation: false
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(bash scripts/kit_update_check.py *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *)
 ---
 
 ## Kit Preamble — testgen
@@ -102,20 +102,17 @@ Algorithm:
    ```
    Ask user to confirm which gaps to fill (all, or a subset).
 
-5) After user approval, create worktree:
+5) After user approval, create worktree + auto-freeze in one step:
    ```bash
-   WT="$(bash scripts/worktree.sh create testgen/add-missing-tests)"
+   WT="$(bash scripts/wt_setup.sh testgen/add-missing-tests)"
    ```
-   All subsequent file operations happen inside `$WT/`.
+   `wt_setup.sh` creates the worktree and writes the freeze marker inside
+   `.claude-kit/freeze-dir.txt` atomically. All subsequent file operations
+   happen inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill testgen --phase worktree --issue "$SLUG"`
+> Run: `bash scripts/checkpoint.sh --skill testgen --phase worktree --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
-
-5b) **Auto-freeze**: Lock edits to the worktree directory:
-   ```bash
-   mkdir -p "$WT/.claude-kit" && echo "$WT" > "$WT/.claude-kit/freeze-dir.txt"
-   ```
 
 6) **Generate tests** inside `$WT/`:
    For each approved gap, ask test-generator subagent to:
@@ -136,7 +133,7 @@ Algorithm:
    - If a test cannot be fixed after 2 attempts: remove it and log a warning.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill testgen --phase test --issue "$SLUG"`
+> Run: `bash scripts/checkpoint.sh --skill testgen --phase test --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 8) Create GH Issue:
@@ -145,7 +142,7 @@ Algorithm:
 9) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill testgen --phase push --issue "$SLUG"`
+> Run: `bash scripts/checkpoint.sh --skill testgen --phase push --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 10) Create PR:
@@ -155,10 +152,9 @@ Algorithm:
 ## Sprint Integration (optional)
 If `issues.md` exists in the project root, register this work in the sprint ecosystem:
 1) Read `issues.md` to find the next available ISSUE-NNN number.
-2) Append a new issue entry via flock_edit.sh:
+2) Append a new issue entry via the registry wrapper:
    ```bash
-   ROOT="$(bash scripts/worktree.sh root)"
-   bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<append issue entry>'
+   bash scripts/registry_edit.sh issues.md -- bash -c '<append issue entry>'
    ```
    Issue fields:
    - Title: same as GH Issue title
@@ -179,17 +175,16 @@ If `issues.md` does not exist, skip this step silently.
 - If `git push` fails: check for upstream conflicts; report and stop.
 
 ## Rollback
-- **CRITICAL**: `cd` and `remove` MUST run in a single shell command (`&&`).
-  A child process `cd` cannot change the parent shell's CWD — separate calls
-  leave the shell in a deleted directory, breaking all subsequent commands.
+- Use `bash scripts/wt_cleanup.sh <branch>` for safe worktree removal —
+  the wrapper cd's to main root and removes the worktree in a single subshell.
 - If failure occurs after worktree creation but before PR:
-  1. `cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>`
+  1. `bash scripts/wt_cleanup.sh <branch>`
   2. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation: `gh pr close <pr_number>` then clean up as above.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
-These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Guidelines
 - Prioritize by risk: test critical paths first (auth, payments, data mutations).

@@ -76,25 +76,30 @@ Every phase has a mandatory checkpoint. Run the verification command and check e
 If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
 Standard prefix:
 ```
-ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py"
+bash scripts/checkpoint.sh
 ```
-Append `--skill <name> --phase <phase> --issue <ID>` for the specific check."""
+Append `--skill <name> --phase <phase> --issue <ID>` for the specific check.
+`checkpoint.sh` resolves the main repo root internally, so the command stays
+a single prefix-matchable form (safe to allowlist as `Bash(bash scripts/checkpoint.sh *)`)."""
 
 _WORKTREE_PATTERN = """\
 ### Worktree Setup Pattern
 Pipeline skills operate in git worktrees to isolate changes from main.
-- Create: `WT="$(bash scripts/worktree.sh create <branch>)"`
+- Create + freeze: `WT="$(bash scripts/wt_setup.sh <branch>)"` — creates the
+  worktree via `scripts/worktree.sh create` and writes `.claude-kit/freeze-dir.txt`
+  inside it in a single step.
 - Resolve main root: `bash scripts/worktree.sh root`
-- Remove after ship: `bash scripts/worktree.sh remove <branch>`
+- Remove safely: `bash scripts/wt_cleanup.sh <branch>` — cd's to main root
+  inside a subshell, then removes the worktree (never leaves CWD dangling).
 All file operations happen inside `$WT/`. Shared files live on main only."""
 
 _REGISTRY_UPDATE_PATTERN = """\
 ### Registry Update Pattern
 Shared files (`issues.md`, `STATUS.md`, `CHANGELOG.md`) are managed on main only.
-Always use flock_edit.sh for concurrent-safe writes:
+Always use `registry_edit.sh` for concurrent-safe writes — it resolves the
+main repo root internally and delegates to `flock_edit.sh`:
 ```bash
-ROOT="$(bash scripts/worktree.sh root)"
-bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
+bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches."""
 
@@ -113,7 +118,7 @@ _PARALLEL_MANAGEMENT = """\
 - Respect the `--parallel N` limit for concurrent subagent tasks.
 - Use the Task tool for subagent dispatch; track completion in `docs/sprint_state.md`.
 - Each parallel track is independent; do not share mutable state between tracks.
-- Use `flock_edit.sh` for any shared file writes (issues.md, STATUS.md)."""
+- Use `registry_edit.sh` for any shared file writes (issues.md, STATUS.md)."""
 
 _ESCALATION_RETRY = """\
 ### Escalation and Retry Logic

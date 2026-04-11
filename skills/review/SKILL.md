@@ -4,7 +4,7 @@ name: review
 description: Performs a senior-level review against the PR, applying minimal fixes/tests/review notes.
 argument-hint: [ISSUE-number]
 disable-model-invocation: true
-allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(bash scripts/kit_update_check.py *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *)
 ---
 
 ## Kit Preamble — review
@@ -34,23 +34,28 @@ Every phase has a mandatory checkpoint. Run the verification command and check e
 If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
 Standard prefix:
 ```
-ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py"
+bash scripts/checkpoint.sh
 ```
 Append `--skill <name> --phase <phase> --issue <ID>` for the specific check.
+`checkpoint.sh` resolves the main repo root internally, so the command stays
+a single prefix-matchable form (safe to allowlist as `Bash(bash scripts/checkpoint.sh *)`).
 
 ### Worktree Setup Pattern
 Pipeline skills operate in git worktrees to isolate changes from main.
-- Create: `WT="$(bash scripts/worktree.sh create <branch>)"`
+- Create + freeze: `WT="$(bash scripts/wt_setup.sh <branch>)"` — creates the
+  worktree via `scripts/worktree.sh create` and writes `.claude-kit/freeze-dir.txt`
+  inside it in a single step.
 - Resolve main root: `bash scripts/worktree.sh root`
-- Remove after ship: `bash scripts/worktree.sh remove <branch>`
+- Remove safely: `bash scripts/wt_cleanup.sh <branch>` — cd's to main root
+  inside a subshell, then removes the worktree (never leaves CWD dangling).
 All file operations happen inside `$WT/`. Shared files live on main only.
 
 ### Registry Update Pattern
 Shared files (`issues.md`, `STATUS.md`, `CHANGELOG.md`) are managed on main only.
-Always use flock_edit.sh for concurrent-safe writes:
+Always use `registry_edit.sh` for concurrent-safe writes — it resolves the
+main repo root internally and delegates to `flock_edit.sh`:
 ```bash
-ROOT="$(bash scripts/worktree.sh root)"
-bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
+bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
 
@@ -77,21 +82,18 @@ If the result is `true`:
 5. Only report kit/skill issues (unclear instructions, missing checkpoints, bad ergonomics). Do NOT report user-app bugs or network errors.
 Steps:
 1) Find PR from issues.md (PR field) or `gh pr status`.
-2) Checkout the PR branch in a worktree:
+2) Checkout the PR branch in a worktree + auto-freeze in one step:
    ```bash
    BRANCH="$(gh pr view <pr_number> --json headRefName -q .headRefName)"
-   WT="$(bash scripts/worktree.sh create "$BRANCH")"
+   WT="$(bash scripts/wt_setup.sh "$BRANCH")"
    ```
-   All subsequent file operations happen inside `$WT/`.
+   `wt_setup.sh` creates the worktree and writes the freeze marker inside
+   `.claude-kit/freeze-dir.txt` atomically. All subsequent file operations
+   happen inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase checkout --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill review --phase checkout --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
-
-2b) **Auto-freeze**: Lock edits to the worktree directory:
-   ```bash
-   mkdir -p "$WT/.claude-kit" && echo "$WT" > "$WT/.claude-kit/freeze-dir.txt"
-   ```
 
 3) Gather review context:
    **Read all applicable context files via parallel Read tool calls in a single message.**
@@ -110,7 +112,7 @@ Steps:
    - Output: `docs/ui_review_notes.md` with severity-classified findings.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase ui-review --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill review --phase ui-review --issue $ARGUMENTS`
 > The script auto-detects UI issues via Track field/title keywords. Non-UI issues pass automatically.
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
@@ -129,13 +131,13 @@ Steps:
 4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit); re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase test --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill review --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 4.5) **Test quality verification**: Validate that all test files in the branch contain real assertions (no hollow tests). This catches test files that exist to satisfy checkpoints but don't actually verify behavior.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase test-quality --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill review --phase test-quality --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 5) Update docs/review_notes.md (inside `$WT/`) with sections:
@@ -145,30 +147,30 @@ Steps:
    - **Design Audit** (from design-auditor, if applicable): Token Consistency, Component Completeness, Philosophy Compliance.
    - **Accessibility Audit** (from a11y-auditor, if applicable): WCAG 2.1 AA findings and remediation.
 5.5) Ask reviewer subagent to update `docs/review_lessons.md`:
-   - Use `$ROOT/docs/review_lessons.md` with `flock_edit.sh` for safe concurrent modification.
+   - Update via `bash scripts/registry_edit.sh docs/review_lessons.md -- bash -c '<update command>'` for safe concurrent modification.
    - Add new preventable patterns or increment frequency of existing ones.
 5.7) **Update test plan** (if `docs/test_plan.md` exists):
    - Ask qa-designer subagent to review and update `docs/test_plan.md` based on the PR changes.
    - Pass: PR diff summary, list of changed files, and current `docs/test_plan.md` content.
    - qa-designer evaluates: new flows requiring test coverage, risk level changes, E2E gap updates.
-   - Update `$ROOT/docs/test_plan.md` via `flock_edit.sh` for safe concurrent modification.
+   - Update via `bash scripts/registry_edit.sh docs/test_plan.md -- bash -c '<update command>'` for safe concurrent modification.
    - If no updates needed: skip silently.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase review --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill review --phase review --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 6) Commit + push from `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill review --phase push --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill review --phase push --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 7) If PR is draft and ready: `gh pr ready`.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
-These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Error Handling
 - If PR not found (issues.md has no PR field and `gh pr status` returns nothing): stop and report; suggest running `/implement` first.
@@ -183,4 +185,4 @@ These are registry files managed only on main. Always use `$ROOT/` path with `fl
 - Review changes are commits on the existing PR branch.
 - If review fixes must be fully undone: `git revert` the review commits (do not force-push).
 - docs/review_notes.md is append-only; no rollback needed for notes.
-- Clean up worktree when done: `cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove "$BRANCH"`.
+- Clean up worktree when done: `bash scripts/wt_cleanup.sh "$BRANCH"`.

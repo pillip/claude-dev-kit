@@ -4,7 +4,7 @@ name: implement
 description: Implements a single issue, creates a GitHub Issue/PR, and links them with `Closes #N`. (1 issue = 1 PR)
 argument-hint: [ISSUE-number]
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(bash scripts/kit_update_check.py *), Bash(python3 scripts/*), Bash(git *), Bash(gh *)
 ---
 
 ## Kit Preamble — implement
@@ -34,23 +34,28 @@ Every phase has a mandatory checkpoint. Run the verification command and check e
 If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
 Standard prefix:
 ```
-ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py"
+bash scripts/checkpoint.sh
 ```
 Append `--skill <name> --phase <phase> --issue <ID>` for the specific check.
+`checkpoint.sh` resolves the main repo root internally, so the command stays
+a single prefix-matchable form (safe to allowlist as `Bash(bash scripts/checkpoint.sh *)`).
 
 ### Worktree Setup Pattern
 Pipeline skills operate in git worktrees to isolate changes from main.
-- Create: `WT="$(bash scripts/worktree.sh create <branch>)"`
+- Create + freeze: `WT="$(bash scripts/wt_setup.sh <branch>)"` — creates the
+  worktree via `scripts/worktree.sh create` and writes `.claude-kit/freeze-dir.txt`
+  inside it in a single step.
 - Resolve main root: `bash scripts/worktree.sh root`
-- Remove after ship: `bash scripts/worktree.sh remove <branch>`
+- Remove safely: `bash scripts/wt_cleanup.sh <branch>` — cd's to main root
+  inside a subshell, then removes the worktree (never leaves CWD dangling).
 All file operations happen inside `$WT/`. Shared files live on main only.
 
 ### Registry Update Pattern
 Shared files (`issues.md`, `STATUS.md`, `CHANGELOG.md`) are managed on main only.
-Always use flock_edit.sh for concurrent-safe writes:
+Always use `registry_edit.sh` for concurrent-safe writes — it resolves the
+main repo root internally and delegates to `flock_edit.sh`:
 ```bash
-ROOT="$(bash scripts/worktree.sh root)"
-bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
+bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
 
@@ -78,7 +83,7 @@ If the result is `true`:
 ## Checkpoint Rules — MANDATORY
 Every phase in this skill has a CHECKPOINT block. You MUST run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase. Skipping checkpoints is a critical violation.
 
-**Path convention**: Checkpoint commands use `ROOT="$(bash scripts/worktree.sh root)"` to resolve the main repo root. This ensures the script is found regardless of whether CWD is the main repo or a worktree.
+**Path convention**: Checkpoint commands use the `bash scripts/checkpoint.sh` wrapper, which resolves the main repo root internally (via `scripts/worktree.sh root`). This ensures the verification script is found regardless of whether CWD is the main repo or a worktree, and keeps the command prefix-matchable for permission allowlists.
 
 Hard requirements:
 - Create GitHub Issue if missing: `gh issue create`
@@ -113,34 +118,33 @@ Algorithm:
    - Pass all relevant context to the developer subagent prompt.
 3) Ensure Branch is set; if empty, derive `issue/$ARGUMENTS-<slug>` and write back.
    - **File lock**: wrap the issues.md read-modify-write with:
-     `bash scripts/flock_edit.sh issues.md -- bash -c '<update command>'`
+     `bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'`
 4) Ensure GH-Issue exists:
    - If empty: `gh issue create --title "[$ARGUMENTS] <title>" --body "<body>"`
    - Body must include: issue goal, scope (in/out), acceptance criteria, and implementation notes from issues.md.
    - Capture issue number/url; write back to issues.md.
    - **File lock**: wrap the issues.md write-back with:
-     `bash scripts/flock_edit.sh issues.md -- bash -c '<update command>'`
+     `bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'`
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase issue --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase issue --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-5) Create worktree for the branch:
+5) Create worktree for the branch (and auto-initialize the freeze marker):
    ```bash
-   WT="$(bash scripts/worktree.sh create issue/$ARGUMENTS-<slug>)"
+   WT="$(bash scripts/wt_setup.sh issue/$ARGUMENTS-<slug>)"
    ```
-   All subsequent file operations (code, tests) happen inside `$WT/`.
+   `wt_setup.sh` creates the worktree via `scripts/worktree.sh create` and
+   writes `.claude-kit/freeze-dir.txt` inside it in a single step. All
+   subsequent file operations (code, tests) happen inside `$WT/`.
+   From this point, Edit/Write operations outside `$WT/` will be blocked
+   (if `/freeze` or `/guard` hooks are active). Registry files on main
+   (`issues.md`, `STATUS.md`) are updated via `bash scripts/registry_edit.sh`
+   from the main repo root — this is the only exception.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase worktree --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase worktree --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
-
-5b) **Auto-freeze**: Lock edits to the worktree directory to prevent accidental changes outside scope:
-   ```bash
-   mkdir -p "$WT/.claude-kit" && echo "$WT" > "$WT/.claude-kit/freeze-dir.txt"
-   ```
-   From this point, Edit/Write operations outside `$WT/` will be blocked (if `/freeze` or `/guard` hooks are active).
-   Registry files on main (`issues.md`, `STATUS.md`) are updated via `flock_edit.sh` from the main repo root — this is the only exception.
 
 6) **Write tests FIRST (TDD Red phase)** inside `$WT/`.
    This project follows TDD: write failing tests before writing implementation code.
@@ -158,34 +162,36 @@ Algorithm:
    - The checkpoint will warn about potential AC coverage gaps.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase tests-written --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase tests-written --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 7) **Verify RED** — Run tests to confirm they FAIL (no implementation yet).
    Tests should fail because the implementation code doesn't exist yet. This ensures tests are testing real behavior, not vacuously passing.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase red --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase red --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 8) **Implement minimal code** inside `$WT/`.
    Write the minimum code needed to make all tests pass. Follow existing project patterns.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase code --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase code --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 9) **Run tests (GREEN phase)** inside `$WT/`.
    All tests must pass. If any fail, fix the implementation (not the tests) until green.
+   The checkpoint also runs platform-specific gates (e2e-web, e2e-mobile, etc.) as **warnings**.
+   Gate failures don't block implementation but flag integration risks early.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase test --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 10) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase push --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase push --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 11) Create PR (or update):
@@ -193,24 +199,24 @@ Algorithm:
    - Body begins with `Closes #<issue_number>`
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase pr --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase pr --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 12) Record PR URL in issues.md; set Status=done; update STATUS.md.
-   Use main repo root for shared files:
+   Use `registry_edit.sh` — it resolves the main repo root internally so
+   you never have to build paths via command substitution:
    ```bash
-   ROOT="$(bash scripts/worktree.sh root)"
-   bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
-   bash scripts/flock_edit.sh "$ROOT/STATUS.md" -- bash -c '<update command>'
+   bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
+   bash scripts/registry_edit.sh STATUS.md -- bash -c '<update command>'
    ```
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill implement --phase registry --issue $ARGUMENTS`
+> Run: `bash scripts/checkpoint.sh --skill implement --phase registry --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
-These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Error Handling
 - If `gh auth status` fails: stop and instruct the user to run `gh auth login`.
@@ -221,11 +227,11 @@ These are registry files managed only on main. Always use `$ROOT/` path with `fl
 - If `gh pr create` fails: retry once; if still failing, the branch is already pushed — report and let user create PR manually.
 
 ## Rollback
-- **CRITICAL**: `cd` and `remove` MUST run in a single shell command (`&&`).
-  A child process `cd` cannot change the parent shell's CWD — separate calls
-  leave the shell in a deleted directory, breaking all subsequent commands.
+- Use `bash scripts/wt_cleanup.sh <branch>` for safe worktree removal.
+  The wrapper cd's to the main repo root and then removes the worktree in
+  a single subshell, so the caller never ends up with a deleted CWD.
 - If failure occurs after worktree creation but before PR:
-  1. `cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>`
+  1. `bash scripts/wt_cleanup.sh <branch>`
   2. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation:
   1. `gh pr close <pr_number>` to close the broken PR.

@@ -4,7 +4,7 @@ name: diagnose
 description: Analyze a bug from error logs or reproduction steps, fix it, and create a GH Issue + PR.
 argument-hint: [error description or file path]
 disable-model-invocation: false
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(bash scripts/kit_update_check.py *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *)
 ---
 
 ## Kit Preamble — diagnose
@@ -34,23 +34,28 @@ Every phase has a mandatory checkpoint. Run the verification command and check e
 If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
 Standard prefix:
 ```
-ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py"
+bash scripts/checkpoint.sh
 ```
 Append `--skill <name> --phase <phase> --issue <ID>` for the specific check.
+`checkpoint.sh` resolves the main repo root internally, so the command stays
+a single prefix-matchable form (safe to allowlist as `Bash(bash scripts/checkpoint.sh *)`).
 
 ### Worktree Setup Pattern
 Pipeline skills operate in git worktrees to isolate changes from main.
-- Create: `WT="$(bash scripts/worktree.sh create <branch>)"`
+- Create + freeze: `WT="$(bash scripts/wt_setup.sh <branch>)"` — creates the
+  worktree via `scripts/worktree.sh create` and writes `.claude-kit/freeze-dir.txt`
+  inside it in a single step.
 - Resolve main root: `bash scripts/worktree.sh root`
-- Remove after ship: `bash scripts/worktree.sh remove <branch>`
+- Remove safely: `bash scripts/wt_cleanup.sh <branch>` — cd's to main root
+  inside a subshell, then removes the worktree (never leaves CWD dangling).
 All file operations happen inside `$WT/`. Shared files live on main only.
 
 ### Registry Update Pattern
 Shared files (`issues.md`, `STATUS.md`, `CHANGELOG.md`) are managed on main only.
-Always use flock_edit.sh for concurrent-safe writes:
+Always use `registry_edit.sh` for concurrent-safe writes — it resolves the
+main repo root internally and delegates to `flock_edit.sh`:
 ```bash
-ROOT="$(bash scripts/worktree.sh root)"
-bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<update command>'
+bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
 
@@ -103,23 +108,20 @@ Steps:
 6) Present the confirmed root cause and a minimal fix to the user.
 7) After user approval, apply the fix.
 8) Run `pytest` to confirm no regressions. Suggest a regression test if none exists.
-9) Create worktree for the branch:
+9) Create worktree + auto-freeze in one step:
    ```bash
-   WT="$(bash scripts/worktree.sh create fix/<slug>)"
+   WT="$(bash scripts/wt_setup.sh fix/<slug>)"
    ```
-   Apply the fix inside `$WT/`, run tests from `$WT/`.
+   `wt_setup.sh` creates the worktree and writes the freeze marker inside
+   `.claude-kit/freeze-dir.txt` atomically. Apply the fix inside `$WT/`,
+   run tests from `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill diagnose --phase worktree --issue "$SLUG"`
+> Run: `bash scripts/checkpoint.sh --skill diagnose --phase worktree --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-9b) **Auto-freeze**: Lock edits to the worktree directory:
-   ```bash
-   mkdir -p "$WT/.claude-kit" && echo "$WT" > "$WT/.claude-kit/freeze-dir.txt"
-   ```
-
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill diagnose --phase test --issue "$SLUG"`
+> Run: `bash scripts/checkpoint.sh --skill diagnose --phase test --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 10) Create GH Issue:
@@ -128,7 +130,7 @@ Steps:
 11) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `ROOT="$(bash scripts/worktree.sh root)" && python3 "$ROOT/scripts/verify_checkpoint.py" --skill diagnose --phase push --issue "$SLUG"`
+> Run: `bash scripts/checkpoint.sh --skill diagnose --phase push --issue "$SLUG"`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
 12) Create PR:
@@ -138,10 +140,9 @@ Steps:
 ## Sprint Integration (optional)
 If `issues.md` exists in the project root, register this work in the sprint ecosystem:
 1) Read `issues.md` to find the next available ISSUE-NNN number.
-2) Append a new issue entry via flock_edit.sh:
+2) Append a new issue entry via the registry wrapper:
    ```bash
-   ROOT="$(bash scripts/worktree.sh root)"
-   bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c '<append issue entry>'
+   bash scripts/registry_edit.sh issues.md -- bash -c '<append issue entry>'
    ```
    Issue fields:
    - Title: same as GH Issue title
@@ -162,17 +163,16 @@ If `issues.md` does not exist, skip this step silently.
 - If tests fail after fix: do NOT push or create PR. Report failing tests and stop.
 
 ## Rollback
-- **CRITICAL**: `cd` and `remove` MUST run in a single shell command (`&&`).
-  A child process `cd` cannot change the parent shell's CWD — separate calls
-  leave the shell in a deleted directory, breaking all subsequent commands.
+- Use `bash scripts/wt_cleanup.sh <branch>` for safe worktree removal —
+  the wrapper cd's to main root and removes the worktree in a single subshell.
 - If failure occurs after worktree creation but before PR:
-  1. `cd "$(bash scripts/worktree.sh root)" && bash scripts/worktree.sh remove <branch>`
+  1. `bash scripts/wt_cleanup.sh <branch>`
   2. `git push origin --delete <branch>` (remote cleanup, if pushed)
 - If failure occurs after PR creation: `gh pr close <pr_number>` then clean up worktree and branch as above.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
-These are registry files managed only on main. Always use `$ROOT/` path with `flock_edit.sh`.
+These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Guidelines
 - Never guess-and-patch. Always confirm the root cause before proposing a fix.
