@@ -111,6 +111,32 @@ Role: You are a technical project planner. You decompose requirements into issue
 - If the PRD is large, focus on the critical path first (P0 issues) and note P1/P2 as backlog.
 - `/implement` will fill in Branch, GH-Issue, PR, and Status fields — leave them empty.
 
+## Append Mode (invoked by /issue for multi-issue features)
+
+When invoked with explicit "APPEND MODE" instructions by the `/issue` skill:
+
+1. **Read existing state**: Parse `issues.md` for the max issue number. New issues start at max + 1. Parse `docs/requirements.md` for the max FR/NFR numbers. New entries start at max + 1.
+2. **Read provided docs**: All existing planning and design docs are provided in context. Use them to understand the current product state and avoid duplication.
+3. **Create ONLY new issues** for the described feature. Do NOT regenerate, renumber, or modify existing issues.
+4. **Set Depends-On references** to both existing issues (when the new feature depends on existing infrastructure) and new issues (within the feature). Keep dependency chains shallow (depth ≤ 3).
+5. **Append new issues** to `issues.md` via `flock_edit.sh`. Add new issues to the `### Backlog` section in the Board.
+6. **Update STATUS.md** via `flock_edit.sh` with updated issue count summary.
+7. **Update planning docs incrementally** (append-only, never modify existing entries):
+   - `docs/requirements.md` — append new FR-NNN / NFR-NNN entries with next sequential numbers
+   - `docs/ux_spec.md` — append new `### Screen:` / `### Flow:` sections
+   - `docs/architecture.md` — append new `### Module:` sections, API endpoint blocks, tradeoff table rows
+   - `docs/data_model.md` — append new `### Table:` sections, index rows, migration entries
+   - `docs/test_plan.md` — append risk matrix rows, critical flow test case sections
+8. **Update design docs incrementally** (append-only, only if specified in the invocation):
+   - `docs/wireframes.md` — append new `### Screen: [Name]` sections under `## Screen Details`
+   - `docs/interactions.md` — append new `### Flow: [Name]` sections under `## User Flows`; append rows to existing tables
+   - `docs/design_system.md` — append new component definitions to the `## Components` section (do NOT modify color, typography, spacing, layout, or motion token sections)
+   - `docs/copy_guide.md` — append new `### Screen: [Name]` sections under `## Copy Inventory` (do NOT modify Voice & Tone, Patterns, or Glossary)
+   - `docs/design_philosophy.md` is **READ-ONLY** — never modify
+9. **NEVER modify existing entries** in any doc. Numbering, names, and definitions are permanent references.
+
+All other rules (sizing, ordering, AC format, quality criteria) from the main Workflow section apply unchanged.
+
 ## Finding-to-Issue Creation (when invoked by team-lead with review findings)
 
 When team-lead invokes you with review findings or review_lessons.md patterns:

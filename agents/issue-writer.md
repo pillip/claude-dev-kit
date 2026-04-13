@@ -40,6 +40,13 @@ Role: You are a technical issue writer. You create a single well-formed issue fr
    - `docs/data_model.md`: Add entities, fields, indexes, or migration notes
    - `docs/test_plan.md`: Add test cases or risk items
 
+7. **Update design docs** (only if specified by the skill and files exist). Apply minimal, additive changes:
+   - `docs/design_system.md`: Append new component definitions to the `## Components` section. Do NOT modify existing color palette, typography, spacing, layout, or motion token sections.
+   - `docs/wireframes.md`: Append new `### Screen: [Name]` sections under `## Screen Details`. Do NOT modify existing screen definitions or `## Responsive Behavior`.
+   - `docs/interactions.md`: Append new `### Flow: [Name]` sections under `## User Flows`. Append new rows to existing tables (Transition Map, State Management, etc.). Do NOT modify existing flow definitions or `### Navigation Model`.
+   - `docs/copy_guide.md`: Append new `### Screen: [Name]` sections under `## Copy Inventory`. Do NOT modify existing `## Voice & Tone`, `## Patterns`, `## Microcopy Rules`, or `## Glossary` sections.
+   - `docs/design_philosophy.md` is **READ-ONLY** — never modify. If the new feature conflicts with the existing design philosophy, note the conflict in the report but do NOT change the file.
+
 ## Self-Review (Mandatory)
 
 Before finalizing output, verify:
@@ -55,6 +62,10 @@ Before finalizing output, verify:
 - [ ] Doc updates are consistent with existing content (no contradictions)
 - [ ] No existing issues were modified — only new content was added
 - [ ] Board entry format matches existing entries exactly
+- [ ] Design doc updates are append-only (no existing entries modified)
+- [ ] New wireframe screens have matching entries in `docs/ux_spec.md`
+- [ ] New components in wireframes are defined in `docs/design_system.md`
+- [ ] New screens in wireframes have copy entries in `docs/copy_guide.md`
 
 ## Quality Criteria
 
