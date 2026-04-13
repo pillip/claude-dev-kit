@@ -66,7 +66,13 @@ Scan for missing or hollow tests, generate unit/integration/E2E tests, and creat
 ```
 Reverse-engineer docs from code: architecture, requirements, test plan, and improvement issues — then feed into `/sprint` or `/implement`.
 
-### 7. Maintain and evolve
+### 7. Add a feature to an existing product
+```
+/issue "Add Stripe payment processing with subscription tiers, billing page, and invoice history"
+```
+Auto-detects that this spans multiple screens/modules, estimates issue count, updates planning and design docs incrementally (append-only), and creates a batch of implementation issues with dependencies.
+
+### 8. Maintain and evolve
 ```
 /refactor src/legacy_module.py    # Improve code structure
 /migrate "Django 5.0"             # Upgrade dependencies
@@ -90,8 +96,13 @@ Reverse-engineer docs from code: architecture, requirements, test plan, and impr
 /implement ISSUE-001 → /review ISSUE-001 → /ship
 ```
 
+**Add a feature to existing product:**
+```
+/issue "feature description" → /sprint (or /implement per issue)
+```
+
 > `/brainstorm` and `/bizanalysis` are optional. If your idea is clear, start from `/prd`.
-> `/uiux` is optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/sprint`.
+> `/uiux`, `/mobile-uiux`, and `/desktop-uiux` are optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/sprint`.
 > `/sprint` auto-orchestrates multiple issues. For a single issue, use `/implement` directly.
 > `/scan` is for existing codebases without a PRD. It reverse-engineers planning docs from code.
 
@@ -134,10 +145,12 @@ START
  │
  ├─ Planning docs ready, project has UI?
  │   ├─ Web → /uiux
- │   └─ Mobile → /mobile-uiux
+ │   ├─ Mobile → /mobile-uiux
+ │   └─ Desktop → /desktop-uiux
  │
- ├─ Want to add more issues?
- │   └─ YES → /issue "description"
+ ├─ Want to add a feature or issues to an existing product?
+ │   ├─ Small (single task) → /issue "description" (creates 1 issue)
+ │   └─ Medium (multi-screen/module) → /issue "feature description" (auto-detects batch mode, creates multiple issues)
  │
  ├─ Multiple issues to implement?
  │   ├─ YES → /sprint (team-lead auto-orchestrates)
@@ -171,9 +184,10 @@ START
 | `/bizanalysis [idea]` | Business viability analysis with market research | `docs/business_analysis.md` |
 | `/prd [path]` | Create or update a PRD via interactive conversation | `PRD.md` (or specified path) |
 | `/kickoff PRD.md` | Analyze PRD and generate planning docs | `docs/requirements.md`, `docs/ux_spec.md`, `docs/architecture.md`, `issues.md`, `docs/test_plan.md`, `STATUS.md` |
-| `/issue [description]` | Create a single issue from natural language + auto-update planning docs | `issues.md`, `STATUS.md`, related `docs/*.md` |
+| `/issue [description]` | Create issues (single or batch) from natural language + auto-update planning and design docs | `issues.md`, `STATUS.md`, related `docs/*.md` |
 | `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
 | `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_philosophy.md`, `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
+| `/desktop-uiux [PRD.md]` | Desktop design system + Electron prototype | `docs/design_philosophy.md`, `docs/design_system_desktop.md`, `docs/wireframes_desktop.md`, `docs/interactions_desktop.md`, `prototype-desktop/` |
 | `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review + security audit + UI review + design audit + a11y audit on PR | `docs/review_notes.md`, `docs/ui_review_notes.md`, `docs/design_audit.md`, `docs/a11y_audit.md` |
@@ -308,6 +322,35 @@ The skill applies [Anthropic's frontend-design guidelines](https://claude.com/bl
 
 Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile apps. Conducts a Design Interview to establish the project's unique design direction, then performs reference research to generate a differentiated mobile design system. If `docs/design_philosophy.md` already exists (from `/uiux`), reuses it with user confirmation; otherwise generates it from scratch. Produces design philosophy, mobile-specific design system, wireframes with thumb zone considerations, and a runnable Expo prototype.
 
+### Desktop UI/UX — Design and prototype for desktop
+
+```
+/desktop-uiux [PRD.md]
+```
+
+Requires `/kickoff` outputs. Like `/uiux` but for Electron desktop apps. Conducts a Design Interview with an additional "Desktop Identity" question (native OS integration vs distinct branded identity). If `docs/design_philosophy.md` already exists (from `/uiux` or `/mobile-uiux`), reuses it with user confirmation; otherwise generates it from scratch. Produces desktop-specific design system with keyboard shortcuts, window chrome specs, and multi-window configurations, plus an Electron prototype with main/preload/renderer separation.
+
+### Issue — Create issues and update planning/design docs
+
+```
+/issue "description"
+```
+
+Creates issues from a natural language description and auto-updates related planning and design docs. Operates in two modes:
+
+- **Single-issue mode**: For small tasks (one module, one screen). Creates 1 issue, updates affected docs.
+- **Batch mode**: For medium-sized features spanning multiple modules/screens. Auto-detects scope, estimates issue count (3–8), and creates multiple issues with dependencies via the planner agent in append mode.
+
+When design docs exist (`design_philosophy.md`, `wireframes.md`, etc.), the skill also detects and incrementally updates them — appending new screens to wireframes, new flows to interactions, new components to the design system, and new copy entries. Design philosophy is read-only; if a conflict is detected, the skill warns and suggests running `/uiux`.
+
+### Test Generation — Fill test gaps
+
+```
+/testgen [path]
+```
+
+Scans source files for missing or hollow tests (empty functions, no assertions). Detects unit, integration, and E2E gaps by cross-referencing `docs/test_plan.md` critical flows. Generates tests with real assertions and creates a PR. When `issues.md` exists, registers the work as an issue in the sprint ecosystem.
+
 ### Sprint — Auto-orchestrate multiple issues
 
 ```
@@ -420,7 +463,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `architect` | opus | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | opus | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
 | `planner` | opus | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
-| `issue-writer` | sonnet | Natural language → single issue creation + docs update | Read, Glob, Grep, Write, Edit, Bash |
+| `issue-writer` | sonnet | Natural language → issue creation + planning/design docs update | Read, Glob, Grep, Write, Edit, Bash |
 | `qa-designer` | opus | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
 | `team-lead` | opus | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task |
 | `developer` | opus | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
