@@ -290,7 +290,9 @@ def _has_real_tests(filepath: str, wt_path: str) -> bool:
         has_test_block = bool(re.search(r"\b(?:it|test|describe)\s*\(", content))
         has_expect = bool(re.search(
             r"\b(?:expect|assert|should|toEqual|toBe|toThrow|toHaveBeenCalled"
-            r"|toContain|toMatch|rejects|resolves)\b",
+            r"|toContain|toMatch|rejects|resolves"
+            r"|expectType|expectNotType|expectAssignable|expectNotAssignable"
+            r"|expectError|expectDeprecated|expectNotDeprecated)\b",
             content,
         ))
         return has_test_block and has_expect
