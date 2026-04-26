@@ -128,7 +128,15 @@ Steps:
    - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
    - Output: `docs/a11y_audit.md` with findings and fix suggestions.
 
-3.8) **Figma compliance check** (auto-skips if no Figma data):
+3.8) **Visual diff** (auto-skips if Playwright not installed or no prototype/implementation HTML):
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase visual-diff --issue $ARGUMENTS`
+> Renders prototype and implementation HTML at 3 viewports (mobile 375px, tablet 768px, desktop 1440px), takes screenshots, and computes pixel-level diff.
+> Auto-passes when Playwright is unavailable or HTML files don't exist. Fails if diff exceeds 5%.
+> If exit code ≠ 0: STOP immediately. Fix visual discrepancies before proceeding.
+
+3.9) **Figma compliance check** (auto-skips if no Figma data):
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill review --phase figma-compliance --issue $ARGUMENTS`

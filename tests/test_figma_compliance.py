@@ -332,10 +332,15 @@ class TestCheckCompliance:
         # box_shadow should not be flagged since Figma has shadows
         assert result["summary"]["box_shadow_count"] == 0
 
-    def test_css_var_definitions_ignored(self):
+    def test_css_var_with_correct_figma_color(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("t.css", "  --color-primary: #3B82F6;")])
+        assert result["summary"]["css_var_value_count"] == 0
+
+    def test_css_var_with_wrong_color_flagged(self):
         design = _make_design_data()
         result = check_compliance(design, [("t.css", "  --color-primary: #FF9900;")])
-        assert result["compliant"] is True
+        assert result["summary"]["css_var_value_count"] > 0
 
     def test_generic_fonts_ignored(self):
         design = _make_design_data()
@@ -374,9 +379,10 @@ class TestCheckCompliance:
         result = check_compliance(design, [("a.css", "background: linear-gradient(#f00, #00f);")])
         assert result["summary"]["gradient_count"] > 0
 
-    def test_gradient_allowed_when_figma_has_gradients(self):
+    def test_gradient_allowed_when_figma_has_gradients_and_colors_match(self):
         design = _make_design_data()
-        result = check_compliance(design, [("a.css", "background: linear-gradient(#f00, #00f);")])
+        # Use colors from the Figma palette
+        result = check_compliance(design, [("a.css", "background: linear-gradient(#3B82F6, #10B981);")])
         assert result["summary"]["gradient_count"] == 0
 
     def test_text_align_violation(self):

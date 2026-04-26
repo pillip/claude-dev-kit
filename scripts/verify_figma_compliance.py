@@ -259,8 +259,28 @@ def extract_opacities(text: str) -> list[dict]:
     return results
 
 
+_SHADOW_PARTS = re.compile(
+    r"(?:inset\s+)?([\d.]+)px\s+([\d.]+)px\s+([\d.]+)px\s*(?:([\d.]+)px\s*)?(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))",
+)
+
+
+def parse_shadow_value(raw: str) -> dict | None:
+    """Parse a CSS box-shadow value into structured components."""
+    m = _SHADOW_PARTS.search(raw)
+    if not m:
+        return None
+    return {
+        "inset": "inset" in raw.lower(),
+        "offset_x": float(m.group(1)),
+        "offset_y": float(m.group(2)),
+        "blur": float(m.group(3)),
+        "spread": float(m.group(4)) if m.group(4) else 0,
+        "color": m.group(5),
+    }
+
+
 def extract_box_shadows(text: str) -> list[dict]:
-    """Extract box-shadow declarations (presence check)."""
+    """Extract and parse box-shadow declarations."""
     results: list[dict] = []
     for i, line in enumerate(text.splitlines(), 1):
         if not _is_code_line(line):
@@ -268,8 +288,34 @@ def extract_box_shadows(text: str) -> list[dict]:
         for m in _BOX_SHADOW.finditer(line):
             val = m.group(1).strip().rstrip(";")
             if val and val.lower() != "none":
-                results.append({"value": val, "line": i})
+                parsed = parse_shadow_value(val)
+                results.append({"value": val, "parsed": parsed, "line": i})
     return results
+
+
+def shadow_matches_figma(impl_shadow: dict | None, figma_shadows: list[dict]) -> bool:
+    """Check if a parsed implementation shadow matches any Figma shadow."""
+    if impl_shadow is None or not figma_shadows:
+        return True  # Can't compare unparsed shadows
+
+    for fs in figma_shadows:
+        if (abs(impl_shadow.get("offset_x", 0) - fs.get("offset_x", 0)) <= 1
+                and abs(impl_shadow.get("offset_y", 0) - fs.get("offset_y", 0)) <= 1
+                and abs(impl_shadow.get("blur", 0) - fs.get("blur", 0)) <= 2
+                and abs(impl_shadow.get("spread", 0) - fs.get("spread", 0)) <= 1):
+            return True
+    return False
+
+
+def gradient_stops_match(impl_colors: list[str], figma_gradients: list[dict], figma_colors: set[str]) -> bool:
+    """Check if gradient colors in implementation match Figma gradient stops."""
+    if not figma_gradients:
+        return True
+    # All colors used in impl gradient should be in Figma palette
+    for c in impl_colors:
+        if not color_matches(c, figma_colors):
+            return False
+    return True
 
 
 # ── Layout, position, text, and visual extractors ───────────────────
@@ -372,6 +418,52 @@ def extract_gradients(text: str) -> list[dict]:
         for m in _GRADIENT_CSS.finditer(line):
             results.append({"value": m.group(0).rstrip("("), "line": i})
     return results
+
+
+# ── CSS variable definition extraction ──────────────────────────────
+
+_CSS_VAR_DEF = re.compile(r"^\s*(--[\w-]+)\s*:\s*(.+?)\s*;", re.MULTILINE)
+
+
+def extract_css_var_definitions(text: str) -> list[dict]:
+    """Extract CSS custom property definitions and their values.
+
+    Returns list of {name, value, line} for lines like: --color-primary: #3B82F6;
+    """
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        m = _CSS_VAR_DEF.match(line)
+        if m:
+            results.append({
+                "name": m.group(1),
+                "value": m.group(2).strip(),
+                "line": i,
+            })
+    return results
+
+
+def check_css_var_values(
+    var_defs: list[dict],
+    figma_colors: set[str],
+) -> list[dict]:
+    """Check that CSS variable color values match Figma palette.
+
+    Only checks variables whose values look like colors (hex or rgb).
+    """
+    violations: list[dict] = []
+    for vd in var_defs:
+        val = vd["value"]
+        # Only check color-like values
+        if val.startswith("#") or val.startswith("rgb"):
+            norm = normalize_hex(val) if val.startswith("#") else val
+            if figma_colors and not color_matches(norm, figma_colors):
+                violations.append({
+                    "name": vd["name"],
+                    "value": val,
+                    "line": vd["line"],
+                    "message": f"CSS var {vd['name']}: {val} — value not in Figma palette",
+                })
+    return violations
 
 
 # ── Comparison ──────────────────────────────────────────────────────
@@ -504,6 +596,8 @@ def check_compliance(
         "overflow": [],
         "position": [],
         "blend_mode": [],
+        "css_var_value": [],
+        "interactive_state": [],
     }
 
     def _add(category: str, filepath: str, line: int, value: str, msg: str) -> None:
@@ -581,17 +675,31 @@ def check_compliance(
                     _add("opacity", filepath, op["line"], str(op["value"]),
                          f"Opacity {op['value']} not in Figma (allowed: {sorted(figma_opacities)})")
 
-        # Box shadow — verify shadows are only used when Figma defines them
-        if not figma_has_shadows:
-            for bs in extract_box_shadows(content):
+        # Box shadow — check exact values when Figma defines shadows
+        figma_shadow_list = summary_data.get("shadows", [])
+        for bs in extract_box_shadows(content):
+            if not figma_has_shadows:
                 _add("box_shadow", filepath, bs["line"], bs["value"],
                      "Box shadow used but Figma design has no shadows")
+            elif bs.get("parsed") and not shadow_matches_figma(bs["parsed"], figma_shadow_list):
+                _add("box_shadow", filepath, bs["line"], bs["value"],
+                     f"Box shadow values don't match any Figma shadow")
 
-        # Gradient — verify gradients are only used when Figma defines them
-        if not figma_has_gradients:
-            for g in extract_gradients(content):
+        # Gradient — check colors when Figma defines gradients
+        _ = summary_data.get("gradients", [])  # used by figma_has_gradients check above
+        for g in extract_gradients(content):
+            if not figma_has_gradients:
                 _add("gradient", filepath, g["line"], g["value"],
                      "Gradient used but Figma design has no gradients")
+        # Also check gradient colors in hex colors that appear inside gradient() calls
+        if figma_has_gradients and figma_colors:
+            for i_line, line in enumerate(content.splitlines(), 1):
+                if "gradient(" in line.lower() and _is_code_line(line):
+                    grad_colors = _HEX_COLOR.findall(line)
+                    for gc in grad_colors:
+                        if not color_matches(normalize_hex(gc), figma_colors):
+                            _add("gradient", filepath, i_line, gc,
+                                 f"Gradient color {gc} not in Figma palette")
 
         # Flex direction
         if figma_flex_dirs:
@@ -662,6 +770,38 @@ def check_compliance(
                 if bm["value"] not in figma_blend_modes:
                     _add("blend_mode", filepath, bm["line"], bm["value"],
                          f"mix-blend-mode '{bm['value']}' not in Figma (allowed: {sorted(figma_blend_modes)})")
+
+        # CSS variable value resolution — check token definitions match Figma
+        if figma_colors:
+            var_defs = extract_css_var_definitions(content)
+            for v in check_css_var_values(var_defs, figma_colors):
+                _add("css_var_value", filepath, v["line"], v["value"], v["message"])
+
+    # ── Interactive state verification (runs after all files are scanned) ──
+    figma_states = set(summary_data.get("interaction_state_names", []))
+    if figma_states:
+        # Map Figma state names to CSS pseudo-classes
+        state_to_css = {
+            "hover": ":hover", "focus": ":focus", "active": ":active",
+            "disabled": ":disabled", "pressed": ":active",
+            "selected": ":checked", "checked": ":checked",
+        }
+        all_content = "\n".join(content for _, content in source_files)
+        for state in figma_states:
+            css_pseudo = state_to_css.get(state)
+            if css_pseudo and css_pseudo not in all_content:
+                # Also check RN-style state handling (e.g., pressable onPressIn)
+                rn_handlers = {"hover": "onHoverIn", "active": "onPressIn",
+                               "pressed": "onPressIn", "focus": "onFocus",
+                               "disabled": "disabled={"}
+                rn_handler = rn_handlers.get(state, "")
+                if not rn_handler or rn_handler not in all_content:
+                    violations.setdefault("interactive_state", []).append({
+                        "file": "(all files)",
+                        "line": 0,
+                        "value": state,
+                        "message": f"Figma defines '{state}' state but no CSS '{css_pseudo}' found in implementation",
+                    })
 
     total = sum(len(v) for v in violations.values())
 
@@ -833,6 +973,8 @@ def main(argv: list[str] | None = None) -> int:
                 "flex_wrap": "Flex wrap", "text_align": "Text align",
                 "text_transform": "Text transform", "text_decoration": "Text decoration",
                 "overflow": "Overflow", "position": "Position", "blend_mode": "Blend mode",
+                "css_var_value": "CSS variable value",
+                "interactive_state": "Interactive state",
             }
             for key, label in category_labels.items():
                 items = result["violations"].get(key, [])

@@ -104,6 +104,82 @@ def fetch_node(file_key: str, node_id: str, token: str) -> dict[str, Any]:
     return node_data["document"]
 
 
+# --- Interactive State Detection ---
+
+_STATE_KEYWORDS = re.compile(
+    r"\b(hover|focus|active|disabled|pressed|selected|checked|error|loading)\b",
+    re.IGNORECASE,
+)
+
+
+def collect_interaction_states(node: dict[str, Any]) -> list[dict[str, Any]]:
+    """Detect interactive states from Figma component variants.
+
+    Figma component sets contain variants with properties like:
+    - name: "State=Hover", "State=Active", "Type=Primary, State=Disabled"
+    - componentPropertyDefinitions with variant options
+
+    Also detects state-like names in non-component nodes (e.g., "Button / Hover").
+    Returns list of {state, name, node_id, colors} for each detected state.
+    """
+    states: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _walk(n: dict[str, Any]) -> None:
+        name = n.get("name", "")
+        node_type = n.get("type", "")
+        node_id = n.get("id", "")
+
+        # Check component variant properties
+        if node_type == "COMPONENT" and "variantProperties" in n:
+            variant_props = n.get("variantProperties", {})
+            for prop_name, prop_value in variant_props.items():
+                if prop_name.lower() in ("state", "status", "interaction"):
+                    state_key = f"{prop_value.lower()}:{node_id}"
+                    if state_key not in seen:
+                        seen.add(state_key)
+                        # Extract colors from this variant node
+                        variant_colors: list[str] = []
+                        _collect_colors(n, variant_colors)
+                        states.append({
+                            "state": prop_value.lower(),
+                            "name": name,
+                            "node_id": node_id,
+                            "colors": variant_colors,
+                        })
+
+        # Check node name for state keywords (e.g., "Button / Hover")
+        state_match = _STATE_KEYWORDS.search(name)
+        if state_match:
+            state = state_match.group(1).lower()
+            state_key = f"{state}:{node_id}"
+            if state_key not in seen:
+                seen.add(state_key)
+                variant_colors_list: list[str] = []
+                _collect_colors(n, variant_colors_list)
+                states.append({
+                    "state": state,
+                    "name": name,
+                    "node_id": node_id,
+                    "colors": variant_colors_list,
+                })
+
+        for child in n.get("children", []):
+            _walk(child)
+
+    def _collect_colors(n: dict[str, Any], colors: list[str]) -> None:
+        """Recursively collect all colors from a node subtree."""
+        for fill in n.get("fills", []):
+            if fill.get("visible", True) and fill.get("type") == "SOLID":
+                c = fill.get("color", {})
+                colors.append(rgba_to_hex(c))
+        for child in n.get("children", []):
+            _collect_colors(child, colors)
+
+    _walk(node)
+    return states
+
+
 # --- Color Helpers ---
 
 
@@ -923,6 +999,20 @@ def main() -> None:
                 seen_keys.add(key)
                 all_text_styles.append(ts)
 
+    # --- Interactive state detection ---
+    all_interaction_states: list[dict] = []
+    seen_state_keys: set[str] = set()
+    for raw_node, _ in all_raw_nodes:
+        for state in collect_interaction_states(raw_node):
+            skey = f"{state['state']}:{state['name']}"
+            if skey not in seen_state_keys:
+                seen_state_keys.add(skey)
+                all_interaction_states.append(state)
+
+    if all_interaction_states:
+        state_names = sorted({s["state"] for s in all_interaction_states})
+        print(f"\nDetected {len(all_interaction_states)} interactive state(s): {', '.join(state_names)}", file=sys.stderr)
+
     # --- Asset detection & export ---
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
@@ -977,6 +1067,8 @@ def main() -> None:
             "blend_modes": sorted(all_blend_modes),
             "has_absolute_position": any_absolute_position,
             "has_background_image": any_background_image,
+            "interaction_states": all_interaction_states,
+            "interaction_state_names": sorted({s["state"] for s in all_interaction_states}),
             "asset_count": len(exported_assets),
         },
     }

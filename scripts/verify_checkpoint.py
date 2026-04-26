@@ -1044,6 +1044,35 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
     return True
 
 
+def verify_review_visual_diff(issue_id: str, **_) -> bool:
+    """Visual diff: compare prototype screenshots against implementation.
+
+    Auto-passes when Playwright is not installed or no prototype/implementation HTML exists.
+    Fails if pixel diff exceeds threshold at any viewport.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    result = _run(
+        ["python3", str(Path(__file__).resolve().parent / "verify_visual_diff.py"),
+         "--project-path", wt_path, "--threshold", "5"],
+        timeout=120,
+    )
+
+    if result.returncode == 0:
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                print(f"  {line}")
+        return True
+
+    if result.stdout:
+        for line in result.stdout.strip().splitlines():
+            print(f"  {line}")
+    return False
+
+
 def verify_review_figma_compliance(issue_id: str, **_) -> bool:
     """Verify implementation matches Figma design tokens.
 
@@ -1335,6 +1364,7 @@ VERIFIERS = {
     ("review", "checkout"): verify_review_checkout,
     ("review", "review"): verify_review_review,
     ("review", "ui-review"): verify_review_ui_review,
+    ("review", "visual-diff"): verify_review_visual_diff,
     ("review", "figma-compliance"): verify_review_figma_compliance,
     ("review", "test-quality"): verify_review_test_quality,
     ("review", "test"): verify_review_test,
