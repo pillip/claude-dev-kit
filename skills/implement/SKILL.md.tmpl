@@ -23,16 +23,7 @@ Algorithm:
 2a) **Figma prototype upsert** (auto-detect, skip if no URLs found):
    Scan the issue's Implementation Notes for Figma URLs (pattern: `figma.com/design/` or `figma.com/file/`).
    If one or more Figma URLs are found:
-   1. Check `FIGMA_TOKEN` environment variable:
-      ```bash
-      python3 -c "import os; exit(0 if os.environ.get('FIGMA_TOKEN') else 1)"
-      ```
-      If missing: **STOP** and report to the user:
-      "Figma URLs found in Implementation Notes but FIGMA_TOKEN is not set.
-      Set it with: `export FIGMA_TOKEN=figd_...`
-      Get a token: Figma → Settings → Account → Personal access tokens"
-      Do NOT proceed without the token — the issue explicitly requires Figma data.
-   2. Determine the platform from the issue's `Platform` field:
+   1. Determine the platform from the issue's `Platform` field:
       - `mobile` → `--mobile`
       - `desktop` → `--desktop`
       - `web` or empty → no flag (default)
@@ -40,13 +31,15 @@ Algorithm:
       ```bash
       python3 scripts/figma_fetch.py [--mobile|--desktop] <url1> <url2> ...
       ```
-   3. Read `figma-export/design_data.json` and existing `docs/design_system.md` (if any).
-   4. Ask the figma-converter agent to **upsert** prototype files:
+      If the script exits with non-zero (e.g., FIGMA_TOKEN not set, invalid URL, API error):
+      **STOP** and report the error to the user. Do NOT proceed — the issue explicitly requires Figma data.
+   2. Read `figma-export/design_data.json` and existing `docs/design_system.md` (if any).
+   3. Ask the figma-converter agent to **upsert** prototype files:
       - Generate or update `prototype/screens/<screen>.html` for each fetched frame
       - Update `prototype/styles.css` with any new tokens from the Figma data
       - Preserve existing prototype files — only add/update screens from this Figma fetch
       - Update `prototype/index.html` to include new screen links
-   5. The updated prototype files become the visual ground truth.
+   4. The updated prototype files become the visual ground truth.
       The developer's existing "Match the prototype" rule (step 2b UI context) handles the rest —
       no special "compact spec" or separate mechanism needed.
    If no Figma URLs found: skip this step silently.

@@ -66,19 +66,13 @@ If the result is `true`:
 - `docs/ux_spec.md` and `docs/requirements.md` are optional but improve quality if present (from `/kickoff`)
 
 ## Argument Validation
-1) Check `FIGMA_TOKEN`:
-   ```bash
-   python3 -c "import os; exit(0 if os.environ.get('FIGMA_TOKEN') else 1)"
-   ```
-   If missing: STOP → "Set FIGMA_TOKEN first: `export FIGMA_TOKEN=figd_...`"
-
-2) Parse `$ARGUMENTS` for platform flag and URLs:
+1) Parse `$ARGUMENTS` for platform flag and URLs:
    - `--mobile` or `--platform mobile` → mobile mode
    - `--desktop` or `--platform desktop` → desktop mode
    - No flag → web mode (default)
    - Everything else → Figma URLs
 
-3) If no URLs found: ask the user for Figma frame URLs.
+2) If no URLs found: ask the user for Figma frame URLs.
 
 ## Algorithm
 
@@ -87,6 +81,8 @@ If the result is `true`:
    ```bash
    python3 scripts/figma_fetch.py [--mobile|--desktop] <url1> <url2> ...
    ```
+   If the script exits with non-zero (FIGMA_TOKEN not set, invalid URL, API error):
+   **STOP** and report the error message to the user.
    This outputs `figma-export/design_data.json` with:
    - `platform`: web/mobile/desktop
    - `platform_config`: output paths for this platform
