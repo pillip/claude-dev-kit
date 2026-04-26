@@ -128,7 +128,16 @@ Steps:
    - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
    - Output: `docs/a11y_audit.md` with findings and fix suggestions.
 
-4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit); re-run tests inside `$WT/`.
+3.8) **Figma compliance check** (auto-skips if no Figma data):
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase figma-compliance --issue $ARGUMENTS`
+> Compares implementation colors, fonts, and spacing against `figma-export/design_data.json`.
+> Auto-passes when no Figma data exists. Fails if implementation deviates from Figma design tokens.
+> If exit code ≠ 0: STOP immediately. Fix all violations before proceeding.
+> **Figma is the absolute source of truth.** Any deviation from Figma colors, typography, or spacing is a blocking violation.
+
+4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit + Figma compliance); re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill review --phase test --issue $ARGUMENTS`

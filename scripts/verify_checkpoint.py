@@ -1044,6 +1044,50 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
     return True
 
 
+def verify_review_figma_compliance(issue_id: str, **_) -> bool:
+    """Verify implementation matches Figma design tokens.
+
+    Auto-passes when no figma-export/design_data.json exists (non-Figma issues).
+    Fails if hardcoded colors, fonts, or spacings deviate from Figma tokens.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    wt = Path(wt_path)
+    design_data = wt / "figma-export" / "design_data.json"
+
+    # Also check main repo root for design data
+    if not design_data.exists():
+        root = _repo_root()
+        design_data = root / "figma-export" / "design_data.json"
+
+    if not design_data.exists():
+        print(f"PASS: {issue_id} has no figma-export/design_data.json — Figma compliance check skipped")
+        return True
+
+    # Run the compliance script
+    result = _run(
+        ["python3", str(Path(__file__).resolve().parent / "verify_figma_compliance.py"),
+         "--project-path", wt_path],
+        timeout=30,
+    )
+
+    if result.returncode == 0:
+        print(f"PASS: {issue_id} — implementation matches Figma design tokens")
+        return True
+
+    # Print compliance output for the agent to see
+    if result.stdout:
+        for line in result.stdout.strip().splitlines():
+            print(f"  {line}")
+
+    print(f"FAIL: {issue_id} — implementation deviates from Figma design")
+    print(f"  Fix the violations above, then re-run this checkpoint.")
+    return False
+
+
 def verify_review_test(issue_id: str, **_) -> bool:
     """pytest exits 0 (inside worktree)."""
     return verify_implement_test(issue_id)
@@ -1291,6 +1335,7 @@ VERIFIERS = {
     ("review", "checkout"): verify_review_checkout,
     ("review", "review"): verify_review_review,
     ("review", "ui-review"): verify_review_ui_review,
+    ("review", "figma-compliance"): verify_review_figma_compliance,
     ("review", "test-quality"): verify_review_test_quality,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,
