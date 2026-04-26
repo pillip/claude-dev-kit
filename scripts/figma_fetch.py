@@ -458,13 +458,23 @@ def export_assets(
 def collect_unique_values(
     tree: dict[str, Any],
 ) -> dict[str, Any]:
-    """Walk the extracted tree and collect unique design values."""
+    """Walk the extracted tree and collect ALL unique design values.
+
+    Comprehensive extraction for high-fidelity 1:1 compliance checking.
+    """
     colors: set[str] = set()
     text_styles: list[dict] = []
     spacings: set[int] = set()
     radii: set[Any] = set()
     shadows: list[dict] = []
+    font_weights: set[int] = set()
+    font_sizes: set[float] = set()
+    line_heights: set[float] = set()
+    letter_spacings: set[float] = set()
+    opacities: set[float] = set()
+    border_widths: set[float] = set()
     seen_text_keys: set[str] = set()
+    seen_shadow_keys: set[str] = set()
 
     def _walk(node: dict[str, Any]) -> None:
         # Colors
@@ -472,6 +482,16 @@ def collect_unique_values(
             colors.add(node["background_color"])
         if "border_color" in node:
             colors.add(node["border_color"])
+
+        # Border width
+        bw = node.get("border_width")
+        if bw and bw > 0:
+            border_widths.add(float(bw))
+
+        # Opacity
+        op = node.get("opacity")
+        if op is not None and op < 1:
+            opacities.add(round(op, 2))
 
         # Text
         ts = node.get("text_style")
@@ -486,6 +506,19 @@ def collect_unique_values(
                 text_styles.append(ts)
             if ts.get("color"):
                 colors.add(ts["color"])
+            # Individual typography tokens
+            fw = ts.get("font_weight")
+            if fw:
+                font_weights.add(int(fw))
+            fs = ts.get("font_size_px")
+            if fs:
+                font_sizes.add(float(fs))
+            lh = ts.get("line_height_ratio")
+            if lh:
+                line_heights.add(round(float(lh), 3))
+            ls = ts.get("letter_spacing_em")
+            if ls:
+                letter_spacings.add(round(float(ls), 4))
 
         # Spacing
         layout = node.get("layout")
@@ -510,9 +543,12 @@ def collect_unique_values(
             else:
                 radii.add(int(r))
 
-        # Shadows
+        # Shadows — deduplicated
         for effect in node.get("effects", []):
-            shadows.append(effect)
+            skey = json.dumps(effect, sort_keys=True)
+            if skey not in seen_shadow_keys:
+                seen_shadow_keys.add(skey)
+                shadows.append(effect)
 
         # Recurse
         for child in node.get("children", []):
@@ -525,8 +561,14 @@ def collect_unique_values(
         "text_styles": sorted(
             text_styles, key=lambda t: -t.get("font_size_px", 0)
         ),
+        "font_weights": sorted(font_weights),
+        "font_sizes": sorted(font_sizes),
+        "line_heights": sorted(line_heights),
+        "letter_spacings": sorted(letter_spacings),
         "spacings": sorted(spacings),
         "border_radii": sorted(radii),
+        "border_widths": sorted(border_widths),
+        "opacities": sorted(opacities),
         "shadows": shadows,
     }
 
@@ -646,14 +688,31 @@ def main() -> None:
     all_spacings: set[int] = set()
     all_radii: set[int] = set()
     all_shadows: list[dict] = []
+    all_font_weights: set[int] = set()
+    all_font_sizes: set[float] = set()
+    all_line_heights: set[float] = set()
+    all_letter_spacings: set[float] = set()
+    all_opacities: set[float] = set()
+    all_border_widths: set[float] = set()
     seen_keys: set[str] = set()
+    seen_shadow_keys: set[str] = set()
 
     for f in frames:
         uv = f["unique_values"]
         all_colors.update(uv["colors"])
         all_spacings.update(uv["spacings"])
         all_radii.update(uv["border_radii"])
-        all_shadows.extend(uv["shadows"])
+        all_font_weights.update(uv.get("font_weights", []))
+        all_font_sizes.update(uv.get("font_sizes", []))
+        all_line_heights.update(uv.get("line_heights", []))
+        all_letter_spacings.update(uv.get("letter_spacings", []))
+        all_opacities.update(uv.get("opacities", []))
+        all_border_widths.update(uv.get("border_widths", []))
+        for shadow in uv["shadows"]:
+            skey = json.dumps(shadow, sort_keys=True)
+            if skey not in seen_shadow_keys:
+                seen_shadow_keys.add(skey)
+                all_shadows.append(shadow)
         for ts in uv["text_styles"]:
             key = (
                 f"{ts.get('font_family')}|{ts.get('font_weight')}|"
@@ -693,8 +752,15 @@ def main() -> None:
             "text_styles": sorted(
                 all_text_styles, key=lambda t: -t.get("font_size_px", 0)
             ),
+            "font_weights": sorted(all_font_weights),
+            "font_sizes": sorted(all_font_sizes),
+            "line_heights": sorted(all_line_heights),
+            "letter_spacings": sorted(all_letter_spacings),
             "spacings": sorted(all_spacings),
             "border_radii": sorted(all_radii),
+            "border_widths": sorted(all_border_widths),
+            "opacities": sorted(all_opacities),
+            "shadows": all_shadows,
             "shadow_count": len(all_shadows),
             "asset_count": len(exported_assets),
         },

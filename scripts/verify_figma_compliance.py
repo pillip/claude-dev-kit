@@ -142,6 +142,136 @@ def extract_spacings_from_source(text: str) -> list[dict]:
     return spacings
 
 
+# ── Additional property extraction ──────────────────────────────────
+
+_FONT_WEIGHT = re.compile(r"font-weight\s*:\s*(\d{3})\b", re.IGNORECASE)
+_RN_FONT_WEIGHT = re.compile(r"fontWeight\s*:\s*['\"]?(\d{3})['\"]?")
+
+_LINE_HEIGHT = re.compile(r"line-height\s*:\s*([\d.]+)\b", re.IGNORECASE)
+_RN_LINE_HEIGHT = re.compile(r"lineHeight\s*:\s*([\d.]+)")
+
+_LETTER_SPACING = re.compile(r"letter-spacing\s*:\s*([\d.]+)\s*(?:em|px)", re.IGNORECASE)
+_RN_LETTER_SPACING = re.compile(r"letterSpacing\s*:\s*([\d.]+)")
+
+_BORDER_RADIUS = re.compile(r"border-radius\s*:\s*([\d.]+)\s*px", re.IGNORECASE)
+_RN_BORDER_RADIUS = re.compile(r"borderRadius\s*:\s*([\d.]+)")
+
+_BORDER_WIDTH = re.compile(r"border(?:-\w+)?-width\s*:\s*([\d.]+)\s*px", re.IGNORECASE)
+_RN_BORDER_WIDTH = re.compile(r"borderWidth\s*:\s*([\d.]+)")
+
+_OPACITY = re.compile(r"opacity\s*:\s*(0?\.\d+|1(?:\.0)?)\b", re.IGNORECASE)
+
+_BOX_SHADOW = re.compile(
+    r"box-shadow\s*:\s*([^;]+)",
+    re.IGNORECASE,
+)
+
+
+def _is_code_line(line: str) -> bool:
+    """Check if a line is actual code (not a comment or variable definition)."""
+    stripped = line.strip()
+    if stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
+        return False
+    if re.match(r"\s*--[\w-]+\s*:", line):
+        return False
+    return True
+
+
+def extract_font_weights(text: str) -> list[dict]:
+    """Extract font-weight values."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _FONT_WEIGHT.finditer(line):
+            results.append({"value": int(m.group(1)), "line": i})
+        for m in _RN_FONT_WEIGHT.finditer(line):
+            results.append({"value": int(m.group(1)), "line": i})
+    return results
+
+
+def extract_line_heights(text: str) -> list[dict]:
+    """Extract line-height values (unitless ratios or px)."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _LINE_HEIGHT.finditer(line):
+            results.append({"value": float(m.group(1)), "line": i})
+        for m in _RN_LINE_HEIGHT.finditer(line):
+            results.append({"value": float(m.group(1)), "line": i})
+    return results
+
+
+def extract_letter_spacings(text: str) -> list[dict]:
+    """Extract letter-spacing values."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _LETTER_SPACING.finditer(line):
+            results.append({"value": float(m.group(1)), "line": i})
+        for m in _RN_LETTER_SPACING.finditer(line):
+            results.append({"value": float(m.group(1)), "line": i})
+    return results
+
+
+def extract_border_radii(text: str) -> list[dict]:
+    """Extract border-radius values."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _BORDER_RADIUS.finditer(line):
+            results.append({"value": float(m.group(1)), "line": i})
+        for m in _RN_BORDER_RADIUS.finditer(line):
+            results.append({"value": float(m.group(1)), "line": i})
+    return results
+
+
+def extract_border_widths(text: str) -> list[dict]:
+    """Extract border-width values."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _BORDER_WIDTH.finditer(line):
+            val = float(m.group(1))
+            if val > 0:
+                results.append({"value": val, "line": i})
+        for m in _RN_BORDER_WIDTH.finditer(line):
+            val = float(m.group(1))
+            if val > 0:
+                results.append({"value": val, "line": i})
+    return results
+
+
+def extract_opacities(text: str) -> list[dict]:
+    """Extract opacity values (0-1)."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _OPACITY.finditer(line):
+            val = float(m.group(1))
+            if 0 < val < 1:  # skip 0 and 1 (fully transparent/opaque)
+                results.append({"value": round(val, 2), "line": i})
+    return results
+
+
+def extract_box_shadows(text: str) -> list[dict]:
+    """Extract box-shadow declarations (presence check)."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _BOX_SHADOW.finditer(line):
+            val = m.group(1).strip().rstrip(";")
+            if val and val.lower() != "none":
+                results.append({"value": val, "line": i})
+    return results
+
+
 # ── Comparison ──────────────────────────────────────────────────────
 
 # Tolerance for "close enough" matching
@@ -199,19 +329,17 @@ def check_compliance(
     design_data: dict,
     source_files: list[tuple[str, str]],  # (filepath, content)
 ) -> dict:
-    """Compare implementation against Figma design tokens.
+    """Compare ALL implementation style properties against Figma design tokens.
 
-    Args:
-        design_data: Parsed figma-export/design_data.json.
-        source_files: List of (relative_path, file_content) tuples.
+    High-fidelity 1:1 matching of every extractable style property:
+    colors, fonts (family/size/weight/line-height/letter-spacing),
+    spacing, border-radius, border-width, opacity, box-shadow.
 
-    Returns dict with:
-        color_violations, font_violations, spacing_violations,
-        summary (counts), compliant (bool).
+    Returns dict with per-category violations, summary, and compliant flag.
     """
     summary_data = design_data.get("summary", {})
 
-    # Build allowed sets from Figma data
+    # ── Build allowed sets from Figma data ──
     figma_colors: set[str] = set()
     for c in summary_data.get("colors", []):
         figma_colors.add(normalize_hex(c) if c.startswith("#") else c)
@@ -224,77 +352,139 @@ def check_compliance(
         if ts.get("font_size_px"):
             figma_font_sizes.add(float(ts["font_size_px"]))
 
-    figma_spacings: set[float] = set()
-    for s in summary_data.get("spacings", []):
-        figma_spacings.add(float(s))
+    figma_font_weights: set[int] = {int(w) for w in summary_data.get("font_weights", [])}
+    figma_line_heights: set[float] = {float(h) for h in summary_data.get("line_heights", [])}
+    figma_letter_spacings: set[float] = {float(s) for s in summary_data.get("letter_spacings", [])}
+    figma_spacings: set[float] = {float(s) for s in summary_data.get("spacings", [])}
+    figma_radii: set[float] = {float(r) for r in summary_data.get("border_radii", [])}
+    figma_border_widths: set[float] = {float(w) for w in summary_data.get("border_widths", [])}
+    figma_opacities: set[float] = {float(o) for o in summary_data.get("opacities", [])}
+    figma_has_shadows = len(summary_data.get("shadows", [])) > 0
 
-    color_violations: list[dict] = []
-    font_violations: list[dict] = []
-    spacing_violations: list[dict] = []
+    generic_fonts = {"sans-serif", "serif", "monospace", "cursive", "fantasy",
+                     "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace",
+                     "inherit", "initial", "unset"}
+
+    # ── Violation accumulators ──
+    violations: dict[str, list[dict]] = {
+        "color": [],
+        "font_family": [],
+        "font_size": [],
+        "font_weight": [],
+        "line_height": [],
+        "letter_spacing": [],
+        "spacing": [],
+        "border_radius": [],
+        "border_width": [],
+        "opacity": [],
+        "box_shadow": [],
+    }
+
+    def _add(category: str, filepath: str, line: int, value: str, msg: str) -> None:
+        violations[category].append({"file": filepath, "line": line, "value": value, "message": msg})
 
     for filepath, content in source_files:
-        # Colors — only check if Figma defines a palette
+        # Colors
         if figma_colors:
-            colors = extract_colors_from_source(content)
-            for c in colors:
+            for c in extract_colors_from_source(content):
                 if not color_matches(c["value"], figma_colors):
-                    color_violations.append({
-                        "file": filepath,
-                        "line": c["line"],
-                        "value": c["value"],
-                        "message": f"Color {c['value']} not in Figma palette",
-                    })
+                    _add("color", filepath, c["line"], c["value"],
+                         f"Color {c['value']} not in Figma palette")
 
-        # Fonts
+        # Font family
         families, sizes = extract_fonts_from_source(content)
-        for f in families:
-            if f["value"].lower() not in figma_fonts:
-                # Skip generic CSS families
-                generic = {"sans-serif", "serif", "monospace", "cursive", "fantasy",
-                           "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace",
-                           "inherit", "initial", "unset"}
-                if f["value"].lower() not in generic:
-                    font_violations.append({
-                        "file": filepath,
-                        "line": f["line"],
-                        "value": f["value"],
-                        "message": f"Font family '{f['value']}' not in Figma typography",
-                    })
-        for s in sizes:
-            if figma_font_sizes and not value_close(s["value"], figma_font_sizes):
-                font_violations.append({
-                    "file": filepath,
-                    "line": s["line"],
-                    "value": f"{s['value']}px",
-                    "message": f"Font size {s['value']}px not in Figma typography (allowed: {sorted(figma_font_sizes)})",
-                })
+        if figma_fonts:
+            for f in families:
+                if f["value"].lower() not in figma_fonts and f["value"].lower() not in generic_fonts:
+                    _add("font_family", filepath, f["line"], f["value"],
+                         f"Font '{f['value']}' not in Figma (allowed: {sorted(figma_fonts)})")
 
-        # Spacings
-        spacings = extract_spacings_from_source(content)
-        for sp in spacings:
-            if figma_spacings and not value_close(sp["value"], figma_spacings):
-                spacing_violations.append({
-                    "file": filepath,
-                    "line": sp["line"],
-                    "value": f"{sp['value']}px",
-                    "message": f"Spacing {sp['value']}px not in Figma spacing scale (allowed: {sorted(figma_spacings)})",
-                })
+        # Font size
+        if figma_font_sizes:
+            for s in sizes:
+                if not value_close(s["value"], figma_font_sizes):
+                    _add("font_size", filepath, s["line"], f"{s['value']}px",
+                         f"Font size {s['value']}px not in Figma (allowed: {sorted(figma_font_sizes)})")
 
-    total = len(color_violations) + len(font_violations) + len(spacing_violations)
+        # Font weight
+        if figma_font_weights:
+            for fw in extract_font_weights(content):
+                if fw["value"] not in figma_font_weights:
+                    _add("font_weight", filepath, fw["line"], str(fw["value"]),
+                         f"Font weight {fw['value']} not in Figma (allowed: {sorted(figma_font_weights)})")
+
+        # Line height
+        if figma_line_heights:
+            for lh in extract_line_heights(content):
+                if not value_close(lh["value"], figma_line_heights, tolerance=0.05):
+                    _add("line_height", filepath, lh["line"], str(lh["value"]),
+                         f"Line height {lh['value']} not in Figma (allowed: {sorted(figma_line_heights)})")
+
+        # Letter spacing
+        if figma_letter_spacings:
+            for ls in extract_letter_spacings(content):
+                if not value_close(ls["value"], figma_letter_spacings, tolerance=0.005):
+                    _add("letter_spacing", filepath, ls["line"], f"{ls['value']}em",
+                         f"Letter spacing {ls['value']} not in Figma (allowed: {sorted(figma_letter_spacings)})")
+
+        # Spacing (margin, padding, gap)
+        if figma_spacings:
+            for sp in extract_spacings_from_source(content):
+                if not value_close(sp["value"], figma_spacings):
+                    _add("spacing", filepath, sp["line"], f"{sp['value']}px",
+                         f"Spacing {sp['value']}px not in Figma (allowed: {sorted(figma_spacings)})")
+
+        # Border radius
+        if figma_radii:
+            for br in extract_border_radii(content):
+                if not value_close(br["value"], figma_radii):
+                    _add("border_radius", filepath, br["line"], f"{br['value']}px",
+                         f"Border radius {br['value']}px not in Figma (allowed: {sorted(figma_radii)})")
+
+        # Border width
+        if figma_border_widths:
+            for bw in extract_border_widths(content):
+                if not value_close(bw["value"], figma_border_widths, tolerance=0.5):
+                    _add("border_width", filepath, bw["line"], f"{bw['value']}px",
+                         f"Border width {bw['value']}px not in Figma (allowed: {sorted(figma_border_widths)})")
+
+        # Opacity
+        if figma_opacities:
+            for op in extract_opacities(content):
+                if not value_close(op["value"], figma_opacities, tolerance=0.05):
+                    _add("opacity", filepath, op["line"], str(op["value"]),
+                         f"Opacity {op['value']} not in Figma (allowed: {sorted(figma_opacities)})")
+
+        # Box shadow — verify shadows are only used when Figma defines them
+        if not figma_has_shadows:
+            for bs in extract_box_shadows(content):
+                _add("box_shadow", filepath, bs["line"], bs["value"],
+                     "Box shadow used but Figma design has no shadows")
+
+    total = sum(len(v) for v in violations.values())
+
+    # Build per-category counts for summary
+    category_counts = {f"{k}_count": len(v) for k, v in violations.items()}
 
     return {
-        "color_violations": color_violations,
-        "font_violations": font_violations,
-        "spacing_violations": spacing_violations,
+        "violations": violations,
         "summary": {
             "files_checked": len(source_files),
-            "color_violation_count": len(color_violations),
-            "font_violation_count": len(font_violations),
-            "spacing_violation_count": len(spacing_violations),
             "total_violations": total,
-            "figma_colors": len(figma_colors),
-            "figma_fonts": len(figma_fonts),
-            "figma_spacings": len(figma_spacings),
+            **category_counts,
+            "figma_tokens": {
+                "colors": len(figma_colors),
+                "fonts": len(figma_fonts),
+                "font_sizes": len(figma_font_sizes),
+                "font_weights": len(figma_font_weights),
+                "line_heights": len(figma_line_heights),
+                "letter_spacings": len(figma_letter_spacings),
+                "spacings": len(figma_spacings),
+                "border_radii": len(figma_radii),
+                "border_widths": len(figma_border_widths),
+                "opacities": len(figma_opacities),
+                "shadows": len(summary_data.get("shadows", [])),
+            },
         },
         "compliant": total == 0,
     }
@@ -408,38 +598,38 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2))
     else:
         s = result["summary"]
-        print(f"Figma Compliance Check: {s['files_checked']} file(s) checked")
-        print(f"  Figma palette: {s['figma_colors']} colors, {s['figma_fonts']} fonts, {s['figma_spacings']} spacing values")
+        t = s.get("figma_tokens", {})
+        print(f"Figma Compliance Check: {s['files_checked']} file(s) checked against {sum(t.values())} Figma token(s)")
+        print(f"  Tokens: {t.get('colors',0)} colors, {t.get('fonts',0)} fonts, {t.get('font_sizes',0)} sizes, "
+              f"{t.get('font_weights',0)} weights, {t.get('line_heights',0)} line-heights, "
+              f"{t.get('spacings',0)} spacings, {t.get('border_radii',0)} radii, "
+              f"{t.get('opacities',0)} opacities, {t.get('shadows',0)} shadows")
         print()
 
         if result["compliant"]:
-            print("PASS: All implementation values match Figma design tokens")
+            print("PASS: All implementation values match Figma design tokens (1:1)")
         else:
-            print(f"FAIL: {s['total_violations']} violation(s) found")
+            print(f"FAIL: {s['total_violations']} violation(s) found — implementation deviates from Figma")
             print()
 
-            if result["color_violations"]:
-                print(f"  Color violations ({s['color_violation_count']}):")
-                for v in result["color_violations"][:10]:
+            # Print each category with violations
+            category_labels = {
+                "color": "Color", "font_family": "Font family", "font_size": "Font size",
+                "font_weight": "Font weight", "line_height": "Line height",
+                "letter_spacing": "Letter spacing", "spacing": "Spacing",
+                "border_radius": "Border radius", "border_width": "Border width",
+                "opacity": "Opacity", "box_shadow": "Box shadow",
+            }
+            for key, label in category_labels.items():
+                items = result["violations"].get(key, [])
+                if not items:
+                    continue
+                print(f"  {label} ({len(items)}):")
+                for v in items[:8]:
                     print(f"    {v['file']}:{v['line']} — {v['message']}")
-                if s["color_violation_count"] > 10:
-                    print(f"    ... and {s['color_violation_count'] - 10} more")
+                if len(items) > 8:
+                    print(f"    ... and {len(items) - 8} more")
                 print()
-
-            if result["font_violations"]:
-                print(f"  Font violations ({s['font_violation_count']}):")
-                for v in result["font_violations"][:10]:
-                    print(f"    {v['file']}:{v['line']} — {v['message']}")
-                if s["font_violation_count"] > 10:
-                    print(f"    ... and {s['font_violation_count'] - 10} more")
-                print()
-
-            if result["spacing_violations"]:
-                print(f"  Spacing violations ({s['spacing_violation_count']}):")
-                for v in result["spacing_violations"][:10]:
-                    print(f"    {v['file']}:{v['line']} — {v['message']}")
-                if s["spacing_violation_count"] > 10:
-                    print(f"    ... and {s['spacing_violation_count'] - 10} more")
 
     return 0 if result["compliant"] else 1
 
