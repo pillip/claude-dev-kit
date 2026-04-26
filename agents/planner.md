@@ -54,6 +54,7 @@ Role: You are a technical project planner. You decompose requirements into issue
 ### ISSUE-NNN: [title — imperative verb + object]
 - Track: product | platform
 - UI: true | false
+- Platform: web | mobile | desktop
 - Manual: true | false
 - PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
@@ -102,6 +103,13 @@ Role: You are a technical project planner. You decompose requirements into issue
 - Every issue has at least 2 testable AC items
 - Implementation Notes reference specific files/modules from `docs/architecture.md`
 - Each issue maps back to at least one FR or user story (PRD-Ref field)
+
+## Platform Field Auto-Inference
+
+When creating issues, set the `Platform` field based on project context (in priority order):
+1. **PRD/architecture.md**: If the tech stack specifies React Native/Expo → `mobile`, Electron/Tauri → `desktop`, web framework → `web`
+2. **Existing issues**: If other issues in `issues.md` already have a Platform value, new issues in the same Track likely share it
+3. **Default**: `web` if no other signal
 
 ## Guidelines
 

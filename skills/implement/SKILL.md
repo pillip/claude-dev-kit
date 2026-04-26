@@ -93,6 +93,42 @@ Algorithm:
 1) Ensure `gh` authenticated (gh auth status).
 2) Locate $ARGUMENTS in issues.md. Read the issue's Goal, Scope, AC, and Implementation Notes.
    - **Manual check**: If the issue has `Manual: true`, STOP immediately. Report to the user: "This issue requires manual action — see Implementation Notes." Do NOT proceed with automated implementation.
+2a) **Figma prototype upsert** (auto-detect, skip if no URLs found):
+   Scan the issue's Implementation Notes for Figma URLs (pattern: `figma.com/design/` or `figma.com/file/`).
+   If one or more Figma URLs are found:
+   1. Check `FIGMA_TOKEN` environment variable:
+      ```bash
+      python3 -c "import os; exit(0 if os.environ.get('FIGMA_TOKEN') else 1)"
+      ```
+      If missing: **STOP** and report to the user:
+      "Figma URLs found in Implementation Notes but FIGMA_TOKEN is not set.
+      Set it with: `export FIGMA_TOKEN=figd_...`
+      Get a token: Figma → Settings → Account → Personal access tokens"
+      Do NOT proceed without the token — the issue explicitly requires Figma data.
+   2. Determine the platform from the issue's `Platform` field:
+      - `mobile` → `--mobile`
+      - `desktop` → `--desktop`
+      - `web` or empty → no flag (default)
+      Run the fetch script with the platform flag and all extracted URLs:
+      ```bash
+      python3 scripts/figma_fetch.py [--mobile|--desktop] <url1> <url2> ...
+      ```
+   3. Read `figma-export/design_data.json` and existing `docs/design_system.md` (if any).
+   4. Ask the figma-converter agent to **upsert** prototype files:
+      - Generate or update `prototype/screens/<screen>.html` for each fetched frame
+      - Update `prototype/styles.css` with any new tokens from the Figma data
+      - Preserve existing prototype files — only add/update screens from this Figma fetch
+      - Update `prototype/index.html` to include new screen links
+   5. The updated prototype files become the visual ground truth.
+      The developer's existing "Match the prototype" rule (step 2b UI context) handles the rest —
+      no special "compact spec" or separate mechanism needed.
+   If no Figma URLs found: skip this step silently.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill implement --phase figma --issue $ARGUMENTS`
+> Auto-passes when no Figma URLs exist. Fails if Figma URLs found but design_data.json not generated.
+> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+
 2b) Gather context — read the following docs (if they exist, skip silently if not).
    **Read all applicable documents via parallel Read tool calls in a single message. Do NOT read them sequentially.**
    - `docs/prd_digest.md` — quick PRD context (goals, features, NFRs, scope)

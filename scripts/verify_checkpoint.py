@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -180,7 +181,94 @@ def _extract_pr_number(issue_id: str) -> str | None:
     return pr_match.group(1)
 
 
+_FIGMA_URL_PATTERN = re.compile(
+    r"https?://[^\s\]\)>,]*figma\.com/(?:design|file)/[^\s\]\)>,]+"
+)
+
+
+def _find_figma_urls(issue_id: str) -> list[str]:
+    """Extract Figma URLs from the issue's Implementation Notes section only."""
+    block = _find_issue_block(issue_id)
+    if not block:
+        return []
+    # Extract only the Implementation Notes subsection
+    impl_match = re.search(
+        r"####\s+Implementation Notes.*?\n(.*?)(?=\n####|\Z)",
+        block,
+        re.DOTALL,
+    )
+    if not impl_match:
+        return []
+    return _FIGMA_URL_PATTERN.findall(impl_match.group(1))
+
+
 # ── Implement skill verifiers ────────────────────────────────────────
+
+
+def verify_implement_figma(issue_id: str, **_) -> bool:
+    """If the issue has Figma URLs, verify design data was fetched.
+
+    Auto-passes when no Figma URLs are found in Implementation Notes.
+    Only requires figma-export/design_data.json — does NOT require
+    prototype/screens/ (that's /figma2proto's job for greenfield projects).
+    """
+    urls = _find_figma_urls(issue_id)
+    if not urls:
+        print(f"PASS: {issue_id} has no Figma URLs — figma checkpoint skipped")
+        return True
+
+    # FIGMA_TOKEN is required when Figma URLs are present
+    if not os.environ.get("FIGMA_TOKEN"):
+        print(f"FAIL: {issue_id} has Figma URLs but FIGMA_TOKEN is not set")
+        print(f"  Set it with: export FIGMA_TOKEN=figd_...")
+        return False
+
+    root = _repo_root()
+
+    # Check design_data.json was fetched
+    data_file = root / "figma-export" / "design_data.json"
+    if not data_file.exists():
+        print(f"FAIL: {issue_id} has {len(urls)} Figma URL(s) but figma-export/design_data.json not found")
+        print(f"  Expected: python3 scripts/figma_fetch.py to produce this file")
+        return False
+
+    # Verify the JSON has a summary section with actual data
+    try:
+        data = json.loads(data_file.read_text(encoding="utf-8"))
+        summary = data.get("summary", {})
+        if not summary.get("colors") and not summary.get("text_styles"):
+            print(f"FAIL: design_data.json exists but summary has no colors or text styles")
+            print(f"  The Figma fetch may have returned empty data — check the URLs")
+            return False
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"FAIL: cannot read design_data.json: {e}")
+        return False
+
+    # Verify prototype files were generated (upsert) — platform-aware
+    platform = data.get("platform", "web")
+    platform_config = data.get("platform_config", {})
+    proto_base = platform_config.get("prototype_dir", "prototype")
+    proto_dir = root / proto_base
+
+    # Determine screen dir and file pattern based on platform
+    if platform == "mobile":
+        screen_dir = proto_dir / "src" / "screens"
+        screen_glob = "*.tsx"
+    else:
+        screen_dir = proto_dir / "screens"
+        screen_glob = "*.html"
+
+    if not screen_dir.is_dir() or not list(screen_dir.glob(screen_glob)):
+        print(f"FAIL: design_data.json exists but no screen files in {screen_dir.relative_to(root)}/")
+        print(f"  Expected {screen_glob} files from figma-converter agent (platform: {platform})")
+        return False
+
+    color_count = len(summary.get("colors", []))
+    style_count = len(summary.get("text_styles", []))
+    frame_count = summary.get("frame_count", 0)
+    screen_count = len(list(screen_dir.glob(screen_glob)))
+    print(f"PASS: {issue_id} — Figma prototype upserted (platform={platform}, {frame_count} frame(s), {screen_count} screen(s), {color_count} colors, {style_count} text styles)")
+    return True
 
 
 def verify_implement_issue(issue_id: str, **_) -> bool:
@@ -1071,6 +1159,7 @@ def verify_mobile_uiux_system(issue_id: str) -> bool:
 # ── Registry ─────────────────────────────────────────────────────────
 
 VERIFIERS = {
+    ("implement", "figma"): verify_implement_figma,
     ("implement", "issue"): verify_implement_issue,
     ("implement", "worktree"): verify_implement_worktree,
     ("implement", "code"): verify_implement_code,

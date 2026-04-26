@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
 [![Tests](https://img.shields.io/badge/Tests-530%20passing-brightgreen.svg)]()
 
-Turn a PRD into shipped code. 32 AI agents and 21 skills that handle the entire development lifecycle — from brainstorming to code review to deployment — so you can focus on what to build, not how.
+Turn a PRD into shipped code. 33 AI agents and 22 skills that handle the entire development lifecycle — from brainstorming to code review to deployment — so you can focus on what to build, not how.
 
 ## Why claude-kit?
 
@@ -146,7 +146,8 @@ START
  ├─ Planning docs ready, project has UI?
  │   ├─ Web → /uiux
  │   ├─ Mobile → /mobile-uiux
- │   └─ Desktop → /desktop-uiux
+ │   ├─ Desktop → /desktop-uiux
+ │   └─ Have Figma design → /figma2proto [--mobile|--desktop] <URLs>
  │
  ├─ Want to add a feature or issues to an existing product?
  │   ├─ Small (single task) → /issue "description" (creates 1 issue)
@@ -188,6 +189,7 @@ START
 | `/uiux [PRD.md]` | Design philosophy + design system + HTML/CSS prototype | `docs/design_philosophy.md`, `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, `prototype/` |
 | `/mobile-uiux [PRD.md]` | Mobile design system + React Native (Expo) prototype | `docs/design_philosophy.md`, `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, `prototype-mobile/` |
 | `/desktop-uiux [PRD.md]` | Desktop design system + Electron prototype | `docs/design_philosophy.md`, `docs/design_system_desktop.md`, `docs/wireframes_desktop.md`, `docs/interactions_desktop.md`, `prototype-desktop/` |
+| `/figma2proto [--mobile\|--desktop] <URLs>` | Fetch Figma design via API and generate complete design deliverable (prototype + docs) | `prototype/`, `docs/design_system.md`, `docs/design_philosophy.md`, `docs/wireframes.md`, `docs/interactions.md`, `docs/copy_guide.md` |
 | `/sprint` | Auto-orchestrate multiple issues via team-lead | `docs/sprint_state.md`, `STATUS.md` |
 | `/implement ISSUE-001` | Implement a single issue + create GH Issue/PR | Code, tests, PR (`Closes #N`) |
 | `/review ISSUE-001` | Senior review + security audit + UI review + design audit + a11y audit on PR | `docs/review_notes.md`, `docs/ui_review_notes.md`, `docs/design_audit.md`, `docs/a11y_audit.md` |
@@ -330,6 +332,16 @@ Requires `/kickoff` outputs. Like `/uiux` but for React Native (Expo) mobile app
 
 Requires `/kickoff` outputs. Like `/uiux` but for Electron desktop apps. Conducts a Design Interview with an additional "Desktop Identity" question (native OS integration vs distinct branded identity). If `docs/design_philosophy.md` already exists (from `/uiux` or `/mobile-uiux`), reuses it with user confirmation; otherwise generates it from scratch. Produces desktop-specific design system with keyboard shortcuts, window chrome specs, and multi-window configurations, plus an Electron prototype with main/preload/renderer separation.
 
+### Figma to Prototype — Design from existing Figma
+
+```
+/figma2proto https://www.figma.com/design/ABC123/MyProject?node-id=42-1234
+/figma2proto --mobile https://...?node-id=42-5678 https://...?node-id=42-9012
+/figma2proto --desktop https://...?node-id=42-3456
+```
+
+Fetches design data from Figma via API and generates the **same complete deliverable** as `/uiux` — prototype, design system, design philosophy, wireframes, interactions, and copy guide. The Figma design is treated as the source of truth: the design philosophy is reverse-engineered from the design (not invented), and interactions/copy that Figma can't express are filled in by asking the user. Supports web (default), mobile (`--mobile` → React Native prototype), and desktop (`--desktop`). Requires `FIGMA_TOKEN` environment variable.
+
 ### Issue — Create issues and update planning/design docs
 
 ```
@@ -447,7 +459,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-32 specialized agents with optimized model assignments (opus for judgment/creativity, sonnet for structured extraction):
+33 specialized agents with optimized model assignments (opus for judgment/creativity, sonnet for structured extraction):
 
 | Agent | Model | Role | Tools |
 |-------|-------|------|-------|
@@ -460,6 +472,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `mobile-uiux-developer` | opus | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `desktop-uiux-developer` | opus | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `copywriter` | opus | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
+| `figma-converter` | opus | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
 | `architect` | opus | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | opus | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
 | `planner` | opus | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
@@ -488,14 +501,15 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (32)
-├── skills/                  # Workflow skills (21)
+├── agents/                  # Agent role definitions (33)
+├── skills/                  # Workflow skills (22)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
 │   ├── kickoff/SKILL.md
 │   ├── issue/SKILL.md
 │   ├── uiux/SKILL.md
+│   ├── figma2proto/SKILL.md    # Convert Figma exports to prototype
 │   ├── mobile-uiux/SKILL.md
 │   ├── desktop-uiux/SKILL.md
 │   ├── scan/SKILL.md        # Reverse-engineer docs from existing codebase
@@ -662,7 +676,7 @@ locking on macOS.
   - Web frontend: React + TypeScript
   - Mobile: React Native (Expo)
 - **Custom stack**: Define your preferred tech stack during `/prd` and the architect agent will follow it
-- **Model mix**: opus (20 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
+- **Model mix**: opus (21 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
 
 ## License
 
