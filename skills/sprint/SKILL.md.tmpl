@@ -26,15 +26,14 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
 **Every issue MUST pass through all three phases in order. No exceptions.**
 
 - An issue is NOT "done" until it is **shipped** (PR merged + smoke test passed).
-- An issue that is only implemented is **incomplete** — it MUST be reviewed and shipped.
-- You MUST NOT start implementing a new issue if there are issues stuck in `implemented` or `reviewed` status. **Clear the pipeline first.**
-- After each implement phase completes, the **immediate next action** for that issue is review. Not another implement.
-- After each review phase completes (approved), the **immediate next action** is ship. Not another implement.
+- New backlog issues are dispatched as **PIPELINE** (implement→review→ship in one invocation). This structurally prevents phase skipping — there is no decision point between phases.
+- Issues stuck mid-pipeline (`implemented` or `reviewed`) are retried via standalone REVIEW or SHIP actions.
+- You MUST NOT start a new PIPELINE if there are issues stuck in `implemented` or `reviewed` status. **Clear the pipeline first.**
 
-**Pipeline priority order** (always follow this):
+**Pipeline priority order** (enforced by `scripts/sprint_queue.py` — do NOT override):
 1. Ship any issues in `reviewed` status (highest priority)
 2. Review any issues in `implemented` status
-3. Only then: implement new `backlog` issues
+3. Only then: PIPELINE new `backlog` issues
 
 **Violation = sprint failure**: If at sprint end, ANY issue has Status=implemented or Status=reviewed (not shipped), the sprint is considered **incomplete**. Report these as unfinished pipeline items.
 
@@ -64,35 +63,31 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
 
    **a) Read fresh state**: Re-read `docs/sprint_state.md` and `issues.md` every iteration.
 
-   **b) Compute pipeline queues** from sprint_state.md Phase column:
-      - `ship_ready`    = issues where Phase = `reviewed`
-      - `review_ready`  = issues where Phase = `implemented`
-      - `implement_ready` = issues in `backlog` where Manual ≠ true AND all Depends-On are resolved
-      - `in_flight`     = issues where Phase ∈ {`implementing`, `reviewing`, `shipping`}
+   **b-c) Compute next action (deterministic — do NOT override):**
 
-   **c) Choose ONE action (strict priority — never skip a higher-priority queue):**
+      Run the pipeline queue script:
+      ```bash
+      python3 scripts/sprint_queue.py next-action --sprint-state docs/sprint_state.md --issues issues.md --max-parallel {MAX_PARALLEL}
+      ```
+      Parse the JSON output. The result contains `action`, `targets`, and `reason` fields.
 
-      **IF** `ship_ready` is not empty →
-        action = **SHIP**, targets = first MAX_PARALLEL ship_ready issues
+      - If action = **DONE** → **Go to step 5.**
+      - If action = **STUCK** → Log warning with the `reason`. Increment attempt counts for stuck issues in sprint_state.md. If attempts ≥ 3, escalate. Otherwise continue to next iteration.
+      - If action = **PIPELINE**, **SHIP**, or **REVIEW** → proceed to step 4d with the action and targets from the script output.
 
-      **ELSE IF** `review_ready` is not empty →
-        action = **REVIEW**, targets = first MAX_PARALLEL review_ready issues
+      **IMPORTANT**: Do NOT manually compute queues or override the script's action choice. The script enforces strict priority ordering (SHIP > REVIEW > PIPELINE) to prevent phase skipping.
 
-      **ELSE IF** `implement_ready` is not empty →
-        action = **IMPLEMENT**, targets = first MAX_PARALLEL implement_ready issues sorted by priority (P0 first)
-
-      **ELSE IF** `in_flight` is not empty →
-        These issues are stuck mid-phase. Log warning: "Issues stuck in progress: {list}".
-        Increment their attempt count. If attempts ≥ 3, escalate. Otherwise retry.
-
-      **ELSE** →
-        All issues are either `shipped`, `waiting`, or `dropped`. **Go to step 5.**
+      > For reference, the script computes these queues internally:
+      > - `ship_ready`    = issues where Phase = `reviewed`
+      > - `review_ready`  = issues where Phase = `implemented`
+      > - `pipeline_ready` = issues in `backlog` where Manual ≠ true AND all Depends-On are resolved
+      > - `in_flight`     = issues where Phase ∈ {`implementing`, `reviewing`, `shipping`}
 
    **d) Invoke team-lead agent via Task tool** with this exact prompt structure:
       ```
-      You are the team-lead agent. Execute ONLY the {action} phase for these issues.
+      You are the team-lead agent. Execute the {action} phase for these issues.
 
-      ## Phase: {SHIP | REVIEW | IMPLEMENT}
+      ## Phase: {PIPELINE | SHIP | REVIEW}
 
       ## Target Issues
       {For each target: full issue spec from issues.md — ID, title, AC, all fields}
@@ -106,19 +101,28 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
       {Content of architecture.md, data_model.md, review_lessons.md, prd_digest.md}
 
       Execute this phase, update docs/sprint_state.md with results, then STOP.
-      Do NOT execute any other phase. Do NOT loop.
+      Do NOT loop.
       ```
+
+      **Phase meanings:**
+      - **PIPELINE**: Full implement→review→ship for backlog issues. Each issue goes through all three phases in one invocation. No phase can be skipped.
+      - **REVIEW**: Retry review for issues stuck in `implemented` status (recovery only).
+      - **SHIP**: Retry ship for issues stuck in `reviewed` status (recovery only).
 
    **e) After team-lead returns**:
       - Re-read `docs/sprint_state.md` to confirm phase transitions happened
       - Log: `=== Iteration {N} complete: {action} phase for {count} issues ===`
       - Increment iteration
 
-   **f) Validate phase transition** (catch stuck issues):
-      - For SHIP action: verify targets moved from `reviewed` → `shipped` (or logged as failed)
-      - For REVIEW action: verify targets moved from `implemented` → `reviewed` (or logged as failed)
-      - For IMPLEMENT action: verify targets moved from `backlog` → `implemented` (or logged as failed)
-      - If a target did NOT transition and has no logged error, log a warning and retry in next iteration
+   **f) Validate phase transition (deterministic — do NOT skip):**
+
+      Run the validation script:
+      ```bash
+      python3 scripts/sprint_queue.py validate --sprint-state docs/sprint_state.md --action {ACTION} --targets {COMMA_SEPARATED_TARGETS}
+      ```
+      Parse the JSON output:
+      - If `valid` = true: all targets transitioned successfully (or stopped at a phase with logged error). Continue loop.
+      - If `valid` = false: log the `errors` array in sprint_state.md. The `stuck` list shows which issues failed to transition — they will be retried in the next iteration via REVIEW or SHIP action.
 
    **Continue loop from step 4a.**
 

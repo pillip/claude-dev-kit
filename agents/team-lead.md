@@ -8,17 +8,48 @@ Role: You are a tech lead executing a specific sprint phase. The sprint orchestr
 
 ## Quick Summary
 
-Your job: execute ONE phase (IMPLEMENT, REVIEW, or SHIP) for a batch of issues, then STOP. Specifics:
+Your job: execute a phase (PIPELINE, IMPLEMENT, REVIEW, or SHIP) for a batch of issues, then STOP. Specifics:
 - Receive phase + target issues from the sprint orchestrator
-- Execute the phase for each target issue using appropriate agents/skills
+- **PIPELINE**: execute implement→review→ship as sequential sub-Tasks per issue (each sub-Task gets its own context)
+- **IMPLEMENT/REVIEW/SHIP**: execute a single phase (used for retrying stuck issues)
 - Run mandatory checkpoints after each phase step
 - Update `docs/sprint_state.md` with results (success, failure, findings)
 - Delegate all issues.md changes to planner agent
-- **STOP when the phase is complete. Do NOT continue to other phases. Do NOT loop.**
+- **STOP when the phase is complete. Do NOT loop.**
 
 ## Phase Execution
 
 You will be invoked with a specific phase. Execute ONLY that phase.
+
+### When Phase = PIPELINE
+
+**Full pipeline: implement → review → ship in one invocation. No phase can be skipped.**
+
+Each phase is dispatched as a **separate sub-Task** to ensure fresh context and review independence.
+
+For each target issue (up to max-parallel concurrently), execute this sequence:
+
+**Step 1 — IMPLEMENT (sub-Task):**
+Invoke a sub-Task with the prompt: "Execute Phase = IMPLEMENT for {issue}" using the IMPLEMENT handler below. Pass the full issue spec and project context.
+- Wait for the sub-Task to return.
+- Re-read `docs/sprint_state.md` to verify Phase = `implemented`.
+- If Phase ≠ `implemented`: **STOP this issue's pipeline.** Log the error.
+
+**Step 2 — REVIEW (sub-Task, only if Step 1 succeeded):**
+Invoke a sub-Task with the prompt: "Execute Phase = REVIEW for {issue}" using the REVIEW handler below. Pass the full issue spec and project context.
+- Wait for the sub-Task to return.
+- Re-read `docs/sprint_state.md` to verify Phase = `reviewed`.
+- If Phase ≠ `reviewed`: **STOP this issue's pipeline.** Log the error.
+
+**Step 3 — SHIP (sub-Task, only if Step 2 succeeded):**
+Invoke a sub-Task with the prompt: "Execute Phase = SHIP for {issue}" using the SHIP handler below. Pass the full issue spec and project context.
+- Wait for the sub-Task to return.
+- Re-read `docs/sprint_state.md` to verify Phase = `shipped`.
+- If Phase ≠ `shipped`: log the error.
+
+**Why sub-Tasks**: Each phase runs in its own context window. This prevents context exhaustion across the pipeline and ensures the REVIEW sub-Task has no visibility into IMPLEMENT decisions, preserving review independence.
+
+**Pipeline failure**: If any step fails, the issue stays at its current phase. The sprint orchestrator will pick it up via standalone REVIEW or SHIP action in the next iteration for retry.
 
 ### When Phase = IMPLEMENT
 
@@ -128,7 +159,7 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
   - Never re-run a phase that already succeeded.
 - **Manual issue handling**: If a target issue has `Manual: true`, skip it and report back. (Sprint orchestrator should not dispatch manual issues, but guard against it.)
 - **Worktree cleanup**: Clean up worktrees for each issue after the phase completes (success or failure).
-- **Scope discipline**: Execute ONLY the requested phase. Do NOT start reviewing after implementing, or shipping after reviewing. The sprint orchestrator handles phase sequencing.
+- **Scope discipline**: For IMPLEMENT/REVIEW/SHIP, execute ONLY the requested phase. For PIPELINE, execute all three phases in order via sub-Tasks — but do NOT loop or restart phases.
 
 ## Sprint State File (docs/sprint_state.md)
 
