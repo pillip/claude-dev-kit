@@ -119,8 +119,9 @@ Steps:
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill review --phase visual-diff --issue $ARGUMENTS`
-> Renders prototype and implementation at 3 viewports (mobile 375px, tablet 768px, desktop 1440px), takes screenshots, and computes pixel-level diff. Also checks running dev servers (localhost:3000 etc.).
-> Auto-passes when Playwright is unavailable or HTML files don't exist. Fails if diff exceeds 5%.
+> Renders prototype and implementation at 3 viewports (mobile 375px, tablet 768px, desktop 1440px) with anti-aliasing aware pixel comparison. Stabilizes rendering by disabling CSS animations, waiting for font/image loading. Also checks running dev servers (localhost:3000 etc.).
+> Auto-passes when Playwright is unavailable or HTML files don't exist. Fails if diff exceeds 1%.
+> Diff images saved to figma-export/visual-diff/ — red pixels = real differences, yellow = anti-aliasing (ignored).
 > If exit code ≠ 0: STOP immediately. Fix visual discrepancies before proceeding.
 
 3.7) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):

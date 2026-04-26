@@ -1075,7 +1075,7 @@ def verify_review_visual_diff(issue_id: str, **_) -> bool:
 
     result = _run(
         ["python3", str(Path(__file__).resolve().parent / "verify_visual_diff.py"),
-         "--project-path", wt_path, "--threshold", "5"],
+         "--project-path", wt_path, "--threshold", "1"],
         timeout=120,
     )
 

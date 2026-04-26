@@ -2,9 +2,11 @@
 """Visual diff: compare prototype HTML screenshots against implementation.
 
 Uses Playwright to render both prototype and implementation at multiple
-viewport sizes, then computes pixel-level differences.
+viewport sizes, then computes pixel-level differences with anti-aliasing
+awareness for sub-1% precision.
 
 Requires: playwright (pip install playwright && playwright install chromium)
+Optional: Pillow (pip install Pillow) for pixel-accurate diff + diff images
 
 Exit codes:
   0 — visual match (diff below threshold)
@@ -25,8 +27,21 @@ VIEWPORTS = [
     {"name": "desktop", "width": 1440, "height": 900},
 ]
 
-# Maximum allowed pixel diff percentage (0-100)
-DEFAULT_THRESHOLD = 5.0
+DEFAULT_THRESHOLD = 1.0  # 1% — sub-1% precision target
+
+# CSS injected into every page to stabilize rendering for comparison
+_STABILIZE_CSS = """
+*, *::before, *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  caret-color: transparent !important;
+}
+/* Hide scrollbars (differ across OS/themes) */
+::-webkit-scrollbar { display: none !important; }
+* { scrollbar-width: none !important; }
+"""
 
 
 def _check_playwright() -> bool:
@@ -38,13 +53,58 @@ def _check_playwright() -> bool:
         return False
 
 
-def _pixel_diff(img1_bytes: bytes, img2_bytes: bytes) -> dict:
-    """Compute pixel-level difference between two PNG screenshots.
+# ── Anti-aliasing aware pixel diff ──────────────────────────────────
 
-    Uses raw byte comparison when Pillow is not available,
-    or proper pixel comparison when it is.
 
-    Returns: {diff_percent, total_pixels, diff_pixels, match}
+def _color_distance_sq(c1: tuple, c2: tuple) -> int:
+    """Squared color distance (Euclidean in RGB space, ignoring alpha for speed)."""
+    return (c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2 + (c1[2] - c2[2]) ** 2
+
+
+def _is_antialiased(
+    px, x: int, y: int, w: int, h: int, other_px, color_threshold_sq: int,
+) -> bool:
+    """Detect if a pixel is anti-aliased by checking neighbors.
+
+    A pixel is anti-aliased if:
+    - It has ≥2 neighbors in the same image that differ significantly
+    - OR it has ≥2 neighbors in the other image that are similar to it
+
+    This is a simplified version of the pixelmatch algorithm.
+    """
+    same_different = 0
+    other_similar = 0
+    center = px[x, y]
+
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h:
+                # Check if neighbor in same image is different
+                neighbor = px[nx, ny]
+                if _color_distance_sq(center, neighbor) > color_threshold_sq:
+                    same_different += 1
+                # Check if neighbor in other image is similar
+                other_neighbor = other_px[nx, ny]
+                if _color_distance_sq(center, other_neighbor) < color_threshold_sq:
+                    other_similar += 1
+
+    # Anti-aliased: edge pixel (many different neighbors) or blending pixel
+    return same_different >= 2 or other_similar >= 2
+
+
+def _pixel_diff(img1_bytes: bytes, img2_bytes: bytes, output_diff: str | None = None) -> dict:
+    """Anti-aliasing aware pixel diff for sub-1% precision.
+
+    Algorithm (inspired by pixelmatch):
+    1. Compare each pixel pair
+    2. If colors differ beyond threshold, check if anti-aliased
+    3. Anti-aliased pixels are NOT counted as diff
+    4. Only truly different pixels are counted
+
+    Optionally saves a diff image highlighting mismatched pixels in red.
     """
     try:
         from PIL import Image
@@ -57,30 +117,63 @@ def _pixel_diff(img1_bytes: bytes, img2_bytes: bytes) -> dict:
         w = max(im1.width, im2.width)
         h = max(im1.height, im2.height)
         if im1.size != (w, h):
-            im1 = im1.resize((w, h))
+            im1 = im1.resize((w, h), Image.LANCZOS)
         if im2.size != (w, h):
-            im2 = im2.resize((w, h))
+            im2 = im2.resize((w, h), Image.LANCZOS)
 
         px1 = im1.load()
         px2 = im2.load()
         total = w * h
         diff_count = 0
-        # Per-pixel comparison with tolerance for anti-aliasing
-        tolerance = 30  # RGB channel tolerance
+
+        # Color threshold: per-channel tolerance of 20 → squared distance = 20²*3 = 1200
+        color_threshold = 20
+        color_threshold_sq = color_threshold * color_threshold * 3
+
+        # Create diff image if requested
+        diff_img = None
+        diff_px = None
+        if output_diff:
+            diff_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            diff_px = diff_img.load()
 
         for y in range(h):
             for x in range(w):
-                r1, g1, b1, a1 = px1[x, y]
-                r2, g2, b2, a2 = px2[x, y]
-                if (abs(r1 - r2) > tolerance or abs(g1 - g2) > tolerance
-                        or abs(b1 - b2) > tolerance or abs(a1 - a2) > tolerance):
-                    diff_count += 1
+                c1 = px1[x, y]
+                c2 = px2[x, y]
+                dist_sq = _color_distance_sq(c1, c2)
+
+                if dist_sq <= color_threshold_sq:
+                    # Colors are close enough — match
+                    if diff_px is not None:
+                        # Dim the pixel in diff image
+                        diff_px[x, y] = (c1[0] // 3, c1[1] // 3, c1[2] // 3, 255)
+                    continue
+
+                # Colors differ — check anti-aliasing
+                aa1 = _is_antialiased(px1, x, y, w, h, px2, color_threshold_sq)
+                aa2 = _is_antialiased(px2, x, y, w, h, px1, color_threshold_sq)
+
+                if aa1 or aa2:
+                    # Anti-aliased pixel — not a real diff
+                    if diff_px is not None:
+                        diff_px[x, y] = (255, 255, 0, 128)  # Yellow = AA
+                    continue
+
+                # Real diff
+                diff_count += 1
+                if diff_px is not None:
+                    diff_px[x, y] = (255, 0, 0, 255)  # Red = real diff
+
+        if diff_img and output_diff:
+            diff_img.save(output_diff)
 
         pct = (diff_count / total * 100) if total > 0 else 0
         return {
-            "diff_percent": round(pct, 2),
+            "diff_percent": round(pct, 3),
             "total_pixels": total,
             "diff_pixels": diff_count,
+            "aa_aware": True,
         }
 
     except ImportError:
@@ -91,31 +184,35 @@ def _pixel_diff(img1_bytes: bytes, img2_bytes: bytes) -> dict:
         diff_bytes += max_len - min_len
         pct = (diff_bytes / max_len * 100) if max_len > 0 else 0
         return {
-            "diff_percent": round(pct, 2),
+            "diff_percent": round(pct, 3),
             "total_pixels": max_len,
             "diff_pixels": diff_bytes,
+            "aa_aware": False,
             "method": "byte-level (install Pillow for pixel-accurate diff)",
         }
+
+
+# ── Stable screenshot capture ───────────────────────────────────────
 
 
 def take_screenshots(
     target: str,
     viewports: list[dict] | None = None,
 ) -> list[dict]:
-    """Take screenshots of an HTML file or URL at multiple viewports.
+    """Take stable screenshots of an HTML file or URL at multiple viewports.
 
-    Args:
-        target: File path (renders via file://) or URL (http://localhost:...).
-        viewports: List of viewport configs.
-
-    Returns list of {viewport_name, width, height, screenshot_bytes}.
+    Stabilization:
+    - Disables all CSS animations/transitions
+    - Waits for font loading to complete
+    - Waits for all images to load
+    - Hides scrollbars (OS-dependent appearance)
+    - Uses 2x device pixel ratio for sub-pixel accuracy
     """
     if viewports is None:
         viewports = VIEWPORTS
 
     from playwright.sync_api import sync_playwright
 
-    # Determine URL: file path or already a URL
     if target.startswith("http://") or target.startswith("https://"):
         url = target
     else:
@@ -131,8 +228,30 @@ def take_screenshots(
                 viewport={"width": vp["width"], "height": vp["height"]},
                 device_scale_factor=2,
             )
+
             page.goto(url, wait_until="networkidle", timeout=30000)
-            page.wait_for_timeout(500)  # Wait for CSS transitions/animations
+
+            # Inject stabilization CSS
+            page.add_style_tag(content=_STABILIZE_CSS)
+
+            # Wait for fonts to load
+            page.evaluate("() => document.fonts.ready")
+
+            # Wait for all images to load
+            page.evaluate("""() => {
+                const images = Array.from(document.querySelectorAll('img'));
+                return Promise.all(images.map(img => {
+                    if (img.complete) return Promise.resolve();
+                    return new Promise(resolve => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                    });
+                }));
+            }""")
+
+            # Final settle time for layout reflow after font/image load
+            page.wait_for_timeout(200)
+
             screenshot = page.screenshot(full_page=True)
             results.append({
                 "viewport_name": vp["name"],
@@ -147,6 +266,9 @@ def take_screenshots(
     return results
 
 
+# ── Diff orchestration ──────────────────────────────────────────────
+
+
 def visual_diff(
     prototype_path: str,
     implementation_path: str,
@@ -156,14 +278,7 @@ def visual_diff(
 ) -> dict:
     """Compare prototype and implementation at multiple viewports.
 
-    Args:
-        prototype_path: Path to prototype HTML file.
-        implementation_path: Path to implementation HTML file.
-        viewports: List of viewport configs (default: mobile, tablet, desktop).
-        threshold: Maximum allowed diff percentage.
-        output_dir: Directory to save screenshot PNGs for debugging.
-
-    Returns dict with per-viewport results, overall pass/fail, and paths to saved images.
+    Saves screenshots and diff images for debugging.
     """
     proto_shots = take_screenshots(prototype_path, viewports)
     impl_shots = take_screenshots(implementation_path, viewports)
@@ -176,7 +291,11 @@ def visual_diff(
         out_path.mkdir(parents=True, exist_ok=True)
 
     for proto, impl in zip(proto_shots, impl_shots):
-        diff = _pixel_diff(proto["screenshot"], impl["screenshot"])
+        diff_img_path = None
+        if out_path:
+            diff_img_path = str(out_path / f"{proto['viewport_name']}_diff.png")
+
+        diff = _pixel_diff(proto["screenshot"], impl["screenshot"], diff_img_path)
         passes = diff["diff_percent"] <= threshold
         if not passes:
             all_pass = False
@@ -188,11 +307,11 @@ def visual_diff(
             "diff_percent": diff["diff_percent"],
             "diff_pixels": diff["diff_pixels"],
             "total_pixels": diff["total_pixels"],
+            "aa_aware": diff.get("aa_aware", False),
             "pass": passes,
             "threshold": threshold,
         }
 
-        # Save screenshots for debugging
         if out_path:
             proto_file = out_path / f"{proto['viewport_name']}_prototype.png"
             impl_file = out_path / f"{proto['viewport_name']}_implementation.png"
@@ -200,6 +319,8 @@ def visual_diff(
             impl_file.write_bytes(impl["screenshot"])
             entry["prototype_screenshot"] = str(proto_file)
             entry["implementation_screenshot"] = str(impl_file)
+            if diff_img_path:
+                entry["diff_image"] = diff_img_path
 
         results.append(entry)
 
@@ -208,6 +329,9 @@ def visual_diff(
         "all_pass": all_pass,
         "viewports_tested": len(results),
     }
+
+
+# ── File discovery ──────────────────────────────────────────────────
 
 
 def find_prototype_html(project_path: Path) -> str | None:
@@ -221,7 +345,6 @@ def find_prototype_html(project_path: Path) -> str | None:
         if c.exists():
             return str(c.resolve())
 
-    # Try first HTML file in prototype/screens/
     screens = project_path / "prototype" / "screens"
     if screens.is_dir():
         html_files = sorted(screens.glob("*.html"))
@@ -245,18 +368,13 @@ def _check_dev_server(port: int) -> bool:
 def find_implementation_html(project_path: Path) -> str | None:
     """Find the implementation entry point.
 
-    Priority:
-    1. Running dev server (localhost:3000, 5173, 8080, 4200)
-    2. Built output (dist/, build/, .next/)
-    3. Static HTML files
+    Priority: running dev server → built output → static HTML.
     """
-    # Check for running dev servers first
     dev_ports = [3000, 5173, 8080, 4200, 3001, 5174]
     for port in dev_ports:
         if _check_dev_server(port):
             return f"http://localhost:{port}"
 
-    # Built output
     candidates = [
         project_path / "dist" / "index.html",
         project_path / "build" / "index.html",
@@ -279,42 +397,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Visual diff: compare prototype vs implementation screenshots",
     )
-    parser.add_argument(
-        "--project-path",
-        required=True,
-        help="Path to project root",
-    )
-    parser.add_argument(
-        "--prototype",
-        default=None,
-        help="Path to prototype HTML (auto-detected if omitted)",
-    )
-    parser.add_argument(
-        "--implementation",
-        default=None,
-        help="Path to implementation HTML (auto-detected if omitted)",
-    )
-    parser.add_argument(
-        "--threshold",
-        type=float,
-        default=DEFAULT_THRESHOLD,
-        help=f"Max allowed diff percentage (default: {DEFAULT_THRESHOLD})",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default=None,
-        help="Directory to save debug screenshots",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="json_output",
-    )
-    parser.add_argument(
-        "--viewports",
-        default=None,
-        help="Comma-separated viewport names to test (default: mobile,tablet,desktop)",
-    )
+    parser.add_argument("--project-path", required=True, help="Path to project root")
+    parser.add_argument("--prototype", default=None, help="Path to prototype HTML")
+    parser.add_argument("--implementation", default=None, help="Path to implementation HTML")
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
+                        help=f"Max allowed diff %% (default: {DEFAULT_THRESHOLD})")
+    parser.add_argument("--output-dir", default=None, help="Directory to save debug screenshots")
+    parser.add_argument("--json", action="store_true", dest="json_output")
+    parser.add_argument("--viewports", default=None,
+                        help="Comma-separated viewport names (default: mobile,tablet,desktop)")
 
     try:
         args = parser.parse_args(argv)
@@ -327,7 +418,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     project_path = Path(args.project_path).resolve()
-
     proto = args.prototype or find_prototype_html(project_path)
     impl = args.implementation or find_implementation_html(project_path)
 
@@ -338,29 +428,31 @@ def main(argv: list[str] | None = None) -> int:
         print("SKIP: No implementation HTML found — visual diff skipped")
         return 0
 
-    # Filter viewports if specified
     viewports = VIEWPORTS
     if args.viewports:
         names = [n.strip() for n in args.viewports.split(",")]
         viewports = [v for v in VIEWPORTS if v["name"] in names]
 
     output_dir = args.output_dir or str(project_path / "figma-export" / "visual-diff")
-
     result = visual_diff(proto, impl, viewports, args.threshold, output_dir)
 
     if args.json_output:
         print(json.dumps(result, indent=2))
     else:
-        print(f"Visual Diff: {result['viewports_tested']} viewport(s) tested (threshold: {args.threshold}%)")
+        aa_label = " (AA-aware)" if result["results"] and result["results"][0].get("aa_aware") else ""
+        print(f"Visual Diff{aa_label}: {result['viewports_tested']} viewport(s) (threshold: {args.threshold}%)")
         print()
         for r in result["results"]:
             icon = "PASS" if r["pass"] else "FAIL"
             print(f"  {icon}: {r['viewport']} ({r['width']}x{r['height']}) — {r['diff_percent']}% diff")
+            if not r["pass"] and r.get("diff_image"):
+                print(f"        Diff image: {r['diff_image']}")
         print()
         if result["all_pass"]:
-            print("PASS: Implementation visually matches prototype at all viewports")
+            print(f"PASS: Implementation matches prototype within {args.threshold}% at all viewports")
         else:
-            print("FAIL: Visual mismatch detected — check screenshots in figma-export/visual-diff/")
+            print("FAIL: Visual mismatch — review diff images in figma-export/visual-diff/")
+            print("  Red pixels = real differences, Yellow pixels = anti-aliasing (ignored)")
 
     return 0 if result["all_pass"] else 1
 
