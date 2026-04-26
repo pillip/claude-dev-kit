@@ -3,16 +3,26 @@
 from scripts.verify_figma_compliance import (
     check_compliance,
     color_matches,
+    extract_align_items,
+    extract_blend_modes,
     extract_border_radii,
     extract_border_widths,
     extract_box_shadows,
     extract_colors_from_source,
+    extract_flex_directions,
     extract_font_weights,
     extract_fonts_from_source,
+    extract_gradients,
+    extract_justify_contents,
     extract_letter_spacings,
     extract_line_heights,
     extract_opacities,
+    extract_overflows,
+    extract_positions,
     extract_spacings_from_source,
+    extract_text_aligns,
+    extract_text_decorations,
+    extract_text_transforms,
     normalize_hex,
     value_close,
 )
@@ -35,6 +45,18 @@ def _make_design_data(**overrides) -> dict:
         "border_widths": [1, 2],
         "opacities": [0.5, 0.8],
         "shadows": [{"type": "box-shadow", "blur": 4, "color": "#000000"}],
+        "gradients": [{"type": "linear", "stops": []}],
+        "flex_directions": ["row", "column"],
+        "justify_contents": ["flex-start", "center", "space-between"],
+        "align_items": ["flex-start", "center", "stretch"],
+        "flex_wraps": ["nowrap"],
+        "text_aligns": ["center", "right"],
+        "text_transforms": ["uppercase"],
+        "text_decorations": ["underline"],
+        "overflow_values": ["hidden"],
+        "blend_modes": ["multiply"],
+        "has_absolute_position": True,
+        "has_background_image": False,
     }
     base.update(overrides)
     return {"summary": base}
@@ -324,3 +346,125 @@ class TestCheckCompliance:
         design = {"summary": {}}
         result = check_compliance(design, [("a.css", "background: #FF9900; font-size: 99px;")])
         assert result["compliant"] is True
+
+    # ── Layout property violations ──
+
+    def test_flex_direction_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "flex-direction: row-reverse;")])
+        assert result["summary"]["flex_direction_count"] > 0
+
+    def test_flex_direction_allowed(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "flex-direction: row;")])
+        assert result["summary"]["flex_direction_count"] == 0
+
+    def test_justify_content_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "justify-content: flex-end;")])
+        assert result["summary"]["justify_content_count"] > 0
+
+    def test_align_items_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "align-items: baseline;")])
+        assert result["summary"]["align_items_count"] > 0
+
+    def test_gradient_violation_no_figma_gradients(self):
+        design = _make_design_data(gradients=[])
+        result = check_compliance(design, [("a.css", "background: linear-gradient(#f00, #00f);")])
+        assert result["summary"]["gradient_count"] > 0
+
+    def test_gradient_allowed_when_figma_has_gradients(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "background: linear-gradient(#f00, #00f);")])
+        assert result["summary"]["gradient_count"] == 0
+
+    def test_text_align_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "text-align: justify;")])
+        assert result["summary"]["text_align_count"] > 0
+
+    def test_text_transform_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "text-transform: lowercase;")])
+        assert result["summary"]["text_transform_count"] > 0
+
+    def test_text_decoration_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "text-decoration: line-through;")])
+        assert result["summary"]["text_decoration_count"] > 0
+
+    def test_overflow_violation_no_figma_clipping(self):
+        design = _make_design_data(overflow_values=[])
+        result = check_compliance(design, [("a.css", "overflow: hidden;")])
+        assert result["summary"]["overflow_count"] > 0
+
+    def test_overflow_allowed_when_figma_has_clipping(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "overflow: hidden;")])
+        assert result["summary"]["overflow_count"] == 0
+
+    def test_position_absolute_violation(self):
+        design = _make_design_data(has_absolute_position=False)
+        result = check_compliance(design, [("a.css", "position: absolute;")])
+        assert result["summary"]["position_count"] > 0
+
+    def test_position_absolute_allowed(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "position: absolute;")])
+        assert result["summary"]["position_count"] == 0
+
+    def test_blend_mode_violation(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "mix-blend-mode: screen;")])
+        assert result["summary"]["blend_mode_count"] > 0
+
+    def test_blend_mode_allowed(self):
+        design = _make_design_data()
+        result = check_compliance(design, [("a.css", "mix-blend-mode: multiply;")])
+        assert result["summary"]["blend_mode_count"] == 0
+
+
+# ── TestNewExtractors ───────────────────────────────────────────────
+
+
+class TestNewExtractors:
+    def test_flex_direction(self):
+        assert extract_flex_directions("flex-direction: column;")[0]["value"] == "column"
+
+    def test_justify_content(self):
+        assert extract_justify_contents("justify-content: center;")[0]["value"] == "center"
+
+    def test_align_items(self):
+        assert extract_align_items("align-items: stretch;")[0]["value"] == "stretch"
+
+    def test_text_align(self):
+        assert extract_text_aligns("text-align: center;")[0]["value"] == "center"
+
+    def test_text_transform(self):
+        assert extract_text_transforms("text-transform: uppercase;")[0]["value"] == "uppercase"
+
+    def test_text_decoration(self):
+        assert extract_text_decorations("text-decoration: underline;")[0]["value"] == "underline"
+
+    def test_overflow(self):
+        assert extract_overflows("overflow: hidden;")[0]["value"] == "hidden"
+
+    def test_position(self):
+        assert extract_positions("position: absolute;")[0]["value"] == "absolute"
+
+    def test_blend_mode(self):
+        assert extract_blend_modes("mix-blend-mode: multiply;")[0]["value"] == "multiply"
+
+    def test_gradient(self):
+        result = extract_gradients("background: linear-gradient(#f00, #00f);")
+        assert len(result) == 1
+
+    def test_rn_flex_direction(self):
+        assert extract_flex_directions("flexDirection: 'row'")[0]["value"] == "row"
+
+    def test_rn_justify_content(self):
+        assert extract_justify_contents("justifyContent: 'space-between'")[0]["value"] == "space-between"
+
+    def test_rn_text_align(self):
+        assert extract_text_aligns("textAlign: 'center'")[0]["value"] == "center"

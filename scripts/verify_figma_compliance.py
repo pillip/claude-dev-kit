@@ -272,6 +272,108 @@ def extract_box_shadows(text: str) -> list[dict]:
     return results
 
 
+# ── Layout, position, text, and visual extractors ───────────────────
+
+_FLEX_DIRECTION = re.compile(r"flex-direction\s*:\s*([\w-]+)", re.IGNORECASE)
+_RN_FLEX_DIRECTION = re.compile(r"flexDirection\s*:\s*['\"]?([\w-]+)['\"]?")
+
+_JUSTIFY_CONTENT = re.compile(r"justify-content\s*:\s*([\w-]+)", re.IGNORECASE)
+_RN_JUSTIFY_CONTENT = re.compile(r"justifyContent\s*:\s*['\"]?([\w-]+)['\"]?")
+
+_ALIGN_ITEMS = re.compile(r"align-items\s*:\s*([\w-]+)", re.IGNORECASE)
+_RN_ALIGN_ITEMS = re.compile(r"alignItems\s*:\s*['\"]?([\w-]+)['\"]?")
+
+_FLEX_WRAP = re.compile(r"flex-wrap\s*:\s*(\w+)", re.IGNORECASE)
+_RN_FLEX_WRAP = re.compile(r"flexWrap\s*:\s*['\"]?(\w+)['\"]?")
+
+_TEXT_ALIGN = re.compile(r"text-align\s*:\s*(\w+)", re.IGNORECASE)
+_RN_TEXT_ALIGN = re.compile(r"textAlign\s*:\s*['\"]?(\w+)['\"]?")
+
+_TEXT_TRANSFORM = re.compile(r"text-transform\s*:\s*(\w+)", re.IGNORECASE)
+_RN_TEXT_TRANSFORM = re.compile(r"textTransform\s*:\s*['\"]?(\w+)['\"]?")
+
+_TEXT_DECORATION = re.compile(r"text-decoration(?:-line)?\s*:\s*([\w-]+)", re.IGNORECASE)
+_RN_TEXT_DECORATION = re.compile(r"textDecorationLine\s*:\s*['\"]?([\w-]+)['\"]?")
+
+_OVERFLOW = re.compile(r"overflow(?:-[xy])?\s*:\s*(\w+)", re.IGNORECASE)
+_RN_OVERFLOW = re.compile(r"overflow\s*:\s*['\"]?(\w+)['\"]?")
+
+_POSITION = re.compile(r"position\s*:\s*(\w+)", re.IGNORECASE)
+_RN_POSITION = re.compile(r"position\s*:\s*['\"]?(\w+)['\"]?")
+
+_MIX_BLEND_MODE = re.compile(r"mix-blend-mode\s*:\s*([\w-]+)", re.IGNORECASE)
+
+_GRADIENT_CSS = re.compile(
+    r"(?:linear|radial|conic)-gradient\s*\(",
+    re.IGNORECASE,
+)
+
+
+def _extract_keyword_property(text: str, css_re: re.Pattern, rn_re: re.Pattern | None = None) -> list[dict]:
+    """Generic extractor for keyword CSS properties (flex-direction, text-align, etc.)."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in css_re.finditer(line):
+            results.append({"value": m.group(1).lower(), "line": i})
+        if rn_re:
+            for m in rn_re.finditer(line):
+                results.append({"value": m.group(1).lower(), "line": i})
+    return results
+
+
+def extract_flex_directions(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _FLEX_DIRECTION, _RN_FLEX_DIRECTION)
+
+
+def extract_justify_contents(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _JUSTIFY_CONTENT, _RN_JUSTIFY_CONTENT)
+
+
+def extract_align_items(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _ALIGN_ITEMS, _RN_ALIGN_ITEMS)
+
+
+def extract_flex_wraps(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _FLEX_WRAP, _RN_FLEX_WRAP)
+
+
+def extract_text_aligns(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _TEXT_ALIGN, _RN_TEXT_ALIGN)
+
+
+def extract_text_transforms(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _TEXT_TRANSFORM, _RN_TEXT_TRANSFORM)
+
+
+def extract_text_decorations(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _TEXT_DECORATION, _RN_TEXT_DECORATION)
+
+
+def extract_overflows(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _OVERFLOW, _RN_OVERFLOW)
+
+
+def extract_positions(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _POSITION, _RN_POSITION)
+
+
+def extract_blend_modes(text: str) -> list[dict]:
+    return _extract_keyword_property(text, _MIX_BLEND_MODE)
+
+
+def extract_gradients(text: str) -> list[dict]:
+    """Detect gradient usage in source (presence check)."""
+    results: list[dict] = []
+    for i, line in enumerate(text.splitlines(), 1):
+        if not _is_code_line(line):
+            continue
+        for m in _GRADIENT_CSS.finditer(line):
+            results.append({"value": m.group(0).rstrip("("), "line": i})
+    return results
+
+
 # ── Comparison ──────────────────────────────────────────────────────
 
 # Tolerance for "close enough" matching
@@ -365,6 +467,19 @@ def check_compliance(
                      "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace",
                      "inherit", "initial", "unset"}
 
+    # ── Build layout/text/visual allowed sets ──
+    figma_flex_dirs: set[str] = set(summary_data.get("flex_directions", []))
+    figma_justify: set[str] = set(summary_data.get("justify_contents", []))
+    figma_align: set[str] = set(summary_data.get("align_items", []))
+    figma_flex_wraps: set[str] = set(summary_data.get("flex_wraps", []))
+    figma_text_aligns: set[str] = set(summary_data.get("text_aligns", []))
+    figma_text_transforms: set[str] = set(summary_data.get("text_transforms", []))
+    figma_text_decorations: set[str] = set(summary_data.get("text_decorations", []))
+    figma_overflow: set[str] = set(summary_data.get("overflow_values", []))
+    figma_blend_modes: set[str] = set(summary_data.get("blend_modes", []))
+    figma_has_gradients = len(summary_data.get("gradients", [])) > 0
+    figma_has_absolute = summary_data.get("has_absolute_position", False)
+
     # ── Violation accumulators ──
     violations: dict[str, list[dict]] = {
         "color": [],
@@ -378,6 +493,17 @@ def check_compliance(
         "border_width": [],
         "opacity": [],
         "box_shadow": [],
+        "gradient": [],
+        "flex_direction": [],
+        "justify_content": [],
+        "align_items": [],
+        "flex_wrap": [],
+        "text_align": [],
+        "text_transform": [],
+        "text_decoration": [],
+        "overflow": [],
+        "position": [],
+        "blend_mode": [],
     }
 
     def _add(category: str, filepath: str, line: int, value: str, msg: str) -> None:
@@ -461,6 +587,82 @@ def check_compliance(
                 _add("box_shadow", filepath, bs["line"], bs["value"],
                      "Box shadow used but Figma design has no shadows")
 
+        # Gradient — verify gradients are only used when Figma defines them
+        if not figma_has_gradients:
+            for g in extract_gradients(content):
+                _add("gradient", filepath, g["line"], g["value"],
+                     "Gradient used but Figma design has no gradients")
+
+        # Flex direction
+        if figma_flex_dirs:
+            for fd in extract_flex_directions(content):
+                if fd["value"] not in figma_flex_dirs:
+                    _add("flex_direction", filepath, fd["line"], fd["value"],
+                         f"flex-direction '{fd['value']}' not in Figma layout (allowed: {sorted(figma_flex_dirs)})")
+
+        # Justify content
+        if figma_justify:
+            for jc in extract_justify_contents(content):
+                if jc["value"] not in figma_justify:
+                    _add("justify_content", filepath, jc["line"], jc["value"],
+                         f"justify-content '{jc['value']}' not in Figma layout (allowed: {sorted(figma_justify)})")
+
+        # Align items
+        if figma_align:
+            for ai in extract_align_items(content):
+                if ai["value"] not in figma_align:
+                    _add("align_items", filepath, ai["line"], ai["value"],
+                         f"align-items '{ai['value']}' not in Figma layout (allowed: {sorted(figma_align)})")
+
+        # Flex wrap
+        if figma_flex_wraps:
+            for fw in extract_flex_wraps(content):
+                if fw["value"] not in figma_flex_wraps:
+                    _add("flex_wrap", filepath, fw["line"], fw["value"],
+                         f"flex-wrap '{fw['value']}' not in Figma layout (allowed: {sorted(figma_flex_wraps)})")
+
+        # Text align
+        if figma_text_aligns:
+            for ta in extract_text_aligns(content):
+                if ta["value"] not in figma_text_aligns and ta["value"] != "left":
+                    _add("text_align", filepath, ta["line"], ta["value"],
+                         f"text-align '{ta['value']}' not in Figma (allowed: {sorted(figma_text_aligns)})")
+
+        # Text transform
+        if figma_text_transforms:
+            for tt in extract_text_transforms(content):
+                if tt["value"] not in figma_text_transforms and tt["value"] != "none":
+                    _add("text_transform", filepath, tt["line"], tt["value"],
+                         f"text-transform '{tt['value']}' not in Figma (allowed: {sorted(figma_text_transforms)})")
+
+        # Text decoration
+        if figma_text_decorations:
+            for td in extract_text_decorations(content):
+                if td["value"] not in figma_text_decorations and td["value"] != "none":
+                    _add("text_decoration", filepath, td["line"], td["value"],
+                         f"text-decoration '{td['value']}' not in Figma (allowed: {sorted(figma_text_decorations)})")
+
+        # Overflow — flag hidden/auto only if Figma doesn't use clipping
+        if not figma_overflow:
+            for ov in extract_overflows(content):
+                if ov["value"] in ("hidden", "auto", "scroll"):
+                    _add("overflow", filepath, ov["line"], ov["value"],
+                         f"overflow '{ov['value']}' used but Figma design has no clipping")
+
+        # Position absolute — flag if Figma doesn't use absolute positioning
+        if not figma_has_absolute:
+            for pos in extract_positions(content):
+                if pos["value"] == "absolute":
+                    _add("position", filepath, pos["line"], pos["value"],
+                         "position: absolute used but Figma design has no absolute positioning")
+
+        # Blend mode — flag if Figma doesn't define blend modes
+        if figma_blend_modes:
+            for bm in extract_blend_modes(content):
+                if bm["value"] not in figma_blend_modes:
+                    _add("blend_mode", filepath, bm["line"], bm["value"],
+                         f"mix-blend-mode '{bm['value']}' not in Figma (allowed: {sorted(figma_blend_modes)})")
+
     total = sum(len(v) for v in violations.values())
 
     # Build per-category counts for summary
@@ -484,6 +686,13 @@ def check_compliance(
                 "border_widths": len(figma_border_widths),
                 "opacities": len(figma_opacities),
                 "shadows": len(summary_data.get("shadows", [])),
+                "gradients": len(summary_data.get("gradients", [])),
+                "flex_directions": len(figma_flex_dirs),
+                "justify_contents": len(figma_justify),
+                "align_items": len(figma_align),
+                "text_aligns": len(figma_text_aligns),
+                "text_transforms": len(figma_text_transforms),
+                "blend_modes": len(figma_blend_modes),
             },
         },
         "compliant": total == 0,
@@ -619,6 +828,11 @@ def main(argv: list[str] | None = None) -> int:
                 "letter_spacing": "Letter spacing", "spacing": "Spacing",
                 "border_radius": "Border radius", "border_width": "Border width",
                 "opacity": "Opacity", "box_shadow": "Box shadow",
+                "gradient": "Gradient", "flex_direction": "Flex direction",
+                "justify_content": "Justify content", "align_items": "Align items",
+                "flex_wrap": "Flex wrap", "text_align": "Text align",
+                "text_transform": "Text transform", "text_decoration": "Text decoration",
+                "overflow": "Overflow", "position": "Position", "blend_mode": "Blend mode",
             }
             for key, label in category_labels.items():
                 items = result["violations"].get(key, [])

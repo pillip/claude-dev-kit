@@ -129,12 +129,42 @@ def extract_fill_color(fills: list[dict]) -> str | None:
             if opacity < 1:
                 color = {**color, "a": color.get("a", 1) * opacity}
             return rgba_to_hex(color)
-        if fill.get("type") in ("GRADIENT_LINEAR", "GRADIENT_RADIAL"):
+        if fill.get("type") in ("GRADIENT_LINEAR", "GRADIENT_RADIAL",
+                                 "GRADIENT_ANGULAR", "GRADIENT_DIAMOND"):
             stops = fill.get("gradientStops", [])
             if stops:
                 colors = [rgba_to_hex(s["color"]) for s in stops]
                 return f"linear-gradient({', '.join(colors)})"
     return None
+
+
+def extract_fill_details(fills: list[dict]) -> dict[str, Any]:
+    """Extract detailed fill information (gradients, image refs, all colors)."""
+    details: dict[str, Any] = {"colors": [], "gradients": [], "has_image": False}
+    for fill in fills:
+        if not fill.get("visible", True):
+            continue
+        ftype = fill.get("type", "")
+        if ftype == "SOLID":
+            color = fill.get("color", {})
+            opacity = fill.get("opacity", 1)
+            if opacity < 1:
+                color = {**color, "a": color.get("a", 1) * opacity}
+            details["colors"].append(rgba_to_hex(color))
+        elif ftype in ("GRADIENT_LINEAR", "GRADIENT_RADIAL",
+                        "GRADIENT_ANGULAR", "GRADIENT_DIAMOND"):
+            stops = fill.get("gradientStops", [])
+            grad = {
+                "type": ftype.lower().replace("gradient_", ""),
+                "stops": [{"color": rgba_to_hex(s["color"]),
+                           "position": s.get("position", 0)} for s in stops],
+            }
+            details["gradients"].append(grad)
+            for s in stops:
+                details["colors"].append(rgba_to_hex(s["color"]))
+        elif ftype == "IMAGE":
+            details["has_image"] = True
+    return details
 
 
 # --- Node Property Extraction ---
@@ -149,14 +179,18 @@ def extract_text_style(node: dict[str, Any]) -> dict[str, Any] | None:
     font_size = style.get("fontSize", 16)
     line_height_px = style.get("lineHeightPx")
 
+    # Map Figma text alignment to CSS
+    _align_map = {"LEFT": "left", "CENTER": "center", "RIGHT": "right", "JUSTIFIED": "justify"}
+    _case_map = {"UPPER": "uppercase", "LOWER": "lowercase", "TITLE": "capitalize",
+                 "SMALL_CAPS": "small-caps", "SMALL_CAPS_FORCED": "small-caps"}
+
     result: dict[str, Any] = {
         "font_family": style.get("fontFamily", ""),
         "font_weight": style.get("fontWeight", 400),
         "font_size_px": font_size,
         "letter_spacing_px": style.get("letterSpacing", 0),
-        "text_transform": "uppercase"
-        if style.get("textCase") == "UPPER"
-        else "none",
+        "text_align": _align_map.get(style.get("textAlignHorizontal", "LEFT"), "left"),
+        "text_transform": _case_map.get(style.get("textCase", "ORIGINAL"), "none"),
         "text_decoration": style.get("textDecoration", "NONE").lower(),
     }
 
@@ -204,33 +238,52 @@ def extract_effects(effects: list[dict]) -> list[dict[str, Any]]:
     return result
 
 
+def _figma_align_to_css(value: str) -> str:
+    """Map Figma alignment value to CSS equivalent."""
+    return {"MIN": "flex-start", "CENTER": "center", "MAX": "flex-end",
+            "SPACE_BETWEEN": "space-between", "BASELINE": "baseline",
+            "STRETCH": "stretch"}.get(value, value.lower())
+
+
 def extract_node_properties(node: dict[str, Any]) -> dict[str, Any]:
-    """Extract CSS-relevant properties from a single Figma node."""
+    """Extract ALL CSS-relevant properties from a single Figma node."""
     props: dict[str, Any] = {
         "name": node.get("name", ""),
         "type": node.get("type", ""),
     }
 
-    # Size
+    # ── Dimensions ──
     bbox = node.get("absoluteBoundingBox", {})
     if bbox:
         props["width"] = round(bbox.get("width", 0), 1)
         props["height"] = round(bbox.get("height", 0), 1)
 
-    # Fills (background color)
+    # Min/max dimensions
+    for dim in ("minWidth", "maxWidth", "minHeight", "maxHeight"):
+        val = node.get(dim)
+        if val is not None and val > 0:
+            props[dim] = round(val, 1)
+
+    # ── Fills (background: color, gradient, image) ──
     fills = node.get("fills", [])
     bg = extract_fill_color(fills)
     if bg:
         props["background_color"] = bg
+    fill_details = extract_fill_details(fills)
+    if fill_details["gradients"]:
+        props["gradients"] = fill_details["gradients"]
+    if fill_details["has_image"]:
+        props["has_background_image"] = True
 
-    # Strokes (borders)
+    # ── Strokes (borders) ──
     strokes = node.get("strokes", [])
     stroke_color = extract_fill_color(strokes)
     if stroke_color:
         props["border_color"] = stroke_color
         props["border_width"] = node.get("strokeWeight", 1)
+        props["border_style"] = "solid"  # Figma strokes are always solid
 
-    # Corner radius
+    # ── Corner radius ──
     cr = node.get("cornerRadius")
     if cr:
         props["border_radius"] = cr
@@ -239,19 +292,42 @@ def extract_node_properties(node: dict[str, Any]) -> dict[str, Any]:
         if radii and any(r > 0 for r in radii):
             props["border_radius"] = radii  # [TL, TR, BR, BL]
 
-    # Effects (shadows)
+    # ── Effects (shadows, blurs) ──
     effects = extract_effects(node.get("effects", []))
     if effects:
         props["effects"] = effects
 
-    # Opacity
+    # ── Opacity ──
     opacity = node.get("opacity")
     if opacity is not None and opacity < 1:
         props["opacity"] = round(opacity, 2)
 
-    # Auto-layout (spacing, padding)
+    # ── Blend mode ──
+    blend = node.get("blendMode")
+    if blend and blend not in ("PASS_THROUGH", "NORMAL"):
+        _blend_map = {
+            "MULTIPLY": "multiply", "SCREEN": "screen", "OVERLAY": "overlay",
+            "DARKEN": "darken", "LIGHTEN": "lighten", "COLOR_DODGE": "color-dodge",
+            "COLOR_BURN": "color-burn", "HARD_LIGHT": "hard-light",
+            "SOFT_LIGHT": "soft-light", "DIFFERENCE": "difference",
+            "EXCLUSION": "exclusion", "HUE": "hue", "SATURATION": "saturation",
+            "COLOR": "color", "LUMINOSITY": "luminosity",
+        }
+        props["mix_blend_mode"] = _blend_map.get(blend, blend.lower())
+
+    # ── Overflow / clipping ──
+    if node.get("clipsContent"):
+        props["overflow"] = "hidden"
+    overflow_dir = node.get("overflowDirection")
+    if overflow_dir and overflow_dir != "NONE":
+        _overflow_map = {"HORIZONTAL": "overflow-x: auto", "VERTICAL": "overflow-y: auto",
+                         "BOTH": "overflow: auto"}
+        props["overflow"] = _overflow_map.get(overflow_dir, "auto")
+
+    # ── Auto-layout → flexbox ──
     layout_mode = node.get("layoutMode")
     if layout_mode and layout_mode != "NONE":
+        props["display"] = "flex"
         props["layout"] = {
             "mode": "row" if layout_mode == "HORIZONTAL" else "column",
             "gap": node.get("itemSpacing", 0),
@@ -259,11 +335,25 @@ def extract_node_properties(node: dict[str, Any]) -> dict[str, Any]:
             "padding_right": node.get("paddingRight", 0),
             "padding_bottom": node.get("paddingBottom", 0),
             "padding_left": node.get("paddingLeft", 0),
-            "align": node.get("primaryAxisAlignItems", "MIN"),
-            "cross_align": node.get("counterAxisAlignItems", "MIN"),
+            "justify_content": _figma_align_to_css(node.get("primaryAxisAlignItems", "MIN")),
+            "align_items": _figma_align_to_css(node.get("counterAxisAlignItems", "MIN")),
+            "flex_wrap": "wrap" if node.get("layoutWrap") == "WRAP" else "nowrap",
         }
 
-    # Text-specific
+    # ── Child layout properties (position within parent auto-layout) ──
+    layout_positioning = node.get("layoutPositioning")
+    if layout_positioning == "ABSOLUTE":
+        props["position"] = "absolute"
+
+    layout_align = node.get("layoutAlign")
+    if layout_align == "STRETCH":
+        props["align_self"] = "stretch"
+
+    layout_grow = node.get("layoutGrow")
+    if layout_grow and layout_grow > 0:
+        props["flex_grow"] = layout_grow
+
+    # ── Text-specific ──
     if node.get("type") == "TEXT":
         text_style = extract_text_style(node)
         if text_style:
@@ -461,6 +551,7 @@ def collect_unique_values(
     """Walk the extracted tree and collect ALL unique design values.
 
     Comprehensive extraction for high-fidelity 1:1 compliance checking.
+    Covers every style property Figma can express.
     """
     colors: set[str] = set()
     text_styles: list[dict] = []
@@ -473,15 +564,45 @@ def collect_unique_values(
     letter_spacings: set[float] = set()
     opacities: set[float] = set()
     border_widths: set[float] = set()
+    # New: layout, position, text, visual properties
+    gradients: list[dict] = []
+    flex_directions: set[str] = set()
+    justify_contents: set[str] = set()
+    align_items_vals: set[str] = set()
+    flex_wraps: set[str] = set()
+    text_aligns: set[str] = set()
+    text_transforms: set[str] = set()
+    text_decorations: set[str] = set()
+    overflow_values: set[str] = set()
+    blend_modes: set[str] = set()
+    has_absolute_position = False
+    has_background_image = False
+
     seen_text_keys: set[str] = set()
     seen_shadow_keys: set[str] = set()
+    seen_gradient_keys: set[str] = set()
 
     def _walk(node: dict[str, Any]) -> None:
+        nonlocal has_absolute_position, has_background_image
+
         # Colors
         if "background_color" in node:
             colors.add(node["background_color"])
         if "border_color" in node:
             colors.add(node["border_color"])
+
+        # Gradients
+        for grad in node.get("gradients", []):
+            gkey = json.dumps(grad, sort_keys=True)
+            if gkey not in seen_gradient_keys:
+                seen_gradient_keys.add(gkey)
+                gradients.append(grad)
+            for stop in grad.get("stops", []):
+                colors.add(stop["color"])
+
+        # Background image
+        if node.get("has_background_image"):
+            has_background_image = True
 
         # Border width
         bw = node.get("border_width")
@@ -492,6 +613,21 @@ def collect_unique_values(
         op = node.get("opacity")
         if op is not None and op < 1:
             opacities.add(round(op, 2))
+
+        # Blend mode
+        bm = node.get("mix_blend_mode")
+        if bm:
+            blend_modes.add(bm)
+
+        # Overflow
+        ov = node.get("overflow")
+        if ov:
+            overflow_values.add(ov)
+
+        # Position
+        pos = node.get("position")
+        if pos == "absolute":
+            has_absolute_position = True
 
         # Text
         ts = node.get("text_style")
@@ -519,10 +655,32 @@ def collect_unique_values(
             ls = ts.get("letter_spacing_em")
             if ls:
                 letter_spacings.add(round(float(ls), 4))
+            # Text properties
+            ta = ts.get("text_align")
+            if ta and ta != "left":  # left is default
+                text_aligns.add(ta)
+            tt = ts.get("text_transform")
+            if tt and tt != "none":
+                text_transforms.add(tt)
+            td = ts.get("text_decoration")
+            if td and td != "none":
+                text_decorations.add(td)
 
-        # Spacing
+        # Layout (flex properties)
         layout = node.get("layout")
         if layout:
+            fd = layout.get("mode")
+            if fd:
+                flex_directions.add(fd)
+            jc = layout.get("justify_content")
+            if jc:
+                justify_contents.add(jc)
+            ai = layout.get("align_items")
+            if ai:
+                align_items_vals.add(ai)
+            fw_val = layout.get("flex_wrap")
+            if fw_val:
+                flex_wraps.add(fw_val)
             for val in [
                 layout.get("gap"),
                 layout.get("padding_top"),
@@ -570,6 +728,18 @@ def collect_unique_values(
         "border_widths": sorted(border_widths),
         "opacities": sorted(opacities),
         "shadows": shadows,
+        "gradients": gradients,
+        "flex_directions": sorted(flex_directions),
+        "justify_contents": sorted(justify_contents),
+        "align_items": sorted(align_items_vals),
+        "flex_wraps": sorted(flex_wraps),
+        "text_aligns": sorted(text_aligns),
+        "text_transforms": sorted(text_transforms),
+        "text_decorations": sorted(text_decorations),
+        "overflow_values": sorted(overflow_values),
+        "blend_modes": sorted(blend_modes),
+        "has_absolute_position": has_absolute_position,
+        "has_background_image": has_background_image,
     }
 
 
@@ -694,8 +864,21 @@ def main() -> None:
     all_letter_spacings: set[float] = set()
     all_opacities: set[float] = set()
     all_border_widths: set[float] = set()
+    all_gradients: list[dict] = []
+    all_flex_directions: set[str] = set()
+    all_justify_contents: set[str] = set()
+    all_align_items: set[str] = set()
+    all_flex_wraps: set[str] = set()
+    all_text_aligns: set[str] = set()
+    all_text_transforms: set[str] = set()
+    all_text_decorations: set[str] = set()
+    all_overflow_values: set[str] = set()
+    all_blend_modes: set[str] = set()
+    any_absolute_position = False
+    any_background_image = False
     seen_keys: set[str] = set()
     seen_shadow_keys: set[str] = set()
+    seen_gradient_keys: set[str] = set()
 
     for f in frames:
         uv = f["unique_values"]
@@ -708,6 +891,24 @@ def main() -> None:
         all_letter_spacings.update(uv.get("letter_spacings", []))
         all_opacities.update(uv.get("opacities", []))
         all_border_widths.update(uv.get("border_widths", []))
+        all_flex_directions.update(uv.get("flex_directions", []))
+        all_justify_contents.update(uv.get("justify_contents", []))
+        all_align_items.update(uv.get("align_items", []))
+        all_flex_wraps.update(uv.get("flex_wraps", []))
+        all_text_aligns.update(uv.get("text_aligns", []))
+        all_text_transforms.update(uv.get("text_transforms", []))
+        all_text_decorations.update(uv.get("text_decorations", []))
+        all_overflow_values.update(uv.get("overflow_values", []))
+        all_blend_modes.update(uv.get("blend_modes", []))
+        if uv.get("has_absolute_position"):
+            any_absolute_position = True
+        if uv.get("has_background_image"):
+            any_background_image = True
+        for grad in uv.get("gradients", []):
+            gkey = json.dumps(grad, sort_keys=True)
+            if gkey not in seen_gradient_keys:
+                seen_gradient_keys.add(gkey)
+                all_gradients.append(grad)
         for shadow in uv["shadows"]:
             skey = json.dumps(shadow, sort_keys=True)
             if skey not in seen_shadow_keys:
@@ -748,6 +949,7 @@ def main() -> None:
         "summary": {
             "frame_count": len(frames),
             "breakpoints": [f["breakpoint"] for f in frames],
+            # Token values
             "colors": sorted(all_colors),
             "text_styles": sorted(
                 all_text_styles, key=lambda t: -t.get("font_size_px", 0)
@@ -762,6 +964,19 @@ def main() -> None:
             "opacities": sorted(all_opacities),
             "shadows": all_shadows,
             "shadow_count": len(all_shadows),
+            # Layout & position values
+            "gradients": all_gradients,
+            "flex_directions": sorted(all_flex_directions),
+            "justify_contents": sorted(all_justify_contents),
+            "align_items": sorted(all_align_items),
+            "flex_wraps": sorted(all_flex_wraps),
+            "text_aligns": sorted(all_text_aligns),
+            "text_transforms": sorted(all_text_transforms),
+            "text_decorations": sorted(all_text_decorations),
+            "overflow_values": sorted(all_overflow_values),
+            "blend_modes": sorted(all_blend_modes),
+            "has_absolute_position": any_absolute_position,
+            "has_background_image": any_background_image,
             "asset_count": len(exported_assets),
         },
     }
