@@ -116,10 +116,14 @@ Algorithm:
       If the script exits with non-zero (e.g., FIGMA_TOKEN not set, invalid URL, API error):
       **STOP** and report the error to the user. Do NOT proceed — the issue explicitly requires Figma data.
    2. Read `figma-export/design_data.json` and existing `docs/design_system.md` (if any).
-   3. Ask the figma-converter agent to **upsert** prototype files:
+   3. Invoke the **figma-converter** agent (via Task) with this explicit context:
+      - Pass the full content of `figma-export/design_data.json`
+      - Tell it to read the `assets` array and reference downloaded files in `figma-export/assets/`
+      - Tell it to check `summary.interaction_states` and generate CSS pseudo-class rules (:hover, :focus, :active, :disabled)
+      - Tell it to handle `gradients` fields and generate CSS `linear-gradient()`/`radial-gradient()`
+      - Instruct it to **upsert** (preserve existing prototype files, only add/update screens from this fetch)
       - Generate or update `prototype/screens/<screen>.html` for each fetched frame
       - Update `prototype/styles.css` with any new tokens from the Figma data
-      - Preserve existing prototype files — only add/update screens from this Figma fetch
       - Update `prototype/index.html` to include new screen links
    4. The updated prototype files become the visual ground truth.
       The developer's existing "Match the prototype" rule (step 2b UI context) handles the rest —
@@ -147,6 +151,8 @@ Algorithm:
      - `docs/interactions.md` — states, transitions, animations for the relevant flow
      - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary
      - `prototype/screens/*.html` — visual reference for the relevant screen
+     - `figma-export/design_data.json` — Figma design tokens and asset manifest (if exists)
+     - `figma-export/assets/` — downloaded SVG/PNG icons and images from Figma (if exists)
    - **Mobile UI context** — read all of the following in parallel (when the issue involves mobile/React Native work):
      - `docs/design_system_mobile.md` — React Native design tokens, component specs
      - `docs/design_philosophy.md` — aesthetic direction (shared with web)

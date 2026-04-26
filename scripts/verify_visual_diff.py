@@ -99,10 +99,14 @@ def _pixel_diff(img1_bytes: bytes, img2_bytes: bytes) -> dict:
 
 
 def take_screenshots(
-    html_path: str,
+    target: str,
     viewports: list[dict] | None = None,
 ) -> list[dict]:
-    """Take screenshots of an HTML file at multiple viewports.
+    """Take screenshots of an HTML file or URL at multiple viewports.
+
+    Args:
+        target: File path (renders via file://) or URL (http://localhost:...).
+        viewports: List of viewport configs.
 
     Returns list of {viewport_name, width, height, screenshot_bytes}.
     """
@@ -110,6 +114,12 @@ def take_screenshots(
         viewports = VIEWPORTS
 
     from playwright.sync_api import sync_playwright
+
+    # Determine URL: file path or already a URL
+    if target.startswith("http://") or target.startswith("https://"):
+        url = target
+    else:
+        url = f"file://{target}"
 
     results: list[dict] = []
 
@@ -121,7 +131,7 @@ def take_screenshots(
                 viewport={"width": vp["width"], "height": vp["height"]},
                 device_scale_factor=2,
             )
-            page.goto(f"file://{html_path}", wait_until="networkidle")
+            page.goto(url, wait_until="networkidle", timeout=30000)
             page.wait_for_timeout(500)  # Wait for CSS transitions/animations
             screenshot = page.screenshot(full_page=True)
             results.append({
@@ -221,14 +231,39 @@ def find_prototype_html(project_path: Path) -> str | None:
     return None
 
 
+def _check_dev_server(port: int) -> bool:
+    """Check if a dev server is running on a port."""
+    import urllib.request
+    import urllib.error
+    try:
+        urllib.request.urlopen(f"http://localhost:{port}", timeout=3)
+        return True
+    except (urllib.error.URLError, OSError):
+        return False
+
+
 def find_implementation_html(project_path: Path) -> str | None:
-    """Find the implementation entry point."""
+    """Find the implementation entry point.
+
+    Priority:
+    1. Running dev server (localhost:3000, 5173, 8080, 4200)
+    2. Built output (dist/, build/, .next/)
+    3. Static HTML files
+    """
+    # Check for running dev servers first
+    dev_ports = [3000, 5173, 8080, 4200, 3001, 5174]
+    for port in dev_ports:
+        if _check_dev_server(port):
+            return f"http://localhost:{port}"
+
+    # Built output
     candidates = [
         project_path / "dist" / "index.html",
         project_path / "build" / "index.html",
+        project_path / "out" / "index.html",
+        project_path / ".next" / "server" / "pages" / "index.html",
         project_path / "public" / "index.html",
         project_path / "index.html",
-        project_path / ".next" / "server" / "pages" / "index.html",
     ]
     for c in candidates:
         if c.exists():

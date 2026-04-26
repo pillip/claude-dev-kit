@@ -105,7 +105,25 @@ Steps:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
    - Pass gathered context (review_lessons, architecture) so the reviewer can identify recurring patterns.
-3.5) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
+
+3.5) **Figma compliance check** (auto-skips if no Figma data) — **runs BEFORE UI review to ensure Figma fidelity first**:
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase figma-compliance --issue $ARGUMENTS`
+> Compares ALL implementation style properties (24 categories) against `figma-export/design_data.json`.
+> Auto-passes when no Figma data exists. Fails if implementation deviates from Figma design tokens.
+> If exit code ≠ 0: STOP immediately. Fix all violations before proceeding.
+> **Figma is the absolute source of truth.** Any deviation is a blocking violation.
+
+3.6) **Visual diff** (auto-skips if Playwright not installed or no prototype/implementation HTML):
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase visual-diff --issue $ARGUMENTS`
+> Renders prototype and implementation at 3 viewports (mobile 375px, tablet 768px, desktop 1440px), takes screenshots, and computes pixel-level diff. Also checks running dev servers (localhost:3000 etc.).
+> Auto-passes when Playwright is unavailable or HTML files don't exist. Fails if diff exceeds 5%.
+> If exit code ≠ 0: STOP immediately. Fix visual discrepancies before proceeding.
+
+3.7) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
    Ask ui-reviewer subagent to perform UI state review:
    - Pass the UI context files gathered in step 3 plus `docs/review_lessons.md`.
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
@@ -116,34 +134,18 @@ Steps:
 > The script auto-detects UI issues via Track field/title keywords. Non-UI issues pass automatically.
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-3.6) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
+3.8) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
    Ask design-auditor subagent to audit the design system:
    - Pass all design context files gathered in step 3.
-   - Auditor checks: token consistency, component completeness, cross-platform alignment, philosophy compliance, copy coverage.
+   - **Also pass `figma-export/design_data.json`** (if exists) so auditor can verify design system covers all Figma tokens.
+   - Auditor checks: token consistency, component completeness, cross-platform alignment, philosophy compliance, copy coverage, **Figma token coverage**.
    - Output: `docs/design_audit.md` with severity-classified findings.
 
-3.7) IF UI issue:
+3.9) IF UI issue:
    Ask a11y-auditor subagent to perform WCAG 2.1 AA accessibility audit:
    - Pass design context files + source code files from the PR diff.
    - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
    - Output: `docs/a11y_audit.md` with findings and fix suggestions.
-
-3.8) **Visual diff** (auto-skips if Playwright not installed or no prototype/implementation HTML):
-
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `bash scripts/checkpoint.sh --skill review --phase visual-diff --issue $ARGUMENTS`
-> Renders prototype and implementation HTML at 3 viewports (mobile 375px, tablet 768px, desktop 1440px), takes screenshots, and computes pixel-level diff.
-> Auto-passes when Playwright is unavailable or HTML files don't exist. Fails if diff exceeds 5%.
-> If exit code ≠ 0: STOP immediately. Fix visual discrepancies before proceeding.
-
-3.9) **Figma compliance check** (auto-skips if no Figma data):
-
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `bash scripts/checkpoint.sh --skill review --phase figma-compliance --issue $ARGUMENTS`
-> Compares implementation colors, fonts, and spacing against `figma-export/design_data.json`.
-> Auto-passes when no Figma data exists. Fails if implementation deviates from Figma design tokens.
-> If exit code ≠ 0: STOP immediately. Fix all violations before proceeding.
-> **Figma is the absolute source of truth.** Any deviation from Figma colors, typography, or spacing is a blocking violation.
 
 4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit + Figma compliance); re-run tests inside `$WT/`.
 

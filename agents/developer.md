@@ -125,8 +125,9 @@ When implementing UI issues where design docs exist:
 
 - **Use design tokens**: Import CSS custom properties from `docs/design_system.md`. Never hardcode colors, fonts, spacing, or shadows — use the design system variables.
 - **Match the prototype**: The HTML/CSS in `prototype/screens/` is the visual target. Your implementation should look identical when rendered, even if the underlying framework differs (e.g., Lit components vs. static HTML).
+- **Use downloaded Figma assets**: If `figma-export/assets/` exists, use the SVG/PNG files from there for icons and images. Read `figma-export/design_data.json` → `assets` array to find the correct file for each element. NEVER use placeholder icons or emoji when a downloaded asset exists.
 - **Respect the philosophy**: Read `docs/design_philosophy.md` to understand the aesthetic intent. Don't introduce elements that contradict it (e.g., adding rounded gradient cards to a "Brutalist" design).
-- **Implement all states**: `docs/interactions.md` defines loading, empty, error, and success states per screen. Implement all of them, not just the happy path.
+- **Implement all states**: `docs/interactions.md` defines loading, empty, error, and success states per screen. Implement all of them, not just the happy path. If `figma-export/design_data.json` has `interaction_states`, use those colors for `:hover`, `:focus`, `:active`, `:disabled` CSS rules.
 - **Animations matter**: Copy transition durations, easings, and keyframes from the design system. Don't skip animations or substitute with generic transitions.
 - **Use the copy guide**: All user-facing strings (labels, placeholders, errors, empty states, toasts) must come from `docs/copy_guide.md`. Never invent UI text — use the canonical copy and glossary terms.
 

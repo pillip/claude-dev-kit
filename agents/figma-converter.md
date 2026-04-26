@@ -24,13 +24,40 @@ The input `figma-export/design_data.json` contains a `frames` array. Each frame 
 - `type`: FRAME, TEXT, RECTANGLE, COMPONENT, INSTANCE, GROUP, etc.
 - `width`, `height`: element dimensions
 - `background_color`: hex or rgba string
-- `border_color`, `border_width`: border properties
+- `gradients`: array of `{type: "linear"|"radial"|"angular"|"diamond", stops: [{color, position}]}` — use `linear-gradient()` / `radial-gradient()` in CSS
+- `has_background_image`: boolean — if true, the node has an IMAGE fill; check `assets` array for the downloaded file
+- `border_color`, `border_width`, `border_style`: border properties
 - `border_radius`: number or [TL, TR, BR, BL] array
 - `opacity`: 0–1 float
-- `effects`: array of `{type: "box-shadow", offset_x, offset_y, blur, spread, color}`
-- `layout`: auto-layout info `{mode: "row"|"column", gap, padding_top/right/bottom/left, align, cross_align}`
-- `text_style`: (TEXT nodes only) `{font_family, font_weight, font_size_px, line_height_ratio, letter_spacing_em, text_transform, color, text_content}`
+- `mix_blend_mode`: CSS mix-blend-mode value (only present when not "normal")
+- `overflow`: "hidden" or "auto" (only present when clipping is enabled)
+- `display`: "flex" (present when node uses auto-layout)
+- `position`: "absolute" (present when node is absolutely positioned within parent)
+- `effects`: array of `{type: "box-shadow", inset, offset_x, offset_y, blur, spread, color}`
+- `layout`: flex layout info `{mode: "row"|"column", gap, padding_top/right/bottom/left, justify_content, align_items, flex_wrap}`
+- `align_self`: "stretch" (when child stretches within parent auto-layout)
+- `flex_grow`: number (when child grows to fill available space)
+- `text_style`: (TEXT nodes only) `{font_family, font_weight, font_size_px, line_height_ratio, letter_spacing_em, text_align, text_transform, text_decoration, color, text_content}`
 - `children`: nested child nodes
+
+### Downloaded Assets
+The top-level `assets` array in design_data.json lists all downloaded icon/image files:
+```json
+{"name": "icon-search", "path": "figma-export/assets/icon-search.svg", "format": "svg", "node_id": "1:234"}
+```
+- **SVG assets**: Use `<img src="figma-export/assets/{filename}.svg" alt="{name}">` in prototype HTML
+- **PNG assets**: Use `<img src="figma-export/assets/{filename}@2x.png" alt="{name}">` with `width`/`height` attributes
+- **Match by node_id**: Each asset's `node_id` corresponds to a node in the tree. When you encounter that node, use the downloaded asset instead of a placeholder.
+
+### Interaction States
+The `summary.interaction_states` array contains detected component states:
+```json
+{"state": "hover", "name": "Button / Hover", "colors": ["#2563EB"]}
+```
+When states are present:
+- Generate CSS pseudo-class rules (`:hover`, `:focus`, `:active`, `:disabled`)
+- Use the state's `colors` for the pseudo-class styling
+- If no explicit state colors, darken/lighten the default color by 10% as a baseline
 
 ### Interpreting the Tree
 - **FRAME with layout** → likely a container (flex/grid)
@@ -80,6 +107,7 @@ The `platform` field in `design_data.json` determines the output format. Read `p
 - `<meta name="viewport">`, linked to `../styles.css`
 - Accessible: `alt` text, form `<label>`s, ARIA, keyboard navigable
 - Self-contained: opens via `file://`
+- **Asset references**: Use relative paths `../../figma-export/assets/{filename}.svg` for downloaded assets. NEVER use placeholder icons when a downloaded asset exists for that node.
 
 **Index** (`prototype/index.html`): navigation hub.
 
