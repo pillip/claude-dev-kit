@@ -158,8 +158,9 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
   - After 2 ship failures: escalate to human.
   - Never re-run a phase that already succeeded.
 - **Manual issue handling**: If a target issue has `Manual: true`, skip it and report back. (Sprint orchestrator should not dispatch manual issues, but guard against it.)
-- **Worktree cleanup**: Clean up worktrees for each issue after the phase completes (success or failure).
+- **Worktree cleanup**: Clean up worktrees for each issue after the phase completes (success or failure). Run: `bash scripts/wt_cleanup.sh <branch>`. If cleanup fails, log a warning but do not block. On PIPELINE failure (e.g., IMPLEMENT fails before SHIP), still clean up the worktree before returning.
 - **Scope discipline**: For IMPLEMENT/REVIEW/SHIP, execute ONLY the requested phase. For PIPELINE, execute all three phases in order via sub-Tasks — but do NOT loop or restart phases.
+- **Sub-Task context**: When dispatching sub-Tasks, pass only the issue spec and phase instruction. The sub-Task's skill re-reads all project docs (architecture.md, review_lessons.md, etc.) from the file system — do NOT duplicate docs in the sub-Task prompt.
 
 ## Sprint State File (docs/sprint_state.md)
 

@@ -155,6 +155,8 @@ If the result is `true`:
       ```bash
       python3 scripts/sprint_queue.py next-action --sprint-state docs/sprint_state.md --issues issues.md --max-parallel {MAX_PARALLEL}
       ```
+      **If the script exits with non-zero and no JSON output**: STOP the sprint and report the error. This indicates a parsing failure or circular dependency — do NOT proceed.
+
       Parse the JSON output. The result contains `action`, `targets`, and `reason` fields.
 
       - If action = **DONE** → **Go to step 5.**

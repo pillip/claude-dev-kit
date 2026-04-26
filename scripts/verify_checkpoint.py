@@ -782,11 +782,29 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
     return True
 
 
+def _ensure_deps_installed(wt: Path, cwd: str | None) -> None:
+    """Install dependencies in worktree if not already present."""
+    # JS/TS: install node_modules if package.json exists but node_modules doesn't
+    if (wt / "package.json").exists() and not (wt / "node_modules").is_dir():
+        print("  Installing npm dependencies in worktree...")
+        _run(["npm", "install", "--legacy-peer-deps"], cwd=cwd, timeout=120)
+
+    # Python: install if pyproject.toml exists but no .venv or site-packages
+    if (wt / "pyproject.toml").exists():
+        # Try uv sync first, fallback to pip
+        result = _run(["uv", "sync"], cwd=cwd, timeout=60)
+        if result.returncode != 0:
+            _run(["pip", "install", "-e", "."], cwd=cwd, timeout=60)
+
+
 def verify_implement_test(issue_id: str, **_) -> bool:
     """Tests pass AND meet minimum coverage threshold."""
     wt_path = _find_worktree_path(issue_id)
     cwd = wt_path if wt_path else None
     wt = Path(cwd) if cwd else Path.cwd()
+
+    # Ensure dependencies are installed before running tests
+    _ensure_deps_installed(wt, cwd)
 
     has_python = (
         (wt / "pyproject.toml").exists()
@@ -1131,20 +1149,39 @@ def verify_review_push(issue_id: str, **_) -> bool:
 
 
 def verify_ship_checks(issue_id: str, **_) -> bool:
-    """`gh pr checks` passes with at least one check present."""
+    """`gh pr checks` passes with at least one check present.
+
+    Waits up to 60 seconds for CI checks to appear (race condition:
+    CI may not have started yet when this runs immediately after PR creation).
+    """
     pr_num = _extract_pr_number(issue_id)
     if pr_num is None:
         return False
 
+    # Wait for CI checks to appear (up to 60 seconds)
+    max_wait = 60
+    waited = 0
+    lines: list[str] = []
     result = _run_with_retry(["gh", "pr", "checks", pr_num])
-    if result.returncode != 0:
-        print(f"FAIL: gh pr checks failed for PR #{pr_num}")
+    while waited < max_wait:
+        result = _run_with_retry(["gh", "pr", "checks", pr_num])
+        if result.returncode == 0:
+            lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
+            if lines:
+                break
+        if waited == 0:
+            print(f"  Waiting for CI checks on PR #{pr_num}...", flush=True)
+        time.sleep(5)
+        waited += 5
+
+    if not lines:
+        print(f"FAIL: PR #{pr_num} has no CI checks after {max_wait}s")
         return False
 
-    # Ensure there is at least one check (not just an empty success)
-    lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
-    if not lines:
-        print(f"FAIL: PR #{pr_num} has no CI checks configured")
+    if result.returncode != 0:
+        print(f"FAIL: gh pr checks failed for PR #{pr_num}")
+        if result.stdout:
+            print(result.stdout[-300:])
         return False
 
     print("PASS: PR checks are green")

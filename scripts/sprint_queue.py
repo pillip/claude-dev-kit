@@ -144,6 +144,48 @@ def parse_issues_metadata(text: str) -> dict[str, dict]:
     return issues
 
 
+# ── Dependency validation ───────────────────────────────────────────
+
+
+def detect_circular_deps(issues_meta: dict[str, dict]) -> list[str]:
+    """Detect circular Depends-On chains using DFS.
+
+    Returns the cycle as a list of issue IDs if found, empty list otherwise.
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {iid: WHITE for iid in issues_meta}
+    parent: dict[str, str] = {}
+
+    def _dfs(node: str) -> list[str]:
+        color[node] = GRAY
+        for dep in issues_meta.get(node, {}).get("depends_on", []):
+            if dep not in color:
+                continue  # dependency references an issue not in issues_meta
+            if color[dep] == GRAY:
+                # Found a cycle — reconstruct it
+                cycle = [dep, node]
+                cur = node
+                while parent.get(cur) and parent[cur] != dep:
+                    cur = parent[cur]
+                    cycle.append(cur)
+                cycle.reverse()
+                return cycle
+            if color[dep] == WHITE:
+                parent[dep] = node
+                result = _dfs(dep)
+                if result:
+                    return result
+        color[node] = BLACK
+        return []
+
+    for issue_id in issues_meta:
+        if color[issue_id] == WHITE:
+            result = _dfs(issue_id)
+            if result:
+                return result
+    return []
+
+
 # ── Queue computation ───────────────────────────────────────────────
 
 
@@ -344,6 +386,19 @@ def cmd_next_action(args: argparse.Namespace) -> int:
 
     sprint_rows = parse_sprint_table(sprint_text)
     if not sprint_rows:
+        # Distinguish between empty table and parse failure:
+        # Count non-header, non-separator data rows with pipe delimiters
+        import re as _re
+        data_lines = [
+            line for line in sprint_text.splitlines()
+            if line.strip().startswith("|") and line.strip().endswith("|")
+            and not _re.match(r"^\|[\s\-|]+\|$", line.strip())
+            and "Issue" not in line and "Phase" not in line
+        ]
+        if data_lines:
+            print("Error: sprint_state.md has data rows but parsing returned 0 rows", file=sys.stderr)
+            print("  Check table format: | Issue | Status | Attempts | Last Error | Phase |", file=sys.stderr)
+            return 2
         result = {
             "action": "DONE",
             "targets": [],
@@ -353,6 +408,19 @@ def cmd_next_action(args: argparse.Namespace) -> int:
         return 1
 
     issues_meta = parse_issues_metadata(issues_text)
+
+    # Detect circular dependencies before computing queues
+    cycle = detect_circular_deps(issues_meta)
+    if cycle:
+        print(f"Error: Circular Depends-On detected: {' → '.join(cycle)}", file=sys.stderr)
+        result = {
+            "action": "STUCK",
+            "targets": cycle,
+            "reason": f"Circular dependency: {' → '.join(cycle)}. Break the cycle in issues.md.",
+        }
+        print(json.dumps(result))
+        return 1
+
     queues = compute_queues(sprint_rows, issues_meta)
     result = choose_action(queues, args.max_parallel)
 
