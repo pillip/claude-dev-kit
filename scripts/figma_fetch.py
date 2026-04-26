@@ -33,6 +33,13 @@ from typing import Any
 
 FIGMA_API_BASE = "https://api.figma.com/v1"
 
+# Node types and name patterns that indicate exportable assets
+_VECTOR_TYPES = {"VECTOR", "BOOLEAN_OPERATION", "STAR", "LINE", "ELLIPSE", "REGULAR_POLYGON"}
+_ASSET_NAME_PATTERN = re.compile(
+    r"\b(?:icon|logo|image|img|illustration|asset|badge|avatar|thumbnail)\b",
+    re.IGNORECASE,
+)
+
 # --- URL Parsing ---
 
 
@@ -285,6 +292,166 @@ def walk_node_tree(
     return result
 
 
+# --- Asset Detection & Export ---
+
+
+def _has_image_fill(node: dict[str, Any]) -> bool:
+    """Check if a node has an IMAGE type fill."""
+    for fill in node.get("fills", []):
+        if fill.get("type") == "IMAGE" and fill.get("visible", True):
+            return True
+    return False
+
+
+def _is_exportable_asset(node: dict[str, Any]) -> bool:
+    """Determine if a Figma node should be exported as an image asset.
+
+    Criteria (any of):
+    - Vector type nodes (VECTOR, BOOLEAN_OPERATION, STAR, LINE, ELLIPSE, etc.)
+    - Nodes with IMAGE fills (raster images)
+    - Nodes whose name matches asset patterns (icon, logo, image, etc.)
+    - Nodes with explicit exportSettings in Figma
+    """
+    node_type = node.get("type", "")
+    name = node.get("name", "")
+
+    if node_type in _VECTOR_TYPES:
+        return True
+    if _has_image_fill(node):
+        return True
+    if _ASSET_NAME_PATTERN.search(name):
+        return True
+    if node.get("exportSettings"):
+        return True
+    return False
+
+
+def collect_exportable_nodes(
+    node: dict[str, Any], file_key: str,
+) -> list[dict[str, str]]:
+    """Walk the raw Figma API node tree and collect exportable asset nodes.
+
+    Returns list of dicts: {node_id, name, type, format}.
+    - Vector nodes → SVG
+    - Image fills → PNG @2x
+    - Named assets → SVG (vectors) or PNG (rasters)
+    """
+    assets: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+
+    def _walk(n: dict[str, Any]) -> None:
+        node_id = n.get("id", "")
+        if node_id in seen_ids:
+            return
+        if _is_exportable_asset(n):
+            seen_ids.add(node_id)
+            node_type = n.get("type", "")
+            # Choose format: vectors → SVG, rasters → PNG
+            if node_type in _VECTOR_TYPES:
+                fmt = "svg"
+            elif _has_image_fill(n):
+                fmt = "png"
+            else:
+                # Named assets: try SVG for small elements, PNG for larger
+                bbox = n.get("absoluteBoundingBox", {})
+                w = bbox.get("width", 0)
+                h = bbox.get("height", 0)
+                fmt = "svg" if w <= 128 and h <= 128 else "png"
+            assets.append({
+                "node_id": node_id,
+                "name": n.get("name", "untitled"),
+                "type": node_type,
+                "format": fmt,
+                "file_key": file_key,
+            })
+        for child in n.get("children", []):
+            _walk(child)
+
+    _walk(node)
+    return assets
+
+
+def _slugify(name: str) -> str:
+    """Convert a node name to a filesystem-safe slug."""
+    s = name.lower().strip()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_]+", "-", s)
+    s = re.sub(r"-+", "-", s)
+    return s.strip("-") or "untitled"
+
+
+def export_assets(
+    assets: list[dict[str, str]], token: str, out_dir: Path,
+) -> list[dict[str, str]]:
+    """Download exportable assets from Figma Image Export API.
+
+    Groups assets by (file_key, format) to minimize API calls.
+    Saves to out_dir/assets/{slug}.{format}.
+
+    Returns list of dicts: {name, path, format, node_id}.
+    """
+    if not assets:
+        return []
+
+    assets_dir = out_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Group by (file_key, format) for batch API calls
+    groups: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for asset in assets:
+        key = (asset["file_key"], asset["format"])
+        groups.setdefault(key, []).append(asset)
+
+    exported: list[dict[str, str]] = []
+
+    for (file_key, fmt), group in groups.items():
+        node_ids = [a["node_id"] for a in group]
+        ids_param = ",".join(urllib.parse.quote(nid, safe="") for nid in node_ids)
+        scale = "2" if fmt == "png" else "1"
+
+        endpoint = f"/images/{file_key}?ids={ids_param}&format={fmt}&scale={scale}"
+        try:
+            data = figma_api_get(endpoint, token)
+        except Exception as e:
+            print(f"WARN: Image export API failed: {e}", file=sys.stderr)
+            continue
+
+        images = data.get("images", {})
+
+        for asset in group:
+            image_url = images.get(asset["node_id"])
+            if not image_url:
+                print(f"WARN: No image URL for {asset['name']} ({asset['node_id']})", file=sys.stderr)
+                continue
+
+            slug = _slugify(asset["name"])
+            suffix = "@2x" if fmt == "png" else ""
+            filename = f"{slug}{suffix}.{fmt}"
+            filepath = assets_dir / filename
+
+            # Avoid duplicate filenames
+            counter = 1
+            while filepath.exists():
+                filename = f"{slug}-{counter}{suffix}.{fmt}"
+                filepath = assets_dir / filename
+                counter += 1
+
+            try:
+                req = urllib.request.Request(image_url)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    filepath.write_bytes(resp.read())
+                exported.append({
+                    "name": asset["name"],
+                    "path": str(filepath.relative_to(out_dir.parent)),
+                    "format": fmt,
+                    "node_id": asset["node_id"],
+                })
+            except Exception as e:
+                print(f"WARN: Failed to download {asset['name']}: {e}", file=sys.stderr)
+
+    return exported
+
+
 # --- Aggregation ---
 
 
@@ -431,6 +598,7 @@ def main() -> None:
         sys.exit(2)
 
     frames: list[dict[str, Any]] = []
+    all_raw_nodes: list[tuple[dict[str, Any], str]] = []  # (raw_node, file_key)
 
     for url in urls:
         try:
@@ -440,6 +608,7 @@ def main() -> None:
             continue
         print(f"Fetching: file={file_key}, node={node_id}...", file=sys.stderr)
         node = fetch_node(file_key, node_id, token)
+        all_raw_nodes.append((node, file_key))
         tree = walk_node_tree(node)
 
         # Detect breakpoint from frame width
@@ -494,10 +663,29 @@ def main() -> None:
                 seen_keys.add(key)
                 all_text_styles.append(ts)
 
+    # --- Asset detection & export ---
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    out_dir = repo_root / "figma-export"
+    out_dir.mkdir(exist_ok=True)
+
+    all_exportable: list[dict[str, str]] = []
+    for raw_node, fk in all_raw_nodes:
+        all_exportable.extend(collect_exportable_nodes(raw_node, fk))
+
+    exported_assets: list[dict[str, str]] = []
+    if all_exportable:
+        print(f"\nDetected {len(all_exportable)} exportable asset(s)...", file=sys.stderr)
+        exported_assets = export_assets(all_exportable, token, out_dir)
+        print(f"  Downloaded {len(exported_assets)} asset(s)", file=sys.stderr)
+    else:
+        print("\nNo exportable assets detected in the fetched frames.", file=sys.stderr)
+
     output = {
         "platform": platform,
         "platform_config": PLATFORM_CONFIG[platform],
         "frames": frames,
+        "assets": exported_assets,
         "summary": {
             "frame_count": len(frames),
             "breakpoints": [f["breakpoint"] for f in frames],
@@ -508,15 +696,11 @@ def main() -> None:
             "spacings": sorted(all_spacings),
             "border_radii": sorted(all_radii),
             "shadow_count": len(all_shadows),
+            "asset_count": len(exported_assets),
         },
     }
 
-    # Write output — resolve repo root so the file lands in a predictable place
-    # regardless of CWD
-    script_dir = Path(__file__).resolve().parent
-    repo_root = script_dir.parent
-    out_dir = repo_root / "figma-export"
-    out_dir.mkdir(exist_ok=True)
+    # Write output
     out_file = out_dir / "design_data.json"
     out_file.write_text(json.dumps(output, indent=2, ensure_ascii=False))
 
@@ -530,6 +714,7 @@ def main() -> None:
     print(f"  Spacing values: {len(s['spacings'])}", file=sys.stderr)
     print(f"  Border radii: {len(s['border_radii'])}", file=sys.stderr)
     print(f"  Shadows: {s['shadow_count']}", file=sys.stderr)
+    print(f"  Assets: {s['asset_count']}", file=sys.stderr)
 
     # Also print to stdout for skill to capture
     print(json.dumps(output["summary"], indent=2, ensure_ascii=False))

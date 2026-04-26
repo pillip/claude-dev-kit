@@ -99,9 +99,12 @@ Algorithm:
 
 2) Locate $ARGUMENTS in issues.md. Read the issue's Goal, Scope, AC, and Implementation Notes.
    - **Manual check**: If the issue has `Manual: true`, STOP immediately. Report to the user: "This issue requires manual action — see Implementation Notes." Do NOT proceed with automated implementation.
-2a) **Figma prototype upsert** (auto-detect, skip if no URLs found):
+2a) **Figma prototype upsert — MANDATORY when Figma URLs exist:**
    Scan the issue's Implementation Notes for Figma URLs (pattern: `figma.com/design/` or `figma.com/file/`).
-   If one or more Figma URLs are found:
+
+   **If NO Figma URLs found**: skip to step 2a checkpoint.
+
+   **If Figma URLs ARE found — you MUST execute ALL of the following steps:**
    1. Determine the platform from the issue's `Platform` field:
       - `mobile` → `--mobile`
       - `desktop` → `--desktop`
@@ -121,7 +124,8 @@ Algorithm:
    4. The updated prototype files become the visual ground truth.
       The developer's existing "Match the prototype" rule (step 2b UI context) handles the rest —
       no special "compact spec" or separate mechanism needed.
-   If no Figma URLs found: skip this step silently.
+
+   **Do NOT skip this step when Figma URLs exist. The checkpoint below WILL fail if figma_fetch.py was not executed.**
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase figma --issue $ARGUMENTS`

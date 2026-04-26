@@ -219,8 +219,10 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
 
     # FIGMA_TOKEN is required when Figma URLs are present
     if not os.environ.get("FIGMA_TOKEN"):
-        print(f"FAIL: {issue_id} has Figma URLs but FIGMA_TOKEN is not set")
+        print(f"FAIL: {issue_id} has {len(urls)} Figma URL(s) but FIGMA_TOKEN is not set")
+        print(f"  FIGMA_TOKEN is REQUIRED for issues with Figma URLs.")
         print(f"  Set it with: export FIGMA_TOKEN=figd_...")
+        print(f"  Then run: python3 scripts/figma_fetch.py {' '.join(urls)}")
         return False
 
     root = _repo_root()
@@ -229,7 +231,8 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
     data_file = root / "figma-export" / "design_data.json"
     if not data_file.exists():
         print(f"FAIL: {issue_id} has {len(urls)} Figma URL(s) but figma-export/design_data.json not found")
-        print(f"  Expected: python3 scripts/figma_fetch.py to produce this file")
+        print(f"  Step 2a was NOT executed. You MUST run figma_fetch.py before proceeding.")
+        print(f"  Run: python3 scripts/figma_fetch.py {' '.join(urls)}")
         return False
 
     # Verify the JSON has a summary section with actual data
@@ -263,11 +266,20 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
         print(f"  Expected {screen_glob} files from figma-converter agent (platform: {platform})")
         return False
 
+    # Verify assets were exported if any were detected
+    asset_count = summary.get("asset_count", 0)
+    assets_dir = root / "figma-export" / "assets"
+    actual_assets = list(assets_dir.glob("*.*")) if assets_dir.is_dir() else []
+    if asset_count > 0 and not actual_assets:
+        print(f"FAIL: design_data.json reports {asset_count} asset(s) but figma-export/assets/ is empty")
+        print(f"  Asset download may have failed — check network and FIGMA_TOKEN permissions")
+        return False
+
     color_count = len(summary.get("colors", []))
     style_count = len(summary.get("text_styles", []))
     frame_count = summary.get("frame_count", 0)
     screen_count = len(list(screen_dir.glob(screen_glob)))
-    print(f"PASS: {issue_id} — Figma prototype upserted (platform={platform}, {frame_count} frame(s), {screen_count} screen(s), {color_count} colors, {style_count} text styles)")
+    print(f"PASS: {issue_id} — Figma prototype upserted (platform={platform}, {frame_count} frame(s), {screen_count} screen(s), {color_count} colors, {style_count} text styles, {len(actual_assets)} asset(s))")
     return True
 
 
