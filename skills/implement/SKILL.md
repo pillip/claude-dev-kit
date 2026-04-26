@@ -233,6 +233,33 @@ Algorithm:
 > Run: `bash scripts/checkpoint.sh --skill implement --phase test --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
+9.5) **Visual fidelity loop** (UI issues with Figma data only — skip if no `figma-export/design_data.json`):
+   Iteratively refine the implementation until it matches the prototype within 1% pixel diff.
+
+   ```
+   MAX_VISUAL_ITERATIONS = 3
+   for i in 1..MAX_VISUAL_ITERATIONS:
+     Run: python3 scripts/verify_visual_diff.py --project-path $WT --threshold 1
+     IF exit code = 0 (diff ≤ 1%): BREAK — visual match achieved.
+     IF exit code ≠ 0:
+       1. Read the diff image at figma-export/visual-diff/{viewport}_diff.png
+          Red pixels = real differences. Yellow pixels = anti-aliasing (OK).
+       2. Read the prototype screenshot and implementation screenshot side by side.
+       3. Identify WHAT is different: wrong colors? wrong layout? missing elements? wrong spacing?
+       4. Fix the implementation code to match the prototype.
+       5. Re-run tests to ensure fixes don't break functionality.
+       6. Continue loop.
+   IF all MAX_VISUAL_ITERATIONS exhausted and still > 1%:
+     Log: "Visual diff {diff}% after {MAX_VISUAL_ITERATIONS} iterations — proceeding with best effort."
+     Continue to step 10 (do NOT block — review checkpoint will catch remaining issues).
+   ```
+
+   Also run Figma compliance check:
+   ```
+   python3 scripts/verify_figma_compliance.py --project-path $WT
+   ```
+   If violations found: fix them and re-run. This catches token mismatches (wrong colors, fonts, spacings) that the pixel diff might not catch due to tolerance.
+
 10) Commit + push (from `$WT/`).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
