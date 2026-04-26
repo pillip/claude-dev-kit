@@ -363,12 +363,13 @@ class TestCheckAcTestCoverage:
         (tests_dir / "test_login.py").write_text(
             "def test_authenticate():\n    assert True\n"
         )
-        vc._check_ac_test_coverage(
+        result = vc._check_ac_test_coverage(
             "ISSUE-001", str(repo_root), ["tests/test_login.py"]
         )
         captured = capsys.readouterr()
-        # Should warn about the uncovered AC
-        assert "WARN" in captured.out
+        # Should fail on uncovered AC (blocking check)
+        assert "FAIL" in captured.out
+        assert result is True  # True means failure detected
 
     def test_no_warning_when_all_covered(self, repo_root, capsys):
         _setup_issues(

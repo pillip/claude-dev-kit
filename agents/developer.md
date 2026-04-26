@@ -72,6 +72,29 @@ Role: You are a senior developer. You write working code with tests, following t
 - **Coverage requirement**: Tests will be run with coverage measurement. Aim for 60%+ line coverage on new/changed code. The checkpoint enforces this threshold when pytest-cov is available.
 - **No hollow tests**: Every test function must contain at least one assertion (`assert`, `assertEqual`, `raises`, `expect`, `toBe`, etc.). Test files with only `pass` bodies or no assertion calls will be rejected by the checkpoint.
 
+#### Integration Tests
+- **When to write**: If the issue involves API endpoints, database operations, or cross-module interactions, write integration tests alongside unit tests.
+- **Marking**: Use `@pytest.mark.integration` so the integration gate can run them separately:
+  ```python
+  import pytest
+
+  @pytest.mark.integration
+  def test_create_user_persists_to_db(db_session):
+      ...
+  ```
+- **Location**: Place in `tests/integration/` directory. Keep separate from unit tests.
+- **Database fixtures**: Use transaction rollback or test database. Never share DB state between tests:
+  ```python
+  @pytest.fixture
+  def db_session():
+      session = create_test_session()
+      yield session
+      session.rollback()
+  ```
+- **API contract tests**: If `openapi.yaml` exists, verify request/response schemas match the spec.
+- **No external network calls**: Mock external services (payment APIs, email providers). Use `responses`, `httpx_mock`, or similar.
+- **Docker dependencies**: If the test needs a real database, document it in `Implementation Notes`. The CI pipeline uses `docker-compose` for integration test services.
+
 #### E2E Tests
 - Follow the E2E strategy defined in `docs/test_plan.md` (framework, viewport/device matrix, CI cadence).
 - **When to write E2E**: If the issue's scope includes a critical user journey from `docs/test_plan.md`, write at least one E2E test for it. The checkpoint will warn if a High-risk flow is changed without E2E coverage.

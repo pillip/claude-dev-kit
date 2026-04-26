@@ -18,6 +18,12 @@ Hard requirements:
 
 Algorithm:
 1) Ensure `gh` authenticated (gh auth status).
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `{{CHECKPOINT_CMD}} --skill implement --phase test-plan --issue $ARGUMENTS`
+> Verifies `docs/test_plan.md` exists with a non-empty Risk Matrix.
+> If exit code ≠ 0: STOP — run `/kickoff` first or create test_plan.md manually.
+
 2) Locate $ARGUMENTS in issues.md. Read the issue's Goal, Scope, AC, and Implementation Notes.
    - **Manual check**: If the issue has `Manual: true`, STOP immediately. Report to the user: "This issue requires manual action — see Implementation Notes." Do NOT proceed with automated implementation.
 2a) **Figma prototype upsert** (auto-detect, skip if no URLs found):

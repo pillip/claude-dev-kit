@@ -1100,9 +1100,9 @@ def test_implement_skill_has_tdd_flow():
     tw_pos = content.find("--phase tests-written")
     red_pos = content.find("--phase red")
     code_pos = content.find("--phase code")
-    # Use regex to find "--phase test " (with space/end) to avoid matching "--phase tests-written"
+    # Use regex to find "--phase test " to avoid matching "--phase tests-written" or "--phase test-plan"
     import re as _re
-    test_match = _re.search(r"--phase test\b(?!s)", content)
+    test_match = _re.search(r"--phase test(?:\s|$)", content)
     test_pos = test_match.start() if test_match else -1
     assert tw_pos < red_pos < code_pos < test_pos, (
         "Implement skill checkpoints not in TDD order: tests-written → red → code → test"

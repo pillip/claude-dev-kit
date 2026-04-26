@@ -271,6 +271,43 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
     return True
 
 
+def verify_implement_test_plan(issue_id: str, **_) -> bool:
+    """Verify docs/test_plan.md exists and has a non-empty Risk Matrix.
+
+    test_plan.md is required so the developer knows which flows are high-risk
+    and what test types (unit/integration/e2e) each flow needs.
+    """
+    root = _repo_root()
+    test_plan = root / "docs" / "test_plan.md"
+    if not test_plan.exists():
+        print("FAIL: docs/test_plan.md not found")
+        print("  Run /kickoff first to generate a test plan, or create one manually.")
+        return False
+
+    content = test_plan.read_text(encoding="utf-8")
+
+    # Check Risk Matrix has at least one data row (not just the header)
+    # The template has: | Flow | Likelihood | Impact | Risk | Coverage Level |
+    # A filled row would be: | Login | High | High | Critical | unit + e2e |
+    risk_rows = re.findall(
+        r"^\|[^|]+\|[^|]+\|[^|]+\|[^|]+\|[^|]+\|",
+        content,
+        re.MULTILINE,
+    )
+    # Filter out header and separator rows
+    data_rows = [
+        r for r in risk_rows
+        if "Flow" not in r and "---" not in r and r.strip("| \n-")
+    ]
+    if not data_rows:
+        print("FAIL: docs/test_plan.md exists but Risk Matrix is empty")
+        print("  Fill in the Risk Matrix so developers know which flows need deep testing.")
+        return False
+
+    print(f"PASS: test_plan.md exists with {len(data_rows)} risk-assessed flow(s)")
+    return True
+
+
 def verify_implement_issue(issue_id: str, **_) -> bool:
     """GH-Issue field exists in issues.md and `gh issue view` succeeds."""
     block = _find_issue_block(issue_id)
@@ -388,16 +425,21 @@ def _has_real_tests(filepath: str, wt_path: str) -> bool:
     return True  # Unknown language, pass through
 
 
-def _check_ac_test_coverage(issue_id: str, wt_path: str, test_files: list[str]) -> None:
-    """Warn if AC items don't appear to have corresponding tests (advisory only)."""
+def _check_ac_test_coverage(issue_id: str, wt_path: str, test_files: list[str]) -> bool:
+    """Check if AC items have corresponding tests. Returns True if coverage is insufficient.
+
+    Matching strategy: extract meaningful keywords (5+ chars) from each AC line,
+    then search test content for those keywords. Also searches for test function
+    names that reference key verbs/nouns from the AC.
+    """
     block = _find_issue_block(issue_id)
     if not block:
-        return
+        return False
 
     # Extract AC lines: lines starting with "- [ ]" or "- [x]" or numbered items under AC
     ac_lines = re.findall(r"(?:^[-*]\s+\[.\]\s+|^\s+\d+\.\s+)(.+)", block, re.MULTILINE)
     if not ac_lines:
-        return
+        return False
 
     # Read all test content
     test_content = ""
@@ -411,17 +453,37 @@ def _check_ac_test_coverage(issue_id: str, wt_path: str, test_files: list[str]) 
 
     test_content_lower = test_content.lower()
 
+    # Also extract test function names for matching
+    test_func_names = " ".join(
+        re.findall(r"(?:def |function |it\(|test\()[\s'\"]*([\w_]+)", test_content_lower)
+    )
+
     uncovered = []
     for ac in ac_lines:
-        keywords = [w.lower() for w in re.findall(r"\b\w{5,}\b", ac)]
-        if keywords and not any(kw in test_content_lower for kw in keywords[:5]):
+        # Extract keywords (5+ chars, skip common stop words)
+        stop_words = {"given", "which", "should", "their", "there", "these", "those", "about", "after", "before", "between"}
+        keywords = [
+            w.lower() for w in re.findall(r"\b\w{5,}\b", ac)
+            if w.lower() not in stop_words
+        ]
+        if not keywords:
+            continue
+
+        # Check if any keyword appears in test content or test function names
+        found_in_content = any(kw in test_content_lower for kw in keywords[:7])
+        found_in_funcs = any(kw in test_func_names for kw in keywords[:7])
+
+        if not found_in_content and not found_in_funcs:
             uncovered.append(ac.strip()[:80])
 
     if uncovered:
-        print(f"WARN: {len(uncovered)} AC item(s) may lack test coverage:")
-        for ac in uncovered[:3]:
+        print(f"FAIL: {len(uncovered)} AC item(s) have no corresponding test coverage:")
+        for ac in uncovered[:5]:
             print(f"  - {ac}")
-        print("  Consider adding tests that cover these acceptance criteria.")
+        print("  Each AC must map to at least one test case.")
+        return True
+
+    return False
 
 
 def verify_implement_red(issue_id: str, **_) -> bool:
@@ -558,10 +620,35 @@ def verify_implement_tests_written(issue_id: str, **_) -> bool:
         print("  JS/TS: it()/test() with expect/toBe/toEqual/toThrow")
         return False
 
-    # Advisory: check AC coverage (warns but does not fail)
-    _check_ac_test_coverage(issue_id, wt_path, all_test_files)
+    # Check test type coverage based on issue characteristics
+    e2e_pattern = re.compile(r"(?:^|/)(?:e2e|tests/e2e)/")
+    integration_pattern = re.compile(r"(?:^|/)(?:integration|tests/integration)/")
+    e2e_files = [f for f in all_test_files if e2e_pattern.search(f)]
+    integration_files = [f for f in all_test_files if integration_pattern.search(f)]
+
+    # UI issues should have e2e tests
+    if _is_ui_issue(issue_id) and not e2e_files:
+        print(f"FAIL: {issue_id} is a UI issue but no e2e test files found")
+        print("  UI issues must include at least one e2e test.")
+        print("  Web: tests/e2e/*.spec.ts | Mobile: e2e/*.yaml or e2e/*.test.ts")
+        return False
+
+    # Issues touching high-risk flows should have integration tests
+    if _test_plan_has_high_risk(_repo_root()) and not integration_files:
+        print(f"WARN: High-risk flows in test_plan.md but no integration tests found")
+        print("  Consider adding tests in tests/integration/ with @pytest.mark.integration")
+        # Warning only — not all issues touch high-risk flows
+
+    # AC coverage check — now blocking
+    ac_fail = _check_ac_test_coverage(issue_id, wt_path, all_test_files)
+    if ac_fail:
+        return False
 
     print(f"PASS: {len(all_test_files)} test file(s) with real assertions: {', '.join(all_test_files)}")
+    if e2e_files:
+        print(f"  e2e: {', '.join(e2e_files)}")
+    if integration_files:
+        print(f"  integration: {', '.join(integration_files)}")
     return True
 
 
@@ -622,6 +709,20 @@ def _run_js_tests_in_worktree(cwd: str | None) -> bool:
             print(result.stdout[-500:])
         return False
     return True
+
+
+def _test_plan_has_high_risk(root: Path) -> bool:
+    """Check if test_plan.md Risk Matrix contains High or Critical risk flows."""
+    test_plan = root / "docs" / "test_plan.md"
+    if not test_plan.exists():
+        return False
+    content = test_plan.read_text(encoding="utf-8")
+    # Look for High or Critical in Risk column of the Risk Matrix table
+    return bool(re.search(
+        r"^\|[^|]+\|[^|]+\|[^|]+\|\s*(?:High|Critical)\s*\|",
+        content,
+        re.MULTILINE | re.IGNORECASE,
+    ))
 
 
 def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
@@ -703,9 +804,14 @@ def verify_implement_test(issue_id: str, **_) -> bool:
     if ok:
         print("PASS: tests passed")
 
-    # Run verify_gates as non-blocking warning (gate failures don't block implement)
+    # Run verify_gates — blocking if test_plan.md has High/Critical risk flows
     if ok:
-        _run_verify_gates(str(wt), blocking=False)
+        has_high_risk = _test_plan_has_high_risk(_repo_root())
+        if has_high_risk:
+            print("  High-risk flows detected in test_plan.md — gates are BLOCKING")
+            ok = ok and _run_verify_gates(str(wt), blocking=True)
+        else:
+            _run_verify_gates(str(wt), blocking=False)
 
     return ok
 
@@ -1159,6 +1265,7 @@ def verify_mobile_uiux_system(issue_id: str) -> bool:
 # ── Registry ─────────────────────────────────────────────────────────
 
 VERIFIERS = {
+    ("implement", "test-plan"): verify_implement_test_plan,
     ("implement", "figma"): verify_implement_figma,
     ("implement", "issue"): verify_implement_issue,
     ("implement", "worktree"): verify_implement_worktree,

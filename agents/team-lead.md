@@ -180,7 +180,7 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 **Checkpoint coverage:**
 | Skill | Phases |
 |-------|--------|
-| implement | figma (auto-skips if no Figma URLs), issue, worktree, tests-written, red, code, test, push, pr, registry |
+| implement | test-plan, figma (auto-skips if no Figma URLs), issue, worktree, tests-written, red, code, test, push, pr, registry |
 | review | checkout, review, ui-review (UI issues only — auto-skips for non-UI), test-quality, test, push |
 | ship | checks, merge, smoke, cleanup |
 
