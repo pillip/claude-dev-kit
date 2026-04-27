@@ -275,14 +275,23 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
     Returns (css_content, component_map).
     """
     # Build asset lookup: node_name → relative path
+    # Paths in design_data.json are relative to project root (e.g., "figma-export/assets/icon.svg")
+    # But skeleton.html and figma_styles.css live inside figma-export/,
+    # so we strip the "figma-export/" prefix for correct relative references.
     assets_by_node: dict[str, str] = {}
     for asset in design_data.get("assets", []):
-        assets_by_node[asset["name"]] = asset["path"]
+        path = asset["path"]
+        if path.startswith("figma-export/"):
+            path = path[len("figma-export/"):]
+        assets_by_node[asset["name"]] = path
 
     # Also map by node_id
     assets_by_id: dict[str, str] = {}
     for asset in design_data.get("assets", []):
-        assets_by_id[asset.get("node_id", "")] = asset["path"]
+        path = asset.get("path", "")
+        if path.startswith("figma-export/"):
+            path = path[len("figma-export/"):]
+        assets_by_id[asset.get("node_id", "")] = path
 
     all_rules: list[dict] = []
     for frame in design_data.get("frames", []):
