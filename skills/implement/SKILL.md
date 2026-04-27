@@ -115,19 +115,31 @@ Algorithm:
       ```
       If the script exits with non-zero (e.g., FIGMA_TOKEN not set, invalid URL, API error):
       **STOP** and report the error to the user. Do NOT proceed — the issue explicitly requires Figma data.
-   2. Read `figma-export/design_data.json` and existing `docs/design_system.md` (if any).
-   3. Invoke the **figma-converter** agent (via Task) with this explicit context:
-      - Pass the full content of `figma-export/design_data.json`
-      - Tell it to read the `assets` array and reference downloaded files in `figma-export/assets/`
-      - Tell it to check `summary.interaction_states` and generate CSS pseudo-class rules (:hover, :focus, :active, :disabled)
-      - Tell it to handle `gradients` fields and generate CSS `linear-gradient()`/`radial-gradient()`
-      - Instruct it to **upsert** (preserve existing prototype files, only add/update screens from this fetch)
-      - Generate or update `prototype/screens/<screen>.html` for each fetched frame
-      - Update `prototype/styles.css` with any new tokens from the Figma data
-      - Update `prototype/index.html` to include new screen links
-   4. The updated prototype files become the visual ground truth.
-      The developer's existing "Match the prototype" rule (step 2b UI context) handles the rest —
-      no special "compact spec" or separate mechanism needed.
+   2. `figma_fetch.py` automatically generates:
+      - `figma-export/design_data.json` — full node tree data
+      - `figma-export/figma_styles.css` — complete CSS rules (gradients, shadows, fonts, positioning, responsive, states)
+      - `figma-export/component_map.json` — node→class→asset mapping with html_hint
+      - `figma-export/assets/` — downloaded SVG/PNG icons and images
+      - `figma-export/renders/` — Figma-rendered reference PNGs
+   3. Invoke the **figma-converter** agent (via Task) with this prompt:
+      ```
+      Build semantic HTML prototypes for each Figma frame.
+
+      Your visual target: the render PNGs in figma-export/renders/
+      Your CSS: figma-export/figma_styles.css (import, do not rewrite)
+      Your data: figma-export/design_data.json (text content + hierarchy)
+      Your assets: figma-export/component_map.json (class names + asset html_hints)
+
+      Study each render PNG carefully. Build HTML that visually matches it.
+      Use CSS classes from figma_styles.css. Use text from design_data.json.
+      Use <img> tags from component_map.json html_hint fields.
+
+      Output: prototype/screens/<frame_name>.html per frame.
+      Preserve existing prototype files (upsert mode).
+      ```
+   4. The figma-converter generates prototype HTML by **visually interpreting** the render PNGs —
+      not by programmatic tree walking. This produces correct semantic structure (sections, cards,
+      overlapping backgrounds with text, navigation) that matches the actual Figma design.
 
    **Do NOT skip this step when Figma URLs exist. The checkpoint below WILL fail if figma_fetch.py was not executed.**
 

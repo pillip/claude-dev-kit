@@ -389,10 +389,9 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
     map_path = out_dir / "component_map.json"
     map_path.write_text(json.dumps(component_map, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    # Generate HTML skeleton
-    html_content = generate_html_skeleton(design_data, all_rules, assets_by_node)
-    html_path = out_dir / "skeleton.html"
-    html_path.write_text(html_content, encoding="utf-8")
+    # NOTE: skeleton.html is NOT generated here. The figma-converter LLM agent
+    # generates proper semantic HTML by interpreting the render PNGs visually.
+    # Programmatic tree-walking cannot reproduce complex design layouts.
 
     # Generate responsive CSS (if multiple viewports)
     responsive_css = generate_responsive_css(design_data, assets_by_node)
