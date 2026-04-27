@@ -316,7 +316,249 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
     map_path = out_dir / "component_map.json"
     map_path.write_text(json.dumps(component_map, indent=2, ensure_ascii=False), encoding="utf-8")
 
+    # Generate HTML skeleton
+    html_content = generate_html_skeleton(design_data, all_rules, assets_by_node)
+    html_path = out_dir / "skeleton.html"
+    html_path.write_text(html_content, encoding="utf-8")
+
+    # Generate responsive CSS (if multiple viewports)
+    responsive_css = generate_responsive_css(design_data, assets_by_node)
+    if responsive_css:
+        responsive_path = out_dir / "figma_responsive.css"
+        responsive_path.write_text(responsive_css, encoding="utf-8")
+        lines.append("")
+        lines.append(responsive_css)
+        css_content = "\n".join(lines)
+        css_path.write_text(css_content, encoding="utf-8")
+
+    # Generate interaction state CSS
+    state_css = generate_state_css(design_data)
+    if state_css:
+        lines.append("")
+        lines.append(state_css)
+        css_content = "\n".join(lines)
+        css_path.write_text(css_content, encoding="utf-8")
+
     return css_content, component_map
+
+
+# ── HTML Skeleton Generator ─────────────────────────────────────────
+
+
+def generate_html_skeleton(
+    design_data: dict,
+    rules: list[dict],
+    assets_by_node: dict[str, str],
+) -> str:
+    """Generate a complete HTML skeleton from the Figma node tree.
+
+    Includes all text content, asset references, and CSS class names.
+    The developer copies this structure and adapts to their framework.
+    """
+    html_lines = [
+        "<!DOCTYPE html>",
+        '<!-- AUTO-GENERATED from Figma — copy this structure to your implementation -->',
+        '<html lang="en">',
+        "<head>",
+        '  <meta charset="UTF-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '  <link rel="stylesheet" href="figma_styles.css">',
+        "  <title>Figma Skeleton</title>",
+        "</head>",
+        "<body>",
+    ]
+
+    # Build a class lookup
+    rules_by_name: dict[str, dict] = {r["node_name"]: r for r in rules}
+
+    def _node_to_html(node: dict, indent: int = 1) -> None:
+        name = node.get("name", "")
+        node_type = node.get("type", "")
+        prefix = "  " * indent
+
+        if not name or node_type in ("GROUP",):
+            for child in node.get("children", []):
+                _node_to_html(child, indent)
+            return
+
+        rule = rules_by_name.get(name)
+        class_name = rule["class_name"] if rule else _slugify_class(name)
+        asset_path = assets_by_node.get(name)
+        ts = node.get("text_style", {})
+        text = ts.get("text_content", "") if ts else ""
+        children = node.get("children", [])
+
+        # Determine HTML tag
+        if asset_path:
+            w = node.get("width", "")
+            h = node.get("height", "")
+            html_lines.append(f'{prefix}<img src="{asset_path}" alt="{name}" '
+                              f'width="{w}" height="{h}" class="{class_name}">')
+            return
+
+        if node_type == "TEXT" and text:
+            # Choose tag based on font size
+            fs = ts.get("font_size_px", 16) if ts else 16
+            if fs >= 32:
+                tag = "h1"
+            elif fs >= 24:
+                tag = "h2"
+            elif fs >= 20:
+                tag = "h3"
+            elif fs >= 14:
+                tag = "p"
+            else:
+                tag = "span"
+            html_lines.append(f'{prefix}<{tag} class="{class_name}">{text}</{tag}>')
+            return
+
+        # Container elements
+        name_lower = name.lower()
+        if "nav" in name_lower or "header" in name_lower:
+            tag = "nav"
+        elif "footer" in name_lower:
+            tag = "footer"
+        elif "main" in name_lower or "content" in name_lower:
+            tag = "main"
+        elif "section" in name_lower:
+            tag = "section"
+        elif "button" in name_lower or "btn" in name_lower:
+            tag = "button"
+        elif "input" in name_lower or "field" in name_lower:
+            tag = "input"
+        elif "link" in name_lower or "anchor" in name_lower:
+            tag = "a"
+        else:
+            tag = "div"
+
+        if tag == "input":
+            html_lines.append(f'{prefix}<input class="{class_name}" placeholder="{name}">')
+            return
+
+        if children:
+            html_lines.append(f'{prefix}<{tag} class="{class_name}">')
+            for child in children:
+                _node_to_html(child, indent + 1)
+            html_lines.append(f'{prefix}</{tag}>')
+        else:
+            content = text or name
+            html_lines.append(f'{prefix}<{tag} class="{class_name}">{content}</{tag}>')
+
+    for frame in design_data.get("frames", []):
+        tree = frame.get("tree", {})
+        breakpoint = frame.get("breakpoint", "desktop")
+        html_lines.append(f'  <!-- Frame: {tree.get("name", "")} ({breakpoint}) -->')
+        _node_to_html(tree)
+
+    html_lines.extend(["</body>", "</html>", ""])
+    return "\n".join(html_lines)
+
+
+# ── Responsive CSS Generator ────────────────────────────────────────
+
+
+def generate_responsive_css(
+    design_data: dict,
+    assets_by_node: dict[str, str],
+) -> str:
+    """Generate @media queries for different Figma viewport frames."""
+    frames = design_data.get("frames", [])
+    if len(frames) <= 1:
+        return ""
+
+    breakpoint_map = {
+        "mobile": "@media (max-width: 767px)",
+        "tablet": "@media (min-width: 768px) and (max-width: 1023px)",
+        "desktop": "@media (min-width: 1024px)",
+    }
+
+    lines = [
+        "",
+        "/* ── Responsive overrides (per-viewport) ────────────────── */",
+        "",
+    ]
+
+    for frame in frames:
+        bp = frame.get("breakpoint", "desktop")
+        media = breakpoint_map.get(bp)
+        if not media:
+            continue
+
+        tree = frame.get("tree", {})
+        frame_rules = generate_node_css(tree, assets_by_node)
+
+        if not frame_rules:
+            continue
+
+        lines.append(f"/* {bp} viewport */")
+        lines.append(f"{media} {{")
+        for rule in frame_rules:
+            if not rule["css_rules"]:
+                continue
+            lines.append(f"  .{rule['class_name']} {{")
+            for css_rule in rule["css_rules"]:
+                lines.append(f"    {css_rule};")
+            lines.append("  }")
+        lines.append("}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# ── Interaction State CSS Generator ─────────────────────────────────
+
+
+def generate_state_css(design_data: dict) -> str:
+    """Generate CSS pseudo-class rules from Figma interaction states."""
+    summary = design_data.get("summary", {})
+    states = summary.get("interaction_states", [])
+    if not states:
+        return ""
+
+    state_to_pseudo = {
+        "hover": ":hover",
+        "focus": ":focus",
+        "active": ":active",
+        "pressed": ":active",
+        "disabled": ":disabled",
+        "selected": "[aria-selected='true']",
+        "checked": ":checked",
+    }
+
+    lines = [
+        "",
+        "/* ── Interaction states (from Figma variants) ────────────── */",
+        "",
+    ]
+
+    for state in states:
+        state_name = state.get("state", "")
+        pseudo = state_to_pseudo.get(state_name)
+        if not pseudo:
+            continue
+
+        element_name = state.get("name", "")
+        # Derive base class from element name (remove state part)
+        base_name = re.sub(r"[\s/]*(?:hover|focus|active|pressed|disabled|selected|checked)[\s/]*",
+                           "", element_name, flags=re.IGNORECASE).strip(" /")
+        if not base_name:
+            continue
+
+        class_name = _slugify_class(base_name)
+        colors = state.get("colors", [])
+
+        if colors:
+            lines.append(f"/* Figma: {element_name} */")
+            lines.append(f".{class_name}{pseudo} {{")
+            # Use first color as background, second as text if available
+            if len(colors) >= 1:
+                lines.append(f"  background-color: {colors[0]};")
+            if len(colors) >= 2:
+                lines.append(f"  color: {colors[1]};")
+            lines.append("}")
+            lines.append("")
+
+    return "\n".join(lines) if len(lines) > 3 else ""
 
 
 def main(argv: list[str] | None = None) -> int:

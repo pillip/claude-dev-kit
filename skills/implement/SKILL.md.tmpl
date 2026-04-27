@@ -78,9 +78,9 @@ Algorithm:
      - `docs/interactions.md` — states, transitions, animations for the relevant flow
      - `docs/copy_guide.md` — UI labels, error messages, empty states, glossary
      - `prototype/screens/*.html` — visual reference for the relevant screen
-     - `figma-export/figma_styles.css` — **ready-to-use CSS rules** generated from Figma (import directly!)
-     - `figma-export/component_map.json` — maps Figma node names to CSS classes and asset paths
-     - `figma-export/design_data.json` — raw Figma design tokens (for reference if figma_styles.css not available)
+     - `figma-export/skeleton.html` — **complete HTML structure** to copy into implementation (semantic tags, text, assets, CSS classes)
+     - `figma-export/figma_styles.css` — **ready-to-use CSS rules** (includes responsive @media queries + :hover/:focus states)
+     - `figma-export/component_map.json` — maps Figma nodes to CSS classes, asset paths (with html_hint), children order
      - `figma-export/assets/` — downloaded SVG/PNG icons and images from Figma
    - **Mobile UI context** — read all of the following in parallel (when the issue involves mobile/React Native work):
      - `docs/design_system_mobile.md` — React Native design tokens, component specs

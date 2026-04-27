@@ -123,7 +123,11 @@ Role: You are a senior developer. You write working code with tests, following t
 
 When implementing UI issues where design docs exist:
 
-- **Import Figma CSS directly**: If `figma-export/figma_styles.css` exists, **import it** into your implementation. This file contains complete CSS rules for every Figma element — gradients, shadows, typography, spacing, border-radius — all pre-generated. Use the CSS class names defined there (check `figma-export/component_map.json` for Figma node → CSS class mapping). This eliminates the need to manually interpret design_data.json.
+- **Use the generated Figma files**: If `figma-export/` exists, use these files directly:
+  - `figma-export/skeleton.html` — **complete HTML structure** with all text, assets, CSS classes. Copy this into your implementation and adapt to your framework (React/Vue/Django).
+  - `figma-export/figma_styles.css` — **complete CSS rules** for every element (gradients, shadows, typography, layout). Import directly.
+  - `figma-export/component_map.json` — maps Figma node names to CSS classes, asset paths, children order, and ready-to-paste `html_hint` for each asset.
+  - These files eliminate the need to interpret design_data.json manually.
 - **Use design tokens**: Import CSS custom properties from `docs/design_system.md`. Never hardcode colors, fonts, spacing, or shadows — use the design system variables. When both figma_styles.css and design tokens exist, prefer figma_styles.css (it's generated from the same Figma data but already converted to CSS).
 - **Match the prototype**: The HTML/CSS in `prototype/screens/` is the visual target. Your implementation should look identical when rendered, even if the underlying framework differs (e.g., Lit components vs. static HTML).
 - **Use downloaded Figma assets**: If `figma-export/assets/` exists, use the SVG/PNG files from there for icons and images. Read `figma-export/component_map.json` to find which asset belongs to which element (the `asset_path` field maps Figma node names to downloaded files). NEVER use placeholder icons or emoji when a downloaded asset exists.
