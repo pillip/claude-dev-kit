@@ -1164,6 +1164,24 @@ def main() -> None:
     print(f"  Shadows: {s['shadow_count']}", file=sys.stderr)
     print(f"  Assets: {s['asset_count']}", file=sys.stderr)
 
+    # --- Generate ready-to-use CSS from node tree ---
+    try:
+        from generate_figma_css import generate_css_file
+        _, component_map = generate_css_file(output, out_dir)
+        print(f"\n  Generated figma_styles.css ({len(component_map)} components)", file=sys.stderr)
+        print(f"  Generated component_map.json", file=sys.stderr)
+    except Exception as e:
+        # Try with full path
+        try:
+            scripts_dir = Path(__file__).resolve().parent
+            sys.path.insert(0, str(scripts_dir))
+            from generate_figma_css import generate_css_file as gen_css
+            _, component_map = gen_css(output, out_dir)
+            print(f"\n  Generated figma_styles.css ({len(component_map)} components)", file=sys.stderr)
+            print(f"  Generated component_map.json", file=sys.stderr)
+        except Exception as e2:
+            print(f"\n  WARN: Could not generate figma_styles.css: {e2}", file=sys.stderr)
+
     # Also print to stdout for skill to capture
     print(json.dumps(output["summary"], indent=2, ensure_ascii=False))
 

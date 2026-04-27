@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""Generate ready-to-use CSS from Figma design data.
+
+Reads figma-export/design_data.json and produces:
+1. figma-export/figma_styles.css — complete CSS rules per Figma node
+2. figma-export/component_map.json — maps Figma node names to CSS class names + asset paths
+
+The developer imports figma_styles.css directly instead of interpreting JSON.
+This eliminates the translation gap between Figma data and CSS implementation.
+
+Usage:
+    python3 scripts/generate_figma_css.py [--project-path <path>]
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+
+def _slugify_class(name: str) -> str:
+    """Convert Figma node name to CSS class name."""
+    s = name.lower().strip()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s_/]+", "-", s)
+    s = re.sub(r"-+", "-", s)
+    return s.strip("-") or "element"
+
+
+def _gradient_to_css(gradients: list[dict]) -> str | None:
+    """Convert Figma gradient data to CSS gradient string."""
+    if not gradients:
+        return None
+    grad = gradients[0]  # Use first gradient
+    grad_type = grad.get("type", "linear")
+    stops = grad.get("stops", [])
+    if not stops:
+        return None
+
+    stop_strs = []
+    for stop in stops:
+        color = stop.get("color", "#000")
+        pos = stop.get("position", 0)
+        stop_strs.append(f"{color} {round(pos * 100)}%")
+
+    if grad_type == "radial":
+        return f"radial-gradient({', '.join(stop_strs)})"
+    return f"linear-gradient({', '.join(stop_strs)})"
+
+
+def _shadow_to_css(effects: list[dict]) -> str | None:
+    """Convert Figma shadow effects to CSS box-shadow."""
+    shadows = []
+    for effect in effects:
+        if effect.get("type") != "box-shadow":
+            continue
+        inset = "inset " if effect.get("inset") else ""
+        x = effect.get("offset_x", 0)
+        y = effect.get("offset_y", 0)
+        blur = effect.get("blur", 0)
+        spread = effect.get("spread", 0)
+        color = effect.get("color", "rgba(0,0,0,0.1)")
+        shadows.append(f"{inset}{x}px {y}px {blur}px {spread}px {color}")
+    return ", ".join(shadows) if shadows else None
+
+
+def generate_node_css(
+    node: dict,
+    assets_by_node: dict[str, str],
+    parent_x: float = 0,
+    parent_y: float = 0,
+) -> list[dict]:
+    """Generate CSS rules for a Figma node and its children.
+
+    Returns list of {class_name, node_name, css_rules, asset_path, children_classes}.
+    """
+    results: list[dict] = []
+    name = node.get("name", "")
+    node_type = node.get("type", "")
+
+    # Skip decorative/structural nodes
+    if not name or name.startswith("Group") or node_type in ("GROUP",):
+        for child in node.get("children", []):
+            results.extend(generate_node_css(child, assets_by_node, parent_x, parent_y))
+        return results
+
+    class_name = _slugify_class(name)
+    rules: list[str] = []
+
+    # Background
+    if node.get("gradients"):
+        grad = _gradient_to_css(node["gradients"])
+        if grad:
+            rules.append(f"background: {grad}")
+    elif node.get("background_color"):
+        rules.append(f"background-color: {node['background_color']}")
+
+    if node.get("has_background_image"):
+        asset_path = assets_by_node.get(name)
+        if asset_path:
+            rules.append(f"background-image: url('{asset_path}')")
+            rules.append("background-size: cover")
+            rules.append("background-position: center")
+
+    # Dimensions
+    w = node.get("width")
+    h = node.get("height")
+    # Don't set fixed dimensions on flex containers (let content determine size)
+    layout = node.get("layout")
+    if not layout and w and w > 0:
+        rules.append(f"width: {w}px")
+    if not layout and h and h > 0:
+        rules.append(f"height: {h}px")
+
+    # Border
+    if node.get("border_color"):
+        bw = node.get("border_width", 1)
+        rules.append(f"border: {bw}px solid {node['border_color']}")
+    if node.get("border_radius"):
+        br = node["border_radius"]
+        if isinstance(br, list):
+            rules.append(f"border-radius: {br[0]}px {br[1]}px {br[2]}px {br[3]}px")
+        else:
+            rules.append(f"border-radius: {br}px")
+
+    # Opacity
+    if node.get("opacity") is not None:
+        rules.append(f"opacity: {node['opacity']}")
+
+    # Blend mode
+    if node.get("mix_blend_mode"):
+        rules.append(f"mix-blend-mode: {node['mix_blend_mode']}")
+
+    # Overflow
+    if node.get("overflow"):
+        rules.append(f"overflow: {node['overflow']}")
+
+    # Shadows
+    if node.get("effects"):
+        shadow_css = _shadow_to_css(node["effects"])
+        if shadow_css:
+            rules.append(f"box-shadow: {shadow_css}")
+
+    # Layout (flexbox)
+    if layout:
+        rules.append("display: flex")
+        rules.append(f"flex-direction: {layout.get('mode', 'column')}")
+        if layout.get("gap"):
+            rules.append(f"gap: {layout['gap']}px")
+        if layout.get("justify_content"):
+            rules.append(f"justify-content: {layout['justify_content']}")
+        if layout.get("align_items"):
+            rules.append(f"align-items: {layout['align_items']}")
+        if layout.get("flex_wrap") and layout["flex_wrap"] != "nowrap":
+            rules.append(f"flex-wrap: {layout['flex_wrap']}")
+
+        # Padding
+        pt = layout.get("padding_top", 0)
+        pr = layout.get("padding_right", 0)
+        pb = layout.get("padding_bottom", 0)
+        pl = layout.get("padding_left", 0)
+        if pt or pr or pb or pl:
+            rules.append(f"padding: {pt}px {pr}px {pb}px {pl}px")
+
+    # Position
+    if node.get("position") == "absolute":
+        rules.append("position: absolute")
+
+    # Flex child properties
+    if node.get("flex_grow"):
+        rules.append(f"flex-grow: {node['flex_grow']}")
+    if node.get("align_self"):
+        rules.append(f"align-self: {node['align_self']}")
+
+    # Typography
+    ts = node.get("text_style")
+    if ts:
+        if ts.get("font_family"):
+            rules.append(f"font-family: '{ts['font_family']}'")
+        if ts.get("font_weight"):
+            rules.append(f"font-weight: {ts['font_weight']}")
+        if ts.get("font_size_px"):
+            rules.append(f"font-size: {ts['font_size_px']}px")
+        if ts.get("line_height_ratio"):
+            rules.append(f"line-height: {ts['line_height_ratio']}")
+        if ts.get("letter_spacing_em"):
+            rules.append(f"letter-spacing: {ts['letter_spacing_em']}em")
+        if ts.get("color"):
+            rules.append(f"color: {ts['color']}")
+        if ts.get("text_align") and ts["text_align"] != "left":
+            rules.append(f"text-align: {ts['text_align']}")
+        if ts.get("text_transform") and ts["text_transform"] != "none":
+            rules.append(f"text-transform: {ts['text_transform']}")
+        if ts.get("text_decoration") and ts["text_decoration"] != "none":
+            rules.append(f"text-decoration: {ts['text_decoration']}")
+
+    # Check for asset (icon/image)
+    asset_path = assets_by_node.get(name)
+
+    children_results = []
+    for child in node.get("children", []):
+        children_results.extend(generate_node_css(child, assets_by_node, parent_x, parent_y))
+
+    if rules:
+        results.append({
+            "class_name": class_name,
+            "node_name": name,
+            "css_rules": rules,
+            "asset_path": asset_path,
+            "children_classes": [c["class_name"] for c in children_results if c.get("css_rules")],
+        })
+
+    results.extend(children_results)
+    return results
+
+
+def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]]:
+    """Generate figma_styles.css and component_map.json.
+
+    Returns (css_content, component_map).
+    """
+    # Build asset lookup: node_name → relative path
+    assets_by_node: dict[str, str] = {}
+    for asset in design_data.get("assets", []):
+        assets_by_node[asset["name"]] = asset["path"]
+
+    # Also map by node_id
+    assets_by_id: dict[str, str] = {}
+    for asset in design_data.get("assets", []):
+        assets_by_id[asset.get("node_id", "")] = asset["path"]
+
+    all_rules: list[dict] = []
+    for frame in design_data.get("frames", []):
+        tree = frame.get("tree", {})
+        all_rules.extend(generate_node_css(tree, assets_by_node))
+
+    # Deduplicate class names
+    seen_classes: dict[str, int] = {}
+    for rule in all_rules:
+        cn = rule["class_name"]
+        if cn in seen_classes:
+            seen_classes[cn] += 1
+            rule["class_name"] = f"{cn}-{seen_classes[cn]}"
+        else:
+            seen_classes[cn] = 1
+
+    # Generate CSS
+    lines = [
+        "/* ==========================================================",
+        "   AUTO-GENERATED from Figma design data — DO NOT EDIT",
+        "   Source: figma-export/design_data.json",
+        "   Import this file in your implementation to use Figma styles.",
+        "   ========================================================== */",
+        "",
+    ]
+
+    for rule in all_rules:
+        if not rule["css_rules"]:
+            continue
+        lines.append(f"/* Figma: {rule['node_name']} */")
+        lines.append(f".{rule['class_name']} {{")
+        for css_rule in rule["css_rules"]:
+            lines.append(f"  {css_rule};")
+        lines.append("}")
+        lines.append("")
+
+    css_content = "\n".join(lines)
+
+    # Write CSS file
+    css_path = out_dir / "figma_styles.css"
+    css_path.write_text(css_content, encoding="utf-8")
+
+    # Generate component map
+    component_map = []
+    for rule in all_rules:
+        entry = {
+            "figma_name": rule["node_name"],
+            "css_class": rule["class_name"],
+        }
+        if rule.get("asset_path"):
+            entry["asset_path"] = rule["asset_path"]
+        if rule.get("children_classes"):
+            entry["children"] = rule["children_classes"]
+        component_map.append(entry)
+
+    map_path = out_dir / "component_map.json"
+    map_path.write_text(json.dumps(component_map, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    return css_content, component_map
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate CSS from Figma design data")
+    parser.add_argument("--project-path", default=".", help="Project root")
+
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        return 2
+
+    project_path = Path(args.project_path).resolve()
+    dd_path = project_path / "figma-export" / "design_data.json"
+
+    if not dd_path.exists():
+        print("No figma-export/design_data.json found", file=sys.stderr)
+        return 1
+
+    try:
+        design_data = json.loads(dd_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Error reading design data: {e}", file=sys.stderr)
+        return 2
+
+    out_dir = project_path / "figma-export"
+    css_content, component_map = generate_css_file(design_data, out_dir)
+
+    print(f"Generated figma-export/figma_styles.css ({len(component_map)} rules)", file=sys.stderr)
+    print(f"Generated figma-export/component_map.json", file=sys.stderr)
+
+    # Print summary
+    assets = [c for c in component_map if c.get("asset_path")]
+    gradients = sum(1 for line in css_content.splitlines() if "gradient(" in line)
+    shadows = sum(1 for line in css_content.splitlines() if "box-shadow:" in line)
+    print(f"  Components: {len(component_map)}", file=sys.stderr)
+    print(f"  With assets: {len(assets)}", file=sys.stderr)
+    print(f"  Gradients: {gradients}", file=sys.stderr)
+    print(f"  Shadows: {shadows}", file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
