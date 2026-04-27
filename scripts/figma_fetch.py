@@ -328,9 +328,11 @@ def extract_node_properties(node: dict[str, Any]) -> dict[str, Any]:
         "type": node.get("type", ""),
     }
 
-    # ── Dimensions ──
+    # ── Dimensions & Position ──
     bbox = node.get("absoluteBoundingBox", {})
     if bbox:
+        props["x"] = round(bbox.get("x", 0), 1)
+        props["y"] = round(bbox.get("y", 0), 1)
         props["width"] = round(bbox.get("width", 0), 1)
         props["height"] = round(bbox.get("height", 0), 1)
 

@@ -50,7 +50,15 @@ Steps:
 > Auto-passes when no Figma data exists. Fails if elements are missing.
 > If exit code ≠ 0: STOP immediately. Add the missing elements before proceeding.
 
-3.7) **Visual diff — ADVISORY** (generates diff images for reviewer, does NOT block):
+3.7) **Layout verification** (auto-skips if no Figma data):
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase layout --issue $ARGUMENTS`
+> Verifies that element spatial relationships match Figma: container directions (row/column), sibling ordering (A left-of B, C above D), element containment.
+> Catches "tokens and structure are correct but everything is in the wrong place."
+> If exit code ≠ 0: STOP immediately. Fix layout before proceeding.
+
+3.8) **Visual diff — ADVISORY** (generates diff images for reviewer, does NOT block):
    Run: `python3 scripts/verify_visual_diff.py --project-path $WT --threshold 5`
    This is a **non-blocking advisory signal**, NOT a gate. Pixel comparison across different renderers (Figma vs Chromium) inherently produces false positives due to font hinting, anti-aliasing, and sub-pixel rendering differences.
    - Generates diff images in `figma-export/visual-diff/` (red = real diff, yellow = AA)

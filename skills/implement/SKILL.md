@@ -271,7 +271,23 @@ Algorithm:
    IF all MAX_ITERATIONS exhausted: log remaining violations and proceed.
    ```
 
-   **c) Visual diff (advisory — non-blocking):**
+   **c) Layout verification loop (primary — blocking):**
+   ```
+   MAX_ITERATIONS = 3
+   for i in 1..MAX_ITERATIONS:
+     Run: python3 scripts/verify_layout.py --project-path $WT
+     IF exit code = 0 (layout matches): BREAK.
+     IF exit code ≠ 0:
+       1. Read the violation report:
+          - Wrong direction: "sidebar should be row but has flex-direction: column"
+          - Wrong order: "nav should be left-of content but appears after it"
+       2. Fix: adjust flex-direction, reorder DOM elements, fix container structure
+       3. Re-run tests.
+       4. Continue loop.
+   IF all MAX_ITERATIONS exhausted: log remaining violations and proceed.
+   ```
+
+   **d) Visual diff (advisory — non-blocking):**
    ```
    Run: python3 scripts/verify_visual_diff.py --project-path $WT --threshold 5
    ```
