@@ -177,7 +177,22 @@ Algorithm:
    IF all MAX_ITERATIONS exhausted: log remaining violations and proceed.
    ```
 
-   **b) Structural match loop (primary — blocking, per-viewport):**
+   **b) Computed style verification loop (primary — blocking):**
+   ```
+   MAX_ITERATIONS = 3
+   for i in 1..MAX_ITERATIONS:
+     Run: python3 scripts/verify_computed_styles.py --project-path $WT
+     IF exit code = 0 (all computed styles match): BREAK.
+     IF exit code ≠ 0:
+       1. Read the violation report — shows ACTUAL rendered values vs Figma-allowed values.
+          These are real computed values from the browser, not source code regex matches.
+       2. Fix: the violation tells you exactly which element, property, and computed value is wrong.
+       3. Re-run tests.
+       4. Continue loop.
+   IF all MAX_ITERATIONS exhausted: log remaining violations and proceed.
+   ```
+
+   **c) Structural match loop (primary — blocking, per-viewport):**
    ```
    MAX_ITERATIONS = 3
    for i in 1..MAX_ITERATIONS:
@@ -214,7 +229,15 @@ Algorithm:
    IF all MAX_ITERATIONS exhausted: log remaining violations and proceed.
    ```
 
-   **d) Visual diff (advisory — non-blocking):**
+   **e) Same-renderer visual diff (blocking — prototype HTML vs implementation, both Chromium):**
+   ```
+   Run: python3 scripts/verify_visual_diff.py --project-path $WT --threshold 1
+   IF exit code ≠ 0: read diff images, fix visible layout/style issues, re-run.
+   ```
+   Both prototype and implementation are rendered by the same Chromium engine,
+   so there are no font hinting or anti-aliasing false positives.
+
+   **f) Visual diff advisory (non-blocking):**
    ```
    Run: python3 scripts/verify_visual_diff.py --project-path $WT --threshold 5
    ```

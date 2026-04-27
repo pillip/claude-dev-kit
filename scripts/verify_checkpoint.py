@@ -1104,6 +1104,51 @@ def verify_review_visual_diff(issue_id: str, **_) -> bool:
     return False
 
 
+def verify_review_computed_styles(issue_id: str, **_) -> bool:
+    """Verify ACTUAL rendered computed styles match Figma tokens.
+
+    Renders the implementation in Chromium, extracts computed CSS values
+    from every visible element, and compares against Figma design_data.json.
+    Catches CSS cascade/specificity/inheritance issues that static analysis misses.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    wt = Path(wt_path)
+    design_data = wt / "figma-export" / "design_data.json"
+    if not design_data.exists():
+        root = _repo_root()
+        design_data = root / "figma-export" / "design_data.json"
+
+    if not design_data.exists():
+        figma_urls = _find_figma_urls(issue_id)
+        if figma_urls:
+            print(f"FAIL: {issue_id} has Figma URLs but design_data.json not found")
+            return False
+        print(f"PASS: {issue_id} has no Figma data — computed style check skipped")
+        return True
+
+    result = _run(
+        ["python3", str(Path(__file__).resolve().parent / "verify_computed_styles.py"),
+         "--project-path", wt_path],
+        timeout=60,
+    )
+
+    if result.returncode == 0:
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                print(f"  {line}")
+        return True
+
+    if result.stdout:
+        for line in result.stdout.strip().splitlines():
+            print(f"  {line}")
+    print(f"FAIL: {issue_id} — rendered styles deviate from Figma tokens")
+    return False
+
+
 def verify_review_layout(issue_id: str, **_) -> bool:
     """Verify implementation layout matches Figma spatial arrangement.
 
@@ -1510,6 +1555,8 @@ VERIFIERS = {
     ("review", "review"): verify_review_review,
     ("review", "ui-review"): verify_review_ui_review,
     ("review", "figma-compliance"): verify_review_figma_compliance,
+    ("review", "computed-styles"): verify_review_computed_styles,
+    ("review", "visual-diff"): verify_review_visual_diff,
     ("review", "structural-match"): verify_review_structural_match,
     ("review", "layout"): verify_review_layout,
     ("review", "test-quality"): verify_review_test_quality,

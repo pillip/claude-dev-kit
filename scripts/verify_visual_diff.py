@@ -552,27 +552,31 @@ def main(argv: list[str] | None = None) -> int:
 
     output_dir = args.output_dir or str(project_path / "figma-export" / "visual-diff")
 
-    # Priority: Figma renders (direct API export) > prototype HTML
-    figma_renders = find_figma_renders(project_path)
+    viewports = VIEWPORTS
+    if args.viewports:
+        names = [n.strip() for n in args.viewports.split(",")]
+        viewports = [v for v in VIEWPORTS if v["name"] in names]
 
-    if figma_renders:
-        # Compare implementation screenshots against Figma-rendered PNGs directly
-        print(f"Using {len(figma_renders)} Figma render(s) as visual source of truth")
-        result = visual_diff_against_renders(impl, figma_renders, args.threshold, output_dir)
-    else:
-        proto = args.prototype or find_prototype_html(project_path)
-        if not proto:
-            if has_figma_data:
-                print("FAIL: Figma data exists but no renders or prototype HTML — run figma_fetch.py first")
-                return 1
-            print("SKIP: No Figma renders or prototype HTML found — visual diff skipped")
-            return 0
-        print("Using prototype HTML as visual reference (no Figma renders found)")
-        viewports = VIEWPORTS
-        if args.viewports:
-            names = [n.strip() for n in args.viewports.split(",")]
-            viewports = [v for v in VIEWPORTS if v["name"] in names]
+    # Priority: prototype HTML (same Chromium renderer = fair comparison)
+    proto = args.prototype or find_prototype_html(project_path)
+
+    if proto:
+        # BEST: Both rendered by Chromium — no renderer differences
+        print(f"Same-renderer comparison: prototype HTML vs implementation (both Chromium)")
         result = visual_diff(proto, impl, viewports, args.threshold, output_dir)
+    else:
+        # Fallback: compare against Figma render PNGs (cross-renderer, higher threshold)
+        figma_renders = find_figma_renders(project_path)
+        if figma_renders:
+            cross_threshold = max(args.threshold, 5.0)  # Cross-renderer needs higher tolerance
+            print(f"Cross-renderer comparison: Figma PNG vs implementation (threshold: {cross_threshold}%)")
+            result = visual_diff_against_renders(impl, figma_renders, cross_threshold, output_dir)
+        else:
+            if has_figma_data:
+                print("FAIL: Figma data exists but no prototype HTML or renders found")
+                return 1
+            print("SKIP: No prototype HTML or Figma renders found — visual diff skipped")
+            return 0
 
     if args.json_output:
         print(json.dumps(result, indent=2))
