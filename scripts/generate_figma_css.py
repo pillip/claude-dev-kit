@@ -196,12 +196,32 @@ def generate_node_css(
         if ts.get("text_decoration") and ts["text_decoration"] != "none":
             rules.append(f"text-decoration: {ts['text_decoration']}")
 
-    # Check for asset (icon/image)
+    # Check for asset (icon/image) — add size and img reference
     asset_path = assets_by_node.get(name)
+    if asset_path:
+        # Asset elements get explicit dimensions from Figma
+        asset_w = node.get("width", 0)
+        asset_h = node.get("height", 0)
+        if asset_w > 0:
+            rules.append(f"width: {asset_w}px")
+        if asset_h > 0:
+            rules.append(f"height: {asset_h}px")
 
     children_results = []
-    for child in node.get("children", []):
-        children_results.extend(generate_node_css(child, assets_by_node, parent_x, parent_y))
+    child_order: list[dict] = []
+    for idx, child in enumerate(node.get("children", [])):
+        child_results = generate_node_css(child, assets_by_node, parent_x, parent_y)
+        children_results.extend(child_results)
+        child_name = child.get("name", "")
+        if child_name:
+            child_order.append({
+                "index": idx,
+                "name": child_name,
+                "class": _slugify_class(child_name),
+                "asset": assets_by_node.get(child_name),
+                "width": child.get("width", 0),
+                "height": child.get("height", 0),
+            })
 
     if rules:
         results.append({
@@ -209,7 +229,10 @@ def generate_node_css(
             "node_name": name,
             "css_rules": rules,
             "asset_path": asset_path,
+            "asset_width": node.get("width", 0) if asset_path else None,
+            "asset_height": node.get("height", 0) if asset_path else None,
             "children_classes": [c["class_name"] for c in children_results if c.get("css_rules")],
+            "children_order": child_order if child_order else None,
         })
 
     results.extend(children_results)
@@ -272,16 +295,21 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
     css_path = out_dir / "figma_styles.css"
     css_path.write_text(css_content, encoding="utf-8")
 
-    # Generate component map
+    # Generate component map with full asset/structure info
     component_map = []
     for rule in all_rules:
-        entry = {
+        entry: dict = {
             "figma_name": rule["node_name"],
             "css_class": rule["class_name"],
         }
         if rule.get("asset_path"):
             entry["asset_path"] = rule["asset_path"]
-        if rule.get("children_classes"):
+            entry["asset_width"] = rule.get("asset_width")
+            entry["asset_height"] = rule.get("asset_height")
+            entry["html_hint"] = f'<img src="{rule["asset_path"]}" alt="{rule["node_name"]}" width="{rule.get("asset_width", "")}" height="{rule.get("asset_height", "")}" class="{rule["class_name"]}">'
+        if rule.get("children_order"):
+            entry["children_order"] = rule["children_order"]
+        elif rule.get("children_classes"):
             entry["children"] = rule["children_classes"]
         component_map.append(entry)
 
