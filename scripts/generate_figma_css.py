@@ -154,7 +154,8 @@ def generate_node_css(
         if shadow_css:
             rules.append(f"box-shadow: {shadow_css}")
 
-    # Layout (flexbox)
+    # Layout (flexbox) or absolute positioning container
+    children = node.get("children", [])
     if layout:
         rules.append("display: flex")
         rules.append(f"flex-direction: {layout.get('mode', 'column')}")
@@ -174,10 +175,20 @@ def generate_node_css(
         pl = layout.get("padding_left", 0)
         if pt or pr or pb or pl:
             rules.append(f"padding: {pt}px {pr}px {pb}px {pl}px")
+    elif children and node_type == "FRAME":
+        # No auto-layout → children are absolutely positioned
+        rules.append("position: relative")
 
-    # Position
+    # Position — explicit absolute or inferred from parent without auto-layout
     if node.get("position") == "absolute":
         rules.append("position: absolute")
+        x = node.get("x")
+        y = node.get("y")
+        if x is not None:
+            # Use left/top relative to parent (parent_x/parent_y passed from caller)
+            rules.append(f"left: {round(x - parent_x)}px")
+        if y is not None:
+            rules.append(f"top: {round(y - parent_y)}px")
 
     # Flex child properties
     if node.get("flex_grow"):
@@ -207,21 +218,29 @@ def generate_node_css(
         if ts.get("text_decoration") and ts["text_decoration"] != "none":
             rules.append(f"text-decoration: {ts['text_decoration']}")
 
-    # Check for asset (icon/image) — add size and img reference
+    # Check for asset (icon/image) — add size only if not already set by dimensions section
     asset_path = assets_by_node.get(name)
     if asset_path:
-        # Asset elements get explicit dimensions from Figma
         asset_w = node.get("width", 0)
         asset_h = node.get("height", 0)
-        if asset_w > 0:
+        has_width = any(r.startswith("width:") for r in rules)
+        has_height = any(r.startswith("height:") for r in rules)
+        if asset_w > 0 and not has_width:
             rules.append(f"width: {asset_w}px")
-        if asset_h > 0:
+        if asset_h > 0 and not has_height:
             rules.append(f"height: {asset_h}px")
 
     children_results = []
     child_order: list[dict] = []
+    # Pass this node's position as parent reference for children
+    node_x = node.get("x", parent_x)
+    node_y = node.get("y", parent_y)
+    # If no auto-layout, children need absolute positioning
+    children_need_absolute = not layout and children and node_type == "FRAME"
     for idx, child in enumerate(node.get("children", [])):
-        child_results = generate_node_css(child, assets_by_node, parent_x, parent_y)
+        if children_need_absolute and child.get("type") not in ("GROUP",):
+            child.setdefault("position", "absolute")
+        child_results = generate_node_css(child, assets_by_node, node_x, node_y)
         children_results.extend(child_results)
         child_name = child.get("name", "")
         if child_name:
@@ -456,7 +475,8 @@ def generate_html_skeleton(
         children = node.get("children", [])
 
         # Determine HTML tag
-        if asset_path:
+        # Assets without children → <img>. Assets WITH children → container (decompose).
+        if asset_path and not children:
             w = node.get("width", "")
             h = node.get("height", "")
             html_lines.append(f'{prefix}<img src="{asset_path}" alt="{name}" '

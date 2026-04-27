@@ -511,14 +511,30 @@ def collect_exportable_nodes(
     - Vector nodes → SVG
     - Image fills → PNG @2x
     - Named assets → SVG (vectors) or PNG (rasters)
+
+    Excludes top-level frames (containers with children) — those are
+    page structure, not assets.
     """
     assets: list[dict[str, str]] = []
     seen_ids: set[str] = set()
+    # Track the root node ID to skip it
+    root_id = node.get("id", "")
 
     def _walk(n: dict[str, Any]) -> None:
         node_id = n.get("id", "")
         if node_id in seen_ids:
             return
+
+        # Skip top-level frame (it's a container, not an asset)
+        # A FRAME with many children is a page/section, not an exportable image
+        is_container = (n.get("type") == "FRAME"
+                        and len(n.get("children", [])) > 2
+                        and node_id == root_id)
+        if is_container:
+            for child in n.get("children", []):
+                _walk(child)
+            return
+
         if _is_exportable_asset(n):
             seen_ids.add(node_id)
             node_type = n.get("type", "")
