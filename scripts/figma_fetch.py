@@ -618,6 +618,72 @@ def export_assets(
     return exported
 
 
+def export_frame_renders(
+    frames: list[dict[str, Any]], token: str, out_dir: Path,
+) -> list[dict[str, str]]:
+    """Download full-frame PNG renders from Figma Image Export API.
+
+    These are the Figma-rendered images — the absolute visual source of truth.
+    Used for pixel-level comparison against the implementation.
+
+    Returns list of {name, path, width, height, file_key, node_id}.
+    """
+    if not frames:
+        return []
+
+    renders_dir = out_dir / "renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+
+    # Group by file_key for batch API calls
+    groups: dict[str, list[dict]] = {}
+    for f in frames:
+        groups.setdefault(f["file_key"], []).append(f)
+
+    exported: list[dict[str, str]] = []
+
+    for file_key, group in groups.items():
+        node_ids = [f["node_id"] for f in group]
+        ids_param = ",".join(urllib.parse.quote(nid, safe="") for nid in node_ids)
+
+        # Export at 2x scale for high-fidelity comparison
+        endpoint = f"/images/{file_key}?ids={ids_param}&format=png&scale=2"
+        try:
+            data = figma_api_get(endpoint, token)
+        except Exception as e:
+            print(f"WARN: Frame render export failed: {e}", file=sys.stderr)
+            continue
+
+        images = data.get("images", {})
+
+        for frame in group:
+            image_url = images.get(frame["node_id"])
+            if not image_url:
+                print(f"WARN: No render URL for frame '{frame['frame_name']}'", file=sys.stderr)
+                continue
+
+            slug = _slugify(frame["frame_name"])
+            filename = f"{slug}@2x.png"
+            filepath = renders_dir / filename
+
+            try:
+                req = urllib.request.Request(image_url)
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    filepath.write_bytes(resp.read())
+                exported.append({
+                    "name": frame["frame_name"],
+                    "path": str(filepath.relative_to(out_dir.parent)),
+                    "width": frame.get("width", 0),
+                    "height": frame.get("height", 0),
+                    "file_key": file_key,
+                    "node_id": frame["node_id"],
+                    "breakpoint": frame.get("breakpoint", "desktop"),
+                })
+            except Exception as e:
+                print(f"WARN: Failed to download render for '{frame['frame_name']}': {e}", file=sys.stderr)
+
+    return exported
+
+
 # --- Aggregation ---
 
 
@@ -1028,8 +1094,14 @@ def main() -> None:
         print(f"\nDetected {len(all_exportable)} exportable asset(s)...", file=sys.stderr)
         exported_assets = export_assets(all_exportable, token, out_dir)
         print(f"  Downloaded {len(exported_assets)} asset(s)", file=sys.stderr)
+
     else:
         print("\nNo exportable assets detected in the fetched frames.", file=sys.stderr)
+
+    # --- Frame render export (Figma-rendered PNGs = absolute visual source of truth) ---
+    print(f"\nExporting {len(frames)} frame render(s) from Figma...", file=sys.stderr)
+    frame_renders = export_frame_renders(frames, token, out_dir)
+    print(f"  Downloaded {len(frame_renders)} render(s) to figma-export/renders/", file=sys.stderr)
 
     output = {
         "platform": platform,
@@ -1069,6 +1141,7 @@ def main() -> None:
             "has_background_image": any_background_image,
             "interaction_states": all_interaction_states,
             "interaction_state_names": sorted({s["state"] for s in all_interaction_states}),
+            "frame_renders": frame_renders,
             "asset_count": len(exported_assets),
         },
     }

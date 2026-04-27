@@ -45,11 +45,21 @@ _STABILIZE_CSS = """
 
 
 def _check_playwright() -> bool:
-    """Check if Playwright is available."""
+    """Check if Playwright is available and install if possible."""
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
         return True
     except ImportError:
+        pass
+
+    # Try auto-install
+    import subprocess
+    try:
+        subprocess.run(["pip", "install", "playwright"], capture_output=True, timeout=60)
+        subprocess.run(["playwright", "install", "chromium"], capture_output=True, timeout=120)
+        from playwright.sync_api import sync_playwright  # noqa: F401
+        return True
+    except Exception:
         return False
 
 
@@ -331,11 +341,115 @@ def visual_diff(
     }
 
 
+def visual_diff_against_renders(
+    implementation_path: str,
+    figma_renders: list[dict],
+    threshold: float = DEFAULT_THRESHOLD,
+    output_dir: str | None = None,
+) -> dict:
+    """Compare implementation screenshots against Figma-rendered PNGs.
+
+    This is the highest-fidelity comparison: the Figma render IS the
+    ground truth, with no intermediate conversion (no figma-converter).
+
+    For each Figma render, takes an implementation screenshot at a matching
+    viewport width and compares pixels.
+    """
+    out_path = Path(output_dir) if output_dir else None
+    if out_path:
+        out_path.mkdir(parents=True, exist_ok=True)
+
+    # Determine viewport for each render based on width
+    render_viewports = []
+    for r in figma_renders:
+        w = r.get("width", 1440)
+        if w <= 0:
+            w = 1440
+        render_viewports.append({"name": r["name"], "width": int(w), "height": 900})
+
+    impl_shots = take_screenshots(implementation_path, render_viewports)
+
+    results: list[dict] = []
+    all_pass = True
+
+    for render, impl in zip(figma_renders, impl_shots):
+        render_bytes = Path(render["path"]).read_bytes()
+        diff_img_path = None
+        if out_path:
+            diff_img_path = str(out_path / f"{render['name']}_diff.png")
+
+        diff = _pixel_diff(render_bytes, impl["screenshot"], diff_img_path)
+        passes = diff["diff_percent"] <= threshold
+        if not passes:
+            all_pass = False
+
+        entry = {
+            "viewport": render["name"],
+            "width": impl["width"],
+            "height": impl["height"],
+            "diff_percent": diff["diff_percent"],
+            "diff_pixels": diff["diff_pixels"],
+            "total_pixels": diff["total_pixels"],
+            "aa_aware": diff.get("aa_aware", False),
+            "pass": passes,
+            "threshold": threshold,
+            "source": "figma-render",
+        }
+
+        if out_path:
+            impl_file = out_path / f"{render['name']}_implementation.png"
+            impl_file.write_bytes(impl["screenshot"])
+            entry["figma_render"] = render["path"]
+            entry["implementation_screenshot"] = str(impl_file)
+            if diff_img_path:
+                entry["diff_image"] = diff_img_path
+
+        results.append(entry)
+
+    return {
+        "results": results,
+        "all_pass": all_pass,
+        "viewports_tested": len(results),
+        "source": "figma-render",
+    }
+
+
 # ── File discovery ──────────────────────────────────────────────────
 
 
+def find_figma_renders(project_path: Path) -> list[dict]:
+    """Find Figma-rendered reference images (absolute source of truth).
+
+    Returns list of {path, breakpoint} from figma-export/renders/.
+    These are PNG images rendered directly by Figma's Image Export API.
+    """
+    renders_dir = project_path / "figma-export" / "renders"
+    if not renders_dir.is_dir():
+        return []
+
+    renders = []
+    for png in sorted(renders_dir.glob("*@2x.png")):
+        # Detect breakpoint from design_data.json if available
+        renders.append({"path": str(png.resolve()), "name": png.stem.replace("@2x", "")})
+
+    # Also check design_data.json for breakpoint mapping
+    dd = project_path / "figma-export" / "design_data.json"
+    if dd.exists():
+        try:
+            data = json.loads(dd.read_text(encoding="utf-8"))
+            render_meta = {r["name"]: r for r in data.get("summary", {}).get("frame_renders", [])}
+            for r in renders:
+                meta = render_meta.get(r["name"], {})
+                r["breakpoint"] = meta.get("breakpoint", "desktop")
+                r["width"] = meta.get("width", 0)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return renders
+
+
 def find_prototype_html(project_path: Path) -> str | None:
-    """Find the main prototype HTML file."""
+    """Find the main prototype HTML file (fallback when no Figma renders)."""
     candidates = [
         project_path / "prototype" / "index.html",
         project_path / "prototype" / "screens" / "index.html",
@@ -418,23 +532,31 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     project_path = Path(args.project_path).resolve()
-    proto = args.prototype or find_prototype_html(project_path)
     impl = args.implementation or find_implementation_html(project_path)
-
-    if not proto:
-        print("SKIP: No prototype HTML found — visual diff skipped")
-        return 0
     if not impl:
-        print("SKIP: No implementation HTML found — visual diff skipped")
+        print("SKIP: No implementation HTML/URL found — visual diff skipped")
         return 0
-
-    viewports = VIEWPORTS
-    if args.viewports:
-        names = [n.strip() for n in args.viewports.split(",")]
-        viewports = [v for v in VIEWPORTS if v["name"] in names]
 
     output_dir = args.output_dir or str(project_path / "figma-export" / "visual-diff")
-    result = visual_diff(proto, impl, viewports, args.threshold, output_dir)
+
+    # Priority: Figma renders (direct API export) > prototype HTML
+    figma_renders = find_figma_renders(project_path)
+
+    if figma_renders:
+        # Compare implementation screenshots against Figma-rendered PNGs directly
+        print(f"Using {len(figma_renders)} Figma render(s) as visual source of truth")
+        result = visual_diff_against_renders(impl, figma_renders, args.threshold, output_dir)
+    else:
+        proto = args.prototype or find_prototype_html(project_path)
+        if not proto:
+            print("SKIP: No Figma renders or prototype HTML found — visual diff skipped")
+            return 0
+        print("Using prototype HTML as visual reference (no Figma renders found)")
+        viewports = VIEWPORTS
+        if args.viewports:
+            names = [n.strip() for n in args.viewports.split(",")]
+            viewports = [v for v in VIEWPORTS if v["name"] in names]
+        result = visual_diff(proto, impl, viewports, args.threshold, output_dir)
 
     if args.json_output:
         print(json.dumps(result, indent=2))
