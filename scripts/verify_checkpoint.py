@@ -1104,6 +1104,51 @@ def verify_review_visual_diff(issue_id: str, **_) -> bool:
     return False
 
 
+def verify_review_structural_match(issue_id: str, **_) -> bool:
+    """Verify Figma element structure is present in implementation.
+
+    Checks that all visible Figma elements (buttons, inputs, icons, text)
+    exist in the implementation with correct content.
+    Auto-passes when no design_data.json exists.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    wt = Path(wt_path)
+    design_data = wt / "figma-export" / "design_data.json"
+    if not design_data.exists():
+        root = _repo_root()
+        design_data = root / "figma-export" / "design_data.json"
+
+    if not design_data.exists():
+        figma_urls = _find_figma_urls(issue_id)
+        if figma_urls:
+            print(f"FAIL: {issue_id} has Figma URLs but design_data.json not found")
+            return False
+        print(f"PASS: {issue_id} has no Figma data — structural match skipped")
+        return True
+
+    result = _run(
+        ["python3", str(Path(__file__).resolve().parent / "verify_structural_match.py"),
+         "--project-path", wt_path],
+        timeout=30,
+    )
+
+    if result.returncode == 0:
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                print(f"  {line}")
+        return True
+
+    if result.stdout:
+        for line in result.stdout.strip().splitlines():
+            print(f"  {line}")
+    print(f"FAIL: {issue_id} — implementation is missing Figma elements")
+    return False
+
+
 def verify_review_figma_compliance(issue_id: str, **_) -> bool:
     """Verify implementation matches Figma design tokens.
 
@@ -1420,8 +1465,8 @@ VERIFIERS = {
     ("review", "checkout"): verify_review_checkout,
     ("review", "review"): verify_review_review,
     ("review", "ui-review"): verify_review_ui_review,
-    ("review", "visual-diff"): verify_review_visual_diff,
     ("review", "figma-compliance"): verify_review_figma_compliance,
+    ("review", "structural-match"): verify_review_structural_match,
     ("review", "test-quality"): verify_review_test_quality,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,

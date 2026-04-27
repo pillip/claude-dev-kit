@@ -115,16 +115,23 @@ Steps:
 > If exit code ≠ 0: STOP immediately. Fix all violations before proceeding.
 > **Figma is the absolute source of truth.** Any deviation is a blocking violation.
 
-3.6) **Visual diff** (auto-skips if Playwright not installed or no prototype/implementation HTML):
+3.6) **Structural match** (auto-skips if no Figma data):
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `bash scripts/checkpoint.sh --skill review --phase visual-diff --issue $ARGUMENTS`
-> Renders prototype and implementation at 3 viewports (mobile 375px, tablet 768px, desktop 1440px) with anti-aliasing aware pixel comparison. Stabilizes rendering by disabling CSS animations, waiting for font/image loading. Also checks running dev servers (localhost:3000 etc.).
-> Auto-passes when Playwright is unavailable or HTML files don't exist. Fails if diff exceeds 1%.
-> Diff images saved to figma-export/visual-diff/ — red pixels = real differences, yellow = anti-aliasing (ignored).
-> If exit code ≠ 0: STOP immediately. Fix visual discrepancies before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill review --phase structural-match --issue $ARGUMENTS`
+> Verifies that all visible Figma elements (buttons, inputs, icons, text content) exist in the implementation.
+> Auto-passes when no Figma data exists. Fails if elements are missing.
+> If exit code ≠ 0: STOP immediately. Add the missing elements before proceeding.
 
-3.7) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
+3.7) **Visual diff — ADVISORY** (generates diff images for reviewer, does NOT block):
+   Run: `python3 scripts/verify_visual_diff.py --project-path $WT --threshold 5`
+   This is a **non-blocking advisory signal**, NOT a gate. Pixel comparison across different renderers (Figma vs Chromium) inherently produces false positives due to font hinting, anti-aliasing, and sub-pixel rendering differences.
+   - Generates diff images in `figma-export/visual-diff/` (red = real diff, yellow = AA)
+   - Log the diff percentage in `docs/review_notes.md` for the reviewer to assess
+   - If diff > 5%: flag as a **warning** in review notes — reviewer should inspect the diff images
+   - Do NOT block the review based on pixel diff alone. The **figma-compliance checkpoint** (step 3.5) is the authoritative Figma fidelity gate.
+
+3.8) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
    Ask ui-reviewer subagent to perform UI state review:
    - Pass the UI context files gathered in step 3 plus `docs/review_lessons.md`.
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
@@ -135,14 +142,14 @@ Steps:
 > The script auto-detects UI issues via Track field/title keywords. Non-UI issues pass automatically.
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-3.8) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
+3.9) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
    Ask design-auditor subagent to audit the design system:
    - Pass all design context files gathered in step 3.
    - **Also pass `figma-export/design_data.json`** (if exists) so auditor can verify design system covers all Figma tokens.
    - Auditor checks: token consistency, component completeness, cross-platform alignment, philosophy compliance, copy coverage, **Figma token coverage**.
    - Output: `docs/design_audit.md` with severity-classified findings.
 
-3.9) IF UI issue:
+3.10) IF UI issue:
    Ask a11y-auditor subagent to perform WCAG 2.1 AA accessibility audit:
    - Pass design context files + source code files from the PR diff.
    - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
