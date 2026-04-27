@@ -418,6 +418,14 @@ def extract_node_properties(node: dict[str, Any]) -> dict[str, Any]:
             "flex_wrap": "wrap" if node.get("layoutWrap") == "WRAP" else "nowrap",
         }
 
+    # ── Sizing mode (Fill / Hug / Fixed) ──
+    h_sizing = node.get("layoutSizingHorizontal", "")
+    v_sizing = node.get("layoutSizingVertical", "")
+    if h_sizing:
+        props["sizing_horizontal"] = h_sizing.lower()  # "fixed", "hug", "fill"
+    if v_sizing:
+        props["sizing_vertical"] = v_sizing.lower()
+
     # ── Child layout properties (position within parent auto-layout) ──
     layout_positioning = node.get("layoutPositioning")
     if layout_positioning == "ABSOLUTE":

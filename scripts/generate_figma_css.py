@@ -104,14 +104,25 @@ def generate_node_css(
             rules.append("background-size: cover")
             rules.append("background-position: center")
 
-    # Dimensions
+    # Dimensions — based on Figma sizing mode (Fill / Hug / Fixed)
     w = node.get("width")
     h = node.get("height")
-    # Don't set fixed dimensions on flex containers (let content determine size)
     layout = node.get("layout")
-    if not layout and w and w > 0:
+    h_sizing = node.get("sizing_horizontal", "fixed")
+    v_sizing = node.get("sizing_vertical", "fixed")
+
+    if h_sizing == "fill":
+        rules.append("width: 100%")
+    elif h_sizing == "hug":
+        rules.append("width: fit-content")
+    elif w and w > 0 and not layout:
         rules.append(f"width: {w}px")
-    if not layout and h and h > 0:
+
+    if v_sizing == "fill":
+        rules.append("height: 100%")
+    elif v_sizing == "hug":
+        rules.append("height: fit-content")
+    elif h and h > 0 and not layout:
         rules.append(f"height: {h}px")
 
     # Border
@@ -269,7 +280,26 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
         else:
             seen_classes[cn] = 1
 
-    # Generate CSS
+    # Collect all font families for Google Fonts
+    all_fonts: set[str] = set()
+    for rule in all_rules:
+        for css_rule in rule.get("css_rules", []):
+            if css_rule.startswith("font-family:"):
+                font = css_rule.split(":", 1)[1].strip().strip("'\"").rstrip(";")
+                if font and font.lower() not in ("sans-serif", "serif", "monospace", "system-ui"):
+                    all_fonts.add(font)
+
+    # Generate Google Fonts import
+    font_imports = []
+    if all_fonts:
+        family_params = []
+        for font_name in sorted(all_fonts):
+            encoded = font_name.replace(" ", "+")
+            family_params.append(f"family={encoded}:wght@100;200;300;400;500;600;700;800;900")
+        params = "&".join(family_params)
+        font_imports.append(f"@import url('https://fonts.googleapis.com/css2?{params}&display=swap');")
+
+    # Generate CSS with @layer for framework conflict prevention
     lines = [
         "/* ==========================================================",
         "   AUTO-GENERATED from Figma design data — DO NOT EDIT",
@@ -279,15 +309,30 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
         "",
     ]
 
+    # Font imports (must be at top)
+    for imp in font_imports:
+        lines.append(imp)
+    if font_imports:
+        lines.append("")
+
+    # Use @layer to ensure Figma styles take priority over framework resets
+    lines.append("@layer base, framework, figma;")
+    lines.append("")
+    lines.append("@layer figma {")
+    lines.append("")
+
     for rule in all_rules:
         if not rule["css_rules"]:
             continue
-        lines.append(f"/* Figma: {rule['node_name']} */")
-        lines.append(f".{rule['class_name']} {{")
+        lines.append(f"  /* Figma: {rule['node_name']} */")
+        lines.append(f"  .{rule['class_name']} {{")
         for css_rule in rule["css_rules"]:
-            lines.append(f"  {css_rule};")
-        lines.append("}")
+            lines.append(f"    {css_rule};")
+        lines.append("  }")
         lines.append("")
+
+    lines.append("} /* end @layer figma */")
+    lines.append("")
 
     css_content = "\n".join(lines)
 
@@ -352,9 +397,27 @@ def generate_html_skeleton(
 ) -> str:
     """Generate a complete HTML skeleton from the Figma node tree.
 
-    Includes all text content, asset references, and CSS class names.
-    The developer copies this structure and adapts to their framework.
+    Includes all text content, asset references, CSS class names,
+    and Google Fonts links.
     """
+    # Collect fonts for Google Fonts link
+    fonts: set[str] = set()
+    for rule in rules:
+        for css_rule in rule.get("css_rules", []):
+            if css_rule.startswith("font-family:"):
+                font = css_rule.split(":", 1)[1].strip().strip("'\"").rstrip(";")
+                if font and font.lower() not in ("sans-serif", "serif", "monospace"):
+                    fonts.add(font)
+
+    font_link = ""
+    if fonts:
+        family_params = []
+        for f in sorted(fonts):
+            family_params.append(f"family={f.replace(' ', '+')}:wght@100;200;300;400;500;600;700;800;900")
+        font_link = f'  <link rel="preconnect" href="https://fonts.googleapis.com">\n' \
+                    f'  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n' \
+                    f'  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?{"&".join(family_params)}&display=swap">'
+
     html_lines = [
         "<!DOCTYPE html>",
         '<!-- AUTO-GENERATED from Figma — copy this structure to your implementation -->',
@@ -362,11 +425,15 @@ def generate_html_skeleton(
         "<head>",
         '  <meta charset="UTF-8">',
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    ]
+    if font_link:
+        html_lines.append(font_link)
+    html_lines.extend([
         '  <link rel="stylesheet" href="figma_styles.css">',
         "  <title>Figma Skeleton</title>",
         "</head>",
         "<body>",
-    ]
+    ])
 
     # Build a class lookup
     rules_by_name: dict[str, dict] = {r["node_name"]: r for r in rules}
