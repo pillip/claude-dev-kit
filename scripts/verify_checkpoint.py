@@ -746,15 +746,15 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
     try:
         import verify_gates
     except ImportError:
-        # verify_gates.py not available — skip silently
-        return True
+        print("WARN: verify_gates.py not available — gate checks skipped")
+        return not blocking  # If blocking=True and module missing, FAIL
 
     pp = Path(project_path)
     try:
         results = verify_gates.run_applicable_gates(pp)
     except Exception as exc:
         print(f"WARN: verify_gates raised an error: {exc}")
-        return True  # Don't block on unexpected errors
+        return not blocking  # If blocking=True and gates crash, FAIL
 
     if not results:
         return True
@@ -782,19 +782,31 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
     return True
 
 
-def _ensure_deps_installed(wt: Path, cwd: str | None) -> None:
-    """Install dependencies in worktree if not already present."""
+def _ensure_deps_installed(wt: Path, cwd: str | None) -> bool:
+    """Install dependencies in worktree if not already present.
+
+    Returns True if deps are ready, False if installation failed.
+    """
+    ok = True
+
     # JS/TS: install node_modules if package.json exists but node_modules doesn't
     if (wt / "package.json").exists() and not (wt / "node_modules").is_dir():
         print("  Installing npm dependencies in worktree...")
-        _run(["npm", "install", "--legacy-peer-deps"], cwd=cwd, timeout=120)
+        result = _run(["npm", "install", "--legacy-peer-deps"], cwd=cwd, timeout=120)
+        if result.returncode != 0:
+            print(f"  WARN: npm install failed (exit {result.returncode})")
+            ok = False
 
-    # Python: install if pyproject.toml exists but no .venv or site-packages
+    # Python: install if pyproject.toml exists
     if (wt / "pyproject.toml").exists():
-        # Try uv sync first, fallback to pip
         result = _run(["uv", "sync"], cwd=cwd, timeout=60)
         if result.returncode != 0:
-            _run(["pip", "install", "-e", "."], cwd=cwd, timeout=60)
+            result = _run(["pip", "install", "-e", "."], cwd=cwd, timeout=60)
+            if result.returncode != 0:
+                print(f"  WARN: dependency install failed (uv sync and pip install both failed)")
+                ok = False
+
+    return ok
 
 
 def verify_implement_test(issue_id: str, **_) -> bool:
@@ -1063,10 +1075,11 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
 
 
 def verify_review_visual_diff(issue_id: str, **_) -> bool:
-    """Visual diff: compare prototype screenshots against implementation.
+    """Visual diff: compare Figma renders or prototype against implementation.
 
-    Auto-passes when Playwright is not installed or no prototype/implementation HTML exists.
-    Fails if pixel diff exceeds threshold at any viewport.
+    FAILS when Figma data exists but Playwright can't be installed or
+    no implementation HTML is found (required checks cannot be skipped).
+    Only auto-passes when there is genuinely no Figma data to compare against.
     """
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
@@ -1111,7 +1124,13 @@ def verify_review_figma_compliance(issue_id: str, **_) -> bool:
         design_data = root / "figma-export" / "design_data.json"
 
     if not design_data.exists():
-        print(f"PASS: {issue_id} has no figma-export/design_data.json — Figma compliance check skipped")
+        # Check if the issue has Figma URLs — if so, design_data.json SHOULD exist
+        figma_urls = _find_figma_urls(issue_id)
+        if figma_urls:
+            print(f"FAIL: {issue_id} has Figma URLs but figma-export/design_data.json not found")
+            print(f"  Run figma_fetch.py first: python3 scripts/figma_fetch.py {' '.join(figma_urls)}")
+            return False
+        print(f"PASS: {issue_id} has no Figma data — compliance check skipped")
         return True
 
     # Run the compliance script

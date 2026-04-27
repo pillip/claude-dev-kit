@@ -526,14 +526,27 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit:
         return 2
 
+    project_path = Path(args.project_path).resolve()
+
+    # Determine if Figma data exists — if so, visual diff is REQUIRED (not optional)
+    has_figma_data = (
+        (project_path / "figma-export" / "design_data.json").exists()
+        or (project_path / "figma-export" / "renders").is_dir()
+    )
+
     if not _check_playwright():
-        print("SKIP: Playwright not installed — visual diff skipped")
-        print("  Install: pip install playwright && playwright install chromium")
+        if has_figma_data:
+            print("FAIL: Playwright not installed but Figma data exists — visual diff is REQUIRED")
+            print("  Install: pip install playwright && playwright install chromium")
+            return 1
+        print("SKIP: Playwright not installed and no Figma data — visual diff skipped")
         return 0
 
-    project_path = Path(args.project_path).resolve()
     impl = args.implementation or find_implementation_html(project_path)
     if not impl:
+        if has_figma_data:
+            print("FAIL: No implementation HTML/URL found but Figma data exists — build the project first")
+            return 1
         print("SKIP: No implementation HTML/URL found — visual diff skipped")
         return 0
 
@@ -549,6 +562,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         proto = args.prototype or find_prototype_html(project_path)
         if not proto:
+            if has_figma_data:
+                print("FAIL: Figma data exists but no renders or prototype HTML — run figma_fetch.py first")
+                return 1
             print("SKIP: No Figma renders or prototype HTML found — visual diff skipped")
             return 0
         print("Using prototype HTML as visual reference (no Figma renders found)")
