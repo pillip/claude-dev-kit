@@ -116,6 +116,23 @@ def extract_expected_elements(design_data: dict) -> list[dict]:
     return elements
 
 
+def extract_expected_elements_per_viewport(design_data: dict) -> dict[str, list[dict]]:
+    """Extract expected elements grouped by viewport/breakpoint.
+
+    Returns dict keyed by breakpoint ("desktop", "tablet", "mobile").
+    """
+    per_viewport: dict[str, list[dict]] = {}
+
+    for frame in design_data.get("frames", []):
+        breakpoint = frame.get("breakpoint", "desktop")
+        # Create a single-frame design_data for extraction
+        single_frame_data = {"frames": [frame]}
+        elements = extract_expected_elements(single_frame_data)
+        per_viewport.setdefault(breakpoint, []).extend(elements)
+
+    return per_viewport
+
+
 # ── HTML content → actual elements ──────────────────────────────────
 
 
@@ -269,6 +286,57 @@ def find_source_files(project_path: Path) -> list[tuple[str, str]]:
 # ── CLI ─────────────────────────────────────────────────────────────
 
 
+_BREAKPOINT_MEDIA = {
+    "mobile": r"max-width\s*:\s*(?:4[0-9]{2}|5[0-9]{2}|6[0-9]{2}|7[0-6][0-9]|767)\s*px",
+    "tablet": r"(?:min-width\s*:\s*7[0-9]{2}|max-width\s*:\s*10[0-2][0-9])\s*px",
+    "desktop": r"min-width\s*:\s*(?:10[2-9][0-9]|1[1-9][0-9]{2}|[2-9][0-9]{3})\s*px",
+}
+
+
+def check_responsive_coverage(
+    viewports: list[str],
+    source_files: list[tuple[str, str]],
+) -> list[dict]:
+    """Check that implementation has responsive CSS for each Figma viewport.
+
+    Looks for media queries or responsive patterns matching each breakpoint.
+    """
+    violations: list[dict] = []
+    all_content = "\n".join(content for _, content in source_files)
+
+    # Check for any responsive pattern (media queries, container queries, responsive utils)
+    has_any_responsive = bool(re.search(r"@media|@container|useMediaQuery|useBreakpoint|breakpoint", all_content, re.IGNORECASE))
+
+    if len(viewports) > 1 and not has_any_responsive:
+        violations.append({
+            "type": "no_responsive",
+            "viewports": viewports,
+            "message": f"Figma has {len(viewports)} viewport(s) ({', '.join(viewports)}) but no responsive CSS (@media/@container) found",
+        })
+        return violations
+
+    # Check each non-desktop viewport has a matching media query
+    for vp in viewports:
+        if vp == "desktop":
+            continue  # Desktop is the default, no media query needed
+        pattern = _BREAKPOINT_MEDIA.get(vp)
+        if pattern and not re.search(pattern, all_content, re.IGNORECASE):
+            # Also check for responsive utility classes (Tailwind, Bootstrap, etc.)
+            responsive_utils = {
+                "mobile": r"\b(sm:|xs:|mobile[:-]|@screen\s+sm)",
+                "tablet": r"\b(md:|tablet[:-]|@screen\s+md)",
+            }
+            util_pattern = responsive_utils.get(vp, "")
+            if not util_pattern or not re.search(util_pattern, all_content, re.IGNORECASE):
+                violations.append({
+                    "type": "missing_breakpoint",
+                    "viewport": vp,
+                    "message": f"Figma has a '{vp}' viewport but no matching media query or responsive pattern found",
+                })
+
+    return violations
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -296,61 +364,70 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: cannot read design data: {e}", file=sys.stderr)
         return 2
 
-    expected = extract_expected_elements(design_data)
-    if not expected:
-        print("PASS: No visible elements extracted from Figma — nothing to compare")
-        return 0
-
     source_files = find_source_files(project_path)
     if not source_files:
         print("FAIL: No implementation source files found")
         return 1
 
-    # Read prototype HTML as additional actual content (if exists)
-    proto_dir = project_path / "prototype" / "screens"
     actual: dict = {"text_contents": set(), "element_roles": set()}
-    if proto_dir.is_dir():
-        for html_file in proto_dir.glob("*.html"):
-            try:
-                content = html_file.read_text(encoding="utf-8", errors="replace")
-                proto_actual = extract_actual_elements(content)
-                # Don't add prototype to actual — we compare implementation, not prototype
-            except OSError:
-                pass
+    all_violations: list[dict] = []
+    all_compliant = True
 
-    result = compare_structure(expected, actual, source_files)
+    # ── Per-viewport structural check ──
+    per_viewport = extract_expected_elements_per_viewport(design_data)
+    viewports = sorted(per_viewport.keys())
+
+    if len(viewports) > 1:
+        print(f"Figma has {len(viewports)} viewport(s): {', '.join(viewports)}")
+        print(f"  Verifying each viewport's elements independently.\n")
+
+    for vp, elements in per_viewport.items():
+        if not elements:
+            continue
+        result = compare_structure(elements, actual, source_files)
+        if not result["compliant"]:
+            all_compliant = False
+            for v in result["violations"]:
+                v["viewport"] = vp
+            all_violations.extend(result["violations"])
+
+        s = result["summary"]
+        icon = "PASS" if result["compliant"] else "FAIL"
+        print(f"  {icon}: {vp} — {s['expected_elements']} elements, "
+              f"{s['missing_role_count']} missing roles, {s['missing_text_count']} missing texts")
+
+    # ── Responsive CSS check (when multiple viewports exist) ──
+    if len(viewports) > 1:
+        responsive_violations = check_responsive_coverage(viewports, source_files)
+        if responsive_violations:
+            all_compliant = False
+            all_violations.extend(responsive_violations)
+            print()
+            for v in responsive_violations:
+                print(f"  FAIL: {v['message']}")
+
+    print()
 
     if args.json_output:
-        # Convert sets to lists for JSON
-        result["summary"]["found_roles"] = sorted(result["summary"].get("found_roles", []))
-        print(json.dumps(result, indent=2, default=list))
+        output = {
+            "viewports": viewports,
+            "violations": all_violations,
+            "compliant": all_compliant,
+            "viewport_count": len(viewports),
+        }
+        print(json.dumps(output, indent=2, default=list))
+
+    if all_compliant:
+        print(f"PASS: All {len(viewports)} viewport(s) structurally matched")
     else:
-        s = result["summary"]
-        print(f"Structural Match: {s['expected_elements']} Figma elements, {len(source_files)} source file(s)")
-        print(f"  Expected roles: {', '.join(s['expected_roles']) or 'none'}")
-        print(f"  Found roles: {', '.join(s['found_roles']) or 'none'}")
-        print()
+        print(f"FAIL: {len(all_violations)} violation(s) across {len(viewports)} viewport(s)")
+        for v in all_violations[:10]:
+            vp_label = f"[{v.get('viewport', 'all')}] " if v.get("viewport") else ""
+            print(f"    {vp_label}{v['message']}")
+        if len(all_violations) > 10:
+            print(f"    ... and {len(all_violations) - 10} more")
 
-        if result["compliant"]:
-            print("PASS: All Figma elements accounted for in implementation")
-        else:
-            print(f"FAIL: {s['total_violations']} structural violation(s)")
-            print()
-
-            if result["missing_roles"]:
-                print(f"  Missing element types ({s['missing_role_count']}):")
-                for v in result["violations"]:
-                    if v["type"] == "missing_role":
-                        print(f"    — {v['message']}")
-                print()
-
-            if result["missing_texts"]:
-                print(f"  Missing text content ({s['missing_text_count']}):")
-                for v in result["violations"]:
-                    if v["type"] == "missing_text":
-                        print(f"    — {v['message']}")
-
-    return 0 if result["compliant"] else 1
+    return 0 if all_compliant else 1
 
 
 if __name__ == "__main__":

@@ -250,11 +250,13 @@ Algorithm:
    IF all MAX_ITERATIONS exhausted: log remaining violations and proceed.
    ```
 
-   **b) Structural match (primary — blocking):**
+   **b) Structural match (primary — blocking, per-viewport):**
    ```
    Run: python3 scripts/verify_structural_match.py --project-path $WT
-   IF exit code ≠ 0: read the missing/extra element report, fix, re-run.
+   IF exit code ≠ 0: read the per-viewport missing element report, fix, re-run.
    ```
+   When Figma has multiple viewports (desktop/tablet/mobile), the script checks each separately.
+   If it reports missing responsive CSS (@media queries), add responsive handling for each breakpoint.
 
    **c) Visual diff (advisory — non-blocking):**
    ```
