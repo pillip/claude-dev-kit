@@ -1079,8 +1079,8 @@ def _make_gate_result(gate: str, status: str, blocking: bool = True) -> vg.GateR
 class TestRunVerifyGates:
     """Tests for _run_verify_gates() — gate integration helper."""
 
-    def test_returns_true_when_import_fails(self, monkeypatch):
-        """If verify_gates can't be imported, skip silently."""
+    def test_returns_false_when_import_fails_and_blocking(self, monkeypatch):
+        """If verify_gates can't be imported and blocking=True, FAIL."""
         import builtins
         original_import = builtins.__import__
 
@@ -1090,7 +1090,20 @@ class TestRunVerifyGates:
             return original_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fail_import)
-        assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+        assert vc._run_verify_gates("/tmp/fake", blocking=True) is False
+
+    def test_returns_true_when_import_fails_and_non_blocking(self, monkeypatch):
+        """If verify_gates can't be imported and blocking=False, pass."""
+        import builtins
+        original_import = builtins.__import__
+
+        def fail_import(name, *args, **kwargs):
+            if name == "verify_gates":
+                raise ImportError("no verify_gates")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fail_import)
+        assert vc._run_verify_gates("/tmp/fake", blocking=False) is True
 
     def test_returns_true_when_no_gates(self):
         """Empty results → pass."""
@@ -1130,10 +1143,15 @@ class TestRunVerifyGates:
         with patch.object(vg, "run_applicable_gates", return_value=results):
             assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
 
-    def test_exception_in_gates_returns_true(self):
-        """Unexpected exception in gates → warning, return True."""
+    def test_exception_in_gates_returns_false_when_blocking(self):
+        """Unexpected exception in gates + blocking=True → FAIL."""
         with patch.object(vg, "run_applicable_gates", side_effect=RuntimeError("boom")):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+            assert vc._run_verify_gates("/tmp/fake", blocking=True) is False
+
+    def test_exception_in_gates_returns_true_when_non_blocking(self):
+        """Unexpected exception in gates + blocking=False → pass."""
+        with patch.object(vg, "run_applicable_gates", side_effect=RuntimeError("boom")):
+            assert vc._run_verify_gates("/tmp/fake", blocking=False) is True
 
 
 class TestVerifyGatesIntegration:
