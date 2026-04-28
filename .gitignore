@@ -27,3 +27,4 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+figma-export/
