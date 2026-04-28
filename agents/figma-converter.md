@@ -117,6 +117,34 @@ You have these resources — **read them ALL before writing any HTML**:
 
 ## Critical Rules (learned from real testing)
 
+### Gradient Borders
+- Figma often uses **gradient borders** (e.g., `border-color: linear-gradient(#FFF600, #000000, #FFF600)`). CSS `border-color` doesn't support gradients directly. Use `border-image`:
+  ```css
+  border: 2px solid transparent;
+  border-image: linear-gradient(to bottom, #FFF600, #000000, #FFF600) 1;
+  border-radius: 15px; /* NOTE: border-image breaks border-radius */
+  ```
+  If border-radius is needed WITH gradient border, use a wrapper technique:
+  ```css
+  .card {
+    position: relative;
+    border-radius: 15px;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 15px;
+    padding: 2px;
+    background: linear-gradient(to bottom, #FFF600, #000000, #FFF600);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+  ```
+- **ALWAYS check `border_color` in design_data.json** — if it starts with `linear-gradient`, implement as gradient border, not solid color.
+
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
 - **배경은 `width: 100%`** — 고정 px(예: `width: 1920px`)를 사용하면 1400px 이상 뷰포트에서 잘림. `width: 100%`로 설정하여 뷰포트에 맞게 자연스럽게 확장.

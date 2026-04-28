@@ -128,7 +128,13 @@ def generate_node_css(
     # Border
     if node.get("border_color"):
         bw = node.get("border_width", 1)
-        rules.append(f"border: {bw}px solid {node['border_color']}")
+        bc = node["border_color"]
+        if bc.startswith("linear-gradient") or bc.startswith("radial-gradient"):
+            # Gradient border — use border-image
+            rules.append(f"border: {bw}px solid transparent")
+            rules.append(f"border-image: {bc} 1")
+        else:
+            rules.append(f"border: {bw}px solid {bc}")
     if node.get("border_radius"):
         br = node["border_radius"]
         if isinstance(br, list):
