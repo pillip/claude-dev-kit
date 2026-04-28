@@ -180,6 +180,31 @@ def collect_interaction_states(node: dict[str, Any]) -> list[dict[str, Any]]:
     return states
 
 
+# --- Gradient Angle Calculation ---
+
+
+def gradient_handles_to_angle(handles: list[dict]) -> int:
+    """Convert Figma gradientHandlePositions to CSS angle in degrees.
+
+    Figma handles: [{x, y}, {x, y}, {x, y}]
+      - handles[0]: gradient start point (0-1 normalized)
+      - handles[1]: gradient end point
+    CSS angles: 0deg = bottom→top, 90deg = left→right, 180deg = top→bottom
+    """
+    import math
+    if len(handles) < 2:
+        return 180  # default: top to bottom
+    start = handles[0]
+    end = handles[1]
+    dx = end.get("x", 0) - start.get("x", 0)
+    dy = end.get("y", 0) - start.get("y", 0)
+    angle_rad = math.atan2(dx, -dy)
+    angle_deg = round(math.degrees(angle_rad))
+    if angle_deg < 0:
+        angle_deg += 360
+    return angle_deg
+
+
 # --- Color Helpers ---
 
 
@@ -209,8 +234,10 @@ def extract_fill_color(fills: list[dict]) -> str | None:
                                  "GRADIENT_ANGULAR", "GRADIENT_DIAMOND"):
             stops = fill.get("gradientStops", [])
             if stops:
+                handles = fill.get("gradientHandlePositions", [])
+                angle = gradient_handles_to_angle(handles)
                 colors = [rgba_to_hex(s["color"]) for s in stops]
-                return f"linear-gradient({', '.join(colors)})"
+                return f"linear-gradient({angle}deg, {', '.join(colors)})"
     return None
 
 
@@ -230,8 +257,11 @@ def extract_fill_details(fills: list[dict]) -> dict[str, Any]:
         elif ftype in ("GRADIENT_LINEAR", "GRADIENT_RADIAL",
                         "GRADIENT_ANGULAR", "GRADIENT_DIAMOND"):
             stops = fill.get("gradientStops", [])
+            handles = fill.get("gradientHandlePositions", [])
+            angle = gradient_handles_to_angle(handles)
             grad = {
                 "type": ftype.lower().replace("gradient_", ""),
+                "angle": angle,
                 "stops": [{"color": rgba_to_hex(s["color"]),
                            "position": s.get("position", 0)} for s in stops],
             }

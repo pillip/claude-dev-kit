@@ -47,7 +47,8 @@ def _gradient_to_css(gradients: list[dict]) -> str | None:
 
     if grad_type == "radial":
         return f"radial-gradient({', '.join(stop_strs)})"
-    return f"linear-gradient({', '.join(stop_strs)})"
+    angle = grad.get("angle", 180)
+    return f"linear-gradient({angle}deg, {', '.join(stop_strs)})"
 
 
 def _shadow_to_css(effects: list[dict]) -> str | None:
