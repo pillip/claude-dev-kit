@@ -189,7 +189,21 @@ When Figma provides multiple frames (desktop/tablet/mobile):
 - **Background images also change per viewport** — different assets, different positions.
 - **Some elements may not exist in all viewports** — check each frame's tree. Use `display:none` in the @media query for missing elements.
 - **Every positioned element MUST have a class name** (e.g., `.skt-title`, `.ai-card-1`, `.poster`). Without class names, @media queries cannot target elements to swap coordinates. Do NOT rely on inline styles alone for position — they can't be overridden by @media.
-- **Build CSS in 3 blocks**: default (desktop coordinates), `@media (max-width:1023px)` (tablet coordinates), `@media (max-width:767px)` (mobile coordinates). Each block redefines top/left/width/font-size for every element.
+- **Build CSS in 3 blocks**: default (desktop coordinates), `@media` (tablet coordinates), `@media` (mobile coordinates). Breakpoints come from the issue/PRD — do NOT hardcode 1023px/767px. Read the project's breakpoint spec.
+- **Each @media block must be COMPLETE** — redefine every element's position, size, and visibility. Do NOT assume desktop styles carry over correctly. Common mistakes:
+  - Forgetting to redefine footer/contact elements → layout breaks
+  - Hiding elements with `display:none` that should still be visible (e.g., phone numbers, X icon between logos, decorative lines)
+  - Not checking what elements EXIST in each Figma frame — some elements appear in all viewports, some don't
+
+### Viewport-Specific Completeness Checklist
+For EACH viewport (@media block), verify these are all handled:
+1. **Header** — different padding, font-size, logo size per viewport. Read from each frame's data.
+2. **All section backgrounds** — different positions and sizes per frame
+3. **All text elements** — different top/left/font-size. Mobile often needs `text-align:center` and `width:100%`.
+4. **Cards** — different size, single-column on mobile
+5. **Footer/Contact** — completely different layout per viewport. Phone numbers, admin text, org text, logos, X icon — ALL must be repositioned, not hidden.
+6. **Process steps** — horizontal on desktop, may be 2x2 grid on tablet, vertical on mobile
+7. **SVG decorative elements** (lines between logos, connecting lines) — must be repositioned, not hidden unless they genuinely don't exist in that Figma frame
 
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
