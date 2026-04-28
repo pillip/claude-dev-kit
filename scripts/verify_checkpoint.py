@@ -307,6 +307,28 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
         print(f"  Asset download may have failed — check network and FIGMA_TOKEN permissions")
         return False
 
+    # Prototype screenshot QA: compare prototype HTML against render PNGs
+    renders_list = list((root / "figma-export" / "renders").glob("*.png")) if (root / "figma-export" / "renders").is_dir() else []
+    screen_files = list(screen_dir.glob(screen_glob))
+    if renders_list and screen_files:
+        visual_diff_script = Path(__file__).resolve().parent / "verify_visual_diff.py"
+        if visual_diff_script.exists():
+            proto_path = str(screen_files[0].resolve())
+            result = _run(
+                ["python3", str(visual_diff_script),
+                 "--project-path", str(root),
+                 "--prototype", proto_path,
+                 "--threshold", "15"],
+                timeout=120,
+            )
+            if result.stdout:
+                for line in result.stdout.strip().splitlines():
+                    print(f"  {line}")
+            if result.returncode != 0:
+                print(f"WARN: Prototype visual diff exceeds 15% — prototype may not match Figma renders")
+                print(f"  This is a warning, not blocking. Developer should verify visually.")
+                # Warning only — don't block, since cross-renderer diff can be high
+
     color_count = len(summary.get("colors", []))
     style_count = len(summary.get("text_styles", []))
     frame_count = summary.get("frame_count", 0)

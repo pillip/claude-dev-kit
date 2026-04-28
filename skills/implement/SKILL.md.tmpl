@@ -48,9 +48,20 @@ Algorithm:
       - `figma-export/component_map.json` — node→class→asset mapping with html_hint
       - `figma-export/assets/` — downloaded SVG/PNG icons and images
       - `figma-export/renders/` — Figma-rendered reference PNGs
-   3. Invoke the **figma-converter** agent (via Task) with this prompt:
+   3. **Extract breakpoints from the issue.** Read the issue's Implementation Notes or the PRD for
+      responsive breakpoint specs (e.g., "Desktop 1400px+ / Tablet 768px+ / Mobile 360px+").
+      If found, pass them explicitly to the figma-converter prompt below.
+      If not found, use the Figma frame widths as breakpoints.
+
+   4. Invoke the **figma-converter** agent (via Task) with this prompt:
       ```
       You are the figma-converter agent. Read agents/figma-converter.md for your full instructions.
+
+      ## Responsive Breakpoints (from project spec — use EXACTLY these values)
+      {Insert the breakpoints extracted in step 3, e.g.:
+       - Desktop: > 1400px (default)
+       - Tablet: ≤ 1400px
+       - Mobile: ≤ 768px}
 
       ## Required Steps (do ALL of these — a placeholder HTML is NOT acceptable)
 
@@ -92,7 +103,7 @@ Algorithm:
       This must be a COMPLETE HTML file — not a placeholder.
       If you cannot complete it, explain what blocked you.
       ```
-   4. **Verify the output is not a placeholder.** Read the generated HTML file. If it contains
+   5. **Verify the output is not a placeholder.** Read the generated HTML file. If it contains
       "placeholder" or is less than 1KB, the figma-converter failed — retry with the same prompt.
 
    **Do NOT skip this step when Figma URLs exist. The checkpoint below WILL fail if figma_fetch.py was not executed.**
