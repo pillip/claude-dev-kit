@@ -258,6 +258,13 @@ Algorithm:
 8) **Implement minimal code** inside `$WT/`.
    Write the minimum code needed to make all tests pass. Follow existing project patterns.
 
+   **If Figma data exists** (`figma-export/` directory present):
+   - **BEFORE writing any code**, read `prototype/screens/*.html` — this is your visual target
+   - Read `figma-export/figma_styles.css` — import this CSS directly
+   - Read `figma-export/component_map.json` — use class names and asset paths
+   - Read `figma-export/renders/*.png` — compare your implementation against these
+   - Your implementation must visually match the prototype HTML. Do NOT guess the design.
+
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase code --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
