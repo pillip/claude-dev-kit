@@ -168,14 +168,6 @@ Algorithm:
    4. **Verify the output is not a placeholder.** Read the generated HTML file. If it contains
       "placeholder" or is less than 1KB, the figma-converter failed — retry with the same prompt.
 
-   5. **Prototype visual QA** (before handing off to developer):
-      Open `prototype/screens/*.html` in browser and compare against `figma-export/renders/*.png`:
-      - **z-index**: Are text elements visible above backgrounds? Are overlapping elements in correct order?
-      - **Text styles**: Do font sizes, weights, colors match the render PNG? Check `text_style.segments` for mixed weights (bold + light in one paragraph → needs `<span>` tags).
-      - **Responsive**: Resize browser to tablet/mobile breakpoints. Do @media queries activate at the correct widths? **Breakpoints must match the project spec** (from issues.md or PRD), NOT hardcoded defaults.
-      - **Header/Footer**: Are they visible and correctly positioned at ALL viewport sizes?
-      - If any issue is found: fix the prototype HTML, then re-verify. Loop until prototype matches renders.
-
    **Do NOT skip this step when Figma URLs exist. The checkpoint below WILL fail if figma_fetch.py was not executed.**
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**

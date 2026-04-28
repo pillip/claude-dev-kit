@@ -288,6 +288,16 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
             print(f"  Re-run figma-converter with the step-by-step prompt from implement skill step 2a.")
             return False
 
+    # Verify @media queries exist when multiple frames are present
+    frame_count = summary.get("frame_count", 1)
+    if frame_count > 1:
+        for screen_file in screen_dir.glob(screen_glob):
+            content = screen_file.read_text(encoding="utf-8", errors="replace")
+            if "@media" not in content:
+                print(f"FAIL: {screen_file.name} has no @media queries but {frame_count} Figma frames exist")
+                print(f"  Prototype must include responsive @media blocks for each viewport.")
+                return False
+
     # Verify assets were exported if any were detected
     asset_count = summary.get("asset_count", 0)
     assets_dir = root / "figma-export" / "assets"
