@@ -188,6 +188,8 @@ When Figma provides multiple frames (desktop/tablet/mobile):
 - **Extract coordinates from each frame separately**: `design_data.json` has a `frames` array. Frame[0]=desktop, Frame[1]=tablet, Frame[2]=mobile. Each has its own `tree` with different x/y/width/height values.
 - **Background images also change per viewport** — different assets, different positions.
 - **Some elements may not exist in all viewports** — check each frame's tree. Use `display:none` in the @media query for missing elements.
+- **Every positioned element MUST have a class name** (e.g., `.skt-title`, `.ai-card-1`, `.poster`). Without class names, @media queries cannot target elements to swap coordinates. Do NOT rely on inline styles alone for position — they can't be overridden by @media.
+- **Build CSS in 3 blocks**: default (desktop coordinates), `@media (max-width:1023px)` (tablet coordinates), `@media (max-width:767px)` (mobile coordinates). Each block redefines top/left/width/font-size for every element.
 
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
