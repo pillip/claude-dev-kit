@@ -145,6 +145,41 @@ You have these resources — **read them ALL before writing any HTML**:
   ```
 - **ALWAYS check `border_color` in design_data.json** — if it starts with `linear-gradient`, implement as gradient border, not solid color.
 
+### Background Image Sizing
+- Use `object-fit: fill` for background images that must fill exact Figma dimensions (stretch allowed).
+- Use `object-fit: cover` only for decorative photos where cropping is acceptable.
+- **Default to `fill`** — Figma backgrounds are designed at exact dimensions.
+
+### Gradient Direction
+- **ALWAYS specify direction explicitly**: `linear-gradient(to bottom, ...)` not `linear-gradient(...)`.
+- Without direction, browsers default to `to bottom` but Figma's gradient angle may differ.
+- Verify by reading the `gradients` field — `stops[0]` is the start color, `stops[last]` is the end.
+
+### Header Component Structure
+- Logo + navigation links → `<header>` with flex layout.
+- Application dates / deadlines are SEPARATE positioned elements, NOT inside `<header>`.
+- Place dates as absolute-positioned div within content-wrap.
+
+### Decorative Elements (Rings, Circles)
+- Filled circles: `<div class="ring" style="border-radius:50%;background:#FFF;opacity:0.05;">`.
+- Outline rings: `border: 1px solid rgba(255,255,255,0.15)`.
+- Check Figma `background_color` and `opacity` — if bg is white + low opacity → filled circle.
+
+### Card Detail Text
+- Secondary text color comes from Figma `text_style.color` (e.g., `#999999`).
+- Never assume gray — read the exact value from design_data.json.
+- Never add symbols (→, •, ▶) that don't exist in Figma `text_content`.
+
+### CTA Button Styling
+- Button colors come FROM Figma data, not from gradient assumptions.
+- Check Figma: `background_color` might be solid (#FFFFFF, #E92436), not gradient.
+- Read Group children to find button Rectangle (bg) + Text (label + color) separately.
+
+### Phone Number / Pill Styling
+- If `border_radius` ≥ 20 → pill shape. Use `border-radius: 24px`.
+- Check `background_color` — often white bg (#FFFFFF) with dark text.
+- No border (Figma `border_color` empty) → don't add CSS border.
+
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
 - **배경은 `width: 100%`** — 고정 px(예: `width: 1920px`)를 사용하면 1400px 이상 뷰포트에서 잘림. `width: 100%`로 설정하여 뷰포트에 맞게 자연스럽게 확장.

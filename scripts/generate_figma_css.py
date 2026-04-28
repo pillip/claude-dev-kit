@@ -131,6 +131,9 @@ def generate_node_css(
         bc = node["border_color"]
         if bc.startswith("linear-gradient") or bc.startswith("radial-gradient"):
             # Gradient border — use border-image
+            # WARNING: border-image breaks border-radius in CSS!
+            # If this node also has border_radius, the developer must use
+            # the ::before pseudo-element technique (see figma-converter.md)
             rules.append(f"border: {bw}px solid transparent")
             rules.append(f"border-image: {bc} 1")
         else:
