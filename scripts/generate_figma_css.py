@@ -127,16 +127,22 @@ def generate_node_css(
         rules.append(f"height: {h}px")
 
     # Border
+    _has_gradient_border = False
+    _gradient_border_css = ""
     if node.get("border_color"):
         bw = node.get("border_width", 1)
         bc = node["border_color"]
         if bc.startswith("linear-gradient") or bc.startswith("radial-gradient"):
-            # Gradient border — use border-image
-            # WARNING: border-image breaks border-radius in CSS!
-            # If this node also has border_radius, the developer must use
-            # the ::before pseudo-element technique (see figma-converter.md)
-            rules.append(f"border: {bw}px solid transparent")
-            rules.append(f"border-image: {bc} 1")
+            _has_gradient_border = True
+            _gradient_border_css = bc
+            has_radius = bool(node.get("border_radius"))
+            if has_radius:
+                # gradient border + radius → can't use border-image, will use ::before
+                # Don't add border rules here — handled as pseudo-element class
+                pass
+            else:
+                rules.append(f"border: {bw}px solid transparent")
+                rules.append(f"border-image: {bc} 1")
         else:
             rules.append(f"border: {bw}px solid {bc}")
     if node.get("border_radius"):
@@ -192,6 +198,10 @@ def generate_node_css(
     # Position — explicit absolute or inferred from parent without auto-layout
     if node.get("position") == "absolute":
         rules.append("position: absolute")
+    # z-index from Figma layer order (set by parent during children iteration)
+    z = node.get("_z_index")
+    if z is not None:
+        rules.append(f"z-index: {z}")
         x = node.get("x")
         y = node.get("y")
         if x is not None:
@@ -250,6 +260,8 @@ def generate_node_css(
     for idx, child in enumerate(node.get("children", [])):
         if children_need_absolute and child.get("type") not in ("GROUP",):
             child.setdefault("position", "absolute")
+            # z-index from Figma layer order: later children = on top
+            child.setdefault("_z_index", idx + 1)
         child_results = generate_node_css(child, assets_by_node, node_x, node_y)
         children_results.extend(child_results)
         child_name = child.get("name", "")
@@ -273,6 +285,7 @@ def generate_node_css(
             "asset_height": node.get("height", 0) if asset_path else None,
             "children_classes": [c["class_name"] for c in children_results if c.get("css_rules")],
             "children_order": child_order if child_order else None,
+            "gradient_border": _gradient_border_css if _has_gradient_border else None,
         })
 
     results.extend(children_results)
@@ -366,6 +379,27 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
         lines.append(f"  .{rule['class_name']} {{")
         for css_rule in rule["css_rules"]:
             lines.append(f"    {css_rule};")
+
+        # Auto-generate ::before for gradient border + border-radius
+        if rule.get("gradient_border"):
+            br_val = None
+            for r in rule["css_rules"]:
+                if r.startswith("border-radius:"):
+                    br_val = r.split(":")[1].strip()
+                    break
+            if br_val:
+                lines.append("  }")
+                lines.append(f"  .{rule['class_name']}::before {{")
+                lines.append("    content: '';")
+                lines.append("    position: absolute;")
+                lines.append("    inset: 0;")
+                lines.append(f"    border-radius: {br_val};")
+                lines.append("    padding: 2px;")
+                lines.append(f"    background: {rule['gradient_border']};")
+                lines.append("    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);")
+                lines.append("    -webkit-mask-composite: xor;")
+                lines.append("    mask-composite: exclude;")
+                lines.append("    pointer-events: none;")
         lines.append("  }")
         lines.append("")
 
