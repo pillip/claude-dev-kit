@@ -188,6 +188,7 @@ When Figma provides multiple frames (desktop/tablet/mobile):
 - **Some elements may not exist in all viewports** — check each frame's tree. Use `display:none` in the @media query for missing elements.
 - **Every positioned element MUST have a class name** (e.g., `.skt-title`, `.ai-card-1`, `.poster`). Without class names, @media queries cannot target elements to swap coordinates. Do NOT rely on inline styles alone for position — they can't be overridden by @media.
 - **Build CSS in 3 blocks**: default (desktop coordinates), `@media` (tablet coordinates), `@media` (mobile coordinates). Breakpoints come from the issue/PRD — do NOT hardcode 1023px/767px. Read the project's breakpoint spec.
+- **Breakpoints must come from the project spec** (issues.md, PRD, or explicit instruction), NOT from hardcoded defaults. Common mistake: using 1024px/768px when the project specifies 1400px/768px.
 - **Each @media block must be built by reading THAT frame's tree.** Do NOT copy desktop values and adjust. Instead:
   1. Read `frames[1].tree` (tablet) — extract every node's x/y/width/height/font_size/color
   2. Write the tablet @media block using ONLY those values

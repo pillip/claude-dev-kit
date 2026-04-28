@@ -145,11 +145,14 @@ Algorithm:
       - All text from design_data.json text_content fields — do NOT invent text
 
       ### Step 3: Add tablet @media
+      - **Read the issue's breakpoint spec** from issues.md or PRD — use THOSE breakpoint values, NOT defaults
       - Read frames[1].tree from design_data.json
       - Write @media block with THAT frame's coordinates, font sizes, widths
       - Every element that exists in frames[1] gets repositioned
+      - Check text_style.segments for mixed font-weights → generate <span> tags
 
       ### Step 4: Add mobile @media
+      - Use the issue's breakpoint spec for mobile threshold
       - Read frames[2].tree from design_data.json
       - Same process as Step 3
 
@@ -164,6 +167,14 @@ Algorithm:
       ```
    4. **Verify the output is not a placeholder.** Read the generated HTML file. If it contains
       "placeholder" or is less than 1KB, the figma-converter failed — retry with the same prompt.
+
+   5. **Prototype visual QA** (before handing off to developer):
+      Open `prototype/screens/*.html` in browser and compare against `figma-export/renders/*.png`:
+      - **z-index**: Are text elements visible above backgrounds? Are overlapping elements in correct order?
+      - **Text styles**: Do font sizes, weights, colors match the render PNG? Check `text_style.segments` for mixed weights (bold + light in one paragraph → needs `<span>` tags).
+      - **Responsive**: Resize browser to tablet/mobile breakpoints. Do @media queries activate at the correct widths? **Breakpoints must match the project spec** (from issues.md or PRD), NOT hardcoded defaults.
+      - **Header/Footer**: Are they visible and correctly positioned at ALL viewport sizes?
+      - If any issue is found: fix the prototype HTML, then re-verify. Loop until prototype matches renders.
 
    **Do NOT skip this step when Figma URLs exist. The checkpoint below WILL fail if figma_fetch.py was not executed.**
 
