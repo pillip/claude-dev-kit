@@ -167,6 +167,8 @@ You have these resources — **read them ALL before writing any HTML**:
 ### Z-Index
 - **ALWAYS set explicit z-index.** Without it, later DOM elements cover earlier ones unpredictably.
 - Text MUST be above background images. Cards MUST be above decorative circles. Navigation MUST be above everything.
+- **Figma layer order = z-order.** Children array in design_data.json is back-to-front — later children render on top. Convert to CSS z-index accordingly.
+- **Overlapping elements with fade transitions** (e.g., process step arrows): the element that visually appears IN FRONT needs HIGHER z-index. If element A overlaps B's tail, A needs higher z-index than B. Add fade overlays (`linear-gradient(270deg, transparent, black)`) on the tail of each element, between the element and the one behind it.
 
 ### Groups
 - **Do NOT create a single `<div>` for a Group.** Read the Group's children from design_data.json and place each child element individually at its Figma coordinates.
