@@ -723,7 +723,18 @@ def export_frame_renders(
                     time.sleep(2)
 
         if not image_url:
-            print(f"WARN: No render URL for frame '{frame['frame_name']}' after 3 attempts", file=sys.stderr)
+            # Fallback: try scale=1 (smaller file, faster download)
+            endpoint_s1 = f"/images/{file_key}?ids={nid_encoded}&format=png&scale=1"
+            try:
+                data = figma_api_get(endpoint_s1, token)
+                image_url = data.get("images", {}).get(nid)
+                if image_url:
+                    print(f"  Using scale=1 fallback for '{frame['frame_name']}'", file=sys.stderr)
+            except Exception:
+                pass
+
+        if not image_url:
+            print(f"ERROR: No render URL for frame '{frame['frame_name']}' after all attempts", file=sys.stderr)
             continue
 
         # Download the image with retry and increasing timeout
