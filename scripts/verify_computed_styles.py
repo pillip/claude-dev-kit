@@ -316,6 +316,117 @@ def compare_computed_vs_figma(
     }
 
 
+# ── Per-node matching: Figma text node ↔ DOM element ────────────────
+
+
+def extract_figma_text_nodes(design_data: dict) -> list[dict]:
+    """Extract all TEXT nodes from Figma design_data with their expected styles.
+
+    Returns list of {text, color, font_size, font_weight, font_family}.
+    """
+    nodes: list[dict] = []
+
+    def _walk(node: dict) -> None:
+        ts = node.get("text_style")
+        if ts and ts.get("text_content"):
+            text = ts["text_content"].strip()
+            if len(text) >= 2:  # skip single chars
+                nodes.append({
+                    "text": text,
+                    "color": _normalize_color(ts["color"]) if ts.get("color") else None,
+                    "font_size": float(ts["font_size_px"]) if ts.get("font_size_px") else None,
+                    "font_weight": int(ts["font_weight"]) if ts.get("font_weight") else None,
+                    "font_family": ts.get("font_family", "").lower() if ts.get("font_family") else None,
+                    "text_align": ts.get("text_align"),
+                })
+        for child in node.get("children", []):
+            _walk(child)
+
+    for frame in design_data.get("frames", []):
+        _walk(frame.get("tree", {}))
+
+    return nodes
+
+
+def match_and_compare_per_node(
+    figma_nodes: list[dict],
+    dom_elements: list[dict],
+) -> list[dict]:
+    """Match Figma text nodes to DOM elements by text content, then compare styles.
+
+    For each Figma text node, find the DOM element whose text matches,
+    then compare color, font-size, font-weight per node.
+    """
+    violations: list[dict] = []
+
+    # Build DOM lookup by text content (first 30 chars → element)
+    dom_by_text: dict[str, dict] = {}
+    for el in dom_elements:
+        text = (el.get("text") or "").strip()
+        if text and len(text) >= 2:
+            # Use first 30 chars as key (text might be truncated in JS extraction)
+            key = text[:30].lower()
+            if key not in dom_by_text:
+                dom_by_text[key] = el
+
+    for fnode in figma_nodes:
+        ftext = fnode["text"]
+        # Try to find matching DOM element
+        key = ftext[:30].lower()
+        # Also try without line breaks
+        key_noline = ftext.replace("\n", "").replace("\r", "")[:30].lower()
+
+        dom_el = dom_by_text.get(key) or dom_by_text.get(key_noline)
+        if not dom_el:
+            continue
+
+        styles = dom_el.get("styles", {})
+        label = f'"{ftext[:40]}"'
+
+        # Color comparison
+        if fnode["color"]:
+            dom_color_raw = styles.get("color", "")
+            dom_color = _rgb_to_hex(dom_color_raw)
+            if dom_color and not _color_close(dom_color, {fnode["color"]}, tolerance=10):
+                violations.append({
+                    "element": label,
+                    "property": "color",
+                    "expected": fnode["color"],
+                    "computed": dom_color,
+                    "message": f'{label} color: expected {fnode["color"]}, got {dom_color}',
+                })
+
+        # Font size comparison
+        if fnode["font_size"]:
+            dom_fs = _parse_px(styles.get("fontSize", ""))
+            if dom_fs and abs(dom_fs - fnode["font_size"]) > 2:
+                violations.append({
+                    "element": label,
+                    "property": "fontSize",
+                    "expected": f'{fnode["font_size"]}px',
+                    "computed": f'{dom_fs}px',
+                    "message": f'{label} font-size: expected {fnode["font_size"]}px, got {dom_fs}px',
+                })
+
+        # Font weight comparison
+        if fnode["font_weight"]:
+            dom_fw = styles.get("fontWeight", "")
+            try:
+                dom_fw_int = int(dom_fw)
+                if dom_fw_int != fnode["font_weight"]:
+                    violations.append({
+                        "element": label,
+                        "property": "fontWeight",
+                        "expected": str(fnode["font_weight"]),
+                        "computed": str(dom_fw_int),
+                        "message": f'{label} font-weight: expected {fnode["font_weight"]}, got {dom_fw_int}',
+                    })
+            except (ValueError, TypeError):
+                pass
+
+    return violations
+
+
 # ── CLI ─────────────────────────────────────────────────────────────
 
 
@@ -386,25 +497,47 @@ def main(argv: list[str] | None = None) -> int:
     elements = extract_computed_styles(url, args.viewport)
     print(f"  Extracted {len(elements)} visible element(s)")
 
+    # Phase 1: Palette-level check (existing)
     result = compare_computed_vs_figma(elements, figma_ref)
 
+    # Phase 2: Per-node matching (NEW — catches per-element style mismatches)
+    figma_nodes = extract_figma_text_nodes(design_data)
+    node_violations = match_and_compare_per_node(figma_nodes, elements)
+
+    # Merge results
+    all_violations = result["violations"] + node_violations
+    total = len(all_violations)
+    compliant = total == 0
+
     if args.json_output:
-        print(json.dumps(result, indent=2))
+        print(json.dumps({
+            "palette_violations": result["violations"],
+            "node_violations": node_violations,
+            "summary": {**result["summary"], "node_violations": len(node_violations), "total_violations": total},
+            "compliant": compliant,
+        }, indent=2))
     else:
         s = result["summary"]
         print(f"  Compared against {len(figma_ref['colors'])} colors, {len(figma_ref['fonts'])} fonts, {len(figma_ref['font_sizes'])} sizes")
+        print(f"  Matched {len(figma_nodes)} Figma text nodes against DOM")
         print()
 
-        if result["compliant"]:
-            print("PASS: All computed styles match Figma tokens")
+        if compliant:
+            print("PASS: All computed styles match Figma (palette + per-node)")
         else:
-            print(f"FAIL: {s['total_violations']} computed style mismatch(es)")
-            for v in result["violations"][:15]:
-                print(f"    {v['element']} → {v['message']}")
-            if s["total_violations"] > 15:
-                print(f"    ... and {s['total_violations'] - 15} more")
+            if result["violations"]:
+                print(f"  Palette violations ({s['total_violations']}):")
+                for v in result["violations"][:10]:
+                    print(f"    {v['element']} → {v['message']}")
+            if node_violations:
+                print(f"  Per-node violations ({len(node_violations)}):")
+                for v in node_violations[:15]:
+                    print(f"    {v['message']}")
+                if len(node_violations) > 15:
+                    print(f"    ... and {len(node_violations) - 15} more")
+            print(f"\n  FAIL: {total} total violation(s)")
 
-    return 0 if result["compliant"] else 1
+    return 0 if compliant else 1
 
 
 if __name__ == "__main__":
