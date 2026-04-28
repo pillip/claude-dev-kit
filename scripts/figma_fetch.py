@@ -318,6 +318,50 @@ def extract_text_style(node: dict[str, Any]) -> dict[str, Any] | None:
     # Text content
     result["text_content"] = node.get("characters", "")
 
+    # Mixed styles within a single text node (e.g., bold + light in one paragraph)
+    overrides = node.get("characterStyleOverrides", [])
+    override_table = node.get("styleOverrideTable", {})
+    if overrides and override_table:
+        chars = node.get("characters", "")
+        segments: list[dict[str, Any]] = []
+        current_style_id = 0  # 0 = base style
+        current_start = 0
+
+        for i, style_id in enumerate(overrides):
+            if style_id != current_style_id:
+                # End previous segment
+                if i > current_start:
+                    seg_text = chars[current_start:i]
+                    if seg_text.strip():
+                        seg: dict[str, Any] = {"text": seg_text}
+                        if current_style_id != 0 and str(current_style_id) in override_table:
+                            ov = override_table[str(current_style_id)]
+                            if "fontWeight" in ov:
+                                seg["font_weight"] = ov["fontWeight"]
+                            if "fontFamily" in ov:
+                                seg["font_family"] = ov["fontFamily"]
+                        else:
+                            seg["font_weight"] = style.get("fontWeight", 400)
+                        segments.append(seg)
+                current_start = i
+                current_style_id = style_id
+
+        # Last segment
+        if current_start < len(chars):
+            seg_text = chars[current_start:]
+            if seg_text.strip():
+                seg = {"text": seg_text}
+                if current_style_id != 0 and str(current_style_id) in override_table:
+                    ov = override_table[str(current_style_id)]
+                    if "fontWeight" in ov:
+                        seg["font_weight"] = ov["fontWeight"]
+                else:
+                    seg["font_weight"] = style.get("fontWeight", 400)
+                segments.append(seg)
+
+        if len(segments) > 1:
+            result["segments"] = segments
+
     return result
 
 
@@ -1180,6 +1224,55 @@ def main() -> None:
 
     else:
         print("\nNo exportable assets detected in the fetched frames.", file=sys.stderr)
+
+    # --- IMAGE fill download (background images not caught by asset export) ---
+    image_fill_nodes: list[dict] = []
+    def _collect_image_fills(node: dict[str, Any], fk: str) -> None:
+        name = node.get("name", "")
+        nid = node.get("id", "")
+        for fill in node.get("fills", []):
+            if fill.get("type") == "IMAGE" and fill.get("imageRef") and fill.get("visible", True):
+                slug = _slugify(name)
+                filepath = out_dir / "assets" / f"{slug}@2x.png"
+                if not filepath.exists():
+                    image_fill_nodes.append({"id": nid, "name": name, "slug": slug, "imageRef": fill["imageRef"]})
+                break
+        for child in node.get("children", []):
+            _collect_image_fills(child, fk)
+
+    for raw_node, fk in all_raw_nodes:
+        _collect_image_fills(raw_node, fk)
+
+    if image_fill_nodes:
+        print(f"\nDownloading {len(image_fill_nodes)} IMAGE fill background(s)...", file=sys.stderr)
+        # Get all image URLs from file images endpoint
+        file_keys = set(fk for _, fk in all_raw_nodes)
+        all_image_urls: dict[str, str] = {}
+        for fk in file_keys:
+            try:
+                img_data = figma_api_get(f"/files/{fk}/images", token)
+                all_image_urls.update(img_data.get("meta", {}).get("images", {}))
+            except Exception as e:
+                print(f"  WARN: Failed to get file images: {e}", file=sys.stderr)
+
+        assets_dir = out_dir / "assets"
+        assets_dir.mkdir(exist_ok=True)
+        import time as _time
+        for item in image_fill_nodes:
+            img_url = all_image_urls.get(item["imageRef"])
+            if not img_url:
+                continue
+            filepath = assets_dir / f"{item['slug']}@2x.png"
+            try:
+                req = urllib.request.Request(img_url)
+                data_bytes = urllib.request.urlopen(req, timeout=120).read()
+                filepath.write_bytes(data_bytes)
+                exported_assets.append({"name": item["name"], "path": str(filepath.relative_to(repo_root)),
+                                        "format": "png", "node_id": item["id"]})
+                print(f"  OK: {item['name']} ({len(data_bytes)//1024}KB)", file=sys.stderr)
+                _time.sleep(0.3)
+            except Exception as e:
+                print(f"  FAIL: {item['name']}: {e}", file=sys.stderr)
 
     # --- Frame render export (Figma-rendered PNGs = absolute visual source of truth) ---
     print(f"\nExporting {len(frames)} frame render(s) from Figma...", file=sys.stderr)
