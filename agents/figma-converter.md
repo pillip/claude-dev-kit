@@ -45,10 +45,9 @@ You have these resources — **read them ALL before writing any HTML**:
 
 5. **Create a single container** that scales naturally:
    ```html
-   <div class="frame" style="position:relative;width:100%;max-width:{frame_w}px;height:{frame_h}px;margin:0 auto;background:#000;overflow:hidden;">
+   <div class="frame" style="position:relative;width:100%;height:{frame_h}px;margin:0 auto;background:#000;overflow:hidden;">
    ```
-   - `width: 100%` — 뷰포트보다 작으면 뷰포트에 맞춤
-   - `max-width: {frame_w}px` — Figma 프레임 너비 초과 방지
+   - `width: 100%` — 뷰포트 전체 너비 사용. **max-width 설정 금지** — 넓은 모니터에서 배경이 잘림.
    - **배경 이미지는 `width: 100%`** 로 설정하여 컨테이너 전체를 채움. 고정 px 사용 금지.
    ```html
    <!-- 배경: width 100%로 자연스럽게 확장 -->
