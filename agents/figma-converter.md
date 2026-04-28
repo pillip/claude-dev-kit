@@ -70,7 +70,41 @@ You have these resources — **read them ALL before writing any HTML**:
    <div style="top:{relative_top}px;left:{relative_left}px;width:{w}px;...;z-index:{layer};">
    ```
 
-8. **Handle Groups**: Read Group children from design_data.json. Groups contain sub-elements with their own positions — extract each child and place it individually. Common groups:
+8. **Identify and build components**: Don't just dump all elements as flat absolute-positioned divs. Recognize common UI patterns and create proper semantic components:
+
+   **Header** — Elements at the top of the frame (y < 100) with logo + navigation links:
+   ```html
+   <header style="position:absolute;top:0;left:0;width:100%;display:flex;align-items:center;padding:25px 60px;z-index:50;">
+     <img src="assets/logo.png" alt="Logo" height="51">
+     <nav style="margin-left:auto;display:flex;gap:40px;">
+       <a href="#">Menu1</a>
+       <a href="#">Menu2</a>
+     </nav>
+     <div class="dates" style="margin-left:40px;">접수 기간</div>
+   </header>
+   ```
+
+   **Footer** — Elements at the bottom of the frame with contact info + logos:
+   ```html
+   <footer style="position:absolute;bottom:0;left:0;width:100%;...;z-index:10;">
+     <div class="footer-content">...</div>
+   </footer>
+   ```
+
+   **Cards** — Repeated elements with similar structure (같은 width/height, 같은 y-간격):
+   ```html
+   <div class="card-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+     <div class="card">...</div>
+     <div class="card">...</div>
+   </div>
+   ```
+
+   **Section titles** — Large bold text with distinctive color (e.g., #FDE886):
+   ```html
+   <h2 class="section-title">모집대상</h2>
+   ```
+
+9. **Handle Groups**: Read Group children from design_data.json. Groups contain sub-elements with their own positions — extract each child and place it individually. Common groups:
    - Navigation groups → individual `<a>` tags at exact positions
    - Footer groups → institution name, phone numbers, buttons, logos each positioned
    - Process steps → arrow images + text labels overlaid
@@ -257,6 +291,7 @@ After generating each screen HTML file, verify by opening in Chrome:
 7. **Coordinates accurate?** — Elements are at Figma positions. Check y-values by scrolling and comparing with render PNG.
 8. **Footer visible?** — Scroll to the very bottom. Footer background, text, buttons, logos all render.
 9. **No missing sections?** — Compare render PNG top-to-bottom with HTML. Count sections in both.
+10. **Components identified?** — Header is a `<header>` with flex layout (not scattered absolute divs). Footer is a `<footer>`. Repeated cards use grid/flex. Section titles use `<h2>`.
 
 ## Guidelines
 
