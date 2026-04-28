@@ -266,6 +266,15 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
         print(f"  Expected {screen_glob} files from figma-converter agent (platform: {platform})")
         return False
 
+    # Verify prototype HTML is not a placeholder
+    for screen_file in screen_dir.glob(screen_glob):
+        content = screen_file.read_text(encoding="utf-8", errors="replace")
+        if len(content) < 1024 or "placeholder" in content.lower():
+            print(f"FAIL: {screen_file.name} is a placeholder ({len(content)} bytes)")
+            print(f"  figma-converter must generate complete HTML, not a stub.")
+            print(f"  Re-run figma-converter with the step-by-step prompt from implement skill step 2a.")
+            return False
+
     # Verify assets were exported if any were detected
     asset_count = summary.get("asset_count", 0)
     assets_dir = root / "figma-export" / "assets"
