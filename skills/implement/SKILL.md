@@ -123,23 +123,47 @@ Algorithm:
       - `figma-export/renders/` — Figma-rendered reference PNGs
    3. Invoke the **figma-converter** agent (via Task) with this prompt:
       ```
-      Build semantic HTML prototypes for each Figma frame.
+      You are the figma-converter agent. Read agents/figma-converter.md for your full instructions.
 
-      Your visual target: the render PNGs in figma-export/renders/
-      Your CSS: figma-export/figma_styles.css (import, do not rewrite)
-      Your data: figma-export/design_data.json (text content + hierarchy)
-      Your assets: figma-export/component_map.json (class names + asset html_hints)
+      ## Required Steps (do ALL of these — a placeholder HTML is NOT acceptable)
 
-      Study each render PNG carefully. Build HTML that visually matches it.
-      Use CSS classes from figma_styles.css. Use text from design_data.json.
-      Use <img> tags from component_map.json html_hint fields.
+      ### Step 1: Read all input files
+      - Read figma-export/renders/*.png (open each image — these are your visual target)
+      - Read figma-export/design_data.json (full content — contains node tree with coordinates, text, styles)
+      - Read figma-export/figma_styles.css (skim — contains pre-generated CSS classes)
+      - Read figma-export/component_map.json (skim — contains asset paths and html_hints)
 
-      Output: prototype/screens/<frame_name>.html per frame.
-      Preserve existing prototype files (upsert mode).
+      ### Step 2: Build desktop HTML
+      - Read frames[0].tree from design_data.json
+      - Frame origin: tree.x, tree.y. Element position: element.y - frame.y, element.x - frame.x
+      - Create a .frame container (width:100%, height:{frame_h}px)
+      - Background images: class="bg", width:100%, position:absolute, z-index:1
+      - Content wrapper: class="cw", width:{frame_w}px, left:50%, transform:translateX(-50%), z-index:3
+      - Every element inside cw: position:absolute, top/left from coordinates, WITH a class name
+      - Import figma_styles.css via <link>
+      - z-index layers: bg(1) → deco(5) → content(10) → nav(50)
+      - All text from design_data.json text_content fields — do NOT invent text
+
+      ### Step 3: Add tablet @media
+      - Read frames[1].tree from design_data.json
+      - Write @media block with THAT frame's coordinates, font sizes, widths
+      - Every element that exists in frames[1] gets repositioned
+
+      ### Step 4: Add mobile @media
+      - Read frames[2].tree from design_data.json
+      - Same process as Step 3
+
+      ### Step 5: Verify
+      - Open the HTML in browser. Compare with render PNGs.
+      - Scroll through entire page. Check: backgrounds visible? Text readable? Footer present?
+
+      ## Output
+      Write to: prototype/screens/desktop.html
+      This must be a COMPLETE HTML file — not a placeholder.
+      If you cannot complete it, explain what blocked you.
       ```
-   4. The figma-converter generates prototype HTML by **visually interpreting** the render PNGs —
-      not by programmatic tree walking. This produces correct semantic structure (sections, cards,
-      overlapping backgrounds with text, navigation) that matches the actual Figma design.
+   4. **Verify the output is not a placeholder.** Read the generated HTML file. If it contains
+      "placeholder" or is less than 1KB, the figma-converter failed — retry with the same prompt.
 
    **Do NOT skip this step when Figma URLs exist. The checkpoint below WILL fail if figma_fetch.py was not executed.**
 
