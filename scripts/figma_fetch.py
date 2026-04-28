@@ -697,33 +697,41 @@ def export_frame_renders(
 
     exported: list[dict[str, str]] = []
 
-    for file_key, group in groups.items():
-        node_ids = [f["node_id"] for f in group]
-        ids_param = ",".join(urllib.parse.quote(nid, safe="") for nid in node_ids)
+    # Download each frame INDIVIDUALLY with retry (batch fails if any frame times out)
+    for frame in frames:
+        file_key = frame["file_key"]
+        nid = frame["node_id"]
+        nid_encoded = urllib.parse.quote(nid, safe="")
+        endpoint = f"/images/{file_key}?ids={nid_encoded}&format=png&scale=2"
 
-        # Export at 2x scale for high-fidelity comparison
-        endpoint = f"/images/{file_key}?ids={ids_param}&format=png&scale=2"
-        try:
-            data = figma_api_get(endpoint, token)
-        except Exception as e:
-            print(f"WARN: Frame render export failed: {e}", file=sys.stderr)
+        slug = _slugify(frame["frame_name"])
+        filename = f"{slug}@2x.png"
+        filepath = renders_dir / filename
+
+        # Retry up to 3 times with increasing timeout
+        image_url = None
+        for attempt, timeout_s in enumerate([30, 60, 120], 1):
+            try:
+                data = figma_api_get(endpoint, token)
+                image_url = data.get("images", {}).get(nid)
+                if image_url:
+                    break
+            except Exception as e:
+                print(f"  Render attempt {attempt}/3 failed for '{frame['frame_name']}': {e}", file=sys.stderr)
+                if attempt < 3:
+                    import time
+                    time.sleep(2)
+
+        if not image_url:
+            print(f"WARN: No render URL for frame '{frame['frame_name']}' after 3 attempts", file=sys.stderr)
             continue
 
-        images = data.get("images", {})
-
-        for frame in group:
-            image_url = images.get(frame["node_id"])
-            if not image_url:
-                print(f"WARN: No render URL for frame '{frame['frame_name']}'", file=sys.stderr)
-                continue
-
-            slug = _slugify(frame["frame_name"])
-            filename = f"{slug}@2x.png"
-            filepath = renders_dir / filename
-
+        # Download the image with retry and increasing timeout
+        downloaded = False
+        for attempt, timeout_s in enumerate([60, 120, 180], 1):
             try:
                 req = urllib.request.Request(image_url)
-                with urllib.request.urlopen(req, timeout=60) as resp:
+                with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                     filepath.write_bytes(resp.read())
                 exported.append({
                     "name": frame["frame_name"],
@@ -731,11 +739,19 @@ def export_frame_renders(
                     "width": frame.get("width", 0),
                     "height": frame.get("height", 0),
                     "file_key": file_key,
-                    "node_id": frame["node_id"],
+                    "node_id": nid,
                     "breakpoint": frame.get("breakpoint", "desktop"),
                 })
+                downloaded = True
+                break
             except Exception as e:
-                print(f"WARN: Failed to download render for '{frame['frame_name']}': {e}", file=sys.stderr)
+                print(f"  Download attempt {attempt}/3 for '{frame['frame_name']}': {e}", file=sys.stderr)
+                if attempt < 3:
+                    import time
+                    time.sleep(2)
+
+        if not downloaded:
+            print(f"ERROR: Failed to download render for '{frame['frame_name']}' after 3 attempts", file=sys.stderr)
 
     return exported
 
@@ -1157,7 +1173,11 @@ def main() -> None:
     # --- Frame render export (Figma-rendered PNGs = absolute visual source of truth) ---
     print(f"\nExporting {len(frames)} frame render(s) from Figma...", file=sys.stderr)
     frame_renders = export_frame_renders(frames, token, out_dir)
-    print(f"  Downloaded {len(frame_renders)} render(s) to figma-export/renders/", file=sys.stderr)
+    if len(frame_renders) == 0 and len(frames) > 0:
+        print(f"  ERROR: Downloaded 0 render(s) out of {len(frames)} frame(s) — all timed out", file=sys.stderr)
+        print(f"  The figma-converter agent NEEDS these renders. Re-run figma_fetch.py.", file=sys.stderr)
+    else:
+        print(f"  Downloaded {len(frame_renders)} render(s) to figma-export/renders/", file=sys.stderr)
 
     output = {
         "platform": platform,

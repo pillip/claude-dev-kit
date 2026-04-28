@@ -266,6 +266,19 @@ def verify_implement_figma(issue_id: str, **_) -> bool:
         print(f"  Expected {screen_glob} files from figma-converter agent (platform: {platform})")
         return False
 
+    # Verify render PNGs exist (figma-converter needs them)
+    renders_dir = root / "figma-export" / "renders"
+    if renders_dir.is_dir():
+        render_files = list(renders_dir.glob("*.png"))
+        if not render_files:
+            print("FAIL: figma-export/renders/ exists but contains no PNG files")
+            print("  Frame renders are required for figma-converter. Re-run figma_fetch.py.")
+            return False
+    else:
+        print("FAIL: figma-export/renders/ directory not found")
+        print("  Frame renders are required for figma-converter. Re-run figma_fetch.py.")
+        return False
+
     # Verify prototype HTML is not a placeholder
     for screen_file in screen_dir.glob(screen_glob):
         content = screen_file.read_text(encoding="utf-8", errors="replace")
