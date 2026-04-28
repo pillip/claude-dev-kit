@@ -43,11 +43,20 @@ You have these resources — **read them ALL before writing any HTML**:
 
 ### Phase 2: Build
 
-5. **Create a single container** with the frame's exact dimensions:
+5. **Create a single container** that scales naturally:
    ```html
-   <div class="frame" style="position:relative;width:{frame_w}px;height:{frame_h}px;background:#000;overflow:hidden;">
+   <div class="frame" style="position:relative;width:100%;max-width:{frame_w}px;height:{frame_h}px;margin:0 auto;background:#000;overflow:hidden;">
    ```
-   All elements inside use `position: absolute` with Figma coordinates.
+   - `width: 100%` — 뷰포트보다 작으면 뷰포트에 맞춤
+   - `max-width: {frame_w}px` — Figma 프레임 너비 초과 방지
+   - **배경 이미지는 `width: 100%`** 로 설정하여 컨테이너 전체를 채움. 고정 px 사용 금지.
+   ```html
+   <!-- 배경: width 100%로 자연스럽게 확장 -->
+   <img src="assets/bg.png" style="top:0;left:0;width:100%;z-index:1;" alt="">
+   <!-- 콘텐츠: max-width 안에서 중앙 정렬 -->
+   <div style="top:100px;left:50%;transform:translateX(-50%);z-index:10;">...</div>
+   ```
+   All content elements inside use `position: absolute` with Figma coordinates.
 
 6. **Layer elements with z-index** (critical for correct rendering):
    - **z-index: 1~3** — Background images (배경), gradient overlays
@@ -75,6 +84,7 @@ You have these resources — **read them ALL before writing any HTML**:
 
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
+- **배경은 `width: 100%`** — 고정 px(예: `width: 1920px`)를 사용하면 1400px 이상 뷰포트에서 잘림. `width: 100%`로 설정하여 뷰포트에 맞게 자연스럽게 확장.
 - When `has_background_image: true`, download the image via `figma_fetch.py`. Use `<img>` with absolute positioning for large backgrounds.
 - Gradient overlays (`gradients` field) go on TOP of background images (higher z-index).
 
