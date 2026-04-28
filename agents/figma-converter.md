@@ -158,6 +158,37 @@ You have these resources — **read them ALL before writing any HTML**:
 - `border-image` (gradient borders) breaks `border-radius` — use `::before` pseudo-element technique when both are needed.
 - `object-fit: fill` stretches to exact dimensions. `object-fit: cover` crops. Choose based on whether the Figma design shows stretching or cropping.
 
+### Multi-Viewport (Responsive)
+When Figma provides multiple frames (desktop/tablet/mobile):
+
+**Auto-layout designs** (Figma nodes have `layout` field):
+- Build once with flexbox → natural reflow across viewports
+- Use @media queries only for specific overrides (font-size, gap, padding)
+
+**Absolute-positioned designs** (no `layout` field, all coordinates fixed):
+- Each frame has completely different coordinates — cannot share layout
+- Build one HTML structure, use @media queries to swap **entire coordinate sets**:
+  ```css
+  /* Desktop (default) */
+  .hero-title { top: 1278px; left: 253px; font-size: 50px; }
+  
+  /* Tablet */
+  @media (max-width: 1023px) {
+    .frame { height: {tablet_frame_h}px; }
+    .hero-title { top: 800px; left: 100px; font-size: 34px; }
+    /* ... every element gets new coordinates from tablet frame */
+  }
+  
+  /* Mobile */
+  @media (max-width: 767px) {
+    .frame { height: {mobile_frame_h}px; }
+    .hero-title { top: 500px; left: 20px; font-size: 26px; }
+  }
+  ```
+- **Extract coordinates from each frame separately**: `design_data.json` has a `frames` array. Frame[0]=desktop, Frame[1]=tablet, Frame[2]=mobile. Each has its own `tree` with different x/y/width/height values.
+- **Background images also change per viewport** — different assets, different positions.
+- **Some elements may not exist in all viewports** — check each frame's tree. Use `display:none` in the @media query for missing elements.
+
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
 - **배경은 `width: 100%`** — 고정 px(예: `width: 1920px`)를 사용하면 1400px 이상 뷰포트에서 잘림. `width: 100%`로 설정하여 뷰포트에 맞게 자연스럽게 확장.
