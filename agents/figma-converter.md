@@ -43,19 +43,21 @@ You have these resources — **read them ALL before writing any HTML**:
 
 ### Phase 2: Build
 
-5. **Create a single container** that scales naturally:
+5. **Create a two-layer structure** — backgrounds stretch, content centers:
    ```html
-   <div class="frame" style="position:relative;width:100%;height:{frame_h}px;margin:0 auto;background:#000;overflow:hidden;">
+   <div class="frame" style="position:relative;width:100%;height:{frame_h}px;background:#000;overflow:hidden;">
+     <!-- 배경 레이어: 뷰포트 전체 확장 -->
+     <img class="bg" src="assets/bg.png" style="position:absolute;top:0;left:0;width:100%;z-index:1;" alt="">
+
+     <!-- 콘텐츠 레이어: 1920px 가운데 정렬 -->
+     <div class="content-wrap" style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:{frame_w}px;height:100%;">
+       <!-- 콘텐츠 요소들은 Figma 좌표 그대로 absolute positioning -->
+       <div style="position:absolute;top:100px;left:253px;z-index:10;">텍스트</div>
+     </div>
+   </div>
    ```
-   - `width: 100%` — 뷰포트 전체 너비 사용. **max-width 설정 금지** — 넓은 모니터에서 배경이 잘림.
-   - **배경 이미지는 `width: 100%`** 로 설정하여 컨테이너 전체를 채움. 고정 px 사용 금지.
-   ```html
-   <!-- 배경: width 100%로 자연스럽게 확장 -->
-   <img src="assets/bg.png" style="top:0;left:0;width:100%;z-index:1;" alt="">
-   <!-- 콘텐츠: max-width 안에서 중앙 정렬 -->
-   <div style="top:100px;left:50%;transform:translateX(-50%);z-index:10;">...</div>
-   ```
-   All content elements inside use `position: absolute` with Figma coordinates.
+   - **배경 (`class="bg"`)**: `width: 100%` — 뷰포트 전체 채움. 고정 px 금지.
+   - **콘텐츠 (`class="content-wrap"`)**: `width: {frame_w}px` + `left:50%; transform:translateX(-50%)` — Figma 프레임 너비로 가운데 정렬. 내부 요소는 Figma 좌표 그대로 사용.
 
 6. **Layer elements with z-index** (critical for correct rendering):
    - **z-index: 1~3** — Background images (배경), gradient overlays

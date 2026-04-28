@@ -13,33 +13,35 @@
     body{background:#000;color:#fff;font-family:'Pretendard',sans-serif;overflow-x:hidden}
     img{display:block;max-width:none}
     a{color:inherit;text-decoration:none}
-    /* 전체 프레임: Figma 1920x6425 그대로, 모든 요소 absolute */
-    .frame{position:relative;width:100%;height:6425px;margin:0 auto;background:#000;overflow:hidden}
-    .frame>*{position:absolute}
-    /* z-index 계층: bg=1, deco=5, content=10, nav=50 */
+    /* 프레임: 배경은 뷰포트 전체, 콘텐츠는 1920px 중앙 정렬 */
+    .frame{position:relative;width:100%;height:6425px;background:#000;overflow:hidden}
+    /* 배경 레이어: 뷰포트 전체 확장 */
+    .frame>.bg{position:absolute}
+    /* 콘텐츠 레이어: 1920px 가운데 정렬 */
+    .content-wrap{position:absolute;top:0;left:50%;transform:translateX(-50%);width:1920px;height:100%}
+    .content-wrap>*{position:absolute}
   </style>
 </head>
 <body>
 <div class="frame">
 
   <!-- ============================================================ -->
-  <!-- LAYER 0: 배경 이미지들 (z-index: 1~3) -->
+  <!-- 배경 레이어 (뷰포트 전체 확장) -->
   <!-- ============================================================ -->
-  <!-- 메인 배경 (Hero~SKT소개 연속) -->
-  <img src="assets/자산-14x-1@2x.png" alt="" style="top:-49px;left:0;width:100%;z-index:1;">
-  <!-- 상단 그라데이션 오버레이 -->
-  <div style="top:0;left:0;width:100%;height:199px;background:linear-gradient(rgba(0,0,0,0),#000);opacity:0.59;z-index:2;"></div>
-  <!-- SKT 소개 배경 -->
-  <img src="assets/자산-24x-1@2x.png" alt="" style="top:1170px;left:0;width:100%;z-index:1;">
-  <!-- 모집대상 배경 -->
-  <img src="assets/자산-34x-1@2x.png" alt="" style="top:1734px;left:0;width:100%;z-index:1;">
-  <!-- 하단 반짝 배경 -->
-  <img src="assets/반짝4x-1@2x.png" alt="" style="top:5546px;left:0;width:100%;z-index:1;">
-  <!-- 하단 회색 바 -->
-  <div style="top:5674px;left:0;width:100%;height:281px;background:#272B2E;z-index:2;"></div>
+  <img class="bg" src="assets/자산-14x-1@2x.png" alt="" style="top:-49px;left:0;width:100%;z-index:1;">
+  <div class="bg" style="top:0;left:0;width:100%;height:199px;background:linear-gradient(rgba(0,0,0,0),#000);opacity:0.59;z-index:2;"></div>
+  <img class="bg" src="assets/자산-24x-1@2x.png" alt="" style="top:1170px;left:0;width:100%;z-index:1;">
+  <img class="bg" src="assets/자산-34x-1@2x.png" alt="" style="top:1734px;left:0;width:100%;z-index:1;">
+  <img class="bg" src="assets/반짝4x-1@2x.png" alt="" style="top:5546px;left:0;width:100%;z-index:1;">
+  <div class="bg" style="top:5674px;left:0;width:100%;height:281px;background:#272B2E;z-index:2;"></div>
 
   <!-- ============================================================ -->
-  <!-- LAYER 1: 장식 요소 (z-index: 5) -->
+  <!-- 콘텐츠 레이어 (1920px 가운데 정렬) -->
+  <!-- ============================================================ -->
+  <div class="content-wrap">
+
+  <!-- ============================================================ -->
+  <!-- 장식 요소 (z-index: 5) -->
   <!-- ============================================================ -->
   <!-- 동심원 (SKT 소개 우측) -->
   <img src="assets/ellipse-15.svg" alt="" style="top:1062px;left:935px;width:929px;height:929px;opacity:0.05;z-index:5;">
@@ -188,6 +190,7 @@
   <img src="assets/image-95@2x.png" alt="" style="top:6258px;left:635px;width:215px;z-index:10;">
   <img src="assets/image-96@2x.png" alt="" style="top:6287px;left:974px;width:311px;z-index:10;">
 
-</div>
+  </div><!-- /content-wrap -->
+</div><!-- /frame -->
 </body>
 </html>
