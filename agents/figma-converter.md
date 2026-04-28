@@ -190,20 +190,7 @@ When Figma provides multiple frames (desktop/tablet/mobile):
 - **Some elements may not exist in all viewports** — check each frame's tree. Use `display:none` in the @media query for missing elements.
 - **Every positioned element MUST have a class name** (e.g., `.skt-title`, `.ai-card-1`, `.poster`). Without class names, @media queries cannot target elements to swap coordinates. Do NOT rely on inline styles alone for position — they can't be overridden by @media.
 - **Build CSS in 3 blocks**: default (desktop coordinates), `@media` (tablet coordinates), `@media` (mobile coordinates). Breakpoints come from the issue/PRD — do NOT hardcode 1023px/767px. Read the project's breakpoint spec.
-- **Each @media block must be COMPLETE** — redefine every element's position, size, and visibility. Do NOT assume desktop styles carry over correctly. Common mistakes:
-  - Forgetting to redefine footer/contact elements → layout breaks
-  - Hiding elements with `display:none` that should still be visible (e.g., phone numbers, X icon between logos, decorative lines)
-  - Not checking what elements EXIST in each Figma frame — some elements appear in all viewports, some don't
-
-### Viewport-Specific Completeness Checklist
-For EACH viewport (@media block), verify these are all handled:
-1. **Header** — different padding, font-size, logo size per viewport. Read from each frame's data.
-2. **All section backgrounds** — different positions and sizes per frame
-3. **All text elements** — different top/left/font-size. Mobile often needs `text-align:center` and `width:100%`.
-4. **Cards** — different size, single-column on mobile
-5. **Footer/Contact** — completely different layout per viewport. Phone numbers, admin text, org text, logos, X icon — ALL must be repositioned, not hidden.
-6. **Process steps** — horizontal on desktop, may be 2x2 grid on tablet, vertical on mobile
-7. **SVG decorative elements** (lines between logos, connecting lines) — must be repositioned, not hidden unless they genuinely don't exist in that Figma frame
+- **Each @media block must cover every element in that Figma frame.** Walk the frame's tree — every node that exists gets a position in the @media block. Don't assume desktop styles carry over. Don't use `display:none` unless the element genuinely doesn't exist in that frame's tree.
 
 ### Background Images
 - **Background images often span multiple visual sections.** Do NOT create separate `<section>` elements that break the background. Use a single container with absolute positioning.
