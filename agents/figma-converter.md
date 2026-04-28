@@ -161,13 +161,11 @@ You have these resources — **read them ALL before writing any HTML**:
 ### Multi-Viewport (Responsive)
 When Figma provides multiple frames (desktop/tablet/mobile):
 
-**Auto-layout designs** (Figma nodes have `layout` field):
-- Build once with flexbox → natural reflow across viewports
-- Use @media queries only for specific overrides (font-size, gap, padding)
-
-**Absolute-positioned designs** (no `layout` field, all coordinates fixed):
-- Each frame has completely different coordinates — cannot share layout
-- Build one HTML structure, use @media queries to swap **entire coordinate sets**:
+**Regardless of layout type** (auto-layout or absolute), the process is the same:
+- Read each frame's tree separately — don't assume values carry over between viewports
+- Auto-layout → flexbox, but flex-direction/gap/padding may differ per viewport
+- Absolute → coordinates differ per viewport
+- Build one HTML structure, use @media queries to apply each frame's values:
   ```css
   /* Desktop (default) */
   .hero-title { top: 1278px; left: 253px; font-size: 50px; }
