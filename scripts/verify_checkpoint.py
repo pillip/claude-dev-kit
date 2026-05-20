@@ -187,19 +187,17 @@ _FIGMA_URL_PATTERN = re.compile(
 
 
 def _find_figma_urls(issue_id: str) -> list[str]:
-    """Extract Figma URLs from the issue's Implementation Notes section only."""
+    """Extract Figma URLs from anywhere in the issue block.
+
+    Scans the entire issue block (title, Goal, Scope, AC, Implementation Notes,
+    and any other subsection). Previously restricted to Implementation Notes only,
+    which caused the figma checkpoint to auto-pass when URLs were placed elsewhere —
+    a silent false negative that let implementations drift to non-Figma sources.
+    """
     block = _find_issue_block(issue_id)
     if not block:
         return []
-    # Extract only the Implementation Notes subsection
-    impl_match = re.search(
-        r"####\s+Implementation Notes.*?\n(.*?)(?=\n####|\Z)",
-        block,
-        re.DOTALL,
-    )
-    if not impl_match:
-        return []
-    return _FIGMA_URL_PATTERN.findall(impl_match.group(1))
+    return _FIGMA_URL_PATTERN.findall(block)
 
 
 # ── Implement skill verifiers ────────────────────────────────────────
