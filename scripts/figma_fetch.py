@@ -35,10 +35,18 @@ FIGMA_API_BASE = "https://api.figma.com/v1"
 
 # Node types and name patterns that indicate exportable assets
 _VECTOR_TYPES = {"VECTOR", "BOOLEAN_OPERATION", "STAR", "LINE", "ELLIPSE", "REGULAR_POLYGON"}
+# English keywords use \b word boundaries; Korean keywords cannot rely on \b
+# (Hangul has no ASCII word boundary), so match them as plain substrings.
 _ASSET_NAME_PATTERN = re.compile(
-    r"\b(?:icon|logo|image|img|illustration|asset|badge|avatar|thumbnail)\b",
+    r"(?:\b(?:icon|logo|image|img|illustration|asset|badge|avatar|thumbnail)\b"
+    r"|자산|아이콘|화살표|로고|이미지|일러스트|아바타|썸네일|배지)",
     re.IGNORECASE,
 )
+
+# Max node IDs per Figma image export API request — Figma allows many but
+# large batches sometimes fail to render a subset of nodes. Smaller chunks
+# isolate failures so one bad node doesn't drop the whole group.
+_EXPORT_BATCH_SIZE = 20
 
 # --- URL Parsing ---
 
@@ -398,6 +406,7 @@ def _figma_align_to_css(value: str) -> str:
 def extract_node_properties(node: dict[str, Any]) -> dict[str, Any]:
     """Extract ALL CSS-relevant properties from a single Figma node."""
     props: dict[str, Any] = {
+        "node_id": node.get("id", ""),
         "name": node.get("name", ""),
         "type": node.get("type", ""),
     }
@@ -576,6 +585,50 @@ def _is_exportable_asset(node: dict[str, Any]) -> bool:
     return False
 
 
+def _is_vector_group_container(node: dict[str, Any]) -> bool:
+    """Detect a multi-layer vector group that should export as one rendered asset.
+
+    A GROUP or FRAME wrapping several VECTOR/BOOLEAN_OPERATION descendants with
+    no text content is conceptually a single icon. Exporting its children
+    individually scatters the icon into unusable fragments, so we treat the
+    container as the exportable unit and render it as a flattened image.
+
+    Heuristic:
+      - Node is a GROUP or FRAME
+      - bbox is set and ≤ ~256px on either axis (icon-sized, not page-sized)
+      - ≥3 vector descendants
+      - No TEXT descendants
+    """
+    if node.get("type") not in ("GROUP", "FRAME"):
+        return False
+    bbox = node.get("absoluteBoundingBox") or {}
+    w = bbox.get("width", 0)
+    h = bbox.get("height", 0)
+    # Require an explicit, icon-sized bbox. Missing bbox means we can't be
+    # confident this is a small icon container vs. a page-level wrapper.
+    if w <= 0 or h <= 0 or w > 256 or h > 256:
+        return False
+
+    vector_count = 0
+    has_text = False
+
+    def _scan(n: dict[str, Any]) -> None:
+        nonlocal vector_count, has_text
+        t = n.get("type", "")
+        if t == "TEXT":
+            has_text = True
+            return
+        if t in _VECTOR_TYPES:
+            vector_count += 1
+        for c in n.get("children", []):
+            _scan(c)
+
+    for child in node.get("children", []):
+        _scan(child)
+
+    return vector_count >= 3 and not has_text
+
+
 def collect_exportable_nodes(
     node: dict[str, Any], file_key: str,
 ) -> list[dict[str, str]]:
@@ -585,6 +638,7 @@ def collect_exportable_nodes(
     - Vector nodes → SVG
     - Image fills → PNG @2x
     - Named assets → SVG (vectors) or PNG (rasters)
+    - Multi-layer vector groups → single PNG (rendered as a unit)
 
     Excludes top-level frames (containers with children) — those are
     page structure, not assets.
@@ -607,6 +661,19 @@ def collect_exportable_nodes(
         if is_container:
             for child in n.get("children", []):
                 _walk(child)
+            return
+
+        # Vector group: export the whole container as one PNG and skip its
+        # children — Figma vector groups are conceptually a single icon.
+        if _is_vector_group_container(n):
+            seen_ids.add(node_id)
+            assets.append({
+                "node_id": node_id,
+                "name": n.get("name", "untitled"),
+                "type": n.get("type", ""),
+                "format": "png",
+                "file_key": file_key,
+            })
             return
 
         if _is_exportable_asset(n):
@@ -637,6 +704,26 @@ def collect_exportable_nodes(
     return assets
 
 
+def dedupe_exportable_assets(
+    assets: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Deduplicate exportable assets by (file_key, node_id).
+
+    Multi-viewport projects (desktop/tablet/mobile) walk the same Figma file
+    multiple times and collect the same asset nodes redundantly. Deduplicating
+    keeps the export batch lean and avoids re-downloading identical assets.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[dict[str, str]] = []
+    for a in assets:
+        key = (a.get("file_key", ""), a.get("node_id", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(a)
+    return out
+
+
 def _slugify(name: str) -> str:
     """Convert a node name to a filesystem-safe slug."""
     s = name.lower().strip()
@@ -646,12 +733,69 @@ def _slugify(name: str) -> str:
     return s.strip("-") or "untitled"
 
 
+def _fetch_image_urls(
+    file_key: str,
+    node_ids: list[str],
+    fmt: str,
+    scale: str,
+    token: str,
+) -> dict[str, str | None]:
+    """Call Figma Image Export API for a list of node IDs.
+
+    Returns a dict mapping node_id → image_url (or None if Figma couldn't
+    render that node). Raises on transport errors so the caller can retry.
+    """
+    ids_param = ",".join(urllib.parse.quote(nid, safe="") for nid in node_ids)
+    endpoint = f"/images/{file_key}?ids={ids_param}&format={fmt}&scale={scale}"
+    data = figma_api_get(endpoint, token)
+    images = data.get("images", {}) or {}
+    return {nid: images.get(nid) for nid in node_ids}
+
+
+def _download_one_asset(
+    asset: dict[str, str],
+    image_url: str,
+    assets_dir: Path,
+    fmt: str,
+    out_root: Path,
+) -> dict[str, str] | None:
+    """Download a single asset image and return its export record."""
+    slug = _slugify(asset["name"])
+    suffix = "@2x" if fmt == "png" else ""
+    filename = f"{slug}{suffix}.{fmt}"
+    filepath = assets_dir / filename
+
+    counter = 1
+    while filepath.exists():
+        filename = f"{slug}-{counter}{suffix}.{fmt}"
+        filepath = assets_dir / filename
+        counter += 1
+
+    try:
+        req = urllib.request.Request(image_url)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            filepath.write_bytes(resp.read())
+        return {
+            "name": asset["name"],
+            "path": str(filepath.relative_to(out_root)),
+            "format": fmt,
+            "node_id": asset["node_id"],
+        }
+    except Exception as e:
+        print(f"WARN: Failed to download {asset['name']}: {e}", file=sys.stderr)
+        return None
+
+
 def export_assets(
     assets: list[dict[str, str]], token: str, out_dir: Path,
 ) -> list[dict[str, str]]:
     """Download exportable assets from Figma Image Export API.
 
-    Groups assets by (file_key, format) to minimize API calls.
+    Groups assets by (file_key, format) and chunks each group into smaller
+    batches (_EXPORT_BATCH_SIZE per request). When a chunk fails entirely or
+    Figma returns no URL for a node, the missing nodes are retried one at a
+    time so a single bad node can't drop an entire viewport's assets.
+
     Saves to out_dir/assets/{slug}.{format}.
 
     Returns list of dicts: {name, path, format, node_id}.
@@ -661,6 +805,7 @@ def export_assets(
 
     assets_dir = out_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
+    out_root = out_dir.parent
 
     # Group by (file_key, format) for batch API calls
     groups: dict[tuple[str, str], list[dict[str, str]]] = {}
@@ -671,49 +816,56 @@ def export_assets(
     exported: list[dict[str, str]] = []
 
     for (file_key, fmt), group in groups.items():
-        node_ids = [a["node_id"] for a in group]
-        ids_param = ",".join(urllib.parse.quote(nid, safe="") for nid in node_ids)
         scale = "2" if fmt == "png" else "1"
 
-        endpoint = f"/images/{file_key}?ids={ids_param}&format={fmt}&scale={scale}"
-        try:
-            data = figma_api_get(endpoint, token)
-        except Exception as e:
-            print(f"WARN: Image export API failed: {e}", file=sys.stderr)
-            continue
+        # Walk the group in chunks; collect (asset, image_url) pairs and a
+        # retry list for anything missing.
+        pending: list[dict[str, str]] = []
+        url_by_id: dict[str, str] = {}
 
-        images = data.get("images", {})
-
-        for asset in group:
-            image_url = images.get(asset["node_id"])
-            if not image_url:
-                print(f"WARN: No image URL for {asset['name']} ({asset['node_id']})", file=sys.stderr)
+        for start in range(0, len(group), _EXPORT_BATCH_SIZE):
+            chunk = group[start:start + _EXPORT_BATCH_SIZE]
+            chunk_ids = [a["node_id"] for a in chunk]
+            try:
+                urls = _fetch_image_urls(file_key, chunk_ids, fmt, scale, token)
+            except Exception as e:
+                print(
+                    f"WARN: Batch export failed ({fmt}, {len(chunk_ids)} nodes): {e}"
+                    f" — retrying individually",
+                    file=sys.stderr,
+                )
+                pending.extend(chunk)
                 continue
 
-            slug = _slugify(asset["name"])
-            suffix = "@2x" if fmt == "png" else ""
-            filename = f"{slug}{suffix}.{fmt}"
-            filepath = assets_dir / filename
+            for a in chunk:
+                url = urls.get(a["node_id"])
+                if url:
+                    url_by_id[a["node_id"]] = url
+                else:
+                    pending.append(a)
 
-            # Avoid duplicate filenames
-            counter = 1
-            while filepath.exists():
-                filename = f"{slug}-{counter}{suffix}.{fmt}"
-                filepath = assets_dir / filename
-                counter += 1
-
+        # Individual retry for nodes the batch couldn't render
+        for a in pending:
             try:
-                req = urllib.request.Request(image_url)
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    filepath.write_bytes(resp.read())
-                exported.append({
-                    "name": asset["name"],
-                    "path": str(filepath.relative_to(out_dir.parent)),
-                    "format": fmt,
-                    "node_id": asset["node_id"],
-                })
+                urls = _fetch_image_urls(file_key, [a["node_id"]], fmt, scale, token)
+                url = urls.get(a["node_id"])
+                if url:
+                    url_by_id[a["node_id"]] = url
+                    continue
             except Exception as e:
-                print(f"WARN: Failed to download {asset['name']}: {e}", file=sys.stderr)
+                print(f"WARN: Retry export failed for {a['name']}: {e}", file=sys.stderr)
+            print(
+                f"WARN: No image URL for {a['name']} ({a['node_id']})",
+                file=sys.stderr,
+            )
+
+        for a in group:
+            url = url_by_id.get(a["node_id"])
+            if not url:
+                continue
+            record = _download_one_asset(a, url, assets_dir, fmt, out_root)
+            if record:
+                exported.append(record)
 
     return exported
 
@@ -1215,6 +1367,9 @@ def main() -> None:
     all_exportable: list[dict[str, str]] = []
     for raw_node, fk in all_raw_nodes:
         all_exportable.extend(collect_exportable_nodes(raw_node, fk))
+    # Multi-viewport runs walk the same Figma file 3× — dedupe so the export
+    # batch isn't bloated with the same node IDs from desktop/tablet/mobile.
+    all_exportable = dedupe_exportable_assets(all_exportable)
 
     exported_assets: list[dict[str, str]] = []
     if all_exportable:
@@ -1226,7 +1381,12 @@ def main() -> None:
         print("\nNo exportable assets detected in the fetched frames.", file=sys.stderr)
 
     # --- IMAGE fill download (background images not caught by asset export) ---
+    # Collect every IMAGE-fill node and whether it already has a downloaded
+    # file on disk. Pre-existing files still need a record in exported_assets
+    # so design_data.json's asset map stays complete on re-runs.
     image_fill_nodes: list[dict] = []
+    fill_recorded_ids = {a.get("node_id") for a in exported_assets}
+
     def _collect_image_fills(node: dict[str, Any], fk: str) -> None:
         name = node.get("name", "")
         nid = node.get("id", "")
@@ -1234,8 +1394,17 @@ def main() -> None:
             if fill.get("type") == "IMAGE" and fill.get("imageRef") and fill.get("visible", True):
                 slug = _slugify(name)
                 filepath = out_dir / "assets" / f"{slug}@2x.png"
-                if not filepath.exists():
-                    image_fill_nodes.append({"id": nid, "name": name, "slug": slug, "imageRef": fill["imageRef"]})
+                existing = filepath.exists()
+                if nid not in fill_recorded_ids:
+                    image_fill_nodes.append({
+                        "id": nid,
+                        "name": name,
+                        "slug": slug,
+                        "imageRef": fill["imageRef"],
+                        "filepath": filepath,
+                        "existing": existing,
+                    })
+                    fill_recorded_ids.add(nid)
                 break
         for child in node.get("children", []):
             _collect_image_fills(child, fk)
@@ -1243,8 +1412,21 @@ def main() -> None:
     for raw_node, fk in all_raw_nodes:
         _collect_image_fills(raw_node, fk)
 
-    if image_fill_nodes:
-        print(f"\nDownloading {len(image_fill_nodes)} IMAGE fill background(s)...", file=sys.stderr)
+    # Items that already have a file on disk: record their metadata without
+    # re-downloading. Items missing on disk: fetch via /files/{fk}/images.
+    to_download = [it for it in image_fill_nodes if not it["existing"]]
+    already_on_disk = [it for it in image_fill_nodes if it["existing"]]
+
+    for item in already_on_disk:
+        exported_assets.append({
+            "name": item["name"],
+            "path": str(item["filepath"].relative_to(repo_root)),
+            "format": "png",
+            "node_id": item["id"],
+        })
+
+    if to_download:
+        print(f"\nDownloading {len(to_download)} IMAGE fill background(s)...", file=sys.stderr)
         # Get all image URLs from file images endpoint
         file_keys = set(fk for _, fk in all_raw_nodes)
         all_image_urls: dict[str, str] = {}
@@ -1258,11 +1440,11 @@ def main() -> None:
         assets_dir = out_dir / "assets"
         assets_dir.mkdir(exist_ok=True)
         import time as _time
-        for item in image_fill_nodes:
+        for item in to_download:
             img_url = all_image_urls.get(item["imageRef"])
             if not img_url:
                 continue
-            filepath = assets_dir / f"{item['slug']}@2x.png"
+            filepath = item["filepath"]
             try:
                 req = urllib.request.Request(img_url)
                 data_bytes = urllib.request.urlopen(req, timeout=120).read()

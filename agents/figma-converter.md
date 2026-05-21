@@ -117,6 +117,38 @@ You have these resources — **read them ALL before writing any HTML**:
 
 ## Critical Rules (learned from real testing)
 
+### Missing Assets — STOP, DO NOT IMPROVISE
+
+The export pipeline (`figma_fetch.py` + `generate_figma_css.py`) is the only
+source of truth for icons, images, and decorative artwork. If you encounter a
+node that should have an asset but doesn't, you have an **infrastructure bug**,
+not a creative challenge.
+
+**Forbidden**: drawing inline `<svg>` approximations, using emoji as substitutes,
+inventing CSS shapes, or "drawing a simple version close enough to the original."
+Pixel-faithful means rendered Figma assets only.
+
+**Detect missing assets before building**:
+1. For every node in `design_data.json` with `has_background_image: true`,
+   confirm a matching entry in `component_map.json` has a non-null `asset`
+   (or its parent's `children_order[i].asset` is set).
+2. For every node whose name suggests an icon/image (matches
+   `icon|logo|image|asset|자산|아이콘|화살표|로고|이미지|일러스트|아바타`)
+   confirm the same.
+
+**If any assets are missing, STOP and report**:
+```
+MISSING_ASSETS:
+  - <figma_name> (node_id: <id>) — expected at figma-export/assets/<slug>.<ext>
+  - ...
+Next step: re-run `uv run python scripts/figma_fetch.py <urls>` to refetch.
+If the asset still doesn't appear, the node may need an `exportSettings`
+flag in Figma or its name needs to match an asset keyword.
+```
+
+Do not proceed with the HTML build until the missing assets are resolved or
+the user explicitly accepts a degraded prototype.
+
 ### Gradient Borders
 - Figma often uses **gradient borders** (e.g., `border-color: linear-gradient(#FFF600, #000000, #FFF600)`). CSS `border-color` doesn't support gradients directly. Use `border-image`:
   ```css

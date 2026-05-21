@@ -72,19 +72,26 @@ def generate_node_css(
     assets_by_node: dict[str, str],
     parent_x: float = 0,
     parent_y: float = 0,
+    assets_by_id: dict[str, str] | None = None,
 ) -> list[dict]:
     """Generate CSS rules for a Figma node and its children.
 
     Returns list of {class_name, node_name, css_rules, asset_path, children_classes}.
     """
+    assets_by_id = assets_by_id or {}
     results: list[dict] = []
     name = node.get("name", "")
     node_type = node.get("type", "")
 
+    # Lookup helper: prefer ID match (exact, even with duplicate names),
+    # fall back to name match.
+    def _lookup_asset(n: dict) -> str | None:
+        return assets_by_id.get(n.get("node_id", "")) or assets_by_node.get(n.get("name", ""))
+
     # Skip decorative/structural nodes
     if not name or name.startswith("Group") or node_type in ("GROUP",):
         for child in node.get("children", []):
-            results.extend(generate_node_css(child, assets_by_node, parent_x, parent_y))
+            results.extend(generate_node_css(child, assets_by_node, parent_x, parent_y, assets_by_id))
         return results
 
     class_name = _slugify_class(name)
@@ -99,7 +106,7 @@ def generate_node_css(
         rules.append(f"background-color: {node['background_color']}")
 
     if node.get("has_background_image"):
-        asset_path = assets_by_node.get(name)
+        asset_path = _lookup_asset(node)
         if asset_path:
             rules.append(f"background-image: url('{asset_path}')")
             rules.append("background-size: cover")
@@ -239,7 +246,7 @@ def generate_node_css(
             rules.append(f"text-decoration: {ts['text_decoration']}")
 
     # Check for asset (icon/image) — add size only if not already set by dimensions section
-    asset_path = assets_by_node.get(name)
+    asset_path = _lookup_asset(node)
     if asset_path:
         asset_w = node.get("width", 0)
         asset_h = node.get("height", 0)
@@ -262,7 +269,7 @@ def generate_node_css(
             child.setdefault("position", "absolute")
             # z-index from Figma layer order: later children = on top
             child.setdefault("_z_index", idx + 1)
-        child_results = generate_node_css(child, assets_by_node, node_x, node_y)
+        child_results = generate_node_css(child, assets_by_node, node_x, node_y, assets_by_id)
         children_results.extend(child_results)
         child_name = child.get("name", "")
         if child_name:
@@ -270,7 +277,7 @@ def generate_node_css(
                 "index": idx,
                 "name": child_name,
                 "class": _slugify_class(child_name),
-                "asset": assets_by_node.get(child_name),
+                "asset": _lookup_asset(child),
                 "width": child.get("width", 0),
                 "height": child.get("height", 0),
             })
@@ -319,7 +326,7 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
     all_rules: list[dict] = []
     for frame in design_data.get("frames", []):
         tree = frame.get("tree", {})
-        all_rules.extend(generate_node_css(tree, assets_by_node))
+        all_rules.extend(generate_node_css(tree, assets_by_node, assets_by_id=assets_by_id))
 
     # Deduplicate class names
     seen_classes: dict[str, int] = {}
@@ -438,7 +445,7 @@ def generate_css_file(design_data: dict, out_dir: Path) -> tuple[str, list[dict]
     # Programmatic tree-walking cannot reproduce complex design layouts.
 
     # Generate responsive CSS (if multiple viewports)
-    responsive_css = generate_responsive_css(design_data, assets_by_node)
+    responsive_css = generate_responsive_css(design_data, assets_by_node, assets_by_id)
     if responsive_css:
         responsive_path = out_dir / "figma_responsive.css"
         responsive_path.write_text(responsive_css, encoding="utf-8")
@@ -599,6 +606,7 @@ def generate_html_skeleton(
 def generate_responsive_css(
     design_data: dict,
     assets_by_node: dict[str, str],
+    assets_by_id: dict[str, str] | None = None,
 ) -> str:
     """Generate @media queries for different Figma viewport frames."""
     frames = design_data.get("frames", [])
@@ -624,7 +632,7 @@ def generate_responsive_css(
             continue
 
         tree = frame.get("tree", {})
-        frame_rules = generate_node_css(tree, assets_by_node)
+        frame_rules = generate_node_css(tree, assets_by_node, assets_by_id=assets_by_id)
 
         if not frame_rules:
             continue
