@@ -4,6 +4,8 @@ This directory contains project-level documentation generated and managed by cla
 
 ## Kit-generated files
 
+### Engineering pipeline
+
 | File | Created by | Purpose |
 |------|-----------|---------|
 | `architecture.md` | `/kickoff` | System architecture and component design |
@@ -13,6 +15,22 @@ This directory contains project-level documentation generated and managed by cla
 | `review_notes.md` | `/review` | Per-PR review findings |
 | `sprint_state.md` | `/sprint` | Sprint progress checkpoint |
 | `test_plan.md` | `/review` | QA test plan and coverage tracking |
+
+### Sales pipeline
+
+| File | Created by | Updated by | Purpose |
+|------|-----------|-----------|---------|
+| `account_brief.md` | `/account-brief` | `/meeting-capture`, `/followup` (atomic Write) | Accumulated account intelligence; **Active Context** at top is the most-read section |
+| `discovery_plan.md` | `/discovery-prep` | `/discovery-prep` | Pre-meeting SPIN/MEDDIC question plan (**max 6 questions**) |
+| `meeting_notes_*.md` | **sales author** | — | Single source of truth for every meeting |
+| `prd_draft.md` | `/meeting-capture` | `/meeting-capture` | Demo-scoped PRD draft; splits **PoC Deliverables** (one-shot) vs **Productionalizable Features** (real product) |
+| `poc_results.md` | **sales + engineer** (fill from template) | — | **Required input to `/proposal`** — single source of truth for PoC metrics, success criteria, ROI assumptions |
+| `proposal.md` | `/proposal` | `/proposal` | Closing proposal (business value first); cites `poc_results.md` for all metrics |
+| `followup.md` | `/followup` | `/followup` | Post-meeting email + actions + CRM updates |
+| `sales_lessons.md` | `/followup` (accumulates) | `/followup` | Cross-account patterns (read by `/discovery-prep` and `/meeting-capture`) |
+| `sales_email_persona.md` | **sales author** (optional) | — | Sales-specific email tone/style; `/followup` follows it if present |
+
+See [`sales-pipeline.md`](sales-pipeline.md) for the end-to-end sales flow.
 
 ## Templates
 
