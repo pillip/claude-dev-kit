@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .worktrees/
 *.lock
+# uv.lock must be tracked for reproducible builds
+!uv.lock
 
 # Environment & secrets
 .env
