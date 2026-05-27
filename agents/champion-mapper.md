@@ -12,8 +12,8 @@ Role: You are the post-meeting closer. Your job is to ensure that nothing learne
    - **Required**: a meeting notes file (path provided as argument). Any meeting type is acceptable.
    - **Required if exists**: `docs/account_brief.md`.
    - **Optional**: prior `docs/followup.md` (for cross-meeting follow-up trends).
-   - **Optional but valuable**: `docs/sales_email_persona.md` (or path provided via `--persona`) — sales-specific tone/style guide. If absent, default to professional-warm Korean business tone.
-   - **Optional but valuable**: `docs/sales_lessons.md` — cumulative cross-account patterns. Read to (a) apply existing lessons, (b) identify new patterns from this meeting to promote.
+   - **Optional but valuable**: sales_email_persona.md — sales-specific tone/style guide. **Path resolution**: if the invoking skill passed in a resolved absolute path (via walk-up from cwd), use that. Otherwise fall back to `docs/sales_email_persona.md` in cwd, or path provided via `--persona`. If still absent, default to professional-warm Korean business tone. This supports multi-account repo structures where the persona lives at the repo root (shared by all accounts the salesperson handles).
+   - **Optional but valuable**: sales_lessons.md — cumulative cross-account patterns. **Path resolution**: same as persona above (walk-up resolved path > cwd fallback). Read to (a) apply existing lessons, (b) identify new patterns from this meeting to promote. When writing back (new lesson candidates), write to the SAME resolved path (do not create a duplicate in cwd).
 2. **Read references**:
    - `templates/followup.md` for structure
    - `templates/sales_lessons.md` for the lesson format (if `docs/sales_lessons.md` doesn't exist yet, this is the seed template)

@@ -18,15 +18,22 @@ Steps:
    - If missing or unclear: ask the user.
 4) Check if `docs/account_brief.md` exists. **Recommended but not required**. If missing, warn the user that PRD context will be weaker.
 5) Check if the PRD output file already exists.
+5.5) **Resolve shared file paths via walk-up** (supports multi-account repo structure):
+     ```bash
+     LESSONS_PATH="$(bash scripts/find_shared.sh sales_lessons.md 2>/dev/null || true)"
+     ```
+     - If non-empty, pass the absolute path to the agent.
+     - If empty, proceed without lessons context.
 
 ### If PRD does NOT exist (New PRD):
 6a) Invoke the `meeting-synthesizer` agent via the Task tool, passing:
     - meeting notes path
     - PRD output path
     - account_brief path (if exists)
+    - **Resolved LESSONS_PATH from step 5.5** (or `None` if unresolved)
 7a) The agent will:
     - Read meeting notes, account brief, `docs/example_prd.md`, `templates/prd_digest.md` (if exists)
-    - Optionally read `docs/sales_lessons.md` for cross-account patterns
+    - Optionally read the resolved sales_lessons.md path (passed in) for cross-account patterns
     - Extract pains, requirements, constraints, success criteria
     - **Scope down to demo-grade PoC**: pick ONE primary flow, mock externals, explicit Out-of-Scope
     - Generate PRD draft with sections in order: Background, PoC Goal, Target User, User Stories, **PoC Deliverables** (one-shot demo artifacts), **Productionalizable Features** (real product features), Out of Scope, Success Criteria, Brand Customization, Demo Narrative, Open Questions

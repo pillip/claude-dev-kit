@@ -15,14 +15,20 @@ Steps:
 3) Check inputs:
    - `docs/account_brief.md` (required — followup needs accumulated account context)
    - prior `docs/followup.md` (optional, for cross-meeting trends)
-   - `docs/sales_email_persona.md` (optional — sales-specific email tone/style; if present, agent will follow it instead of default professional-warm tone)
-   - `docs/sales_lessons.md` (optional — cross-account patterns to apply; agent may also draft new lesson candidates from this meeting)
+3.5) **Resolve shared file paths via walk-up** (supports multi-account repo structure):
+     ```bash
+     LESSONS_PATH="$(bash scripts/find_shared.sh sales_lessons.md 2>/dev/null || true)"
+     PERSONA_PATH="$(bash scripts/find_shared.sh sales_email_persona.md 2>/dev/null || true)"
+     ```
+     - For each non-empty result, pass the absolute path to the agent.
+     - `sales_email_persona.md` — sales-specific email tone/style; if found, agent follows it. Otherwise default professional-warm tone.
+     - `sales_lessons.md` — cross-account patterns; agent applies relevant lessons and may draft new candidates from this meeting.
 
 ### If followup does NOT exist (New Followup):
-4a) Invoke the `champion-mapper` agent via the Task tool, passing meeting notes, account brief, and (if present) email persona + sales lessons paths.
+4a) Invoke the `champion-mapper` agent via the Task tool, passing meeting notes, account brief, and the resolved `LESSONS_PATH` + `PERSONA_PATH` from step 3.5 (or `None` for each if unresolved).
 5a) The agent will:
     - Read all inputs + `templates/followup.md` for structure
-    - Draft customer-facing email (personalized, references specifics, restates pain in their words). **If `docs/sales_email_persona.md` exists, apply its tone/salutations/sign-off/length rules.** Otherwise default to professional-warm Korean.
+    - Draft customer-facing email (personalized, references specifics, restates pain in their words). **If `PERSONA_PATH` was resolved, read that file and apply its tone/salutations/sign-off/length rules.** Otherwise default to professional-warm Korean.
     - Generate internal action list (24h / 1 week / 2–4 weeks / blocked-on)
     - Propose explicit CRM update fields (before → after)
     - **Atomically update `account_brief.md`** via Read+Write (single Write of full file, not multiple Edits): Active Context section, decision structure, meeting history, unresolved questions, etc.

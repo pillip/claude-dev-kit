@@ -47,13 +47,19 @@ Steps:
 1) Determine the output path ($ARGUMENTS or `docs/discovery_plan.md`).
 2) Check if `docs/account_brief.md` exists. **Required**. If absent, stop and tell the user to run `/account-brief` first.
 3) Check if the output file already exists.
+3.5) **Resolve shared file paths via walk-up** (supports multi-account repo structure):
+     ```bash
+     LESSONS_PATH="$(bash scripts/find_shared.sh sales_lessons.md 2>/dev/null || true)"
+     ```
+     - If non-empty, pass the absolute path to the agent as the sales_lessons input.
+     - If empty (not found within repo), proceed without lessons context.
 
 ### If the file does NOT exist (New Plan):
-4a) Invoke the `discovery-coach` agent via the Task tool, passing the account brief path.
+4a) Invoke the `discovery-coach` agent via the Task tool, passing the account brief path **and the resolved `LESSONS_PATH`** (or `None` if unresolved).
 5a) The agent will:
     - Read `docs/account_brief.md` and `templates/discovery_plan.md`
     - Optionally read any prior `meeting_notes_*.md` for accumulated context
-    - Optionally read `docs/sales_lessons.md` for cross-account patterns to apply
+    - Optionally read the resolved sales_lessons.md path (passed in from step 3.5) for cross-account patterns to apply
     - Generate meeting goals (Must / Nice / no-go)
     - Convert hypothesized pain points into verification questions
     - **Generate SPIN questions — HARD CAP 6 total** (Situation 1–2, Problem 2, Implication 1–2, Need-Payoff 1)

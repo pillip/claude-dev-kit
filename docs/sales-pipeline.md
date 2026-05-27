@@ -142,8 +142,52 @@
 | `docs/poc_results.md` | **세일즈 + 엔지니어** (템플릿 복사 후 작성) | — | **`/proposal`의 필수 입력.** 모든 PoC 메트릭의 단일 진실 소스 |
 | `docs/proposal.md` | `/proposal` | `/proposal` (update) | 클로징용 제안서. 모든 메트릭은 `poc_results.md` 출처 |
 | `docs/followup.md` | `/followup` | `/followup` (update) | 미팅 후 액션 |
-| `docs/sales_lessons.md` | `/followup` (누적) | `/followup` | 어카운트 간 패턴. `/discovery-prep`과 `/meeting-capture`가 읽음 |
-| `docs/sales_email_persona.md` | **세일즈 작성** (선택) | — | 세일즈별 이메일 톤. `/followup`이 있으면 따름 |
+| `docs/sales_lessons.md` | `/followup` (누적) | `/followup` | 어카운트 간 패턴. `/discovery-prep`과 `/meeting-capture`가 읽음. **walk-up 발견 가능** |
+| `docs/sales_email_persona.md` | **세일즈 작성** (선택) | — | 세일즈별 이메일 톤. `/followup`이 있으면 따름. **walk-up 발견 가능** |
+
+---
+
+## Multi-Account 레포 구조
+
+세일즈 1명이 여러 B2B 고객을 추적할 때 권장 구조:
+
+```
+sales-ops/                              ← 세일즈 팀 단일 레포 (.git)
+├── .claude/                            ← sales pack 1회 설치
+├── docs/                               ← 어카운트 무관 공통 파일
+│   ├── sales_lessons.md                (cross-account)
+│   └── sales_email_persona.md          (세일즈 본인)
+├── accounts/
+│   ├── kt-millie/docs/...              (어카운트별 산출물)
+│   ├── tossbank/docs/...
+│   └── kakao-enterprise/docs/...
+└── archive/                            (종료된 deal)
+```
+
+세일즈는 작업 시 어카운트 디렉토리로 이동 후 스킬 실행:
+
+```bash
+cd accounts/kt-millie/
+/account-brief           # → accounts/kt-millie/docs/account_brief.md 생성
+/discovery-prep          # → 자동으로 docs/ 발견 + 공유 lessons walk-up
+```
+
+### Walk-up 메커니즘
+
+스킬은 `sales_lessons.md`와 `sales_email_persona.md`를 찾을 때 **현재 디렉토리부터 위로 올라가며 `docs/<file>` 탐색**:
+
+```bash
+bash scripts/find_shared.sh sales_lessons.md
+# accounts/kt-millie/docs/sales_lessons.md 없음 → 한 레벨 위
+# accounts/docs/sales_lessons.md 없음 → 한 레벨 위
+# sales-ops/docs/sales_lessons.md 발견 → 절대 경로 반환
+```
+
+- **`.git` 디렉토리 또는 filesystem root에서 중단** (레포 경계 존중)
+- 찾으면 해당 파일을 입력으로 사용, 못 찾으면 그냥 그 입력 없이 진행
+- `scripts/find_shared.sh`는 kit의 utility (수정 불필요)
+
+이 메커니즘 덕분에 sales pack은 **단일 어카운트 레포**와 **multi-account 레포** 둘 다에서 작동.
 
 ---
 

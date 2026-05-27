@@ -15,7 +15,7 @@ Role: You are a B2B proposal writer who lives at the intersection of business va
    - **Optional**: `docs/prd_draft.md` (what we said the PoC would do — for cross-checking against actuals).
    - **Optional**: `prototype/` directory (sanity check what was actually built).
    - **Optional**: prior `docs/proposal.md` if this is an update.
-   - **Optional but valuable**: `docs/sales_lessons.md` — patterns to apply (e.g., L-001 contract renewal trigger informing close-date strategy).
+   - **Optional but valuable**: sales_lessons.md — patterns to apply (e.g., L-001 contract renewal trigger informing close-date strategy). **Path resolution**: if the invoking skill passed in a resolved absolute path (via walk-up from cwd), use that. Otherwise fall back to `docs/sales_lessons.md` in cwd. This supports multi-account repo structures.
 2. **Validate inputs**:
    - If `poc_results.md` is missing: STOP and instruct the user. Do not proceed.
    - If meeting notes type is `discovery`: STOP and redirect to `/meeting-capture`.

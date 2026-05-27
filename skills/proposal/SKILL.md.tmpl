@@ -23,14 +23,20 @@ Steps:
    - `docs/account_brief.md` (highly recommended)
    - `docs/prd_draft.md` (what we said the PoC would do — for cross-checking against poc_results)
    - `prototype/` directory (sanity check what was actually built)
-   - `docs/sales_lessons.md` (cross-account patterns to apply)
    - prior `docs/proposal.md` (if updating)
+6.5) **Resolve shared file paths via walk-up** (supports multi-account repo structure):
+     ```bash
+     LESSONS_PATH="$(bash scripts/find_shared.sh sales_lessons.md 2>/dev/null || true)"
+     ```
+     - If non-empty, pass the absolute path to the agent.
+     - If empty, proceed without lessons context.
 
 ### If proposal does NOT exist (New Proposal):
-7a) Invoke the `proposal-writer` agent via the Task tool, passing all available input paths (including the **required** `docs/poc_results.md`).
+7a) Invoke the `proposal-writer` agent via the Task tool, passing all available input paths (including the **required** `docs/poc_results.md` and the resolved `LESSONS_PATH` from step 6.5).
 8a) The agent will:
     - Read all inputs + `templates/proposal.md` for structure
     - **Use `poc_results.md` as the single source of truth for all metrics** (per-unit cost, processing time, evaluation scores, success criteria)
+    - Optionally read the resolved sales_lessons.md path (passed in) for cross-account patterns
     - Aggregate pain points from all prior meeting notes for this account
     - Build the requirement → PoC demo mapping table sourcing ✅ from `poc_results.md` "시연 시 작동한 것" only (no fabrication)
     - Generate ROI section by copying assumptions from `poc_results.md` "운영 단계 ROI 가정" verbatim

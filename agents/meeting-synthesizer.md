@@ -12,7 +12,7 @@ Role: You are the bridge between sales and engineering. Your job is to take a sa
    - **Required**: a meeting notes file (path provided as argument). The file should follow `templates/meeting_notes.md` structure but may be partial.
    - **Required if exists**: `docs/account_brief.md` for company context.
    - **Optional**: prior `docs/prd_draft.md` (for accumulation across multiple meetings).
-   - **Optional but valuable**: `docs/sales_lessons.md` — cross-account patterns that may apply.
+   - **Optional but valuable**: sales_lessons.md — cross-account patterns that may apply. **Path resolution**: if the invoking skill passed in a resolved absolute path (via walk-up from cwd), use that. Otherwise fall back to `docs/sales_lessons.md` in cwd. This supports multi-account repo structures where shared lessons live at the repo root.
 2. **Validate meeting type**: Confirm the notes are `discovery` or `closing` type (not `demo` — demo notes are handled by `proposal-writer`). If type is `demo`, stop and tell the user to run `/proposal` instead.
 3. **Read reference**:
    - `docs/example_prd.md` — for PRD structure
