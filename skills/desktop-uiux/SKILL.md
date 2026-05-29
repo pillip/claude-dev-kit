@@ -125,24 +125,43 @@ If the result is `true`:
    - Who are the users? What's the emotional tone?
    - What category does this product belong to?
    - Are there competitor/reference apps mentioned?
-7.5) **Reference Research** (uses WebSearch):
-   - Search for the aspiration reference's design (if provided): "[brand/product] UI design"
-   - Search for the anti-reference to understand what to avoid: "[anti-reference] UI criticism"
-   - Search for the product domain's design trends: "[domain] desktop app design 2025/2026"
-   - Synthesize 3-5 concrete design cues to adopt and 3-5 to explicitly avoid
-   - Document these in the design philosophy as "Reference Anchors"
+7.5) **Reference Research** (uses WebSearch + WebFetch):
+   - Step 1 — Source discovery via WebSearch (restrict to visual showcase sites):
+     - Aspiration reference: `"[brand/product] desktop UI site:dribbble.com OR site:behance.net OR site:awwwards.com OR site:land-book.com"`
+     - Anti-reference: `"[anti-reference] UI criticism"`
+     - Domain trends: `"[domain] desktop app design 2025 2026 showcase"`
+   - Step 2 — Visual fetching via WebFetch (CRITICAL — do not skip):
+     - From search results, pick 2–3 URLs that point to actual visual showcases (case studies, product hero pages, brand press kits) — NOT text-only articles.
+     - WebFetch each URL. Extract concrete visual specifics: exact hex colors, font choices and sizes, sidebar/split-pane proportions, title-bar treatment, command-palette style, density (compact vs roomy), dark-mode strategy.
+     - If WebFetch returns text-only without resolvable visuals, fall back to careful synthesis but mark the cue as `(indirect)`.
+   - Step 3 — Synthesis (output goes into `docs/design_philosophy.md` "Reference Anchors"):
+     - **5 specific visual cues to adopt**, each as: cue (≤12 words) — exact value or token (e.g., `sidebar 240px @ #0E0F12`, `JetBrains Mono 13 + Inter 13`, `title bar 28px frameless with traffic lights inset 12/12`) — source URL.
+     - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
+     - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a generic Electron/Material default. Prose-only cues are rejected.
 8) Commit to a BOLD aesthetic direction with desktop lens:
    - Apply the desktop design lens: information density, keyboard workflow, multi-window experience
 9) Generate `docs/design_philosophy.md`:
    - Named aesthetic (2-3 words)
    - 2-3 paragraphs: how the philosophy manifests through space/form, color/material, scale/rhythm, composition
-   - What makes this design UNFORGETTABLE
+   - **Signature Move** (MANDATORY — the single biggest anti-slop anchor): one specific, non-default desktop visual decision with exact numeric values or token names that MUST appear on every screen of the prototype. Must be:
+     - **Numeric or token-named** (px / % / deg / ms / `var(--token)`) — never prose-only.
+     - **Implementable in CSS or React via 1–3 properties** on a reusable class/component.
+     - **Visible on every screen/panel**, not just splash or settings.
+     - Bad (rejected — too soft): "Information-dense", "Keyboard-first", "Pro tool feel"
+     - Good desktop examples:
+       - "Active row in any list/table gets `border-left: 3px solid var(--accent)` and `background: var(--accent-10)` — never full-row highlight"
+       - "All panel headers use `text-transform: uppercase`, `letter-spacing: 0.08em`, JetBrains Mono 11 — never sentence case"
+       - "Command palette: `clip-path: polygon(...)` notched bottom-right corner, 480×320 fixed — never plain rounded rectangle"
+       - "Sidebar split: `grid-template-columns: 240px 1fr` with a 1px hairline divider in `--border-strong`, no shadow"
+       - "Title bar: 28px frameless with traffic lights inset 12/12, app icon at 16px — never default window chrome"
+   - **Reference Anchors** section (from step 7.5 visual research): 5 adopted cues with source URLs, 3–5 avoided cues with reasons.
+   - What makes this design UNFORGETTABLE (should align with and reinforce the Signature Move).
 10) Present the design philosophy to the user and ask for approval before proceeding.
     - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_philosophy.md` exists with Decision Matrix and Reference Anchors populated.
-> If missing or incomplete: STOP and fix before proceeding.
+> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) **Reference Anchors** with 5 adopted cues each carrying a source URL.
+> If the Signature Move is prose-only, or Reference Anchors lack source URLs: STOP and fix before proceeding.
 
 ### Phase 3 — Desktop Design System
 11) Generate `docs/design_system_desktop.md` reflecting the chosen aesthetic:
@@ -170,6 +189,15 @@ If the result is `true`:
     - Window layout architecture (single window vs multi-window, sidebar+content+panel structure)
     - Screen inventory with window position and panel assignment
     - Per-screen details: window context, panel layout, resize behavior, layout zones (sidebar/toolbar/content/panel/statusbar), components, states (default/loading/empty/error), keyboard focus order
+    - **Numeric layout commitments (MANDATORY)**: per screen/window, declare exact CSS Grid/Flex values, not prose:
+      - `grid-template-columns` or column ratios — e.g., `240px 1fr 320px` (sidebar / content / inspector)
+      - Resize constraints — min/max widths per panel as exact px, snap zones in px
+      - Toolbar height, sidebar header height, status bar height as exact px
+      - Gap / gutter — e.g., `gap: 1px` (for hairline-divided panels) or `gap: 16px` (for spaced panels)
+      - Window chrome offsets — e.g., `traffic lights at top: 12px left: 12px`, custom title bar height `28px`
+      - Density token — e.g., `row height: 28px`, `cell padding: 6px 12px` (compact) vs `40px / 12px 16px` (comfortable)
+      - Per-window-size overrides at min-width / comfortable / max — list only the values that change
+    - Reject prose-only layout phrases ("information-dense", "spacious layout"). Re-state every layout description with at least one numeric value tied to a CSS property.
     - Multi-window configuration: main window, auxiliary windows (settings, inspector, detached panels), window-to-window communication patterns
     - Responsive behavior per window size (min-width, comfortable, max/full-screen)
 14) Generate `docs/interactions_desktop.md`:
@@ -286,14 +314,46 @@ If the result is `true`:
     - Each component uses theme tokens, supports all 6 states (default, hover, active, focus, disabled, loading)
     - Keyboard navigation support on every interactive component
     - Context menu integration where specified
-20) Generate `prototype-desktop/src/screens/`:
-    - One .tsx file per screen from wireframes
+    - **Signature Move encoding** (MANDATORY): the Signature Move from `docs/design_philosophy.md` MUST be implemented as a reusable component/class/CSS-custom-property primitive. It must be importable from any screen — not duplicated per-screen.
+
+19.5) **PHASE 5A — Pilot screens & gate (multi-archetype, catches AI slop before full generation)**:
+    - **Step 1 — Archetype classification & pilot pick**:
+      - Classify every screen in `docs/wireframes_desktop.md` into one of these desktop archetypes: `list/table`, `detail/inspector`, `form/settings`, `hub/dashboard`, `command-palette/overlay`, `editor/canvas`, `empty/cold-start`.
+      - Pick **TWO pilot screens from the two most-distinct archetypes** present in the inventory (typically one consumption + one input, e.g., data table + settings, or editor + command palette). If only one archetype exists, fall back to a single pilot and note it.
+    - **Step 2 — Pilot-only generation**:
+      - Generate ONLY the 2 pilot `.tsx` files in `prototype-desktop/src/screens/`.
+      - Generate a TEMPORARY minimal `prototype-desktop/src/App.tsx` that routes ONLY between the 2 pilots (no full router yet).
+      - Ensure the Electron `main.ts` and `preload.ts` from step 17-c/17-d are wired so `npm run dev` launches the pilot view.
+      - Do NOT generate the remaining screens or the full router yet.
+    - **Step 3 — PILOT GATE — render, self-critique (if available), then HOLD for user**:
+      - Tell the user how to run:
+        ```bash
+        cd prototype-desktop && npm run dev
+        ```
+      - Optionally, if Playwright with Electron is installed, the agent MAY screenshot the rendered window for a self-critique pass against the Signature Move and named aesthetic before presenting. If not installed, skip the auto-critique.
+      - Ask: "Please run the pilots and confirm:
+        (a) Is the **Signature Move** (`<paste exact text>`) visible and applied on both pilots?
+        (b) Do both pilots feel like `<aesthetic name>` and read as the same family across the two archetypes?
+        (c) Any slop signals — Electron-wrapper-website feel, default OS chrome, generic Material/Fluent components, mobile-touch-sized targets?"
+      - WAIT for explicit approval before continuing to Phase 5B.
+    - **Step 4 — On rejection** (route to the correct layer):
+      - Signature Move wrong/absent → revisit Phase 2 step 9.
+      - Color / type / density tokens off → revisit Phase 3 design system.
+      - Layout reads as generic → revisit Phase 4 numeric layout commitments.
+      - Tokens are right but pilot implementation is generic → fix the pilot `.tsx` and components only.
+      - Do NOT proceed to Phase 5B with an unaddressed pilot rejection.
+
+### Phase 5B — Full Prototype (after pilot approval)
+20) Generate remaining screen files in `prototype-desktop/src/screens/`:
+    - One .tsx file per remaining screen from wireframes (the 2 pilots are already done).
+    - **Use the approved pilots as the visual template** — match their component usage, density, Signature Move application, keyboard patterns. Do not re-explore the aesthetic mid-prototype.
     - Uses design system components and theme tokens
     - Implements all states: default, loading (skeleton), empty, error
     - Uses actual copy from `docs/copy_guide.md`
     - Keyboard shortcut bindings per screen
     - **Code splitting**: Secondary screens and heavy panels (settings, inspector) MUST use `React.lazy` + `Suspense` to avoid loading everything upfront
-21) Generate `prototype-desktop/src/App.tsx`:
+    - **Signature Move per-screen check**: every screen must reference the Signature Move's reusable primitive at least once.
+21) Replace the temporary App.tsx from step 19.5 with the full `prototype-desktop/src/App.tsx`:
     - Router setup (react-router or custom)
     - Theme provider (dark/light mode with system preference detection)
     - Keyboard shortcut global handler
@@ -327,6 +387,11 @@ If the result is `true`:
     - Every interactive component MUST be keyboard-accessible (tab focus, enter/space activation)
     - Command Palette (Cmd+K / Ctrl+K) MUST be implemented if specified in design system
     - At least 5 keyboard shortcuts from `docs/interactions_desktop.md` MUST be functional
+27.5) **Signature Move check**:
+    - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
+    - The Signature Move must be implemented as a reusable component/class/CSS-custom-property primitive under `src/components/` or `src/theme/`.
+    - Every `.tsx` file in `src/screens/` (including the pilots) must reference that reusable Signature Move primitive at least once.
+    - If any check fails: list violations, fix, and re-verify before proceeding.
 28) **Performance check**:
     - List/table item components MUST use `React.memo`
     - Event handlers passed to memoized children MUST use `useCallback`
@@ -382,7 +447,9 @@ If the result is `true`:
 
 ## Anti-AI-Slop Rules (CRITICAL)
 
-These rules prevent Claude from converging on generic, forgettable desktop defaults:
+These rules prevent Claude from converging on generic, forgettable desktop defaults.
+
+**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 9 and enforced at the Phase 5A pilot gate (step 19.5) and Phase 5.5 step 27.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
 
 **NEVER:**
 - A web app wrapped in Electron with browser-like UI (address bar feel, no native integration)

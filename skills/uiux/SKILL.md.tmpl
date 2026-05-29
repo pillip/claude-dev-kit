@@ -137,6 +137,13 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - Spatial composition: asymmetry, overlap, grid-breaking elements, negative space strategy
     - Content hierarchy and information architecture
     - Responsive behavior per breakpoint (mobile 375px / tablet 768px / desktop 1280px)
+    - **Numeric layout commitments (MANDATORY)**: per screen, declare specific values, not prose. The screen entry MUST include:
+      - `grid-template-columns` or column ratios — e.g., `7fr 3fr`, `1fr 2fr 1fr`, `repeat(12, 1fr)`
+      - Gap / gutter in px — e.g., `gap: 64px`, `column-gap: 32px; row-gap: 96px`
+      - Container max-width and side padding — e.g., `max-width: 1280px; padding: 0 80px`
+      - Asymmetry deltas as exact values — e.g., `hero text overhangs column 1 by -120px`, `image overhangs viewport right edge by 48px`, `sidebar overlaps content by 24px`
+      - Per-breakpoint overrides at mobile 375 / tablet 768 / desktop 1280 — list only the values that change
+    - Reject prose-only layout phrases ("asymmetric grid", "wide layout", "generous whitespace"). Re-state every layout description with at least one numeric value tied to a CSS property.
     - **PRD feature cross-check**: After writing, verify EVERY PRD feature (including P2) has a corresponding wireframe element. P2 features should show placement with a "P2 — deferred" note.
 12) Generate `docs/interactions.md`:
     - User flow diagrams (text-based state machines) — each with Trigger, Preconditions, Steps, Success/Error/Edge Cases
@@ -174,26 +181,40 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - CSS keyframe animations for page-load reveals, stagger effects, hover transitions
     - **Layout positioning rule**: `.sidebar`, `.nav`, and similar layout-structural elements MUST use `position: static` (or `relative`/`sticky` if scroll-pinning is intended) — NEVER `position: fixed` or `position: absolute`. Fixed/absolute positioning pulls the element out of the document flow, collapsing the grid column it occupied. Sidebars participate in grid/flex layout as normal flow children; scroll-pinning should use `position: sticky` with a `top` value.
     - **Signature Move encoding** (MANDATORY): the Signature Move from `docs/design_philosophy.md` MUST be encoded as a reusable utility class or component variant (e.g., `.cta-primary { box-shadow: -8px 16px 0 var(--accent); }`). If no natural component owns it, create a dedicated class named `.signature-<move>`. This class must be referenced from at least one selector that will appear on every screen.
-14.5) **Pilot screen selection & render**:
-    - Pick ONE pilot screen — the highest-information screen that best showcases the Signature Move, dominant components, and overall aesthetic. Typically the primary post-onboarding screen (NOT a splash or login).
-    - Generate ONLY this single HTML file in `prototype/screens/` following all the rules listed in step 15 below.
+14.5) **Pilot screens selection & render (multi-archetype)**:
+    - Classify every screen in `docs/wireframes.md` into one of these archetypes: `list/feed`, `detail/show`, `form/input`, `hub/dashboard`, `modal-wizard`, `content/long-form`, `empty/cold-start`.
+    - Pick **TWO pilot screens from the two most-distinct archetypes** present in the inventory. Typically one consumption-oriented (list / detail / hub) plus one input-oriented (form / wizard). If only one archetype exists in the inventory, fall back to a single pilot and note this in the gate.
+    - Generate ONLY these pilot HTML files in `prototype/screens/` following all the rules listed in step 15 below. Both pilots share `styles.css` from step 14.
     - Do NOT generate other screens or `prototype/index.html` yet.
-14.6) **PILOT GATE — present to user and HOLD** (do not auto-proceed):
-    - Tell the user the exact path: `open prototype/screens/<pilot>.html`
-    - Ask: "Does this pilot screen match the design philosophy? Specifically:
-      (a) Is the **Signature Move** — `<paste exact Signature Move text>` — visible and applied as intended?
-      (b) Does the typography, color, and composition feel like the named aesthetic ('<aesthetic name>'), not a generic SaaS dashboard?"
-    - WAIT for explicit approval before continuing to Phase 5B.
-    - If rejected: identify which level the problem lives at and fix there before regenerating the pilot:
+14.6) **PILOT GATE — render, self-critique, then HOLD for user** (do not auto-proceed):
+    - **Step 1 — Render**: for each pilot HTML, run:
+      ```
+      python3 scripts/screenshot_pilot.py prototype/screens/<pilot>.html --viewport 1280x800 --full-page
+      ```
+      This produces `prototype/screens/<pilot>.png`. If the script exits with "no screenshot backend available", record this and skip Step 2 (proceed directly to Step 3 with a note to the user).
+    - **Step 2 — Self-critique** (only if screenshots were produced): Read each PNG with the Read tool. For every pilot, answer in writing:
+      - (a) Is the Signature Move (`<paste exact text>`) visible at the expected location? Yes/No + one-sentence observation of where and how it appears.
+      - (b) Does the screenshot look like the named aesthetic (`<aesthetic name>`), or like a generic SaaS dashboard?
+      - (c) Slop signals — flag any of: centered card with symmetric margins, soft blurred shadows that read as "Material default", default Inter/Roboto-feeling font, evenly-spaced flat color palette, hover/empty/error states that read as stock.
+      - If (a) or (b) is unsatisfactory, OR (c) flags any signal: fix at the correct layer (philosophy → tokens → CSS), regenerate the affected pilot, re-screenshot, and re-critique. Document what was changed in the critique notes that you carry into Step 3. Do NOT advance to Step 3 until self-critique passes.
+    - **Step 3 — User gate**: present both pilots to the user.
+      - Give the exact open commands: `open prototype/screens/<pilot1>.html` and `open prototype/screens/<pilot2>.html`.
+      - Share the self-critique notes (so the user sees what was already caught and fixed) or note that auto-critique was skipped because no screenshot backend was available.
+      - Ask: "Do both pilots match the design philosophy? Specifically:
+        (a) Is the **Signature Move** (`<paste exact text>`) visible and applied in both?
+        (b) Do they feel like `<aesthetic name>` and read as the same family across the two archetypes?"
+      - WAIT for explicit approval before continuing to Phase 5B.
+    - If rejected: identify which level the problem lives at and fix there before regenerating the pilots:
       - Signature Move wrong/absent → revisit Phase 2 step 8.
-      - Color/type/spacing tokens off → revisit Phase 3 design system.
-      - Tokens are right but implementation is generic → fix `styles.css` and pilot HTML only.
+      - Color / type / spacing tokens off → revisit Phase 3 design system.
+      - Layout reads as generic → revisit Phase 4 numeric layout commitments.
+      - Tokens and layout are right but implementation is generic → fix `styles.css` and pilot HTML only.
     - Do NOT proceed to Phase 5B with an unaddressed pilot rejection.
 
 ### Phase 5B — Full Prototype (after pilot approval)
 15) Generate remaining screen HTML files in `prototype/screens/`:
-    - One HTML file per remaining screen identified in wireframes (the pilot is already done).
-    - **Use the approved pilot as the visual template** — match its component usage, spacing rhythm, Signature Move application, and overall composition language. Do not re-explore the aesthetic mid-prototype.
+    - One HTML file per remaining screen identified in wireframes (the pilots are already done).
+    - **Use the approved pilots as the visual template** — match their component usage, spacing rhythm, Signature Move application, and overall composition language. New screens should feel like they belong to the same family across both consumption- and input-oriented archetypes. Do not re-explore the aesthetic mid-prototype.
     - Semantic HTML5 structure (`<nav>`, `<main>`, `<section>`, `<article>`, `<aside>`, `<header>`, `<footer>`)
     - Google Fonts loaded via `<link>` tag (single CDN exception — fonts only)
     - `<meta name="viewport">` for responsiveness
