@@ -197,12 +197,26 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 22) **State demo check**:
     - Every screen has a visible state-switcher toolbar
     - Loading, empty, and error states are implemented and togglable
+22.5) **issues.md coverage cross-check** (only if `issues.md` exists):
+    - Read `issues.md` and extract titles, scope, and `UI` flag from each issue.
+    - Compare against the design deliverables and produce a gap list:
+      - **New screens**: `### Screen:` entries in `wireframes.md` not implied by any existing issue
+      - **New components**: composite components defined in `design_system.md` (FAB, list items, pickers, etc.) that no existing issue produces
+      - **New flows**: `### Flow:` entries in `interactions.md` not covered by an existing issue
+      - **New states**: loading/empty/error states added in `interactions.md` or `copy_guide.md` beyond what was anticipated in `ux_spec.md`
+    - Persist the gap list in memory for Phase 6 reporting. Do NOT modify `issues.md` — issue creation is `/issue`'s responsibility.
+    - If `issues.md` does not exist, skip silently.
 
 ### Phase 6 — Review & Iterate
 23) Present deliverables summary to the user:
     - List all generated files with brief descriptions
     - Highlight the design philosophy and key aesthetic choices
     - Report verification results from Phase 5.5 (component coverage, PRD coverage, token compliance)
+    - **Report the issues.md gap list from Phase 5.5 step 22.5** under a "Suggested follow-up issues" heading. If gaps exist, suggest the exact command to run:
+      ```
+      /issue "uiux 산출물 기반으로 issues.md에 누락된 화면/컴포넌트/상태/플로우 작업을 batch로 추가해줘"
+      ```
+      If no gaps were found, state explicitly: "No issues.md gaps detected — design deliverables are fully covered by existing issues."
     - Suggest: `open prototype/index.html` to view in browser
     - Ask for feedback on any screen
 24) Iterate based on user feedback:
@@ -211,8 +225,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - If aesthetic direction needs major change, go back to Phase 2
 
 ## Shared Registry Files
-- None. This skill produces standalone deliverables — no `issues.md` or `STATUS.md` updates.
-- Since `/kickoff` has already created issues, if additional UI/UX-related issues are needed, add them manually to `issues.md` or re-run `/kickoff`.
+- None directly written. This skill produces standalone design deliverables and does NOT modify `issues.md` or `STATUS.md`.
+- However, design work routinely surfaces new screens, components, states, or flows that were not anticipated when `/kickoff` generated `issues.md`. Phase 5.5 step 22.5 detects these gaps and Phase 6 reports them.
+- To convert the reported gaps into actual issues, run `/issue` with a gap-finder prompt — `/issue`'s batch mode automatically reads `design_system.md`, `wireframes.md`, `interactions.md`, and `copy_guide.md` (`has_design_docs` flag) and appends new issues without disturbing existing ones.
+- Do NOT re-run `/kickoff` for this purpose — it overwrites all planning docs and resets issue numbering, Status, GH-Issue, and PR fields.
 
 ## Error Handling
 - If `docs/ux_spec.md` not found: stop and suggest running `/kickoff` first (unless user explicitly opts to skip).
