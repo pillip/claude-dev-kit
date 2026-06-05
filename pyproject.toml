@@ -19,3 +19,8 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "strict"
+
+[dependency-groups]
+dev = [
+    "locust>=2.43.4",
+]
