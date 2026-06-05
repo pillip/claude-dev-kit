@@ -195,6 +195,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
       - Output: Voice & tone definition, copy inventory per screen, patterns, glossary, desktop adaptations section
       - Include FULL CONTENT of input documents in the subagent prompt.
       - This step MUST complete before Phase 5 so the prototype uses real copy.
+    - **Banned copy tells (enforce on every string)**: zero em-dashes (`—`/`–`) — use `-`, comma, period, or colon; no filler verbs (Elevate, Seamless, Unleash, Next-Gen, Revolutionize); no generic person names (John Doe) or startup-slop brand names (Acme, Nexus, SmartFlow); no fake-perfect numbers (`99.99%`, round `50%`) — use organic values. See "Specific AI Tells" in Anti-AI-Slop Rules.
 16-a) **Accessibility labels (REQUIRED)**: Ensure `copy_guide.md` includes `aria-label` for EVERY interactive element (buttons, inputs, menus, panels, dialogs). Also include keyboard shortcut announcements for screen readers.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
@@ -375,6 +376,9 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - Renderer bundle SHOULD be under 500KB gzip (excluding node_modules externalized by Vite)
     - Vendor chunk (react, react-dom) MUST be split from app code via `manualChunks`
     - Electron built-in modules (`electron`, `path`, `fs`) MUST be externalized, not bundled
+30.5) **AI Tell sweep** (CRITICAL):
+    - Sweep every `.tsx`/`.css` file in `src/screens/`, `src/components/`, and theme/style files for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, decorative version labels, `<div>`-based fake product UI, decorative status dots, locale/time strips.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting.
 
 ### Phase 6 — Review & Iterate
 31) Present deliverables summary to the user:
@@ -435,6 +439,29 @@ These rules prevent Claude from converging on generic, forgettable desktop defau
 - System tray presence for background tasks, notifications, quick actions
 - Context menus that match OS conventions while expressing app personality
 - Desktop-appropriate component sizing: smaller click targets (24-32px), denser spacing, more visible information
+
+**Specific AI Tells (hard bans — sweep every screen before presenting).**
+Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one.
+
+*Content & data:*
+- Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
+- Fake-perfect numbers (`99.99%`, round `50%`, `1,234,567`) → organic messy values (`47.2%`, `+1 (312) 847-1928`).
+- Filler verbs ("Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionize") → concrete verbs only.
+- **Em-dash (`—`) and en-dash-as-separator (`–`): zero tolerance** in all visible text (titles, labels, menu items, body, empty/error copy). Use a regular hyphen `-`, comma, period, colon, or line break. The single most-violated tell.
+
+*Fake product UI:*
+- NEVER fake a product surface out of styled `<div>` rectangles (fake chart, fake terminal, fake data table) to fill a welcome/empty screen. Use a real screenshot, generated image, real component, or skip it.
+- No fake version footers / sync stamps (`v0.6.2-rc.1`, `last sync 4s ago`) as decoration (a real app-version readout in About/status bar is fine).
+
+*Decorative meta:*
+- No section-number eyebrows (`001 · Capabilities`) or `01 / 4` pagination labels — name the topic in plain language.
+- No version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) as decoration unless the brief is explicitly a launch/preview.
+- No decorative status dots before every list row/tab/badge (only for real semantic state, sparingly).
+- No locale/time/weather strips (`Lisbon 14:23 · 18°C`) or mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`) as chrome.
+- Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
+
+*CSS mechanics (renderer):*
+- Multi-column / split-pane layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
 
 ## Guidelines
 - **Electron + React + TypeScript first**: Prototype targets Electron with Vite for fast development. Main/renderer process separation is mandatory.
