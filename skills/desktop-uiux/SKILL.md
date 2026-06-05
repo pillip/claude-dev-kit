@@ -332,6 +332,7 @@ If the result is `true`:
         cd prototype-desktop && npm run dev
         ```
       - Optionally, if Playwright with Electron is installed, the agent MAY screenshot the rendered window for a self-critique pass against the Signature Move and named aesthetic before presenting. If not installed, skip the auto-critique.
+      - **Pre-emit critique (write before presenting, screenshot or not):** rate each pilot 1–5 on six axes — **Philosophy** (a clear *why*, a position the screen takes?), **Hierarchy** (primary/secondary/tertiary readable in 2 seconds?), **Execution** (token use, accent footprint, states, contrast, density in spec?), **Specificity** (looks like *this brief*, not a generic desktop app?), **Restraint** (everything earns its place?), **Variety** (structurally distinct from the other pilot — colour-swaps don't count). **Anything < 3 on any axis triggers a revision pass before presenting.** Record the scores in a one-line comment at the top of the pilot's stylesheet/screen file: `/* pre-emit critique: P5 H4 E5 S4 R5 V5 */`.
       - Ask: "Please run the pilots and confirm:
         (a) Is the **Signature Move** (`<paste exact text>`) visible and applied on both pilots?
         (b) Do both pilots feel like `<aesthetic name>` and read as the same family across the two archetypes?
@@ -388,6 +389,14 @@ If the result is `true`:
     - Every interactive component MUST be keyboard-accessible (tab focus, enter/space activation)
     - Command Palette (Cmd+K / Ctrl+K) MUST be implemented if specified in design system
     - At least 5 keyboard shortcuts from `docs/interactions_desktop.md` MUST be functional
+27.3) **Contrast sweep** (CRITICAL — catches the failures that ship most):
+    - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
+    - Fail on any of: **button text ≈ button fill** (text within ~5% lightness of fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark panel** (background lightness < 50%) that did not flip its text colour (ink-on-ink). Most-missed: text in a panel that switched `background` but inherited `color`; muted text on a tinted surface.
+    - List failing pairs as `file:selector`, fix, and re-check before proceeding.
+27.4) **Slop-proof mechanics sweep** (deterministic — grep `.css`/theme/screens):
+    - Flag and fix: `transition: all` / `transition-all`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0`; all-caps display with `line-height` < 1.0.
+    - Confirm present: `overflow-x: clip` on `html`+`body`; input/select fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Anti-AI-Slop "CSS mechanics (renderer)".
+    - List violations as `file:line`, fix, and re-sweep.
 27.5) **Signature Move check**:
     - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
     - The Signature Move must be implemented as a reusable component/class/CSS-custom-property primitive under `src/components/` or `src/theme/`.
@@ -496,8 +505,21 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 - No locale/time/weather strips (`Lisbon 14:23 · 18°C`) or mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`) as chrome.
 - Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
 
-*CSS mechanics (renderer):*
+*Typography & interaction tells:*
+- **No italic headings.** `font-style: italic` on `h1`–`h6` / display / wordmark / `<em>` inside a heading is a top tell. Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
+- No celebratory success toast for an action whose effect is already visible (silent success; reserve toasts for failures and invisible/background effects).
+- Tooltip delays differ by input: hover delays 800–1000ms, keyboard focus shows at 0ms (never equal).
+- Auto-rotating content (carousel, banner, ticker) must pause on hover AND focus (WCAG 2.2.2).
+
+*CSS mechanics (renderer) — deterministic, all mandatory:*
 - Multi-column / split-pane layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
+- `overflow-x: clip` on BOTH `html` and `body` (use `clip`, not `hidden` — preserves descendant `sticky`/`fixed`); no horizontal scroll at any window width down to 320px.
+- Any grid track holding an image uses `minmax(0, 1fr)`, never bare `1fr`.
+- Display headers set `overflow-wrap: anywhere; min-width: 0`; all-caps display type uses `line-height ≥ 1.0`.
+- At most ONE `position: sticky; top: 0` (the top chrome/toolbar); other sticky elements offset to `top: var(--banner-height)` with a lower z-index than the toolbar.
+- Flex rows mixing height-different children set `align-items: center`.
+- No `transition: all` / `transition-all` — name properties. Focus rings appear instantly (no `transition` on `outline`) and use `outline`, never `border`. Reserve overshoot easings for drag/physical interactions only.
+- Input/select 8-state rules: constant `border-width` across states (change `outline`/`box-shadow`/`border-color`); `outline`-based focus ring; input height == adjacent button height; reserve helper/error slot with `min-height: 1lh`; disabled = `opacity` + `cursor: not-allowed` + `disabled`/`aria-disabled` (never opacity alone).
 
 ## Guidelines
 - **Electron + React + TypeScript first**: Prototype targets Electron with Vite for fast development. Main/renderer process separation is mandatory.

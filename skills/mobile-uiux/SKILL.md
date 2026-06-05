@@ -297,6 +297,7 @@ If the result is `true`:
       - Generate a TEMPORARY minimal `prototype-mobile/src/navigation/index.tsx` that mounts ONLY the 2 pilots in a Stack (no full tab/drawer setup yet).
       - Generate `prototype-mobile/App.tsx` (SafeAreaProvider + NavigationContainer + theme provider) so the pilots are runnable.
       - Do NOT generate the remaining screens or the full navigation yet.
+    - **Step 2.5 — Pre-emit critique** (write before presenting): rate each pilot 1–5 on six axes — **Philosophy** (a clear *why*, a position the screen takes?), **Hierarchy** (primary/secondary/tertiary readable in 2 seconds?), **Execution** (token use, accent footprint, states, contrast in spec?), **Specificity** (looks like *this brief*, not a generic app?), **Restraint** (everything earns its place?), **Variety** (structurally distinct from the other pilot — colour-swaps don't count). **Anything < 3 on any axis triggers a revision pass before presenting.** Record the scores in a one-line comment at the top of the pilot screen file: `// pre-emit critique: P5 H4 E5 S4 R5 V5`.
     - **Step 3 — PILOT GATE — present and HOLD for user** (do not auto-proceed):
       - Tell the user how to run:
         ```bash
@@ -352,6 +353,14 @@ If the result is `true`:
 28) **Animation completeness check**:
     - At least ONE signature animation from `docs/design_philosophy.md` MUST be fully implemented with Reanimated worklet code
     - `useReducedMotion()` MUST be respected globally, not just in one component
+28.3) **Contrast sweep** (CRITICAL — catches the failures that ship most):
+    - For every text/icon color vs its computed background, verify WCAG ratio: body text needs ≥ 4.5:1; large text (≥24pt / ≥18pt bold), icons, and focus indicators need ≥ 3:1.
+    - Fail on any of: **button label ≈ button fill** (the black-on-black bug — label colour within ~5% lightness of the fill); an accent-filled surface carrying text without a verified accent-ink colour; any **dark surface** (lightness < 50%) that did not flip its `<Text>` color (ink-on-ink). Most-missed: text in a card that switched `backgroundColor` but kept the default ink color.
+    - List failing pairs as `file:component`, fix, and re-check before proceeding.
+28.4) **State & motion mechanics sweep**:
+    - `TextInput` fields satisfy the state rules from Anti-AI-Slop ("Motion & input mechanics"): constant `borderWidth`, input height == button height, reserved helper/error slot, multi-channel disabled.
+    - Reanimated worklets animate only `transform`/`opacity` (no layout props); overshoot springs appear only on gesture-driven interactions, not incidental state changes; no element stacks multiple simultaneous effects.
+    - List violations as `file:line`, fix, and re-sweep.
 28.5) **Signature Move check**:
     - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
     - The Signature Move must be implemented as a reusable component/hook/HOC under `src/components/` or `src/theme/`.
@@ -444,6 +453,17 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 - No decorative status dots before every list row/tab/badge (only for real semantic state, sparingly).
 - No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
 - Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
+
+*Typography & interaction tells:*
+- **No italic headings.** `fontStyle: 'italic'` on title/display/hero-stat `<Text>` is a top tell. Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
+- No celebratory success toast/haptic for an action whose effect is already visible on screen (silent success; reserve toasts for failures and invisible effects).
+- Auto-advancing carousels/banners must be pausable and never the only way to reach content.
+
+*Motion & input mechanics (React Native):*
+- Animate only `transform` / `opacity` in Reanimated worklets; never animate layout props (`width`, `height`, `margin`, `padding`, `top`, `left`) that trigger re-layout per frame.
+- Reserve overshoot/bouncy springs for **gesture-driven / physical** interactions (press, drag, pull-to-refresh, sheet) — not for incidental state changes (colour, opacity, content swaps).
+- No stacking multiple simultaneous effects (scale + translate + shadow + rotate) on one element.
+- `TextInput` states: keep `borderWidth` constant across default/focus/error (change `borderColor`/background, never width — it shifts layout); input height == adjacent button height (44pt floor); reserve the helper/error slot height so an appearing error doesn't push content; disabled needs three channels — dimmed style + `editable={false}` + `accessibilityState={{ disabled: true }}` (never opacity alone).
 
 ## Guidelines
 - **React Native (Expo) first**: Prototype targets Expo managed workflow. No bare workflow or native modules unless absolutely necessary.

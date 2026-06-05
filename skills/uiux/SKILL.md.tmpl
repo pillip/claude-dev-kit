@@ -183,6 +183,20 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - **Layout positioning rule**: `.sidebar`, `.nav`, and similar layout-structural elements MUST use `position: static` (or `relative`/`sticky` if scroll-pinning is intended) — NEVER `position: fixed` or `position: absolute`. Fixed/absolute positioning pulls the element out of the document flow, collapsing the grid column it occupied. Sidebars participate in grid/flex layout as normal flow children; scroll-pinning should use `position: sticky` with a `top` value.
     - **Viewport-height rule**: full-height hero/section uses `min-height: 100dvh` — NEVER `100vh` / `height: 100vh`. `100vh` ignores the iOS Safari address bar and causes layout jump on mobile.
     - **Multi-column rule**: build column layouts with CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
+    - **Layout-safety mechanics (deterministic — all mandatory):**
+      - `overflow-x: clip` on BOTH `html` and `body` (use `clip`, not `hidden` — `clip` preserves descendant `sticky`/`fixed`). The page must not scroll horizontally at any width 320–1920px.
+      - Any `grid-template-columns`/`-rows` track that holds an image uses `minmax(0, 1fr)`, never bare `1fr` (bare `1fr` = `minmax(auto, 1fr)` → a large native image sets a huge min-width and overflows on phones).
+      - Display headers (`h1`, `.hero__title`, section titles) set `overflow-wrap: anywhere; min-width: 0` so long compound words can break.
+      - All-caps display type uses `line-height ≥ 1.0` (never < 1.0 — cap-tops collide with the line below when the heading wraps).
+      - At most ONE `position: sticky; top: 0` element (the top nav). Any other sticky element offsets to `top: var(--banner-height)` and uses a lower z-index than the nav (split `--z-sticky` from `--z-sticky-nav`).
+      - Flex rows mixing height-different children (button+text, icon+text) set `align-items: center`.
+    - **Motion mechanics (deterministic — all mandatory):**
+      - NEVER `transition: all` / `transition-all` — name the exact properties.
+      - Animate only `transform` / `opacity` / `filter`; never animate `width`, `height`, `top`, `left`, `margin`, `padding`.
+      - No uniform `scale` hover applied across unrelated elements; no stacking multiple hover effects (translate+scale+shadow+rotate) on one element.
+      - Reserve bouncy/overshoot easings (`cubic-bezier(…, 1.56, …)`) for physical/drag interactions only — never on buttons, modals, or tooltips.
+      - Focus rings appear INSTANTLY (no `transition` on `outline`) and are built from `outline`, never `border`.
+    - **Input-state mechanics (8 states; fail on any):** `border-width` stays `1px` across default/hover/focus/error (state changes go to `outline`/`box-shadow`/`border-color`, never `border-width` — it shifts layout); focus ring is `outline: 2px solid var(--color-focus); outline-offset: 1px` (reserve `outline: 2px solid transparent` at rest); input height == adjacent button height (44px floor); reserve the helper/error slot with `min-height: 1lh` so an appearing error doesn't push the page; disabled needs `opacity` + `cursor: not-allowed` + the `disabled`/`aria-disabled` attribute (never opacity alone).
     - **Signature Move encoding** (MANDATORY): the Signature Move from `docs/design_philosophy.md` MUST be encoded as a reusable utility class or component variant (e.g., `.cta-primary { box-shadow: -8px 16px 0 var(--accent); }`). If no natural component owns it, create a dedicated class named `.signature-<move>`. This class must be referenced from at least one selector that will appear on every screen.
 14.5) **Pilot screens selection & render (multi-archetype)**:
     - Classify every screen in `docs/wireframes.md` into one of these archetypes: `list/feed`, `detail/show`, `form/input`, `hub/dashboard`, `modal-wizard`, `content/long-form`, `empty/cold-start`.
@@ -196,6 +210,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
       ```
       This produces `prototype/screens/<pilot>.png`. If the script exits with "no screenshot backend available", record this and skip Step 2 (proceed directly to Step 3 with a note to the user).
     - **Step 2 — Self-critique** (only if screenshots were produced): Read each PNG with the Read tool. For every pilot, answer in writing:
+      - **Pre-emit critique (score these six axes BEFORE the checks below):** rate the pilot 1–5 on each — **Philosophy** (is there a clear *why*, a position the screen takes — or just a layout?), **Hierarchy** (can a viewer tell primary/secondary/tertiary in 2 seconds?), **Execution** (rule weight, accent footprint, focus rings, contrast all in spec?), **Specificity** (looks like *this brief*, not a generic page anyone could ship?), **Restraint** (has everything that isn't earning its place been removed?), **Variety** (structurally distinct from the other pilot — colour-swaps don't count). **Anything < 3 on any axis triggers a revision pass before continuing.** Record the scores as a one-line stamp at the top of `styles.css`: `/* pre-emit critique: P5 H4 E5 S4 R5 V5 */`.
       - (a) Is the Signature Move (`<paste exact text>`) visible at the expected location? Yes/No + one-sentence observation of where and how it appears.
       - (b) Does the screenshot look like the named aesthetic (`<aesthetic name>`), or like a generic SaaS dashboard?
       - (c) Slop signals — flag any of: centered card with symmetric margins, soft blurred shadows that read as "Material default", default Inter/Roboto-feeling font, evenly-spaced flat color palette, hover/empty/error states that read as stock.
@@ -263,6 +278,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - No `outline: none` on `:focus` without `:focus-visible` coverage
     - Placeholder text contrast >= 3:1
     - All interactive elements have keyboard handlers
+21.5) **Contrast sweep** (CRITICAL — catches the failures that ship most):
+    - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text (<24px regular / <18px bold) needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
+    - Fail on any of: **button text ≈ button fill** (text colour within ~5% lightness of the fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark section** (background lightness < 50%) that did not also flip its text colour (ink-on-ink). Most-missed: text in a card that switched `background` but inherited `color`; muted text on a tinted surface.
+    - List failing pairs as `file:selector`, fix, and re-check before proceeding.
 22) **State demo check**:
     - Every screen has a visible state-switcher toolbar
     - Loading, empty, and error states are implemented and togglable
@@ -278,6 +297,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 22.7) **AI Tell sweep** (CRITICAL):
     - Sweep every file in `prototype/screens/` and `prototype/styles.css` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`), `100vh`/`height: 100vh` on full-height sections, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, hero version labels, three equal feature cards, `<div>`-based fake product UI, decorative status dots, locale/time strips, scroll cues, mono-caps decoration strips.
     - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting.
+22.8) **Slop-proof mechanics sweep** (deterministic — grep `prototype/styles.css` and screens):
+    - Flag and fix: `transition: all` / `transition-all`; animating `width`/`height`/`top`/`left`/`margin`/`padding`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0` (only the nav may sit there); all-caps display with `line-height` < 1.0.
+    - Confirm present: `overflow-x: clip` on BOTH `html` and `body`; input fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Phase 5A step 14.
+    - List every violation as `file:line`, fix, and re-sweep.
 
 ### Phase 6 — Review & Iterate
 23) Present deliverables summary to the user:
@@ -362,6 +385,13 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 *CSS mechanics (web):*
 - Full-height hero: use `min-height: 100dvh`, NEVER `100vh` / `height: 100vh` (iOS Safari address-bar jump).
 - Multi-column layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`).
+- Full deterministic layout/motion/input rules live in Phase 5A step 14 ("Layout-safety / Motion / Input-state mechanics") and are swept in Phase 5.5.
+
+*Typography & interaction tells:*
+- **No italic headings.** `font-style: italic` on `h1`–`h6` / display / wordmark / hero stat / `<em>` inside a heading is a top tell. Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
+- No celebratory success toast for an action whose effect is already visible (silent success; reserve toasts for failures and invisible effects).
+- Tooltip delays differ by input: hover delays 800–1000ms, keyboard focus shows at 0ms (never equal).
+- Auto-rotating content (carousel, banner, stat ticker) must pause on hover AND focus (WCAG 2.2.2).
 
 ## Guidelines
 - **Self-contained prototypes**: Opens via `file://` — no build tools, no npm, no frameworks.
