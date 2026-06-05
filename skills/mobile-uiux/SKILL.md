@@ -216,6 +216,7 @@ If the result is `true`:
       - Output: Voice & tone definition, copy inventory per screen, patterns, glossary, mobile adaptations section
       - Include FULL CONTENT of input documents in the subagent prompt.
       - This step MUST complete before Phase 5 so the prototype uses real copy.
+    - **Banned copy tells (enforce on every string)**: zero em-dashes (`—`/`–`) — use `-`, comma, period, or colon; no filler verbs (Elevate, Seamless, Unleash, Next-Gen, Revolutionize); no generic person names (John Doe) or startup-slop brand names (Acme, Nexus, SmartFlow); no fake-perfect numbers (`99.99%`, round `50%`) — use organic values. See "Specific AI Tells" in Anti-AI-Slop Rules.
 16-a) **Accessibility labels (REQUIRED)**: Ensure `copy_guide.md` includes `accessibilityLabel` for EVERY interactive element (buttons, toggles, list items, navigation items, form inputs). Also include state-change announcement strings for VoiceOver/TalkBack (e.g., "Run completed", "Run unchecked"). This is mandatory per NFR accessibility requirements.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
@@ -359,6 +360,9 @@ If the result is `true`:
 29) **Performance check**:
     - List item components used in FlatList MUST use `React.memo`
     - Event handlers passed to memoized children MUST use `useCallback`
+29.5) **AI Tell sweep** (CRITICAL):
+    - Sweep every `.tsx` file in `src/screens/` and `src/components/` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, generic person/brand names, fake-perfect numbers, section-number eyebrows, version labels, `<View>`-based fake product UI, decorative status dots, locale/time strips, scroll cues.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and View-based fake product UI** — these must be 0 before presenting.
 
 ### Phase 6 — Review & Iterate
 30) Present deliverables summary to the user:
@@ -420,6 +424,26 @@ These rules prevent Claude from converging on generic, forgettable mobile defaul
 - OLED-aware dark mode with true black and incremental surface elevation
 - Thumb-zone-aware layout: primary actions in the bottom third
 - Signature gesture or interaction that defines the app's personality
+
+**Specific AI Tells (hard bans — sweep every screen before presenting).**
+Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one.
+
+*Content & data:*
+- Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
+- Fake-perfect numbers (`99.99%`, round `50%`, `1,234,567`) → organic messy values (`47.2%`, `+1 (312) 847-1928`).
+- Filler verbs ("Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionize") → concrete verbs only.
+- **Em-dash (`—`) and en-dash-as-separator (`–`): zero tolerance** in all visible text (titles, labels, body, empty/error copy). Use a regular hyphen `-`, comma, period, colon, or line break. The single most-violated tell.
+
+*Fake product UI:*
+- NEVER fake a product surface out of styled `<View>` rectangles (fake chart, fake feed, fake map) to fill a hero/onboarding slide. Use a real screenshot, generated image, real component, or skip it.
+- No fake version footers / sync stamps (`v0.6.2-rc.1`, `last sync 4s ago`) as decoration.
+
+*Decorative meta:*
+- No section-number eyebrows (`001 · Capabilities`) or `01 / 4` pagination labels — name the topic in plain language.
+- No version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) unless the brief is explicitly a launch/preview.
+- No decorative status dots before every list row/tab/badge (only for real semantic state, sparingly).
+- No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
+- Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
 
 ## Guidelines
 - **React Native (Expo) first**: Prototype targets Expo managed workflow. No bare workflow or native modules unless absolutely necessary.

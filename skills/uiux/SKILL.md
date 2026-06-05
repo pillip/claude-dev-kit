@@ -197,6 +197,7 @@ If the result is `true`:
     - Output: Voice & tone definition, copy inventory per screen (labels, placeholders, empty/error/success states, confirmations, toasts), patterns, glossary
     - Retrieve the contents of `docs/ux_spec.md` and PRD already read in Phase 1, and the documents generated in Phase 2-4, from memory and include them in the subagent prompt — do not re-read the files.
     - The copy guide must align with the design philosophy's tone (e.g., "Ink & Paper" → restrained, precise language).
+    - **Banned copy tells (enforce on every string)**: zero em-dashes (`—`/`–`) — use `-`, comma, period, or colon; no filler verbs (Elevate, Seamless, Unleash, Next-Gen, Revolutionize); no generic person names (John Doe) or startup-slop brand names (Acme, Nexus, SmartFlow); no fake-perfect numbers (`99.99%`, round `50%`) — use organic values. See "Specific AI Tells" in Anti-AI-Slop Rules.
     - This step MUST complete before Phase 5 so the prototype uses real copy, not placeholder text.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
@@ -216,6 +217,8 @@ If the result is `true`:
     - Dark mode via `prefers-color-scheme` (if appropriate for the aesthetic)
     - CSS keyframe animations for page-load reveals, stagger effects, hover transitions
     - **Layout positioning rule**: `.sidebar`, `.nav`, and similar layout-structural elements MUST use `position: static` (or `relative`/`sticky` if scroll-pinning is intended) — NEVER `position: fixed` or `position: absolute`. Fixed/absolute positioning pulls the element out of the document flow, collapsing the grid column it occupied. Sidebars participate in grid/flex layout as normal flow children; scroll-pinning should use `position: sticky` with a `top` value.
+    - **Viewport-height rule**: full-height hero/section uses `min-height: 100dvh` — NEVER `100vh` / `height: 100vh`. `100vh` ignores the iOS Safari address bar and causes layout jump on mobile.
+    - **Multi-column rule**: build column layouts with CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
     - **Signature Move encoding** (MANDATORY): the Signature Move from `docs/design_philosophy.md` MUST be encoded as a reusable utility class or component variant (e.g., `.cta-primary { box-shadow: -8px 16px 0 var(--accent); }`). If no natural component owns it, create a dedicated class named `.signature-<move>`. This class must be referenced from at least one selector that will appear on every screen.
 14.5) **Pilot screens selection & render (multi-archetype)**:
     - Classify every screen in `docs/wireframes.md` into one of these archetypes: `list/feed`, `detail/show`, `form/input`, `hub/dashboard`, `modal-wizard`, `content/long-form`, `empty/cold-start`.
@@ -308,6 +311,9 @@ If the result is `true`:
       - **New states**: loading/empty/error states added in `interactions.md` or `copy_guide.md` beyond what was anticipated in `ux_spec.md`
     - Persist the gap list in memory for Phase 6 reporting. Do NOT modify `issues.md` — issue creation is `/issue`'s responsibility.
     - If `issues.md` does not exist, skip silently.
+22.7) **AI Tell sweep** (CRITICAL):
+    - Sweep every file in `prototype/screens/` and `prototype/styles.css` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`), `100vh`/`height: 100vh` on full-height sections, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, hero version labels, three equal feature cards, `<div>`-based fake product UI, decorative status dots, locale/time strips, scroll cues, mono-caps decoration strips.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting.
 
 ### Phase 6 — Review & Iterate
 23) Present deliverables summary to the user:
@@ -366,6 +372,32 @@ These rules prevent Claude from converging on generic, forgettable defaults.
 - Atmosphere and depth — gradients, noise, textures, layered transparencies, dramatic shadows
 - High-impact motion moments over scattered micro-interactions
 - Implementation complexity matched to aesthetic vision
+
+**Specific AI Tells (hard bans — sweep every screen before presenting).**
+Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one.
+
+*Content & data:*
+- Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
+- Fake-perfect numbers (`99.99%`, round `50%`, `1,234,567`) → organic messy values (`47.2%`, `+1 (312) 847-1928`).
+- Filler verbs ("Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionize") → concrete verbs only.
+- **Em-dash (`—`) and en-dash-as-separator (`–`): zero tolerance** everywhere visible (headlines, labels, body, captions, attribution). Use a regular hyphen `-`, comma, period, colon, or line break. The single most-violated tell.
+
+*Fake product UI:*
+- NEVER build a fake product UI out of styled `<div>` rectangles (fake dashboard, terminal, task list, chart) to fill a hero or preview. This is the #1 design tell. Use a real screenshot, generated image, real component preview, or skip the preview.
+- No fake version footers / sync stamps inside previews (`v0.6.2-rc.1`, `last sync 4s ago`).
+
+*Decorative meta (agency-portfolio clichés):*
+- No section-number eyebrows (`001 · Capabilities`, `06 · how it works`) or `01 / 4` pagination labels. Name the topic in plain language.
+- No hero version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) unless the brief is explicitly a launch/preview.
+- No three identical equal-width feature cards in a row → 2-col zig-zag, asymmetric grid, or scroll-pinned alternative.
+- No decorative status dots before every nav/list/badge (only for real semantic state, sparingly).
+- No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll to explore`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
+- Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
+- No fake photo-credit captions (`Frame XII · 35mm`, `Plate 03`) — real photographer credit only.
+
+*CSS mechanics (web):*
+- Full-height hero: use `min-height: 100dvh`, NEVER `100vh` / `height: 100vh` (iOS Safari address-bar jump).
+- Multi-column layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`).
 
 ## Guidelines
 - **Self-contained prototypes**: Opens via `file://` — no build tools, no npm, no frameworks.
