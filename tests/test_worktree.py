@@ -22,6 +22,18 @@ def git_repo(tmp_path):
     repo = str(tmp_path / "repo")
     os.makedirs(repo)
     subprocess.run(["git", "init", repo], check=True, capture_output=True)
+    # Configure a local identity so the fixture works on CI runners with no
+    # global git identity (matches the pattern in test_hook_runner.py).
+    subprocess.run(
+        ["git", "-C", repo, "config", "user.email", "test@test.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", repo, "config", "user.name", "Test"],
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["git", "-C", repo, "commit", "--allow-empty", "-m", "init"],
         check=True,
