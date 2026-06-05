@@ -296,10 +296,11 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - If `issues.md` does not exist, skip silently.
 22.7) **AI Tell sweep** (CRITICAL):
     - Sweep every file in `prototype/screens/` and `prototype/styles.css` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`), `100vh`/`height: 100vh` on full-height sections, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, hero version labels, three equal feature cards, `<div>`-based fake product UI, decorative status dots, locale/time strips, scroll cues, mono-caps decoration strips.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
 22.8) **Slop-proof mechanics sweep** (deterministic — grep `prototype/styles.css` and screens):
     - Flag and fix: `transition: all` / `transition-all`; animating `width`/`height`/`top`/`left`/`margin`/`padding`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0` (only the nav may sit there); all-caps display with `line-height` < 1.0.
     - Confirm present: `overflow-x: clip` on BOTH `html` and `body`; input fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Phase 5A step 14.
+    - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
     - List every violation as `file:line`, fix, and re-sweep.
 
 ### Phase 6 — Review & Iterate

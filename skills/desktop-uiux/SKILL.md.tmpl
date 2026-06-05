@@ -360,6 +360,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
 27.4) **Slop-proof mechanics sweep** (deterministic — grep `.css`/theme/screens):
     - Flag and fix: `transition: all` / `transition-all`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0`; all-caps display with `line-height` < 1.0.
     - Confirm present: `overflow-x: clip` on `html`+`body`; input/select fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Anti-AI-Slop "CSS mechanics (renderer)".
+    - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
     - List violations as `file:line`, fix, and re-sweep.
 27.5) **Signature Move check**:
     - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
@@ -387,7 +388,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
     - Electron built-in modules (`electron`, `path`, `fs`) MUST be externalized, not bundled
 30.5) **AI Tell sweep** (CRITICAL):
     - Sweep every `.tsx`/`.css` file in `src/screens/`, `src/components/`, and theme/style files for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, decorative version labels, `<div>`-based fake product UI, decorative status dots, locale/time strips.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
 
 ### Phase 6 — Review & Iterate
 31) Present deliverables summary to the user:
