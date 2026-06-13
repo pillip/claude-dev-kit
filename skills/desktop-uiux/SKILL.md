@@ -4,7 +4,7 @@ name: desktop-uiux
 description: Establishes a desktop design philosophy based on kickoff outputs, and generates a desktop design system/wireframes/Electron prototype. Recommended flow: /prd → /kickoff → /desktop-uiux
 argument-hint: [PRD.md path (optional)]
 disable-model-invocation: false
-allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 ---
 
 ## Kit Preamble — desktop-uiux
@@ -125,19 +125,38 @@ If the result is `true`:
    - Who are the users? What's the emotional tone?
    - What category does this product belong to?
    - Are there competitor/reference apps mentioned?
-7.5) **Reference Research** (uses WebSearch + WebFetch):
-   - Step 1 — Source discovery via WebSearch (restrict to visual showcase sites):
-     - Aspiration reference: `"[brand/product] desktop UI site:dribbble.com OR site:behance.net OR site:awwwards.com OR site:land-book.com"`
-     - Anti-reference: `"[anti-reference] UI criticism"`
-     - Domain trends: `"[domain] desktop app design 2025 2026 showcase"`
-   - Step 2 — Visual fetching via WebFetch (CRITICAL — do not skip):
-     - From search results, pick 2–3 URLs that point to actual visual showcases (case studies, product hero pages, brand press kits) — NOT text-only articles.
-     - WebFetch each URL. Extract concrete visual specifics: exact hex colors, font choices and sizes, sidebar/split-pane proportions, title-bar treatment, command-palette style, density (compact vs roomy), dark-mode strategy.
-     - If WebFetch returns text-only without resolvable visuals, fall back to careful synthesis but mark the cue as `(indirect)`.
-   - Step 3 — Synthesis (output goes into `docs/design_philosophy.md` "Reference Anchors"):
-     - **5 specific visual cues to adopt**, each as: cue (≤12 words) — exact value or token (e.g., `sidebar 240px @ #0E0F12`, `JetBrains Mono 13 + Inter 13`, `title bar 28px frameless with traffic lights inset 12/12`) — source URL.
-     - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
-     - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a generic Electron/Material default. Prose-only cues are rejected.
+7.5) **Reference Research — image-grounded only** (NO WebFetch for visual extraction).
+
+   WebFetch returns parsed text, not pixels. Asking the model to extract hex values or sidebar proportions from a Dribbble URL via WebFetch is fabrication. Visual references MUST arrive as actual images.
+
+   Pick exactly ONE of three paths:
+
+   - **Path (a) — user-provided images** (preferred):
+     - The user supplies 1–3 desktop screenshots / app hero shots (image URLs or local file paths).
+     - Read each image with the Read tool (image input).
+     - For each image, extract concrete cues from what you actually see: dominant hex (`≈#…`), sidebar/split-pane proportions, title bar treatment, command palette presence, density (compact / roomy), dark-mode handling.
+
+   - **Path (b) — page URLs**:
+     - For each reference page URL, run:
+       ```bash
+       python3 scripts/capture_reference.py <url> --viewport 1440x900
+       ```
+       This headless-captures the page into `docs/references/<slug>.png`. If the script exits non-zero, STOP this path and switch to Path (a) or Path (c).
+     - Read every captured PNG.
+     - Extract cues grounded in the actual capture.
+
+   - **Path (c) — no images available**:
+     - Skip the Reference Anchors section entirely. Print this one-line warning to the user:
+       `Reference Anchor skipped: no image provided. Pass 1–3 desktop screenshot paths or a page URL (with Playwright/Chrome installed) to populate this section.`
+     - Proceed to step 8 (aesthetic direction) WITHOUT a Reference Anchors section. The Signature Move + Decision Matrix still anchor the design.
+
+   **Anti-reference**: WebSearch for *anti-reference titles* is acceptable. Anti-cues are written from the model's own knowledge.
+
+   **Synthesis** (when Path (a) or (b) ran — output goes into `docs/design_philosophy.md` "Reference Anchors"):
+   - **5 specific visual cues to adopt**, each as: cue (≤12 words) — exact value or token (e.g., `sidebar 240px @ #0E0F12`, `JetBrains Mono 13 + Inter 13`, `title bar 28px frameless with traffic lights inset 12/12`) — **source image path under `docs/references/` OR user-provided image URL/path**.
+   - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
+   - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a generic Electron/Material default. Prose-only cues are rejected.
+   - Never invent hex / font / sizing values without an image to point at. Mark uncertain extractions with `≈` and cite the source image.
 8) Commit to a BOLD aesthetic direction with desktop lens:
    - Apply the desktop design lens: information density, keyboard workflow, multi-window experience
 9) Generate `docs/design_philosophy.md`:
@@ -154,14 +173,14 @@ If the result is `true`:
        - "Command palette: `clip-path: polygon(...)` notched bottom-right corner, 480×320 fixed — never plain rounded rectangle"
        - "Sidebar split: `grid-template-columns: 240px 1fr` with a 1px hairline divider in `--border-strong`, no shadow"
        - "Title bar: 28px frameless with traffic lights inset 12/12, app icon at 16px — never default window chrome"
-   - **Reference Anchors** section (from step 7.5 visual research): 5 adopted cues with source URLs, 3–5 avoided cues with reasons.
+   - **Reference Anchors** section (from step 7.5 image-grounded research): 5 adopted cues each citing an image (path under `docs/references/` or a user-provided image URL/path), 3–5 avoided cues with reasons. If step 7.5 took Path (c) and skipped this section, omit it here too and proceed.
    - What makes this design UNFORGETTABLE (should align with and reinforce the Signature Move).
 10) Present the design philosophy to the user and ask for approval before proceeding.
     - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) **Reference Anchors** with 5 adopted cues each carrying a source URL.
-> If the Signature Move is prose-only, or Reference Anchors lack source URLs: STOP and fix before proceeding.
+> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line. If Reference Anchors is present, every adopted cue MUST cite an image path under `docs/references/` or a user-provided image URL/path — NOT a generic webpage URL that was WebFetched.
+> If the Signature Move is prose-only, or Reference Anchors lacks image citations, or Reference Anchors has 0 cues without an explicit skip line: STOP and fix before proceeding.
 
 ### Phase 3 — Desktop Design System
 11) Generate `docs/design_system_desktop.md` reflecting the chosen aesthetic:
