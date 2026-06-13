@@ -10,8 +10,11 @@
 - Estimate: `0.5d` | `1d` | `1.5d` (> 1.5d must be split)
 - Platform: `web` (default) | `mobile` (React Native/Expo) | `desktop` (Electron/Tauri) — auto-inferred from PRD/architecture if available
 - Manual: `true` = task requires human action (API key provisioning, external service setup, environment variable configuration, OAuth registration, DNS setup, etc.); `false` = fully automatable by code
-- Branch: `issue/ISSUE-<NNN>-<slug>`
+- Spec-Required: `true` = a tech spec / RFC (`docs/specs/SPEC-NNN.md`) MUST exist before `done`; `false` (default) = no spec needed
+- Spec: path to the SPEC file (e.g., `docs/specs/SPEC-007.md`) or `none`
+- Branch: `issue/ISSUE-<NNN>-<slug>` (impl) / `issue/ISSUE-<NNN>-spec` (spec-only PR in non-sprint mode)
 - GitHub: **/implement creates a GH Issue (if missing) + PR and links them (Closes #N)**
+- Spec PR exception: a `Spec-Required: true` issue produces **2 PRs in non-sprint mode** (spec-only PR then impl PR), or **1 bundled PR in sprint mode** (single branch carrying both the SPEC commit and impl commits).
 
 ---
 
@@ -37,6 +40,8 @@
 - UI: true | false
 - Platform: web | mobile | desktop
 - Manual: true | false
+- Spec-Required: true | false
+- Spec: docs/specs/SPEC-<NNN>.md | none
 - PRD-Ref: FR-NNN or Story-NNN
 - Priority: P0 | P1 | P2
 - Estimate: 0.5d | 1d | 1.5d

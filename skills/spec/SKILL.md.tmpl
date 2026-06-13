@@ -1,0 +1,133 @@
+---
+name: spec
+description: Writes a tech spec / RFC (docs/specs/SPEC-NNN.md) for a feature flagged Spec-Required, capturing Problem / Options ≥2 / Trade-offs / Decision / Migration / Rollback before code is written.
+argument-hint: [ISSUE-NNN | (empty for ad-hoc)] [--rewrite]
+disable-model-invocation: false
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash(python3 scripts/validate_spec.py *), Bash(python3 scripts/validate_issues.py *), Bash(ls *), Bash(test *)
+---
+
+{{PREAMBLE}}
+Goal: produce a reviewable SPEC document that captures the **decision** behind a non-trivial feature **before** code is written. Two callers expect this skill:
+- The user directly: `/spec ISSUE-NNN` or `/spec` (ad-hoc).
+- `/implement` in sprint mode: auto-invokes this skill for issues flagged `Spec-Required: true`.
+
+## Algorithm
+
+### Phase 1 — Resolve target
+
+1) Parse `$ARGUMENTS`:
+   - If contains `ISSUE-NNN`: this is an issue-linked SPEC. Set `mode=linked`, `issue_id=ISSUE-NNN`.
+   - If empty (or only `--rewrite`): this is an ad-hoc SPEC. Set `mode=adhoc`.
+   - Check for `--rewrite` flag; if present, set `rewrite=true`.
+
+2) Determine SPEC number:
+   - `mode=linked`: `spec_num` = the numeric part of `issue_id` (e.g., ISSUE-007 → SPEC-007).
+   - `mode=adhoc`: scan `docs/specs/` for existing `SPEC-NNN.md` files, take the max NNN, increment by 1. If no specs exist, start at SPEC-001.
+
+3) Compute target path: `docs/specs/SPEC-<NNN>.md`.
+
+4) Check existence:
+   - If file exists AND `rewrite=false`: refuse with message:
+     ```
+     docs/specs/SPEC-NNN.md already exists.
+     Re-run with --rewrite to regenerate (the previous file will be overwritten).
+     ```
+     STOP.
+   - If file exists AND `rewrite=true`: proceed; warn that the previous version will be overwritten.
+   - If file does not exist: proceed.
+
+### Phase 2 — Gather context
+
+5) **If `mode=linked`**: read the target issue from `issues.md`:
+   - Find the `### ISSUE-NNN: ...` section.
+   - Extract: Goal, Scope (In/Out), Implementation Notes.
+   - If issue cannot be found: STOP with an error naming the missing ID.
+
+6) Read project context files **in parallel** (skip silently if absent):
+   - `docs/architecture.md` — current system shape, tech stack.
+   - `docs/ux_spec.md` — UX flows touched by this feature.
+   - `docs/prd_digest.md` or `PRD.md` — product-level intent.
+   - `docs/data_model.md` — current schema state (relevant when the issue touches data).
+
+7) Grep the codebase for related code:
+   - Use issue keywords (from Goal + Scope In) as search terms.
+   - Identify the modules/files most likely affected.
+   - Read 1–3 of the most relevant files for shape, not for comprehensive review.
+
+### Phase 3 — Draft the SPEC
+
+8) Open `templates/spec.md` as the structural reference. Every section must be populated.
+
+9) **Problem**: 1–3 sentences. Quote a concrete situation that forces the decision. Avoid abstract framing.
+
+10) **Context**: list bounding constraints (prior decisions, deadlines, capacity, external deps). Cite file paths or schema versions where possible.
+
+11) **Options**: produce **at least 2** named options. Each option MUST have:
+    - **Approach**: 2–4 sentences on the mechanism.
+    - **Pros**: at least one concrete bullet.
+    - **Cons**: at least one concrete bullet.
+    - **Trade-off**: a single line containing a **measurable comparator** — e.g., `+20% write latency, -1 service dep, +3 days impl`. Vague phrasing like "more flexible" is rejected at validation time.
+
+12) **Decision**: explicitly choose one option (`**Chosen: Option A**`). Cite the specific trade-off line that drove the choice.
+
+13) **Trade-offs Accepted**: bullet list of what is deliberately given up.
+
+14) **Migration**: ordered steps from current state to target state. If no migration needed, state that explicitly.
+
+15) **Rollback**: how to undo this decision. What signal triggers rollback? How long does rollback take?
+
+16) **Open Questions**: things deliberately NOT decided here. Each item names an owner and a by-when.
+
+### Phase 4 — Write + validate
+
+17) Write the SPEC to `docs/specs/SPEC-<NNN>.md`.
+
+18) Run the SPEC validator:
+    ```
+    python3 scripts/validate_spec.py docs/specs/SPEC-<NNN>.md
+    ```
+    - If exit code ≠ 0: read the violations, fix them in the SPEC, re-run. Repeat until validator passes. Common failures:
+      - Trade-off line is not measurable (no number/comparator).
+      - Fewer than 2 options.
+      - Missing required section.
+
+19) **If `mode=linked`**: update the target issue in `issues.md` so `Spec: docs/specs/SPEC-<NNN>.md` (was `none` or absent).
+
+20) Run the issues validator:
+    ```
+    python3 scripts/validate_issues.py issues.md
+    ```
+    Verify the issue's `Spec:` field is satisfied. Report any other warnings to the user but do not block.
+
+### Phase 5 — Report
+
+21) Tell the user:
+    - SPEC path: `docs/specs/SPEC-<NNN>.md`
+    - The chosen option (in 1 sentence).
+    - The single biggest trade-off accepted.
+    - If `mode=linked`: that the issue's `Spec:` field has been updated.
+    - **In non-sprint mode**: the recommended next step is to open a PR on `issue/ISSUE-<NNN>-spec` branch for spec-only review before `/implement` runs.
+    - **In sprint mode** (caller is `/implement`): just return — `/implement` continues on the same branch.
+
+## Quality Criteria
+
+**NEVER:**
+- Write a SPEC with only one option ("we'll just do X") — the validator will reject this and so should you.
+- Use vague trade-off lines ("simpler", "more robust"). The validator enforces measurable comparators; respect that at draft time, not retry time.
+- Reference the implementation plan as a substitute for a decision. A SPEC explains **why**, not **how to code**.
+- Mutate code or any file outside `docs/specs/` and the target issue's metadata.
+
+**INSTEAD:**
+- Force yourself to write at least one **rejected** option in detail. The rejected options are why the chosen one is credible.
+- Cite concrete file paths, schema versions, latency numbers, API endpoints. SPECs degrade fast without quoted specifics.
+- When the trade-off is genuinely soft, quantify the soft thing: "+1 contributor onboarding session", "+2 weeks before second feature can build on this".
+- When ad-hoc (no linked issue), still write Migration and Rollback — even prototypes need to be reversible.
+
+## Output Contract (for /implement sprint-mode invocation)
+
+When invoked by `/implement` in sprint mode (env `KIT_SPRINT_MODE=1`), this skill MUST:
+- NOT prompt the user.
+- NOT open or suggest a separate PR.
+- Write the SPEC file on the current branch.
+- Make the SPEC commit message: `docs(spec): SPEC-<NNN> — <one-line decision summary>`.
+- Return control to `/implement` once the validator passes.
