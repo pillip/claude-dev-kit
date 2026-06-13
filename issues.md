@@ -29,7 +29,6 @@
 - [ ] ISSUE-009: Install script --pack flag + merge_settings + tests _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-010: Pilot Gate hardening — separate-context critic + auto-cycle + neutral observation + specificity check _(track: platform, P2, 1.5d)_
 - [ ] ISSUE-012: Reference Anchor tuning — 2-3 strong cues + 1 literal quote _(track: platform, P2, 0.5d)_
-- [ ] ISSUE-013: Consolidate ui-reviewer / design-auditor agents — sharpen role boundaries _(track: platform, P2, 1d)_
 
 ### Doing
 
@@ -39,6 +38,7 @@
 - [x] ISSUE-006: /spec skill — RFC pattern + Spec-Required metadata + non-sprint HOLD gate _(track: platform, P1, 1.5d)_
 - [x] ISSUE-007: /implement spec gate — sprint auto-run + non-sprint HOLD + signal detection _(track: platform, P1, 1d)_
 - [x] ISSUE-011: Kill WebFetch reference fabrication — image-grounded references only _(track: platform, P1, 0.5d)_
+- [x] ISSUE-013: Consolidate ui-reviewer / design-auditor agents — sharpen role boundaries _(track: platform, P2, 1d)_
 
 ### Drop
 
@@ -788,10 +788,12 @@ Revert Phase 2 output spec, restore 5-cues template. Delete `literal_quote:` fie
 - UI: false
 - Platform: web
 - Manual: false
+- Spec-Required: true
+- Spec: docs/specs/SPEC-013.md
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-06-13 — current ui-reviewer and design-auditor have overlapping prerequisites and checklist scope)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
