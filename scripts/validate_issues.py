@@ -23,6 +23,7 @@ from pathlib import Path
 
 VALID_ESTIMATES = {"0.5d", "1d", "1.5d"}
 GWT_PATTERN = re.compile(r"given\s+.+,\s*when\s+.+,\s*then\s+", re.IGNORECASE)
+SPEC_ENFORCED_STATUSES = {"doing", "waiting", "done"}
 
 
 def parse_issues(text: str) -> list[dict]:
@@ -44,6 +45,9 @@ def parse_issues(text: str) -> list[dict]:
         estimate = _extract_field(part, "Estimate")
         prd_ref = _extract_field(part, "PRD-Ref")
         depends_on = _extract_field(part, "Depends-On")
+        status = _extract_field(part, "Status").lower()
+        spec_required = _extract_field(part, "Spec-Required").lower()
+        spec_path = _extract_field(part, "Spec")
 
         # Extract AC items
         ac_section = _extract_section(part, "Acceptance Criteria")
@@ -58,6 +62,9 @@ def parse_issues(text: str) -> list[dict]:
                 "prd_ref": prd_ref,
                 "depends_on": depends_on,
                 "ac_items": ac_items,
+                "status": status,
+                "spec_required": spec_required,
+                "spec_path": spec_path,
             }
         )
 
@@ -77,8 +84,26 @@ def _extract_section(text: str, section_name: str) -> str:
     return match.group(1) if match else ""
 
 
-def validate(issues: list[dict]) -> list[str]:
-    """Return a list of violation messages."""
+def _spec_path_satisfied(spec_path: str, issues_md_dir: Path | None) -> bool:
+    """A spec_path is satisfied if it is non-empty, not 'none', and the file exists.
+
+    When issues_md_dir is None (in-memory test paths), only the non-empty/non-none
+    check applies — we trust the test to set realistic values.
+    """
+    if not spec_path or spec_path.strip().lower() == "none":
+        return False
+    if issues_md_dir is None:
+        return True
+    spec_file = (issues_md_dir / spec_path).resolve()
+    return spec_file.exists()
+
+
+def validate(issues: list[dict], issues_md_dir: Path | None = None) -> list[str]:
+    """Return a list of violation messages.
+
+    issues_md_dir: directory containing issues.md. Used to resolve Spec: paths
+    when checking existence. Pass None to skip file-existence checks (unit tests).
+    """
     warnings: list[str] = []
     seen_nums: dict[str, str] = {}
 
@@ -118,6 +143,17 @@ def validate(issues: list[dict]) -> list[str]:
         if not issue["depends_on"]:
             warnings.append(f"{iid}: Depends-On is empty")
 
+        # Spec-Required enforcement
+        spec_required = issue.get("spec_required", "")
+        status = issue.get("status", "")
+        spec_path = issue.get("spec_path", "")
+        if spec_required == "true" and status in SPEC_ENFORCED_STATUSES:
+            if not _spec_path_satisfied(spec_path, issues_md_dir):
+                warnings.append(
+                    f"{iid}: Spec-Required=true and Status={status}, "
+                    f"but Spec: '{spec_path or '<empty>'}' is missing or unreadable"
+                )
+
     # Cross-issue validations
     all_ids = {issue["id"] for issue in issues}
     dep_graph = _build_dependency_graph(issues)
@@ -146,10 +182,19 @@ def validate(issues: list[dict]) -> list[str]:
 
 
 def _parse_depends_on(depends_on: str) -> list[str]:
-    """Parse Depends-On field into a list of issue IDs."""
+    """Parse Depends-On field into a list of issue IDs.
+
+    Tolerates inline notes like `ISSUE-002 (eval reports feed pattern extraction)` —
+    extracts the bare `ISSUE-NNN` token from each comma-separated entry.
+    """
     if not depends_on or depends_on.strip().lower() == "none":
         return []
-    return [d.strip() for d in depends_on.split(",") if d.strip().startswith("ISSUE-")]
+    ids: list[str] = []
+    for piece in depends_on.split(","):
+        match = re.search(r"\bISSUE-\d+\b", piece)
+        if match:
+            ids.append(match.group(0))
+    return ids
 
 
 def _build_dependency_graph(issues: list[dict]) -> dict[str, list[str]]:
@@ -227,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Warning: no issues found in file")
         return 0
 
-    warnings = validate(issues)
+    warnings = validate(issues, issues_md_dir=path.resolve().parent)
 
     if warnings:
         print(f"Found {len(warnings)} violation(s):")

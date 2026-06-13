@@ -1,5 +1,7 @@
 """Unit tests for scripts/validate_issues.py."""
 
+from pathlib import Path
+
 from scripts.validate_issues import parse_issues, validate
 
 
@@ -10,21 +12,32 @@ def _make_issue(
     prd_ref: str = "FR-001",
     depends_on: str = "none",
     ac_items: list[str] | None = None,
+    status: str = "backlog",
+    spec_required: str | None = None,
+    spec: str | None = None,
 ) -> str:
-    """Build a minimal issue markdown block."""
+    """Build a minimal issue markdown block.
+
+    spec_required / spec: if not None, the corresponding metadata field is emitted.
+    """
     if ac_items is None:
         ac_items = [
             "Given a user is logged in, when they click save, then data is persisted",
             "Given a user is logged out, when they click save, then an error is shown",
         ]
     ac_lines = "\n".join(f"- [ ] {ac}" for ac in ac_items)
+    spec_meta = ""
+    if spec_required is not None:
+        spec_meta += f"- Spec-Required: {spec_required}\n"
+    if spec is not None:
+        spec_meta += f"- Spec: {spec}\n"
     return f"""### ISSUE-{num}: {title}
 - Track: product
 - PRD-Ref: {prd_ref}
 - Priority: P1
 - Estimate: {estimate}
-- Status: backlog
-- Owner:
+- Status: {status}
+{spec_meta}- Owner:
 - Branch:
 - GH-Issue:
 - PR:
@@ -136,3 +149,55 @@ class TestValidate:
         warnings = validate(issues)
         # invalid estimate, too few AC, bad AC format, empty PRD-Ref, empty Depends-On
         assert len(warnings) == 5
+
+
+class TestSpecRequired:
+    def test_no_warning_when_spec_required_false(self):
+        text = _make_issue(spec_required="false", status="done")
+        issues = parse_issues(text)
+        warnings = validate(issues)
+        assert not any("Spec-Required" in w for w in warnings)
+
+    def test_no_warning_when_status_backlog(self):
+        # Even with Spec-Required=true, backlog status does not enforce.
+        text = _make_issue(spec_required="true", status="backlog", spec="none")
+        issues = parse_issues(text)
+        warnings = validate(issues)
+        assert not any("Spec-Required" in w for w in warnings)
+
+    def test_warns_when_doing_and_spec_none(self):
+        text = _make_issue(spec_required="true", status="doing", spec="none")
+        issues = parse_issues(text)
+        warnings = validate(issues)
+        assert any("Spec-Required" in w and "ISSUE-001" in w for w in warnings)
+
+    def test_warns_when_done_and_spec_empty(self):
+        # Field present but empty.
+        text = _make_issue(spec_required="true", status="done", spec="")
+        issues = parse_issues(text)
+        warnings = validate(issues)
+        assert any("Spec-Required" in w for w in warnings)
+
+    def test_warns_when_waiting_and_spec_missing_file(self, tmp_path: Path):
+        # File path is given but does not exist on disk.
+        text = _make_issue(
+            spec_required="true",
+            status="waiting",
+            spec="docs/specs/SPEC-001.md",
+        )
+        issues = parse_issues(text)
+        warnings = validate(issues, issues_md_dir=tmp_path)
+        assert any("Spec-Required" in w and "missing or unreadable" in w for w in warnings)
+
+    def test_passes_when_spec_file_exists(self, tmp_path: Path):
+        specs_dir = tmp_path / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        (specs_dir / "SPEC-001.md").write_text("# SPEC-001\n", encoding="utf-8")
+        text = _make_issue(
+            spec_required="true",
+            status="done",
+            spec="docs/specs/SPEC-001.md",
+        )
+        issues = parse_issues(text)
+        warnings = validate(issues, issues_md_dir=tmp_path)
+        assert not any("Spec-Required" in w for w in warnings)
