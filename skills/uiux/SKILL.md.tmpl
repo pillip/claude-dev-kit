@@ -3,7 +3,7 @@ name: uiux
 description: Establishes a design philosophy based on kickoff outputs, and generates a design system/wireframes/HTML prototype. Recommended flow: /prd → /kickoff → /uiux
 argument-hint: [PRD.md path (optional)]
 disable-model-invocation: false
-allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 ---
 
 {{PREAMBLE}}
@@ -75,19 +75,38 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
    - Who are the users? What's the emotional tone?
    - What category does this product belong to? (SaaS, consumer, creative tool, enterprise, etc.)
    - Are there competitor/reference products mentioned?
-6.5) **Reference Research** (uses WebSearch + WebFetch):
-   - Step 1 — Source discovery via WebSearch:
-     - Aspiration reference: `"[brand/product] UI design site:dribbble.com OR site:mobbin.com OR site:awwwards.com OR site:land-book.com OR site:godly.website"`
-     - Anti-reference: `"[anti-reference] UI criticism"`
-     - Domain trends: `"[domain] app design 2025 2026 showcase"`
-   - Step 2 — Visual fetching via WebFetch (CRITICAL — do not skip):
-     - From the search results, pick 2–3 URLs that point to actual visual showcases (gallery pages, case studies, product hero pages, brand press kits) — NOT text-only articles.
-     - WebFetch each URL. Extract concrete visual specifics: exact hex colors, specific font pairings, layout choice (asymmetric grid, full-bleed photo, type-as-art hero, etc.), background treatment (gradient mesh, noise, plain), shadow style, motion cues.
-     - If WebFetch returns text-only without resolvable visuals, fall back to careful synthesis from the page description but mark the cue as `(indirect)` so the implementer knows confidence is lower.
-   - Step 3 — Synthesis (output goes into `docs/design_philosophy.md` "Reference Anchors"):
-     - **5 specific visual cues to adopt**, each as a single bullet with: cue (≤12 words) — exact value or token (e.g., `#1A1A1A on #F5EFE6`, `Fraunces 96/0.92 + Inter Tight 14`) — source URL.
-     - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
-     - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a default. Prose-only cues like "warm palette" or "bold type" are rejected — re-do them with numbers/tokens.
+6.5) **Reference Research — image-grounded only** (NO WebFetch for visual extraction).
+
+   WebFetch returns parsed text, not pixels. Asking the model to extract hex values or font pairings from a Dribbble/Mobbin URL via WebFetch is fabrication. Visual references MUST arrive as actual images.
+
+   Pick exactly ONE of three paths:
+
+   - **Path (a) — user-provided images** (preferred):
+     - The user supplies 1–3 image references (image URLs ending in `.png`/`.jpg`/`.webp` OR local file paths).
+     - Read each image with the Read tool (image input). The model sees actual pixels.
+     - For each image, extract concrete cues from what you actually see: dominant hex color guesses, font category guesses (serif/grotesque/mono with weight), composition (grid, density, alignment), background treatment, shadow style. Mark guesses with "≈" when sampling color from rendered output.
+
+   - **Path (b) — page URLs**:
+     - For each reference page URL, run:
+       ```bash
+       python3 scripts/capture_reference.py <url>
+       ```
+       This headless-captures the page to `docs/references/<slug>.png`. If the script exits non-zero (no browser backend installed), STOP this path and either install Playwright/Chromium OR switch to Path (a) OR Path (c).
+     - Read every captured PNG via the Read tool.
+     - Extract the same kinds of cues as Path (a), grounded in the captured image.
+
+   - **Path (c) — no images available**:
+     - Skip the Reference Anchors section entirely. Print this one-line warning to the user:
+       `Reference Anchor skipped: no image provided. Pass 1–3 image paths or a page URL (with Playwright/Chrome installed) to populate this section.`
+     - Proceed to Phase 2 step 7 (aesthetic direction) WITHOUT a Reference Anchors section. The Signature Move + Decision Matrix still anchor the design — references are an additional, not required, signal.
+
+   **Anti-reference (separate from path choice)**: WebSearch is still acceptable for *titles* of anti-references (e.g., "what makes corporate B2B SaaS dashboards generic"). Anti-cues are written from the model's own knowledge of the pattern being avoided — they are not visual extractions and do not require image grounding.
+
+   **Synthesis** (when Path (a) or (b) ran successfully — output goes into `docs/design_philosophy.md` "Reference Anchors"):
+   - **5 specific visual cues to adopt**, each as a single bullet with: cue (≤12 words) — exact value or token (e.g., `#1A1A1A on #F5EFE6`, `Fraunces 96/0.92 + Inter Tight 14`) — **source image path under `docs/references/` OR the user-provided image URL**.
+   - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
+   - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a default. Prose-only cues like "warm palette" or "bold type" are rejected — re-do them with numbers/tokens.
+   - Never invent a hex value or font name without an image to point at. If an extracted detail is uncertain, mark it `≈` (approximate) and leave a comment about which image it came from.
 7) Commit to a BOLD aesthetic direction. Choose one and execute with precision:
    - Brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined,
      playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel,
@@ -107,14 +126,14 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch
        - "Section dividers: `1px solid var(--accent)` with `margin-right: 12px` indent — never full-width rules"
        - "Screen titles: Fraunces 96/0.92, `letter-spacing: -0.04em`, `transform: skew(-2deg)`"
        - "All hover states: `translateY(-2px)` + `border-left: 4px solid var(--ink)` — no opacity changes"
-   - **Reference Anchors** section (from step 6.5 visual research): 5 adopted cues with source URLs, 3–5 avoided cues with reasons.
+   - **Reference Anchors** section (from step 6.5 image-grounded research): 5 adopted cues each pointing at an image (path under `docs/references/` or a user-provided image URL/path), 3–5 avoided cues with reasons. If step 6.5 took Path (c) and skipped this section, omit it here too and proceed.
    - What makes this design UNFORGETTABLE — the one thing someone will remember (should align with and reinforce the Signature Move).
 9) Present the design philosophy to the user and ask for approval before proceeding.
    - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) **Reference Anchors** with 5 adopted cues each carrying a source URL.
-> If the Signature Move is prose-only, or Reference Anchors lack source URLs: STOP and fix before proceeding.
+> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line. If Reference Anchors is present, every adopted cue MUST cite an image path under `docs/references/` or a user-provided image URL/path — NOT a generic webpage URL that was WebFetched.
+> If the Signature Move is prose-only, or Reference Anchors lacks image citations, or Reference Anchors has 0 cues without an explicit skip line: STOP and fix before proceeding.
 
 ### Phase 3 — Design System
 9) Generate `docs/design_system.md` reflecting the chosen aesthetic:
