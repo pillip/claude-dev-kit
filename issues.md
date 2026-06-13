@@ -25,7 +25,6 @@
 - [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-004: Sales pack file move + manifest schema _(track: platform, P1, 1d)_
 - [ ] ISSUE-005: README sync — reflect counts + positioning + post-sales-boundary layout + team-scale usage _(track: platform, P1, 1d)_
-- [ ] ISSUE-007: /implement spec gate — sprint auto-run + non-sprint HOLD + signal detection _(track: platform, P1, 1d)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d)_
 - [ ] ISSUE-009: Install script --pack flag + merge_settings + tests _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-010: Pilot Gate hardening — separate-context critic + auto-cycle + neutral observation + specificity check _(track: platform, P2, 1.5d)_
@@ -39,6 +38,7 @@
 
 ### Done
 - [x] ISSUE-006: /spec skill — RFC pattern + Spec-Required metadata + non-sprint HOLD gate _(track: platform, P1, 1.5d)_
+- [x] ISSUE-007: /implement spec gate — sprint auto-run + non-sprint HOLD + signal detection _(track: platform, P1, 1d)_
 
 ### Drop
 
@@ -414,10 +414,12 @@ Delete `skills/spec/`, `templates/spec.md`, revert `validate_issues.py` and `iss
 - UI: false
 - Platform: web
 - Manual: false
+- Spec-Required: true
+- Spec: docs/specs/SPEC-007.md
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-06-13 — decision table for sprint vs non-sprint Spec-Required handling)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:

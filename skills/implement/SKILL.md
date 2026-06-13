@@ -92,6 +92,40 @@ Hard requirements:
 Algorithm:
 1) Ensure `gh` authenticated (gh auth status).
 
+### Phase 0 — Spec gate (MANDATORY, runs before any other phase)
+
+Before reading the test plan, the issue body, or anything else, evaluate the spec gate for `$ARGUMENTS`. This protects against the failure mode where a non-trivial feature gets coded without any reviewable decision artifact.
+
+0a) **Parse flags**: check `$ARGUMENTS` for `--skip-spec-gate`. If present, the gate logs a telemetry-style bypass note (one line printed to stdout) and proceeds to step 1. Strip the flag from `$ARGUMENTS` before continuing.
+
+0b) **Compute the gate decision**:
+```
+python3 scripts/spec_gate.py $ARGUMENTS [--skip-spec-gate]
+```
+The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans the issue body for signals (api/schema/migration/breaking/protocol/데이터모델/new-package + estimate-at-cap), and prints a JSON object with `decision`, `reasons`, `signals`, `spec_path`, `sprint_mode`.
+
+0c) **Branch on `decision`**:
+
+- **`decision: "proceed"`** — log the reasons (and signals if non-empty) inline so the user can see why the gate let it through, then continue to step 1.
+
+- **`decision: "auto_spec"`** (sprint mode, Spec-Required, no SPEC yet) — invoke the `/spec` skill inline on the current branch:
+  - Set env `KIT_SPRINT_MODE=1` so `/spec` knows it is being auto-invoked.
+  - Pass the issue id: `/spec $ARGUMENTS`.
+  - Wait for `/spec` to complete and produce `docs/specs/SPEC-<NNN>.md` with the `Spec:` field updated on the issue.
+  - The SPEC commit message format is enforced by `/spec` (`docs(spec): SPEC-<NNN> — <decision summary>`).
+  - After `/spec` returns, re-run `python3 scripts/spec_gate.py $ARGUMENTS` to confirm the new decision is `proceed`. If it is still not `proceed`, STOP and report.
+
+- **`decision: "hold"`** (non-sprint, requires user input) — present a structured 3-way choice using the project's question mechanism (e.g., `AskUserQuestion`):
+  - **Option 1 — Run `/spec` now**: invoke `/spec $ARGUMENTS`, then resume at step 0b (re-evaluate gate after SPEC lands).
+  - **Option 2 — Mark Spec-Required: false**: ask the user for a one-line reason; rewrite the issue's `Spec-Required:` field to `false` and append the reason to the issue's Implementation Notes; then proceed to step 1.
+  - **Option 3 — Cancel implement**: print the gate's reasons and STOP cleanly.
+
+  Quote the gate's `reasons` and `signals` to the user so they understand the prompt.
+
+- **`decision: "bypassed"`** (`--skip-spec-gate` was passed) — print the one-line bypass note (telemetry-style: `spec_gate_bypassed issue=$ARGUMENTS`) and continue.
+
+0d) Only after Phase 0 produces a `proceed`-equivalent outcome does the rest of the algorithm run.
+
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase test-plan --issue $ARGUMENTS`
 > Verifies `docs/test_plan.md` exists with a non-empty Risk Matrix.
