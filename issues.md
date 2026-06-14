@@ -20,14 +20,14 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d)_
-- [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d)_
-- [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d)_
-- [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d)_
 
 ### Doing
 
 ### Waiting
+- [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d — **deferred 2026-06-14**: un-defer when sprint usage at N>1 produces a measurable signal worth analyzing)_
+- [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns)_
+- [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d — **deferred 2026-06-14**: structure value unverified; un-defer if review_lessons.md hits >20 entries or reviewer needs preamble injection)_
+- [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d — **deferred 2026-06-14**: was already gated on ISSUE-001 telemetry; un-defer when a real polyrepo team requests it)_
 
 ### Done
 - [x] ISSUE-004: Sales pack file move + manifest schema _(track: platform, P1, 1d)_
@@ -47,6 +47,9 @@
 ## Issue Detail
 
 ### ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook
+
+> **Deferred 2026-06-14.** Telemetry needs N>1 sprint usage to produce meaningful signal — at single-user sub-monthly cadence, the data is a diary not a statistic. Un-defer when (a) sprint usage produces ≥10 runs/week, OR (b) a felt diagnostic gap appears ("which agent fails most often?" can't be answered by feel), OR (c) ISSUE-002 / ISSUE-008 actually moves to doing and needs telemetry as a prerequisite.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -54,7 +57,7 @@
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: waiting
 - Owner:
 - Branch:
 - GH-Issue:
@@ -99,6 +102,9 @@ Revert the hook patch and delete `scripts/trace_query.py` + `docs/telemetry_sche
 ---
 
 ### ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality
+
+> **Deferred 2026-06-14.** Cluster D's role split (ISSUE-013) + Pilot Gate hardening (ISSUE-010) already raised reviewer signal quality through structural changes, not eval scoring. Eval gate adds ANTHROPIC_API_KEY dependency + token cost + self-grading loop risk (kit eval-ing kit's review). Un-defer when (a) a regression in review quality is felt and not explainable by the existing scope split, OR (b) a multi-reviewer setup needs an automated tie-break, OR (c) eval signal becomes the bottleneck blocking a downstream decision.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -106,7 +112,7 @@ Revert the hook patch and delete `scripts/trace_query.py` + `docs/telemetry_sche
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: waiting
 - Owner:
 - Branch:
 - GH-Issue:
@@ -153,6 +159,9 @@ Remove the advisory block from `skills/ship/SKILL.md`, delete `scripts/eval_revi
 ---
 
 ### ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store
+
+> **Deferred 2026-06-14.** `docs/review_lessons.md` already exists as a markdown accumulation surface and `reviewer` reads it. Promoting to `patterns.jsonl` + preamble injection is a structure bet — the hypothesis is that structured-ness improves reviewer behavior, but the hypothesis is unverified. Also depends on ISSUE-002. Un-defer when (a) `review_lessons.md` grows past ~20 entries and contributors complain about navigating it, OR (b) preamble token budget for reviewer becomes a measured constraint, OR (c) a real pattern keeps recurring despite being in `review_lessons.md`, suggesting the markdown surface isn't getting consumed.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -160,7 +169,7 @@ Remove the advisory block from `skills/ship/SKILL.md`, delete `scripts/eval_revi
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: waiting
 - Owner:
 - Branch:
 - GH-Issue:
@@ -477,6 +486,9 @@ Revert `/implement` gate logic; the signal scanner and `--skip-spec-gate` flag b
 ---
 
 ### ISSUE-008: Virtual monorepo wrapper — polyrepo team support
+
+> **Deferred 2026-06-14.** Already gated on ISSUE-001 telemetry, which itself is now deferred. The wrapper pattern is **documented** in README's Team-scale usage section (ISSUE-005) — users who want it today can adopt the pattern manually without code support. Un-defer when (a) a real polyrepo team adopts the kit and surfaces friction with the manual pattern, OR (b) ISSUE-001 lands and produces signal showing polyrepo path-resolution errors.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -484,7 +496,7 @@ Revert `/implement` gate logic; the signal scanner and `--skip-spec-gate` flag b
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30 — polyrepo team friction; deferred until measured)
 - Priority: P2
 - Estimate: 1.5d
-- Status: backlog
+- Status: waiting
 - Owner:
 - Branch:
 - GH-Issue:
