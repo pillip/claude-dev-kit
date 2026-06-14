@@ -39,12 +39,21 @@ from typing import Any
 
 try:
     import yaml  # type: ignore
-except ImportError:
-    print(
-        "error: PyYAML is required. Install with: uv add --dev pyyaml",
-        file=sys.stderr,
-    )
-    sys.exit(2)
+except ImportError:  # pragma: no cover — only hit when PyYAML is absent
+    yaml = None  # type: ignore[assignment]
+
+
+def _require_yaml() -> None:
+    """Fail loudly with an install hint at the point YAML parsing is actually needed.
+
+    Importing this module must not trigger sys.exit — that breaks unrelated
+    test collection on environments where PyYAML isn't installed yet.
+    """
+    if yaml is None:
+        raise ImportError(
+            "PyYAML is required for pack manifest parsing. "
+            "Install with: uv add --dev pyyaml  OR  pip install pyyaml"
+        )
 
 
 REQUIRED_FIELDS = {"name", "description", "depends_on"}
@@ -52,6 +61,7 @@ OPTIONAL_LIST_FIELDS = {"agents", "skills", "templates"}
 
 
 def _load_manifest(path: Path) -> dict[str, Any]:
+    _require_yaml()
     text = path.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
     if not isinstance(data, dict):
@@ -76,7 +86,11 @@ def _validate_single(
 
     try:
         manifest = _load_manifest(manifest_path)
-    except (yaml.YAMLError, ValueError) as exc:
+    except ImportError as exc:
+        # PyYAML is not installed — surface as a clean validation failure.
+        return [f"{manifest_path}: {exc}"]
+    except Exception as exc:
+        # YAMLError, ValueError, and any other parser-level failure.
         return [f"{manifest_path}: failed to parse YAML — {exc}"]
 
     # Required fields

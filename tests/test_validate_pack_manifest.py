@@ -253,3 +253,49 @@ class TestRealSalesManifest:
             pytest.skip("packs/sales/manifest.yaml not present in this checkout")
         rc = main([str(manifest)])
         assert rc == 0
+
+
+class TestPyYamlImportContract:
+    """Regression: importing validate_pack_manifest must NOT sys.exit when
+    PyYAML is missing. The CI failure on PR #29-#32 was caused by a
+    module-level sys.exit(2) breaking unrelated test collection. Yaml errors
+    must surface only when YAML parsing is actually invoked.
+    """
+
+    def test_module_import_is_safe(self):
+        # Importing should never raise SystemExit, even if PyYAML is missing.
+        # (We're testing the contract; PyYAML IS installed in this test env.)
+        import importlib
+
+        import scripts.validate_pack_manifest as mod
+
+        importlib.reload(mod)
+        # Successful reload is the contract.
+        assert hasattr(mod, "_load_manifest")
+        assert hasattr(mod, "validate_packs")
+
+    def test_lazy_failure_surface(self, monkeypatch, tmp_path: Path):
+        """When yaml is None at parse time, _load_manifest raises ImportError
+        with an install hint — not SystemExit."""
+        import scripts.validate_pack_manifest as mod
+
+        manifest = tmp_path / "manifest.yaml"
+        manifest.write_text("name: x\n", encoding="utf-8")
+        monkeypatch.setattr(mod, "yaml", None)
+        with pytest.raises(ImportError, match="PyYAML is required"):
+            mod._load_manifest(manifest)
+
+    def test_validate_packs_surfaces_yaml_missing_cleanly(
+        self, monkeypatch, tmp_path: Path
+    ):
+        """validate_packs() should turn a missing-yaml ImportError into a clean
+        validation error, not a crash."""
+        from scripts.validate_pack_manifest import validate_packs
+
+        manifest = _make_pack(tmp_path)
+        import scripts.validate_pack_manifest as mod
+
+        monkeypatch.setattr(mod, "yaml", None)
+        count, errors = validate_packs(manifest)
+        assert count == 1
+        assert any("PyYAML is required" in e for e in errors)
