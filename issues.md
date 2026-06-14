@@ -23,7 +23,6 @@
 - [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d)_
-- [ ] ISSUE-004: Sales pack file move + manifest schema _(track: platform, P1, 1d)_
 - [ ] ISSUE-005: README sync — reflect counts + positioning + post-sales-boundary layout + team-scale usage _(track: platform, P1, 1d)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d)_
 - [ ] ISSUE-009: Install script --pack flag + merge_settings + tests _(track: platform, P1, 1.5d)_
@@ -33,6 +32,7 @@
 ### Waiting
 
 ### Done
+- [x] ISSUE-004: Sales pack file move + manifest schema _(track: platform, P1, 1d)_
 - [x] ISSUE-006: /spec skill — RFC pattern + Spec-Required metadata + non-sprint HOLD gate _(track: platform, P1, 1.5d)_
 - [x] ISSUE-007: /implement spec gate — sprint auto-run + non-sprint HOLD + signal detection _(track: platform, P1, 1d)_
 - [x] ISSUE-010: Pilot Gate hardening — separate-context critic + auto-cycle + neutral observation + specificity check _(track: platform, P2, 1.5d)_
@@ -212,10 +212,12 @@ Delete `.claude-kit/memory/` and `scripts/memory_promote.py`; revert preamble ho
 - UI: false
 - Platform: web
 - Manual: false
+- Spec-Required: true
+- Spec: docs/specs/SPEC-004.md
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30 — sales pack is off-thesis vs "trustworthy code / AI dev team control plane" positioning. Split from original ISSUE-004 — install script work is ISSUE-009.)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
