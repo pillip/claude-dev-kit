@@ -2,19 +2,22 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-530%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-917%20passing-brightgreen.svg)]()
 
-Turn a PRD into shipped code. 33 AI agents and 22 skills that handle the entire development lifecycle — from brainstorming to code review to deployment — so you can focus on what to build, not how.
+Turn a PRD into shipped code. **33 engineering agents + 23 skills** (default install) handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how. An optional **sales pack** (5 agents + 5 skills, opt-in via `--pack=sales`) covers account / discovery / proposal workflows for teams sharing a repo with engineering.
 
 ## Why claude-kit?
 
+**Positioning: trustworthy code in collaboration → AI dev team control plane.** The kit's bet is that AI productivity is bottlenecked not by the model but by what surrounds it — concurrency, state, guardrails, decision capture, learning. Adding more agents doesn't close that gap; structuring the work does.
+
 Claude Code is powerful on its own, but without structure it produces inconsistent results — skipped tests, forgotten reviews, PRs that drift from requirements. claude-kit solves this by giving Claude Code **a repeatable process**:
 
-- **Structured pipeline**: Every issue goes through implement → review → ship. No shortcuts, no skipped phases.
-- **Specialized agents**: Instead of one generalist prompt, 32 agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans.
+- **Structured pipeline**: Every issue goes through spec (when required) → implement → review → ship. No shortcuts, no skipped phases.
+- **Specialized agents**: Instead of one generalist prompt, 33 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
+- **Decision capture**: Non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / Trade-offs / Decision / Rollback. Sprint mode auto-runs it; non-sprint mode HOLDs for review.
 - **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
 - **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
-- **Zero configuration**: Install as a git submodule, run one script, and all agents/skills/hooks are ready.
+- **Zero configuration**: Install as a git submodule, run one script, and all agents/skills/hooks are ready. Pack opt-in via a single flag.
 
 In short: claude-kit turns Claude Code from a smart assistant into a **development team that follows engineering best practices**.
 
@@ -32,7 +35,8 @@ claude-kit takes a PRD (Product Requirements Document) as input and orchestrates
 
 ### 1. Build a product from scratch
 ```
-/brainstorm → /bizanalysis → /prd → /kickoff → /uiux → /sprint
+/prd → /kickoff → /uiux → /sprint
+# (optional pre-PRD: /brainstorm → /bizanalysis → /prd)
 ```
 Start with an idea, validate it, write a PRD, generate planning docs, design the UI, and let the team-lead auto-implement everything.
 
@@ -83,7 +87,8 @@ Auto-detects that this spans multiple screens/modules, estimates issue count, up
 
 **New project:**
 ```
-/brainstorm → /bizanalysis → /prd → /kickoff → /uiux → /sprint
+/prd → /kickoff → /uiux → /sprint
+# (optional pre-PRD: /brainstorm → /bizanalysis → /prd)
 ```
 
 **Existing codebase (no PRD):**
@@ -101,7 +106,7 @@ Auto-detects that this spans multiple screens/modules, estimates issue count, up
 /issue "feature description" → /sprint (or /implement per issue)
 ```
 
-> `/brainstorm` and `/bizanalysis` are optional. If your idea is clear, start from `/prd`.
+> **Optional pre-PRD**: `/brainstorm` (Socratic exploration) and `/bizanalysis` (market + SWOT) are stand-alone primitives, not part of the default flow. If your idea is clear, start from `/prd`. These exist for the case where you genuinely don't know what to build yet.
 > `/uiux`, `/mobile-uiux`, and `/desktop-uiux` are optional for UI projects. Backend/CLI projects go directly from `/kickoff` to `/sprint`.
 > `/sprint` auto-orchestrates multiple issues. For a single issue, use `/implement` directly.
 > `/scan` is for existing codebases without a PRD. It reverse-engineers planning docs from code.
@@ -129,16 +134,31 @@ review_lessons.md → patterns with Frequency ≥ 3 + Critical/High severity
 
 Standalone skills (`/testgen`, `/diagnose`, `/refactor`) register their work in `issues.md` when it exists, so team-lead can track all work in `sprint_state.md`.
 
+### Packs
+
+The default install ships the **core** layer — engineering agents, design pack (uiux / mobile-uiux / desktop-uiux), and safety guardrails. Domain-specific workflows live in opt-in **packs** that depend on core.
+
+| Pack | What it adds | Install command |
+|---|---|---|
+| **core** (default) | 33 engineering agents + 23 skills | `bash .claude-kit/scripts/install_project.sh` |
+| **sales** | 5 sales agents + 5 sales skills + 7 sales templates | `bash .claude-kit/scripts/install_project.sh --pack=sales` |
+| (every declared pack) | core + every pack under `packs/` | `bash .claude-kit/scripts/install_project.sh --pack=all` |
+
+Rules:
+- **Packs are additive on top of core, never substitutes.** Every pack's `manifest.yaml` declares `depends_on: [core]`. The installer enforces this — there is no "pack-only" install.
+- Pack entries (agents / skills) live alongside core's in `.claude/agents/` and `.claude/skills/` via per-entry symlinks. Re-running the installer with a different `--pack` set is the supported way to add / remove packs.
+- Pack `settings.snippet.json` (if declared) merges after core's, with pack values winning on key collision.
+
+See `packs/README.md` for the manifest schema and rules for contributing new packs.
+
 ### Decision Tree — Which skill should I use?
 
 ```
 START
  │
- ├─ Have an idea but direction is unclear?
- │   └─ YES → /brainstorm → Need business validation? → /bizanalysis → /prd
- │
  ├─ No PRD yet?
  │   └─ YES → /prd
+ │   └─ (optional pre-PRD: direction unclear → /brainstorm → /bizanalysis → /prd)
  │
  ├─ PRD exists but no planning docs?
  │   └─ YES → /kickoff PRD.md
@@ -233,10 +253,22 @@ bash .claude-kit/scripts/install_user.sh
 
 ### 3. Install into project
 
-Copies agents, skills, hooks, and settings into the project's `.claude/` directory.
+Symlinks core agents, skills, hooks, and settings into the project's `.claude/` directory. Default install is **core only**:
 
 ```bash
 bash .claude-kit/scripts/install_project.sh
+```
+
+To include the sales pack (account-research / discovery / proposal / meeting-capture / follow-up):
+
+```bash
+bash .claude-kit/scripts/install_project.sh --pack=sales
+```
+
+To include every declared pack:
+
+```bash
+bash .claude-kit/scripts/install_project.sh --pack=all
 ```
 
 After installation:
@@ -244,13 +276,15 @@ After installation:
 ```
 your-service-repo/
 ├── .claude/
-│   ├── agents/          # 32 agent definitions
-│   ├── skills/          # 21 skills
+│   ├── agents/          # 33 core agents (or +5 if --pack=sales)
+│   ├── skills/          # 23 core skills (or +5 if --pack=sales)
 │   ├── hooks/           # agent_state.py (agent state tracking)
 │   └── settings.json    # Status line + hook config (auto-merged)
-├── .claude-kit/         # submodule (source)
+├── .claude-kit/         # submodule (source — contains packs/ subtree too)
 └── ...
 ```
+
+> Re-running the installer with a different `--pack` set is destructive of the pack entries from the previous install (the install set IS the active install). Symlinks are per-entry so core + selected packs coexist in the same `.claude/agents/` and `.claude/skills/`.
 
 ### 4. Verify gh authentication
 
@@ -259,6 +293,59 @@ gh auth status
 ```
 
 If not authenticated, run `gh auth login`.
+
+## Team-scale usage
+
+The kit assumes **the repo IS the team boundary**. Two adoption patterns cover the common shapes — and there is deliberately no separate "team layer."
+
+### Pattern (a) — Monorepo (engineering or sales)
+
+The common pattern. One repo holds all team work; the kit installs once at the root.
+
+- **Engineering team**: services live under `services/<name>/` subdirectories. Each service worktree is created from the repo root via `scripts/worktree.sh`. Shared state (`issues.md`, `STATUS.md`, `sprint_state.md`) sits at the root.
+- **Sales team**: accounts live under `accounts/<company>/` subdirectories. Cross-account patterns accumulate in repo-root `docs/sales_lessons.md`. Walk-up resolution via `scripts/find_shared.sh` finds shared sales-pack files (e.g., `sales_email_persona.md`) from inside any account directory.
+
+```
+~/work/my-team/                       # team boundary == repo boundary
+├── .claude-kit/                      # submodule
+├── .claude/                          # installed (--pack=sales for sales)
+├── issues.md, STATUS.md
+├── docs/                             # shared knowledge
+├── services/auth/                    # (engineering) one git checkout
+├── services/gateway/                 # ...
+│   └── ...
+# OR
+├── accounts/customer-a/              # (sales) one account
+├── accounts/customer-b/              # ...
+```
+
+### Pattern (b) — Virtual monorepo wrapper (polyrepo teams)
+
+When services genuinely cannot be in one repo (independent release cadence, vendor isolation, etc.), wrap them. A top-level **wrapper directory** is itself a git repo holding the `.claude-kit/` submodule and shared kit state at its root; each independent service repo lives as an immediate subdirectory and is gitignored from the wrapper.
+
+```
+~/work/my-team/                       # wrapper = git repo
+├── .git/
+├── .gitignore                        # auth-service/, gateway-service/, ...
+├── .claude-kit/                      # submodule
+├── .claude/                          # installed at wrapper root
+├── issues.md, STATUS.md, sprint_state.md
+├── docs/
+├── auth-service/                     # independent git repo (gitignored)
+├── gateway-service/                  # independent git repo (gitignored)
+└── payments-service/                 # independent git repo (gitignored)
+```
+
+Per-service work routes to the right subdirectory; kit state stays at the wrapper root. Code-level support for this layout (Target-Service field, `worktree.sh --service` flag, wrapper-root detection in `flock_edit.sh`) is tracked as ISSUE-008 — gated on telemetry signal that polyrepo friction is real before we ship the helpers.
+
+### Why no separate "team layer"
+
+A separate layer would add concepts (a new manifest type, a new install scope) without adding capability:
+- **Sales team accumulation** already works via `accounts/<company>/` subdirectories in a sales-pack install. The repo's accounts directory IS the team asset store.
+- **Cross-team installation** uses the existing `--pack` flag (one repo can install core + sales together).
+- **Polyrepo collaboration** uses the wrapper pattern above. The wrapper directory IS the team boundary.
+
+Adding a "team layer" would raise the onboarding cost (more concepts to learn, more install steps) for zero new capability over what the existing core + pack + wrapper model already provides. **This decision is intentional, not a transitional state.** Documented here so contributors don't re-propose it.
 
 ## Usage
 
@@ -459,7 +546,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-33 specialized agents with optimized model assignments (opus for judgment/creativity, sonnet for structured extraction):
+**33 core engineering agents** (default install) with optimized model assignments — opus for judgment/creativity, sonnet for structured extraction. **The sales pack adds 5 more** (`account-researcher`, `champion-mapper`, `discovery-coach`, `meeting-synthesizer`, `proposal-writer`) when installed with `--pack=sales`. See [Packs](#packs) for opt-in install.
 
 | Agent | Model | Role | Tools |
 |-------|-------|------|-------|
@@ -497,12 +584,29 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `scan-qa-designer` | sonnet | Assess existing test coverage and identify gaps | Read, Glob, Grep, Write, Edit |
 | `scan-planner` | opus | Generate improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
 
+## Roadmap
+
+The next layer the kit is building: **AI dev team control plane** — telemetry → eval → cumulative learning memory. Each issue ships as its own SPEC + PR; no dates committed.
+
+- **ISSUE-001 — Run telemetry**: every agent invocation, tool call, and phase emits a JSONL trace event so lead time, retry rate, and finding density can be measured without touching agent prompts.
+- **ISSUE-002 — Workflow eval gate**: LLM-as-judge scoring of `review_notes.md` against the PR diff. Non-blocking advisory at first; data feeds future thresholds.
+- **ISSUE-003 — Cumulative learning memory**: promote `docs/review_lessons.md` to a structured pattern store (`.claude/memory/patterns.jsonl` + `docs/decision_log.md`). The `reviewer` and `planner` agents consume top-N patterns as preamble context.
+- **ISSUE-008 — Virtual monorepo wrapper code support**: per-service routing helpers + wrapper-root detection. Gated on telemetry signal (ISSUE-001) that polyrepo teams actually hit friction.
+
+Recently shipped (Cluster C + D this session): `/spec` skill + Spec-Required metadata (ISSUE-006), `/implement` Phase 0 spec gate (ISSUE-007), Pilot Gate hardening — neutral observation + separate-context critic + specificity + auto-cycle (ISSUE-010), Kill WebFetch reference fabrication (ISSUE-011), Reference Anchor tuning to 2–3 cues + literal_quote (ISSUE-012), `design-auditor` / `ui-reviewer` scope split (ISSUE-013). See `docs/specs/` for each SPEC.
+
 ## Project Structure
 
 ```
 claude-dev-kit/
-├── agents/                  # Agent role definitions (33)
-├── skills/                  # Workflow skills (22)
+├── agents/                  # Core engineering agents (33)
+├── skills/                  # Core engineering / design / safety skills (23)
+├── packs/                   # Opt-in domain packs
+│   └── sales/               # Sales pack (5 agents + 5 skills + 7 templates)
+│       ├── agents/
+│       ├── skills/
+│       ├── templates/
+│       └── manifest.yaml
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
@@ -525,7 +629,7 @@ claude-dev-kit/
 │   ├── careful/SKILL.md     # Safety guardrail: destructive command warnings
 │   ├── freeze/SKILL.md      # Safety guardrail: edit boundary enforcement
 │   └── guard/SKILL.md       # Safety guardrail: careful + freeze combined
-├── templates/               # Document templates (24)
+├── templates/               # Core document templates (26)
 ├── project/                 # Files installed into target project
 │   └── .claude/
 │       ├── hooks/agent_state.py
