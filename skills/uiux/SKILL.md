@@ -139,10 +139,17 @@ If the result is `true`:
    **Anti-reference (separate from path choice)**: WebSearch is still acceptable for *titles* of anti-references (e.g., "what makes corporate B2B SaaS dashboards generic"). Anti-cues are written from the model's own knowledge of the pattern being avoided — they are not visual extractions and do not require image grounding.
 
    **Synthesis** (when Path (a) or (b) ran successfully — output goes into `docs/design_philosophy.md` "Reference Anchors"):
-   - **5 specific visual cues to adopt**, each as a single bullet with: cue (≤12 words) — exact value or token (e.g., `#1A1A1A on #F5EFE6`, `Fraunces 96/0.92 + Inter Tight 14`) — **source image path under `docs/references/` OR the user-provided image URL**.
+   - **2–3 strong cues to adopt**, each as a single bullet with: cue (≤12 words) — exact value or token (e.g., `#1A1A1A on #F5EFE6`, `Fraunces 96/0.92 + Inter Tight 14`) — **source image path under `docs/references/` OR the user-provided image URL**. Strong = present in the chosen images, specific enough that no Phase 5 implementer can fall back to a default. Fewer-and-deeper beats more-and-shallow: 5 cues averaged out as "generic premium SaaS"; 2–3 force a direction.
+   - **1 literal quote** (MANDATORY when Phase 1.5 interview was NOT skipped): a specific word, number, or glyph drawn from the brand or domain that MUST appear **verbatim** in the rendered prototype. Format: `literal_quote: "<exact string>" — <where it appears>`. Examples:
+     - `literal_quote: "조용한" — set in 168pt Fraunces, hero headline`
+     - `literal_quote: "47.2-A" — sample order ID, shown in mono on the order detail screen`
+     - `literal_quote: "회" — quantity unit in the picker`
+     - Reject abstract concepts here (`"luxury"`, `"trust"`, `"premium"`) — the literal quote is text/digits/glyphs the prototype renders, not adjectives.
    - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
    - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a default. Prose-only cues like "warm palette" or "bold type" are rejected — re-do them with numbers/tokens.
    - Never invent a hex value or font name without an image to point at. If an extracted detail is uncertain, mark it `≈` (approximate) and leave a comment about which image it came from.
+
+   **Verbatim render check** — Phase 5B is required to render the `literal_quote` string verbatim in at least one HTML file under `prototype/screens/`. The Phase 2 CHECKPOINT below verifies the field is populated; Phase 5B verifies it actually appears in output.
 7) Commit to a BOLD aesthetic direction. Choose one and execute with precision:
    - Brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined,
      playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel,
@@ -162,14 +169,17 @@ If the result is `true`:
        - "Section dividers: `1px solid var(--accent)` with `margin-right: 12px` indent — never full-width rules"
        - "Screen titles: Fraunces 96/0.92, `letter-spacing: -0.04em`, `transform: skew(-2deg)`"
        - "All hover states: `translateY(-2px)` + `border-left: 4px solid var(--ink)` — no opacity changes"
-   - **Reference Anchors** section (from step 6.5 image-grounded research): 5 adopted cues each pointing at an image (path under `docs/references/` or a user-provided image URL/path), 3–5 avoided cues with reasons. If step 6.5 took Path (c) and skipped this section, omit it here too and proceed.
+   - **Reference Anchors** section (from step 6.5 image-grounded research): 2–3 strong adopted cues each pointing at an image (path under `docs/references/` or a user-provided image URL/path), 1 `literal_quote:` field (mandatory unless Phase 1.5 was skipped), 3–5 avoided cues with reasons. If step 6.5 took Path (c) and skipped this section, omit it here too and proceed.
    - What makes this design UNFORGETTABLE — the one thing someone will remember (should align with and reinforce the Signature Move).
 9) Present the design philosophy to the user and ask for approval before proceeding.
    - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line. If Reference Anchors is present, every adopted cue MUST cite an image path under `docs/references/` or a user-provided image URL/path — NOT a generic webpage URL that was WebFetched.
-> If the Signature Move is prose-only, or Reference Anchors lacks image citations, or Reference Anchors has 0 cues without an explicit skip line: STOP and fix before proceeding.
+> Verify `docs/design_philosophy.md` exists with:
+> (a) a **Signature Move** that is numeric/token-specific (not prose-only);
+> (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line; AND
+> (c) when Reference Anchors is present, exactly **2–3** adopted cues (not 1, not 4+), each citing an image path, plus a `literal_quote:` field with a concrete word/number/glyph (NOT an adjective like "luxury"). The literal_quote may only be omitted if Phase 1.5 interview was explicitly skipped — in which case `literal_quote: (skipped — interview not run)` must appear instead of the field being absent.
+> If any of (a) / (b) / (c) fails: STOP and fix before proceeding.
 
 ### Phase 3 — Design System
 9) Generate `docs/design_system.md` reflecting the chosen aesthetic:
@@ -319,6 +329,11 @@ If the result is `true`:
     - `prototype/styles.css` must implement it as a reusable class or component variant.
     - Every HTML file in `prototype/screens/` (including the pilot) must apply that class/variant at least once.
     - If any check fails: list violations, fix, and re-verify before proceeding.
+17.6) **Literal quote verbatim render check** (skip if Phase 1.5 was explicitly skipped):
+    - Read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors.
+    - Grep `prototype/screens/*.html` for the literal string. The string MUST appear verbatim in at least one screen's rendered output.
+    - If absent: name the screens that would naturally host it (per the anchor's "where it appears" hint), inject the quote into that screen's HTML, and re-grep. Do not skip this check by widening the search (no substring matches, no partial matches).
+    - Example: `literal_quote: "47.2-A"` MUST appear as the literal characters `47.2-A` in at least one screen file — not `47-2-A`, not `47.2A`, not in a comment.
 18) **PRD feature cross-check**:
     - Every feature in the PRD (F1, F2, ... including P2) MUST appear in wireframes and/or interactions
     - List any gaps and add missing features (P2 features as "deferred" notes)

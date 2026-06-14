@@ -153,10 +153,17 @@ If the result is `true`:
    **Anti-reference**: WebSearch for *anti-reference titles* is acceptable. Anti-cues are written from the model's own knowledge.
 
    **Synthesis** (when Path (a) or (b) ran — output goes into `docs/design_philosophy.md` "Reference Anchors"):
-   - **5 specific visual cues to adopt**, each as: cue (≤12 words) — exact value or token (e.g., `sidebar 240px @ #0E0F12`, `JetBrains Mono 13 + Inter 13`, `title bar 28px frameless with traffic lights inset 12/12`) — **source image path under `docs/references/` OR user-provided image URL/path**.
+   - **2–3 strong cues to adopt**, each as: cue (≤12 words) — exact value or token (e.g., `sidebar 240px @ #0E0F12`, `JetBrains Mono 13 + Inter 13`, `title bar 28px frameless with traffic lights inset 12/12`) — **source image path under `docs/references/` OR user-provided image URL/path**. Strong = present in the chosen images, specific enough that no Phase 5 implementer can fall back to a generic Electron/Material default. Fewer-and-deeper beats more-and-shallow.
+   - **1 literal quote** (MANDATORY when Phase 1.5 interview was NOT skipped): a specific word, number, glyph, or shortcut drawn from the brand or domain that MUST appear **verbatim** in the rendered prototype. Format: `literal_quote: "<exact string>" — <where it appears>`. Desktop-friendly examples:
+     - `literal_quote: "⌘K" — command palette trigger shown in the sidebar`
+     - `literal_quote: "47.2-A" — sample order ID, mono on the order detail panel`
+     - `literal_quote: "조용한" — set in 96pt Inter Display, splash screen`
+     - Reject abstract concepts (`"luxury"`, `"power user"`) — the literal quote is text/glyph/shortcut the prototype renders.
    - **3–5 cues to explicitly avoid**, each with one-line reason tied to the anti-reference.
    - Each adopted cue must be specific enough that a Phase 5 implementer cannot fall back to a generic Electron/Material default. Prose-only cues are rejected.
    - Never invent hex / font / sizing values without an image to point at. Mark uncertain extractions with `≈` and cite the source image.
+
+   **Verbatim render check** — Phase 5B is required to render the `literal_quote` string verbatim in at least one screen file under `prototype-desktop/`. The Phase 2 CHECKPOINT below verifies the field is populated; Phase 5B verifies it appears in rendered output.
 8) Commit to a BOLD aesthetic direction with desktop lens:
    - Apply the desktop design lens: information density, keyboard workflow, multi-window experience
 9) Generate `docs/design_philosophy.md`:
@@ -173,14 +180,17 @@ If the result is `true`:
        - "Command palette: `clip-path: polygon(...)` notched bottom-right corner, 480×320 fixed — never plain rounded rectangle"
        - "Sidebar split: `grid-template-columns: 240px 1fr` with a 1px hairline divider in `--border-strong`, no shadow"
        - "Title bar: 28px frameless with traffic lights inset 12/12, app icon at 16px — never default window chrome"
-   - **Reference Anchors** section (from step 7.5 image-grounded research): 5 adopted cues each citing an image (path under `docs/references/` or a user-provided image URL/path), 3–5 avoided cues with reasons. If step 7.5 took Path (c) and skipped this section, omit it here too and proceed.
+   - **Reference Anchors** section (from step 7.5 image-grounded research): 2–3 strong adopted cues each citing an image (path under `docs/references/` or a user-provided image URL/path), 1 `literal_quote:` field (mandatory unless Phase 1.5 was skipped), 3–5 avoided cues with reasons. If step 7.5 took Path (c) and skipped this section, omit it here too and proceed.
    - What makes this design UNFORGETTABLE (should align with and reinforce the Signature Move).
 10) Present the design philosophy to the user and ask for approval before proceeding.
     - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_philosophy.md` exists with (a) a **Signature Move** that is numeric/token-specific (not prose-only), and (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line. If Reference Anchors is present, every adopted cue MUST cite an image path under `docs/references/` or a user-provided image URL/path — NOT a generic webpage URL that was WebFetched.
-> If the Signature Move is prose-only, or Reference Anchors lacks image citations, or Reference Anchors has 0 cues without an explicit skip line: STOP and fix before proceeding.
+> Verify `docs/design_philosophy.md` exists with:
+> (a) a **Signature Move** that is numeric/token-specific (not prose-only);
+> (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line; AND
+> (c) when Reference Anchors is present, exactly **2–3** adopted cues (not 1, not 4+), each citing an image path, plus a `literal_quote:` field with a concrete word/number/glyph/shortcut (NOT an adjective like "luxury"). The literal_quote may only be omitted if Phase 1.5 interview was explicitly skipped — in which case `literal_quote: (skipped — interview not run)` must appear instead of the field being absent.
+> If any of (a) / (b) / (c) fails: STOP and fix before proceeding.
 
 ### Phase 3 — Desktop Design System
 11) Generate `docs/design_system_desktop.md` reflecting the chosen aesthetic:
@@ -422,6 +432,11 @@ If the result is `true`:
     - The Signature Move must be implemented as a reusable component/class/CSS-custom-property primitive under `src/components/` or `src/theme/`.
     - Every `.tsx` file in `src/screens/` (including the pilots) must reference that reusable Signature Move primitive at least once.
     - If any check fails: list violations, fix, and re-verify before proceeding.
+27.6) **Literal quote verbatim render check** (skip if Phase 1.5 was explicitly skipped):
+    - Read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors.
+    - Grep `src/screens/*.tsx` for the literal string. The string MUST appear verbatim in at least one screen file (inside a string literal, NOT inside a comment).
+    - If absent: name the screens that would naturally host it (per the anchor's "where it appears" hint), inject the quote into that screen, and re-grep. Do not skip by widening the search.
+    - Example: `literal_quote: "⌘K"` MUST appear as the literal characters `⌘K` — not `Cmd+K`, not interpolated from a variable, not inside `{/* */}`.
 28) **Performance check**:
     - List/table item components MUST use `React.memo`
     - Event handlers passed to memoized children MUST use `useCallback`
