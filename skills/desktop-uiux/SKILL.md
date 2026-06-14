@@ -355,17 +355,50 @@ If the result is `true`:
       - Generate a TEMPORARY minimal `prototype-desktop/src/App.tsx` that routes ONLY between the 2 pilots (no full router yet).
       - Ensure the Electron `main.ts` and `preload.ts` from step 17-c/17-d are wired so `npm run dev` launches the pilot view.
       - Do NOT generate the remaining screens or the full router yet.
-    - **Step 3 — PILOT GATE — render, self-critique (if available), then HOLD for user**:
+    - **Step 2.5 — PILOT GATE — observe → critique → specificity → auto-correct → user HOLD**
+      Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This block routes critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting.
+      Desktop pilots run live in Electron (`npm run dev`). If Playwright + Electron is installed, screenshot the rendered window for the critique inputs. Otherwise critique runs against pilot `.tsx` source (degraded mode) — record `pilot_degraded: no_playwright_electron` in the critique log.
+
+      - **Step 2.5.0 — Neutral observation** (mandatory; BEFORE judgment).
+        For each pilot, write 5 plain factual statements about what renders (screenshot) or what the source would render (degraded).
+        **Banned vocabulary**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
+        Save to `prototype-desktop/src/screens/<pilot>.observations.md`.
+
+      - **Step 2.5.1 — Separate-context critique** (mandatory). Invoke `design-auditor` via the Task tool. **Do NOT inline-critique in the generator's context.**
+        Pass:
+          - the pilot screenshot path (if available) AND the pilot `.tsx` path
+          - `prototype-desktop/src/screens/<pilot>.observations.md`
+          - `docs/design_philosophy.md`
+          - `docs/design_system_desktop.md`
+        Ask for a 6-axis 1–5 score (Philosophy / Hierarchy / Execution / Specificity / Restraint / Variety), one cited evidence per axis referencing observation indices, and a list of slop signals.
+        Where ui-reviewer's scope applies (state coverage, copy usage), invoke `ui-reviewer` separately. Disjoint scopes (ISSUE-013) — surface both outputs.
+        Save the structured output to `prototype-desktop/src/screens/<pilot>.critique.md`.
+
+      - **Step 2.5.2 — Specificity check** (mandatory). Ask design-auditor:
+        *"Name 3 details visible in this pilot that ONLY make sense for THIS specific product / domain / user. Generic UI primitives don't count. Domain content does count (real entity names, the literal_quote from Reference Anchors, brand-specific shortcuts/units). Fewer than 3 → FAIL."*
+        The literal_quote (from ISSUE-012) counts as exactly **1** of the 3.
+
+      - **Step 2.5.3 — Auto-correction cycle** (hard cap N=3). If any score < 3, specificity FAIL, or slop signals fire:
+        1. Identify the patch layer (philosophy / system / layout / pilot only).
+        2. Apply the patch.
+        3. Re-observe → re-critique → re-specificity.
+        4. Increment cycle counter. Append to `prototype-desktop/src/screens/<pilot>.cycles.log`:
+           `cycle N: layer=<L> change="<summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
+        5. **Hard stop at N=3.** After cycle 3, freeze and surface to the user with the full history.
+        Record final scores at the top of the pilot stylesheet/screen file: `/* pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 specificity=PASS */`.
+
+    - **Step 3 — PILOT GATE — present and HOLD for user**:
       - Tell the user how to run:
         ```bash
         cd prototype-desktop && npm run dev
         ```
-      - Optionally, if Playwright with Electron is installed, the agent MAY screenshot the rendered window for a self-critique pass against the Signature Move and named aesthetic before presenting. If not installed, skip the auto-critique.
-      - **Pre-emit critique (write before presenting, screenshot or not):** rate each pilot 1–5 on six axes — **Philosophy** (a clear *why*, a position the screen takes?), **Hierarchy** (primary/secondary/tertiary readable in 2 seconds?), **Execution** (token use, accent footprint, states, contrast, density in spec?), **Specificity** (looks like *this brief*, not a generic desktop app?), **Restraint** (everything earns its place?), **Variety** (structurally distinct from the other pilot — colour-swaps don't count). **Anything < 3 on any axis triggers a revision pass before presenting.** Record the scores in a one-line comment at the top of the pilot's stylesheet/screen file: `/* pre-emit critique: P5 H4 E5 S4 R5 V5 */`.
+      - Share `prototype-desktop/src/screens/<pilot>.critique.md` and `<pilot>.cycles.log`.
+      - If Step 2.5 entered degraded mode (no Playwright/Electron), say so explicitly.
       - Ask: "Please run the pilots and confirm:
         (a) Is the **Signature Move** (`<paste exact text>`) visible and applied on both pilots?
         (b) Do both pilots feel like `<aesthetic name>` and read as the same family across the two archetypes?
-        (c) Any slop signals — Electron-wrapper-website feel, default OS chrome, generic Material/Fluent components, mobile-touch-sized targets?"
+        (c) Do the 3 product-specific details from the specificity check belong to *this* product?
+        (d) Any slop signals — Electron-wrapper-website feel, default OS chrome, generic Material/Fluent components, mobile-touch-sized targets?"
       - WAIT for explicit approval before continuing to Phase 5B.
     - **Step 4 — On rejection** (route to the correct layer):
       - Signature Move wrong/absent → revisit Phase 2 step 9.

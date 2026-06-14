@@ -268,26 +268,72 @@ If the result is `true`:
     - Pick **TWO pilot screens from the two most-distinct archetypes** present in the inventory. Typically one consumption-oriented (list / detail / hub) plus one input-oriented (form / wizard). If only one archetype exists in the inventory, fall back to a single pilot and note this in the gate.
     - Generate ONLY these pilot HTML files in `prototype/screens/` following all the rules listed in step 15 below. Both pilots share `styles.css` from step 14.
     - Do NOT generate other screens or `prototype/index.html` yet.
-14.6) **PILOT GATE — render, self-critique, then HOLD for user** (do not auto-proceed):
+14.6) **PILOT GATE — render → observe → critique → specificity → auto-correct → user HOLD**
+    Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This phase routes the critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting to the user. Do not auto-proceed past Step 3.
+
     - **Step 1 — Render**: for each pilot HTML, run:
       ```
       python3 scripts/screenshot_pilot.py prototype/screens/<pilot>.html --viewport 1280x800 --full-page
       ```
-      This produces `prototype/screens/<pilot>.png`. If the script exits with "no screenshot backend available", record this and skip Step 2 (proceed directly to Step 3 with a note to the user).
-    - **Step 2 — Self-critique** (only if screenshots were produced): Read each PNG with the Read tool. For every pilot, answer in writing:
-      - **Pre-emit critique (score these six axes BEFORE the checks below):** rate the pilot 1–5 on each — **Philosophy** (is there a clear *why*, a position the screen takes — or just a layout?), **Hierarchy** (can a viewer tell primary/secondary/tertiary in 2 seconds?), **Execution** (rule weight, accent footprint, focus rings, contrast all in spec?), **Specificity** (looks like *this brief*, not a generic page anyone could ship?), **Restraint** (has everything that isn't earning its place been removed?), **Variety** (structurally distinct from the other pilot — colour-swaps don't count). **Anything < 3 on any axis triggers a revision pass before continuing.** Record the scores as a one-line stamp at the top of `styles.css`: `/* pre-emit critique: P5 H4 E5 S4 R5 V5 */`.
-      - (a) Is the Signature Move (`<paste exact text>`) visible at the expected location? Yes/No + one-sentence observation of where and how it appears.
-      - (b) Does the screenshot look like the named aesthetic (`<aesthetic name>`), or like a generic SaaS dashboard?
-      - (c) Slop signals — flag any of: centered card with symmetric margins, soft blurred shadows that read as "Material default", default Inter/Roboto-feeling font, evenly-spaced flat color palette, hover/empty/error states that read as stock.
-      - If (a) or (b) is unsatisfactory, OR (c) flags any signal: fix at the correct layer (philosophy → tokens → CSS), regenerate the affected pilot, re-screenshot, and re-critique. Document what was changed in the critique notes that you carry into Step 3. Do NOT advance to Step 3 until self-critique passes.
+      Produces `prototype/screens/<pilot>.png`. If the script exits "no screenshot backend available":
+        - DO NOT silently skip the critique. Enter **degraded mode** for Steps 2.0–2.2: critique runs against the HTML/CSS *source* instead of the rendered PNG.
+        - Record `pilot_degraded: no_screenshot_backend` in the critique log so the user sees the limitation.
+
+    - **Step 2.0 — Neutral observation** (mandatory; do this BEFORE any judgment).
+      For each pilot, write 5 plain factual statements about what you see in the PNG (or HTML in degraded mode).
+      **Banned vocabulary in this step**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
+      Output to `prototype/screens/<pilot>.observations.md` like:
+      ```
+      1. Top bar 64px tall, dark navy background, four icon buttons right-aligned.
+      2. Hero headline reads "조용한", left-aligned, 168pt serif, off-white text.
+      3. Below the hero, three cards in a row at 24% / 38% / 38% widths.
+      4. Bottom-right floating action button, 56px, orange fill, no border.
+      5. Sticky bottom toolbar with four state-switcher buttons.
+      ```
+      If you catch yourself reaching for a banned word, restart Step 2.0 — the observation is the input that prevents the critique from agreeing with itself.
+
+    - **Step 2.1 — Separate-context critique** (mandatory). Invoke `design-auditor` via the Task tool to evaluate the pilot from a fresh context. **Do NOT inline-critique in the generator's context.**
+      Pass the auditor:
+        - the pilot PNG path (or HTML path in degraded mode)
+        - `prototype/screens/<pilot>.observations.md`
+        - `docs/design_philosophy.md` (so it knows the system claim it should check)
+        - `docs/design_system.md`
+      Ask it to return:
+        - the 6-axis score (Philosophy / Hierarchy / Execution / Specificity / Restraint / Variety), each 1–5
+        - one piece of cited evidence per axis, referencing observation indices (e.g., "Specificity 2 — observations 2,3 are interchangeable with any landing page")
+        - a list of slop signals it flags
+      Where ui-reviewer's scope applies (state coverage in pilots, copy usage), also invoke `ui-reviewer` via the Task tool with the same inputs. The two sub-agents' scopes are disjoint (per ISSUE-013) — do not deduplicate findings, surface both.
+      Save the structured output to `prototype/screens/<pilot>.critique.md`.
+
+    - **Step 2.2 — Specificity check** (mandatory). Ask the design-auditor (still in its separate context) to answer:
+      *"Name 3 details visible in this pilot that ONLY make sense for THIS specific product / domain / user. Generic UI primitives ('a card', 'a hero', 'a button') do not count. Domain content does count (real entity names, the literal_quote from Reference Anchors, domain-specific units, brand-specific shortcuts). If you can list fewer than 3, the pilot FAILs specificity."*
+      The literal_quote (from ISSUE-012) counts as exactly **1** of the 3 — not 0, not 2+. The other 2 must come from independent product/domain details.
+      Specificity FAIL → treat as a critique failure feeding Step 2.3.
+
+    - **Step 2.3 — Auto-correction cycle** (hard cap N=3 rounds). If any axis score < 3, OR Step 2.2 returns FAIL, OR slop signals are flagged:
+      1. Identify the correct layer to patch:
+         - Philosophy / Specificity < 3 → revisit Phase 2 step 8 (`docs/design_philosophy.md`).
+         - Hierarchy / Execution / Restraint < 3 → revisit Phase 3 design system (`docs/design_system.md`) or Phase 4 layout numbers.
+         - Variety < 3 → re-pick the pilot archetype or restructure the pilot itself.
+         - Specificity FAIL → either add concrete product details to the pilot or, if Phase 1.5 was skipped, document that and proceed.
+      2. Apply the patch.
+      3. Re-screenshot (Step 1) → re-observe (Step 2.0) → re-critique (Step 2.1) → re-specificity (Step 2.2).
+      4. Increment the cycle counter. Append a one-line summary to `prototype/screens/<pilot>.cycles.log`:
+         `cycle N: layer=<L> change="<short summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
+      5. **Hard stop at N=3**. After the third unsuccessful cycle, freeze the pilot and surface to the user with the full cycle history. Do NOT loop indefinitely.
+      Record the final scores as a one-line stamp at the top of `styles.css`: `/* pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 specificity=PASS */`.
+
     - **Step 3 — User gate**: present both pilots to the user.
       - Give the exact open commands: `open prototype/screens/<pilot1>.html` and `open prototype/screens/<pilot2>.html`.
-      - Share the self-critique notes (so the user sees what was already caught and fixed) or note that auto-critique was skipped because no screenshot backend was available.
+      - Share `prototype/screens/<pilot>.critique.md` (Step 2.1 output) and `prototype/screens/<pilot>.cycles.log` (Step 2.3 history) so the user sees what was caught and what changed.
+      - If Step 1 entered degraded mode, say so explicitly.
       - Ask: "Do both pilots match the design philosophy? Specifically:
         (a) Is the **Signature Move** (`<paste exact text>`) visible and applied in both?
-        (b) Do they feel like `<aesthetic name>` and read as the same family across the two archetypes?"
+        (b) Do they feel like `<aesthetic name>` and read as the same family across the two archetypes?
+        (c) Do the 3 product-specific details from the specificity check belong to *this* product?"
       - WAIT for explicit approval before continuing to Phase 5B.
-    - If rejected: identify which level the problem lives at and fix there before regenerating the pilots:
+
+    - If rejected: identify which layer the problem lives at and fix there before regenerating the pilots:
       - Signature Move wrong/absent → revisit Phase 2 step 8.
       - Color / type / spacing tokens off → revisit Phase 3 design system.
       - Layout reads as generic → revisit Phase 4 numeric layout commitments.
