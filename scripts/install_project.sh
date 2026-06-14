@@ -7,18 +7,31 @@ bash "$KIT_ROOT/scripts/ensure_gh.sh"
 
 mkdir -p "$PROJ_ROOT/.claude"
 
-# Remove old copies (if any) and create symlinks to kit source
-for dir in agents skills; do
-  rm -rf "$PROJ_ROOT/.claude/$dir"
-  ln -sfn "$KIT_ROOT/$dir" "$PROJ_ROOT/.claude/$dir"
-done
+# ── Install core + optional packs ────────────────────────────────────
+# Forwards --pack=<name> args to install_packs.py. Defaults to core only.
+# install_packs.py prints any per-pack settings_snippet paths to stdout
+# (one per line); we capture them to merge after core's snippet.
+PACK_SNIPPETS=$(python3 "$KIT_ROOT/scripts/install_packs.py" \
+  "$KIT_ROOT" "$PROJ_ROOT" "$@")
 
 rm -rf "$PROJ_ROOT/.claude/hooks"
 ln -sfn "$KIT_ROOT/project/.claude/hooks" "$PROJ_ROOT/.claude/hooks"
 
+# Merge core settings snippet first.
 python3 "$KIT_ROOT/scripts/merge_settings.py" \
   "$PROJ_ROOT/.claude/settings.json" \
   "$KIT_ROOT/project/.claude/settings.snippet.json"
+
+# Then merge each pack's snippet (alphabetical pack-name order).
+# Pack snippets override core on key collision (deep merge, last write wins).
+if [ -n "$PACK_SNIPPETS" ]; then
+  while IFS= read -r snippet; do
+    [ -z "$snippet" ] && continue
+    python3 "$KIT_ROOT/scripts/merge_settings.py" \
+      "$PROJ_ROOT/.claude/settings.json" \
+      "$snippet"
+  done <<< "$PACK_SNIPPETS"
+fi
 
 # Ensure settings.local.json has required sprint permissions
 python3 "$KIT_ROOT/scripts/ensure_permissions.py" \

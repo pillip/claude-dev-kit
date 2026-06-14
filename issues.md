@@ -25,7 +25,6 @@
 - [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-005: README sync — reflect counts + positioning + post-sales-boundary layout + team-scale usage _(track: platform, P1, 1d)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d)_
-- [ ] ISSUE-009: Install script --pack flag + merge_settings + tests _(track: platform, P1, 1.5d)_
 
 ### Doing
 
@@ -35,6 +34,7 @@
 - [x] ISSUE-004: Sales pack file move + manifest schema _(track: platform, P1, 1d)_
 - [x] ISSUE-006: /spec skill — RFC pattern + Spec-Required metadata + non-sprint HOLD gate _(track: platform, P1, 1.5d)_
 - [x] ISSUE-007: /implement spec gate — sprint auto-run + non-sprint HOLD + signal detection _(track: platform, P1, 1d)_
+- [x] ISSUE-009: Install script --pack flag + merge_settings + tests _(track: platform, P1, 1.5d)_
 - [x] ISSUE-010: Pilot Gate hardening — separate-context critic + auto-cycle + neutral observation + specificity check _(track: platform, P2, 1.5d)_
 - [x] ISSUE-011: Kill WebFetch reference fabrication — image-grounded references only _(track: platform, P1, 0.5d)_
 - [x] ISSUE-012: Reference Anchor tuning — 2-3 strong cues + 1 literal quote _(track: platform, P2, 0.5d)_
@@ -536,10 +536,12 @@ Revert wrapper-root detection across scripts. `Target-Service:` becomes vestigia
 - UI: false
 - Platform: web
 - Manual: false
+- Spec-Required: true
+- Spec: docs/specs/SPEC-009.md
 - PRD-Ref: none (kit self-development; split from original ISSUE-004 — installer behavior layer on top of ISSUE-004's file move)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
