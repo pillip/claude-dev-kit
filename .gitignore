@@ -5,6 +5,10 @@ __pycache__/
 # uv.lock must be tracked for reproducible builds
 !uv.lock
 
+# Per-worktree freeze marker (absolute path); never tracked — committing it
+# caused parallel branches to merge-conflict on disjoint source.
+.claude-kit/freeze-dir.txt
+
 # Environment & secrets
 .env
 .env.*

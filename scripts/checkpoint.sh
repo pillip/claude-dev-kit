@@ -13,5 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(bash "$SCRIPT_DIR/worktree.sh" root)"
-exec python3 "$ROOT/scripts/verify_checkpoint.py" "$@"
+# verify_checkpoint.py always lives beside this script, so resolve it via
+# SCRIPT_DIR rather than "$ROOT/scripts/…". This keeps the checkpoint working
+# even when the kit's scripts/ isn't symlinked at the repo root.
+exec python3 "$SCRIPT_DIR/verify_checkpoint.py" "$@"

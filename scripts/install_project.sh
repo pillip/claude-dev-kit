@@ -55,8 +55,40 @@ if ! command -v prettier &>/dev/null; then
   npm install -g prettier 2>/dev/null || true
 fi
 
+# ── Expose kit scripts at the project root ────────────────────────────
+# Skill templates invoke `bash scripts/<name>` (checkpoint.sh, wt_setup.sh,
+# verify_checkpoint.py, …) from the repo root, and the permission allowlist is
+# prefix-matched on `scripts/`. So the kit's scripts/ must be reachable there.
+# Prefer a single directory symlink (keeps inter-script imports / sibling
+# lookups working). If the project already has its own real scripts/ dir,
+# symlink each kit script in individually, skipping name collisions.
+if [ -e "$PROJ_ROOT/scripts" ] && [ ! -L "$PROJ_ROOT/scripts" ]; then
+  echo "  Project has its own scripts/ — linking kit scripts individually."
+  for src in "$KIT_ROOT"/scripts/*; do
+    name="$(basename "$src")"
+    [ "$name" = "__pycache__" ] && continue
+    dst="$PROJ_ROOT/scripts/$name"
+    if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+      echo "  ⚠️  skip scripts/$name (project already has its own)"
+      continue
+    fi
+    ln -sfn "$src" "$dst"
+  done
+else
+  ln -sfn "$KIT_ROOT/scripts" "$PROJ_ROOT/scripts"
+fi
+
 # ── Linter config symlinks ────────────────────────────────────────────
 ln -sfn "$KIT_ROOT/linters/ruff.toml" "$PROJ_ROOT/ruff.toml"
 ln -sfn "$KIT_ROOT/linters/.prettierrc.json" "$PROJ_ROOT/.prettierrc.json"
+
+# ── Ignore the per-worktree freeze marker ─────────────────────────────
+# wt_setup.sh writes an absolute path into .claude-kit/freeze-dir.txt inside
+# each worktree. If committed, parallel branches merge-conflict on it even
+# when their source diffs are disjoint. Make sure it's ignored.
+GITIGNORE="$PROJ_ROOT/.gitignore"
+if ! { [ -f "$GITIGNORE" ] && grep -qxF '.claude-kit/freeze-dir.txt' "$GITIGNORE"; }; then
+  printf '\n# claude-dev-kit: per-worktree freeze marker (never track)\n.claude-kit/freeze-dir.txt\n' >> "$GITIGNORE"
+fi
 
 echo "✅ Installed kit into: $PROJ_ROOT/.claude"
