@@ -20,6 +20,10 @@
 ## Board
 
 ### Backlog
+- [ ] ISSUE-014: Verify Claude Code feature/version support matrix (spike) _(track: platform, P1, 0.5d)_
+- [ ] ISSUE-015: Adopt agent effort tiers + refresh model references _(track: platform, P2, 1d)_
+- [ ] ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup _(track: platform, P2, 1d)_
+- [ ] ISSUE-017: Migrate kit packaging to Claude Code plugin system _(track: platform, P1, 1.5d — spec)_
 
 ### Doing
 
@@ -872,3 +876,212 @@ Revert Phase 2 output spec, restore 5-cues template. Delete `literal_quote:` fie
 
 #### Rollback
 Revert both agent files. Both agents resume with overlapping checklists (today's behavior). ISSUE-010 continues to work because the `design-auditor` name is preserved across this issue's lifecycle — rollback does not break wiring.
+
+---
+
+### ISSUE-014: Verify Claude Code feature/version support matrix (spike)
+
+> Prerequisite spike for ISSUE-015/016/017. Claude Code has added many capabilities (new hook events, plugin system, model effort levels, Fable 5) over the last ~6 months. Before the kit adopts any of them we must confirm what the *targeted* Claude Code version actually supports — feature briefings from docs can drift from a given installed build.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: true
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; rationale in conversation 2026-06-16)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A documented support matrix (`docs/cc_feature_matrix.md`) records the minimum Claude Code version the kit targets and, for each capability ISSUE-015/016/017 depend on, whether it is supported at that version.
+
+#### Scope (In/Out)
+- In:
+  - Decide and document the minimum supported Claude Code version (and where that's enforced — e.g. README prerequisites, optionally `requiredMinimumVersion`).
+  - Verify against that version: agent `effort:` frontmatter; agent `model: inherit`; current model aliases (`opus`→4.8, `sonnet`, `haiku`, `fable`/`best`); `WorktreeCreate`/`WorktreeRemove`/`SessionEnd`/`PreCompact` hook events; plugin manifest schema (`.claude-plugin/plugin.json`) + `hooks.json`; whether plugin subagents really drop `hooks`/`mcpServers`/`permissionMode`.
+  - Record verified-vs-unverified status per feature with the evidence (doc link or local `claude` probe).
+- Out:
+  - Any actual adoption of the features (that is ISSUE-015/016/017).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the matrix doc, when read, then it states the targeted CC version and lists each dependent feature with one of {supported, unsupported, needs-newer-version}.
+- [ ] Given each "supported" row, when checked, then it cites how it was verified (doc URL or command output), not memory.
+- [ ] Given ISSUE-015/016/017, when they start, then their implementation notes can reference this matrix instead of re-investigating.
+
+#### Implementation Notes
+- This is investigation + documentation only; no code changes expected beyond the new doc (and possibly a README prerequisites line).
+- Probe the locally installed build where possible (`claude --version`, trying an `effort:`/`model: inherit` agent, a no-op `WorktreeCreate` hook) rather than trusting the briefing.
+
+#### Tests
+- [ ] N/A (doc spike) — verification evidence captured inline in the matrix doc.
+
+#### Rollback
+Delete `docs/cc_feature_matrix.md`. No runtime impact.
+
+---
+
+### ISSUE-015: Adopt agent effort tiers + refresh model references
+
+> Agents already use forward-compatible model *aliases* (`opus`/`sonnet`), but don't use the newer per-agent `effort` lever, and a stale `claude-opus-4-6` appears in a README example. Tune cost/quality by tier and fix the doc drift.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; rationale in conversation 2026-06-16)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+Judgment-heavy agents run at high reasoning effort and extraction agents at low/medium, model references in docs are current, and a `fallbackModel` is configured for resilience — all gated on what ISSUE-014 confirms is supported.
+
+#### Scope (In/Out)
+- In:
+  - Add `effort:` frontmatter to `agents/*.md`: high/xhigh for architect, developer, reviewer, diagnostician, refactorer, planner, *-uiux-developer; low/medium for scan-*, documenter, issue-writer, requirement-analyst, a11y-auditor.
+  - Refresh the stale `claude-opus-4-6` example in `README.md` to the current default.
+  - Add `fallbackModel` to `project/.claude/settings.snippet.json` (verified-supported only).
+  - Optionally introduce an opt-in pack/flag that sets the orchestrator (`team-lead`) to `model: fable` / `best`.
+- Out:
+  - Pinning full version IDs in agent frontmatter (keep aliases for forward-compat).
+  - Changing agent prompts/behavior.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given every agent file, when its frontmatter is parsed, then `effort` is one of the values ISSUE-014 confirmed for that model, and the heavy/light split matches the scope list.
+- [ ] Given the README, when grepped, then no retired model ID (e.g. `claude-opus-4-6`) remains as a current example.
+- [ ] Given a session where the `opus` model is unavailable, when an agent runs, then the configured `fallbackModel` is used (or documented as unsupported on the target version).
+- [ ] Given the existing agent/skill tests, when run, then none regress.
+
+#### Implementation Notes
+- Effort-value vocabularies differ by model (e.g. `xhigh` may be Opus-4.7/4.8-only) — honor the ISSUE-014 matrix.
+- Fable 5 is not the default on any tier and needs a recent CC build; keep it opt-in, never the kit default.
+- Aliases (`opus`/`sonnet`) intentionally stay so the kit tracks provider defaults without edits.
+
+#### Tests
+- [ ] Frontmatter lint: every agent has a valid `effort` for its `model`.
+- [ ] README grep: no retired model IDs presented as current.
+- [ ] settings snippet parses and merges cleanly (extend existing merge_settings tests).
+
+#### Rollback
+Revert agent frontmatter and settings snippet changes. Agents fall back to default effort; no behavioral dependency.
+
+---
+
+### ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup
+
+> The kit manages worktrees (`wt_setup.sh`) and writes per-project runtime state under `.claude/run/`, but does this imperatively from skills. Newer lifecycle hook events line up exactly with that work, letting the harness drive it.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; rationale in conversation 2026-06-16)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+Worktree creation auto-writes the freeze marker via a `WorktreeCreate` hook (removing the manual step in `wt_setup.sh`), and `.claude/run/` trace/state files are cleaned up on `SessionEnd`/`Stop`.
+
+#### Scope (In/Out)
+- In:
+  - `WorktreeCreate` hook that writes `.claude-kit/freeze-dir.txt` for the new worktree (already gitignored per the recent fix).
+  - `SessionEnd` (or `Stop`) hook that prunes/rotates `.claude/run/agent-state.json` and `events.jsonl`.
+  - Wire these in `project/.claude/settings.snippet.json`; drop the now-redundant freeze-write from `wt_setup.sh` (keep a fallback if the hook event is unsupported on the target version).
+  - Tests for the new hook scripts.
+- Out:
+  - `PreCompact`/`PostCompact` state preservation (separate follow-up if needed).
+  - Telemetry schema changes (that's ISSUE-001).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a worktree created through the kit on a version that supports `WorktreeCreate`, when it is created, then `.claude-kit/freeze-dir.txt` exists with the worktree's absolute path without any manual skill step.
+- [ ] Given `wt_setup.sh` on a version WITHOUT the hook, when run, then it still writes the marker (graceful fallback — no regression).
+- [ ] Given a session that ends, when the `SessionEnd`/`Stop` hook fires, then stale `.claude/run/` files are pruned/rotated per the documented policy.
+- [ ] Given the hook scripts, when unit-tested, then they no-op safely on malformed/missing payloads.
+
+#### Implementation Notes
+- Reuse the existing worktree-root resolution pattern (the `commondir`-aware inline hook in settings.snippet.json) so hooks work inside worktrees.
+- Only remove the imperative freeze-write once ISSUE-014 confirms `WorktreeCreate` is supported on the target version; otherwise keep both paths and prefer the hook when present.
+
+#### Tests
+- [ ] WorktreeCreate hook writes freeze-dir.txt given a synthetic payload.
+- [ ] SessionEnd/Stop hook prunes run/ files per policy; no-ops when absent.
+- [ ] wt_setup.sh fallback still writes the marker when the hook path is disabled.
+
+#### Rollback
+Remove the new hook entries from the settings snippet and restore the freeze-write in `wt_setup.sh`. Behavior returns to today's manual flow.
+
+---
+
+### ISSUE-017: Migrate kit packaging to Claude Code plugin system
+
+> The kit hand-rolls a plugin/marketplace: `install_project.sh` + `install_packs.py` + `packs/*/manifest.yaml` + `merge_settings.py` + per-entry symlinks. Claude Code now ships this natively (`.claude-plugin/plugin.json`, `hooks.json`, namespaced skills, `/plugin install`, versioning). Several recently-fixed bugs (scripts/ wiring, freeze-dir.txt tracking) were artifacts of the bespoke installer. This issue produces the migration SPEC; implementation issues are carved out from it.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; rationale in conversation 2026-06-16)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-014
+
+#### Goal
+A reviewed SPEC (`docs/specs/SPEC-017.md`) defines how the kit is packaged as a Claude Code plugin (or coexists with the current installer during a transition), with a concrete migration plan and the implementation issues it decomposes into.
+
+#### Scope (In/Out)
+- In (the SPEC must cover):
+  - Mapping current layout → plugin layout: `agents/`, `skills/`, `hooks/` → plugin root + `.claude-plugin/plugin.json` + `hooks.json` + `.mcp.json`.
+  - How `${CLAUDE_PLUGIN_ROOT}` replaces the repo-root `scripts/` symlink (root cause of the #1 fix) and the `.claude-kit/` markers (#5).
+  - Handling the constraint that **plugin subagents ignore `hooks`/`mcpServers`/`permissionMode`** — specifically the `/freeze`, `/careful`, `/guard` skills that embed `hooks:` in frontmatter must move to `hooks.json`.
+  - Skill namespacing impact (`/implement` → `/kit:implement`) and whether to keep short names via a standalone-install option.
+  - The `packs/` selection model under plugins (multiple plugins vs. one plugin with optional components) and what happens to `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py`.
+  - Distribution: private git marketplace vs. skills-directory plugin; team install UX (`/plugin install kit@…`).
+  - Migration/transition plan (can both installers coexist? deprecation path?) and the decomposed implementation issues.
+- Out:
+  - The actual migration code (separate issues spawned from the SPEC).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given SPEC-017, when reviewed, then it specifies the plugin layout, the hooks.json migration for `/freeze` `/careful` `/guard`, the namespacing decision, the fate of the bespoke install scripts, and a transition plan.
+- [ ] Given SPEC-017, when read, then it lists the concrete implementation issues (ISSUE-NNN stubs) the migration decomposes into, each ≤1.5d.
+- [ ] Given the plugin-subagent restriction, when the SPEC addresses it, then no current hook-bearing skill is silently broken by the migration.
+- [ ] Given the spec gate (per ISSUE-006/007), when this issue reaches `done`, then SPEC-017 exists and is approved.
+
+#### Implementation Notes
+- This follows the `Spec-Required` workflow established by ISSUE-006/007 — produce the SPEC/RFC first; do not migrate code under this issue.
+- The whole motivation is reducing maintenance surface and eliminating the bug class behind the recent install fixes — the SPEC should explicitly tie each removed script to the failure mode it caused.
+- Verify plugin-system specifics against ISSUE-014's matrix before finalizing.
+
+#### Tests
+- [ ] N/A under this issue (SPEC deliverable). Implementation issues carry their own tests.
+
+#### Rollback
+Abandon SPEC-017 (or mark `drop`). No runtime impact — the current installer remains in place until a future implementation issue replaces it.
