@@ -601,14 +601,59 @@ class TestVerifyImplementRegistry:
         )
         assert vc.verify_implement_registry("ISSUE-001") is True
 
-    def test_fail_when_status_not_done(self, repo_root):
+    def test_pass_when_doing_with_pr(self, repo_root):
+        # /implement opens a PR but does not merge, so `doing` is the normal
+        # terminal state for the implement phase.
         _setup_issues(
             repo_root,
             "### ISSUE-001: Test\n"
             "- Status: doing\n"
             "- PR: https://github.com/org/repo/pull/42\n",
         )
+        assert vc.verify_implement_registry("ISSUE-001") is True
+
+    def test_fail_when_status_invalid(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Test\n"
+            "- Status: backlog\n"
+            "- PR: https://github.com/org/repo/pull/42\n",
+        )
         assert vc.verify_implement_registry("ISSUE-001") is False
+
+    def test_fail_when_no_pr(self, repo_root):
+        _setup_issues(
+            repo_root,
+            "### ISSUE-001: Test\n- Status: doing\n",
+        )
+        assert vc.verify_implement_registry("ISSUE-001") is False
+
+
+class TestDetectTestRunners:
+    def test_js_repo_with_fixtures_dir_is_not_python(self, tmp_path):
+        # A JS/TS repo with a tests/ fixtures dir must NOT be forced through
+        # pytest just because tests/ exists (the original false-positive).
+        (tmp_path / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "fixtures.json").write_text("{}")
+
+        has_python, has_js = vc._detect_test_runners(tmp_path)
+        assert (has_python, has_js) == (False, True)
+
+    def test_python_repo_via_pyproject(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+        has_python, has_js = vc._detect_test_runners(tmp_path)
+        assert (has_python, has_js) == (True, False)
+
+    def test_package_json_without_test_script_is_not_js(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"scripts": {"build": "tsc"}}')
+        has_python, has_js = vc._detect_test_runners(tmp_path)
+        assert has_js is False
+
+    def test_loose_python_fallback_only_without_js(self, tmp_path):
+        (tmp_path / "script.py").write_text("print('hi')\n")
+        has_python, has_js = vc._detect_test_runners(tmp_path)
+        assert (has_python, has_js) == (True, False)
 
 
 # ── Review verifiers ─────────────────────────────────────────────────
@@ -632,6 +677,19 @@ class TestVerifyReviewReview:
         notes_dir.mkdir(parents=True)
         (notes_dir / "review_notes.md").write_text(
             "## Code Review\nFindings.\n\n## Security Findings\nNone.\n"
+        )
+
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is True
+
+    def test_pass_with_per_issue_path(self, tmp_path):
+        # Per-issue file (docs/review_notes/<ISSUE>.md) avoids parallel-merge
+        # conflicts on a single shared docs/review_notes.md.
+        wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
+        notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs" / "review_notes"
+        notes_dir.mkdir(parents=True)
+        (notes_dir / "ISSUE-001.md").write_text(
+            "# Code Review\nFindings.\n\n# Security Findings\nNone.\n"
         )
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
@@ -933,17 +991,24 @@ class TestVerifyShipChecks:
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="build\tpass\t1m\ntest\tpass\t2m\n")):
             assert vc.verify_ship_checks("ISSUE-001") is True
 
-    def test_fail_when_no_checks_configured(self, repo_root):
-        """Empty stdout from gh pr checks means no CI — should fail."""
+    def test_skip_when_no_checks_configured(self, repo_root):
+        """Empty stdout from gh pr checks means no CI is registered.
+
+        This is legitimate for deploy-only repos (workflows all on
+        workflow_dispatch), so it is a non-blocking SKIP/PASS — not a failure.
+        """
         _setup_issues(repo_root, "### ISSUE-001: Test\n- PR: #42\n")
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout="")):
-            assert vc.verify_ship_checks("ISSUE-001") is False
+            assert vc.verify_ship_checks("ISSUE-001") is True
 
     def test_fail_when_checks_fail(self, repo_root):
+        # Failing checks DO emit rows to stdout (with a non-zero exit), so they
+        # must still FAIL — distinct from the "no checks at all" SKIP case.
         _setup_issues(repo_root, "### ISSUE-001: Test\n- PR: #42\n")
 
-        with patch.object(vc, "_run", return_value=_mock_run(1, stdout="build\tfail\n")):
+        with patch.object(vc, "_run", return_value=_mock_run(1, stdout="build\tfail\n")), \
+                patch.object(vc.time, "sleep", lambda *_a, **_k: None):
             assert vc.verify_ship_checks("ISSUE-001") is False
 
 

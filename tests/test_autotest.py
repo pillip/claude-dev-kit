@@ -392,3 +392,50 @@ class TestNonTargetTools:
         }
         out = run_hook(payload)
         assert out is None
+
+
+class TestFindJsRunner:
+    def _load(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        import importlib
+        import autotest
+        importlib.reload(autotest)
+        return autotest
+
+    def test_prefers_local_vitest_bin(self):
+        autotest = self._load()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            bin_dir = root / "node_modules" / ".bin"
+            bin_dir.mkdir(parents=True)
+            (bin_dir / "vitest").write_text("#!/bin/sh\n")
+            (root / "package.json").write_text('{"devDependencies": {"vitest": "^1"}}')
+            test_file = root / "src" / "a.test.ts"
+            test_file.parent.mkdir()
+            test_file.write_text("test('x', () => {})\n")
+
+            runner = autotest.find_js_runner(str(test_file))
+            assert runner is not None
+            assert runner[0].endswith(os.path.join("node_modules", ".bin", "vitest"))
+            assert runner[1] == "run"
+
+    def test_no_jest_fallback_for_vitest_project(self):
+        # vitest declared but no local bin and no global vitest/jest:
+        # must NOT fall back to `npx jest` (would mis-run TS/ESM tests).
+        autotest = self._load()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "package.json").write_text('{"devDependencies": {"vitest": "^1"}}')
+            test_file = root / "a.test.ts"
+            test_file.write_text("test('x', () => {})\n")
+
+            import shutil as _sh
+            from unittest.mock import patch
+
+            def fake_which(name):
+                return "/usr/bin/npx" if name == "npx" else None
+
+            with patch.object(_sh, "which", side_effect=fake_which):
+                runner = autotest.find_js_runner(str(test_file))
+            # Should choose npx vitest, never npx jest.
+            assert runner == ["/usr/bin/npx", "vitest", "run"]

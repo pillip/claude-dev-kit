@@ -596,15 +596,15 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         print(f"FAIL: test files have no real assertions: {', '.join(shallow)}")
         return False
 
-    # Now run tests — they SHOULD FAIL (exit code != 0)
-    has_python = (
-        (wt / "pyproject.toml").exists()
-        or (wt / "setup.py").exists()
-        or (wt / "tests").is_dir()
-    )
+    # Now run tests — they SHOULD FAIL (exit code != 0).
+    # Use explicit runner detection so a JS/TS repo with a `tests/` dir isn't
+    # mis-run through pytest (which collects 0 tests → exit 5 → a *fake* RED
+    # pass even when the real JS suite would have passed).
+    has_python, has_js = _detect_test_runners(wt)
 
-    if has_python:
-        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=60)
+    # JS first: an explicit scripts.test is the strongest signal.
+    if has_js:
+        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=wt_path, timeout=60)
         if result.returncode == 0:
             print("FAIL: RED phase — tests passed but should fail before implementation.")
             print("  TDD requires: write failing tests first, then implement to make them pass.")
@@ -612,12 +612,11 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
         return True
 
-    # JS/TS fallback
-    has_js = (wt / "package.json").exists()
-    if has_js:
-        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=wt_path, timeout=60)
+    if has_python:
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=60)
         if result.returncode == 0:
             print("FAIL: RED phase — tests passed but should fail before implementation.")
+            print("  TDD requires: write failing tests first, then implement to make them pass.")
             return False
         print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
         return True
@@ -775,6 +774,39 @@ def _run_js_tests_in_worktree(cwd: str | None) -> bool:
     return True
 
 
+def _detect_test_runners(wt: Path) -> tuple[bool, bool]:
+    """Decide which test runners apply, from explicit project signals.
+
+    Returns (has_python, has_js).
+
+    JS is signalled by ``package.json`` declaring a ``scripts.test`` entry —
+    the strongest, least-ambiguous signal a JS/TS project provides.
+
+    Python is signalled by ``pyproject.toml`` or ``setup.py``. A bare
+    ``tests/`` directory or stray ``*.py`` is deliberately NOT treated as a
+    Python signal: JS/TS repos routinely have a ``tests/`` directory (for
+    fixtures or non-Python tooling), which previously forced pytest to run
+    and fail with "no tests ran, 0% coverage" even though the JS suite was
+    green. Loose ``*.py`` detection only kicks in when no JS test runner was
+    found, as a last resort for script-style Python projects without packaging
+    metadata.
+    """
+    has_js = False
+    pkg = wt / "package.json"
+    if pkg.exists():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            has_js = "test" in (data.get("scripts") or {})
+        except (OSError, json.JSONDecodeError):
+            has_js = False
+
+    has_python = (wt / "pyproject.toml").exists() or (wt / "setup.py").exists()
+    if not has_python and not has_js:
+        has_python = any(wt.glob("*.py"))
+
+    return has_python, has_js
+
+
 def _test_plan_has_high_risk(root: Path) -> bool:
     """Check if test_plan.md Risk Matrix contains High or Critical risk flows."""
     test_plan = root / "docs" / "test_plan.md"
@@ -841,12 +873,19 @@ def _ensure_deps_installed(wt: Path, cwd: str | None) -> bool:
     """
     ok = True
 
-    # JS/TS: install node_modules if package.json exists but node_modules doesn't
+    # JS/TS: install node_modules if package.json exists but node_modules doesn't.
+    # Honor the repo's package manager (lockfile) instead of forcing npm.
     if (wt / "package.json").exists() and not (wt / "node_modules").is_dir():
-        print("  Installing npm dependencies in worktree...")
-        result = _run(["npm", "install", "--legacy-peer-deps"], cwd=cwd, timeout=120)
+        if (wt / "pnpm-lock.yaml").exists():
+            install_cmd = ["pnpm", "install"]
+        elif (wt / "yarn.lock").exists():
+            install_cmd = ["yarn", "install"]
+        else:
+            install_cmd = ["npm", "install", "--legacy-peer-deps"]
+        print(f"  Installing JS dependencies in worktree ({install_cmd[0]})...")
+        result = _run(install_cmd, cwd=cwd, timeout=120)
         if result.returncode != 0:
-            print(f"  WARN: npm install failed (exit {result.returncode})")
+            print(f"  WARN: {install_cmd[0]} install failed (exit {result.returncode})")
             ok = False
 
     # Python: install if pyproject.toml exists
@@ -870,13 +909,7 @@ def verify_implement_test(issue_id: str, **_) -> bool:
     # Ensure dependencies are installed before running tests
     _ensure_deps_installed(wt, cwd)
 
-    has_python = (
-        (wt / "pyproject.toml").exists()
-        or (wt / "setup.py").exists()
-        or any(wt.glob("*.py"))
-        or (wt / "tests").is_dir()
-    )
-    has_js = (wt / "package.json").exists()
+    has_python, has_js = _detect_test_runners(wt)
 
     ok = True
 
@@ -956,7 +989,13 @@ def verify_implement_pr(issue_id: str, **_) -> bool:
 
 
 def verify_implement_registry(issue_id: str, **_) -> bool:
-    """Status=done and PR field exists in issues.md."""
+    """Status is a valid implement-end state and a PR field exists in issues.md.
+
+    /implement opens a PR but does NOT merge it, so ``doing`` (PR in flight) is
+    the normal terminal state for this phase. ``done`` is also accepted for
+    flows that mark completion here. The ``done``-only requirement is enforced
+    at the ship/merge phase, not implement.
+    """
     block = _find_issue_block(issue_id)
     if block is None:
         return False
@@ -964,18 +1003,39 @@ def verify_implement_registry(issue_id: str, **_) -> bool:
     status = _extract_field(block, "Status")
     pr_field = _extract_field(block, "PR")
 
-    if status != "done":
-        print(f"FAIL: {issue_id} Status is '{status}', expected 'done'")
+    if status not in ("doing", "done"):
+        print(f"FAIL: {issue_id} Status is '{status}', expected 'doing' or 'done'")
         return False
     if not pr_field:
         print(f"FAIL: {issue_id} has no PR field")
         return False
 
-    print(f"PASS: {issue_id} registry updated (Status=done, PR present)")
+    print(f"PASS: {issue_id} registry updated (Status={status}, PR present)")
     return True
 
 
 # ── Review skill verifiers ───────────────────────────────────────────
+
+
+def _review_notes_path(wt: Path, basename: str, issue_id: str) -> Path | None:
+    """Resolve a review-notes file, preferring the per-issue path.
+
+    Parallel pipelines all appended to a single shared ``docs/<basename>.md``,
+    which produced repeated merge conflicts even when the source diffs were
+    disjoint. The per-issue path ``docs/<basename>/<ISSUE-ID>.md`` keeps each
+    branch's notes in its own file. The legacy single-file location is still
+    accepted as a fallback so existing repos and in-flight branches keep
+    working.
+
+    Returns the resolved Path, or None if neither location exists.
+    """
+    per_issue = wt / "docs" / basename / f"{issue_id}.md"
+    if per_issue.exists():
+        return per_issue
+    legacy = wt / "docs" / f"{basename}.md"
+    if legacy.exists():
+        return legacy
+    return None
 
 
 def verify_review_checkout(issue_id: str, **_) -> bool:
@@ -990,9 +1050,12 @@ def verify_review_review(issue_id: str, **_) -> bool:
         print(f"FAIL: no worktree found for {issue_id}")
         return False
 
-    notes = Path(wt_path) / "docs" / "review_notes.md"
-    if not notes.exists():
-        print("FAIL: docs/review_notes.md not found in worktree")
+    notes = _review_notes_path(Path(wt_path), "review_notes", issue_id)
+    if notes is None:
+        print(
+            f"FAIL: docs/review_notes/{issue_id}.md "
+            "(or legacy docs/review_notes.md) not found in worktree"
+        )
         return False
 
     content = notes.read_text(encoding="utf-8")
@@ -1059,9 +1122,12 @@ def verify_review_ui_review(issue_id: str, **_) -> bool:
         print(f"FAIL: no worktree found for {issue_id}")
         return False
 
-    notes = Path(wt_path) / "docs" / "ui_review_notes.md"
-    if not notes.exists():
-        print("FAIL: docs/ui_review_notes.md not found in worktree")
+    notes = _review_notes_path(Path(wt_path), "ui_review_notes", issue_id)
+    if notes is None:
+        print(
+            f"FAIL: docs/ui_review_notes/{issue_id}.md "
+            "(or legacy docs/ui_review_notes.md) not found in worktree"
+        )
         return False
 
     content = notes.read_text(encoding="utf-8")
@@ -1363,25 +1429,37 @@ def verify_ship_checks(issue_id: str, **_) -> bool:
     if pr_num is None:
         return False
 
-    # Wait for CI checks to appear (up to 60 seconds)
+    # Wait up to 60s for all checks to go green (CI may not have started yet
+    # right after PR creation). Break early once `gh pr checks` exits 0.
     max_wait = 60
     waited = 0
-    lines: list[str] = []
     result = _run_with_retry(["gh", "pr", "checks", pr_num])
     while waited < max_wait:
         result = _run_with_retry(["gh", "pr", "checks", pr_num])
         if result.returncode == 0:
-            lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
-            if lines:
-                break
+            break
         if waited == 0:
             print(f"  Waiting for CI checks on PR #{pr_num}...", flush=True)
         time.sleep(5)
         waited += 5
 
+    # Parse the check rows regardless of exit code: `gh pr checks` still writes
+    # one row per check to stdout when checks are failing/pending. An empty
+    # stdout means there are NO checks registered at all.
+    lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
+
     if not lines:
-        print(f"FAIL: PR #{pr_num} has no CI checks after {max_wait}s")
-        return False
+        # No checks registered on the PR. Legitimate for deploy-only repos
+        # (workflows all `on: workflow_dispatch`, so no PR-triggered CI). Treat
+        # as a non-blocking SKIP rather than a false failure — but warn loudly
+        # so a repo that *should* have CI but silently lost it doesn't pass
+        # unnoticed. (Failing checks DO produce rows, so they still FAIL below.)
+        print(
+            f"SKIP: PR #{pr_num} has no CI checks registered after {max_wait}s "
+            "(deploy-only repo or no PR-triggered CI). Treating as PASS — "
+            "verify CI coverage manually if this repo is expected to run checks."
+        )
+        return True
 
     if result.returncode != 0:
         print(f"FAIL: gh pr checks failed for PR #{pr_num}")

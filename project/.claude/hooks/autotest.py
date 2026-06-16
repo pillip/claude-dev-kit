@@ -67,14 +67,68 @@ def find_js_test(filepath: str) -> str | None:
     return None
 
 
-def find_js_runner() -> list[str] | None:
-    """Detect available JS test runner."""
+def _find_up(start_dir: str, *relpaths: str) -> str | None:
+    """Walk up from start_dir, returning the first existing relpath match."""
+    d = os.path.abspath(start_dir)
+    while True:
+        for rel in relpaths:
+            cand = os.path.join(d, rel)
+            if os.path.exists(cand):
+                return cand
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+
+def _pkg_has_dep(start_dir: str, dep: str) -> bool:
+    """True if the nearest package.json declares `dep` in (dev)dependencies."""
+    pkg = _find_up(start_dir, "package.json")
+    if not pkg:
+        return False
+    try:
+        with open(pkg, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return any(
+        dep in (data.get(key) or {})
+        for key in ("dependencies", "devDependencies")
+    )
+
+
+def find_js_runner(test_file: str) -> list[str] | None:
+    """Detect the JS test runner, preferring locally-installed binaries.
+
+    `shutil.which` only sees the global PATH, but vitest/jest are almost always
+    installed locally under `node_modules/.bin`. Missing the local binary used
+    to fall back to `npx jest`, which can't run TS/ESM test files and produced
+    a false "Test failed" on every edit even when vitest was green. So:
+      1. Prefer a local `node_modules/.bin/{vitest,jest}` near the test file.
+      2. If the project declares vitest but has no local binary yet, use
+         `npx vitest` — never fall back to jest for a vitest project.
+      3. Only then consider a global vitest/jest, and `npx jest` last.
+    """
+    start = os.path.dirname(os.path.abspath(test_file))
+    has_vitest = _pkg_has_dep(start, "vitest")
+
+    local_vitest = _find_up(start, os.path.join("node_modules", ".bin", "vitest"))
+    if local_vitest:
+        return [local_vitest, "run"]
+    local_jest = _find_up(start, os.path.join("node_modules", ".bin", "jest"))
+    if local_jest:
+        return [local_jest, "--no-coverage"]
+
+    npx = shutil.which("npx")
+    if has_vitest and npx:
+        return [npx, "vitest", "run"]
     if shutil.which("vitest"):
         return ["vitest", "run"]
     if shutil.which("jest"):
         return ["jest", "--no-coverage"]
-    npx = shutil.which("npx")
-    if npx:
+    # Don't run jest against a vitest project's TS/ESM tests — guaranteed false
+    # failure. Only use the npx jest fallback when vitest isn't in play.
+    if npx and not has_vitest:
         return [npx, "jest", "--no-coverage"]
     return None
 
@@ -108,7 +162,7 @@ def run_python_test(test_file: str) -> dict | None:
 
 
 def run_js_test(test_file: str) -> dict | None:
-    runner = find_js_runner()
+    runner = find_js_runner(test_file)
     if not runner:
         return None
 

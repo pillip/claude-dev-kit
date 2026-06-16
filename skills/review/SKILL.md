@@ -150,7 +150,7 @@ Steps:
    Run: `python3 scripts/verify_visual_diff.py --project-path $WT --threshold 5`
    This is a **non-blocking advisory signal**, NOT a gate. Pixel comparison across different renderers (Figma vs Chromium) inherently produces false positives due to font hinting, anti-aliasing, and sub-pixel rendering differences.
    - Generates diff images in `figma-export/visual-diff/` (red = real diff, yellow = AA)
-   - Log the diff percentage in `docs/review_notes.md` for the reviewer to assess
+   - Log the diff percentage in `docs/review_notes/$ARGUMENTS.md` for the reviewer to assess
    - If diff > 5%: flag as a **warning** in review notes — reviewer should inspect the diff images
    - Do NOT block the review based on pixel diff alone. The **figma-compliance checkpoint** (step 3.5) is the authoritative Figma fidelity gate.
 
@@ -158,7 +158,7 @@ Steps:
    Ask ui-reviewer subagent to perform UI state review:
    - Pass the UI context files gathered in step 3 plus `docs/review_lessons.md`.
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
-   - Output: `docs/ui_review_notes.md` with severity-classified findings.
+   - Output: `docs/ui_review_notes/$ARGUMENTS.md` with severity-classified findings.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill review --phase ui-review --issue $ARGUMENTS`
@@ -190,7 +190,7 @@ Steps:
 > Run: `bash scripts/checkpoint.sh --skill review --phase test-quality --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-5) Update docs/review_notes.md (inside `$WT/`) with sections:
+5) Update docs/review_notes/$ARGUMENTS.md (inside `$WT/`) with sections:
    - **Code Review**: findings, changes, follow-ups.
    - **Security Findings**: severity-classified list with remediation steps.
    - **UI Review** (from ui-reviewer, if applicable): State Coverage, Copy, Tokens, Accessibility.
@@ -224,15 +224,15 @@ These are registry files managed only on main. Always use `bash scripts/registry
 
 ## Error Handling
 - If PR not found (issues.md has no PR field and `gh pr status` returns nothing): stop and report; suggest running `/implement` first.
-- If reviewer subagent fails: retry once; if still failing, skip automated review and log a warning in docs/review_notes.md.
+- If reviewer subagent fails: retry once; if still failing, skip automated review and log a warning in docs/review_notes/$ARGUMENTS.md.
 - If applied fixes break tests:
   1. Revert the fix commits: `git checkout -- <files>` for unstaged or `git revert HEAD` for committed changes (inside `$WT/`).
   2. Re-run tests to confirm the branch is back to a passing state.
-  3. Log the failed fix attempt in docs/review_notes.md as a follow-up item.
+  3. Log the failed fix attempt in docs/review_notes/$ARGUMENTS.md as a follow-up item.
 - If `gh pr ready` fails: report the error but do not block — the PR can be manually marked ready.
 
 ## Rollback
 - Review changes are commits on the existing PR branch.
 - If review fixes must be fully undone: `git revert` the review commits (do not force-push).
-- docs/review_notes.md is append-only; no rollback needed for notes.
+- docs/review_notes/$ARGUMENTS.md is append-only; no rollback needed for notes.
 - Clean up worktree when done: `bash scripts/wt_cleanup.sh "$BRANCH"`.
