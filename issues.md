@@ -20,7 +20,6 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-014: Verify Claude Code feature/version support matrix (spike) _(track: platform, P1, 0.5d)_
 - [ ] ISSUE-015: Adopt agent effort tiers + refresh model references _(track: platform, P2, 1d)_
 - [ ] ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup _(track: platform, P2, 1d)_
 - [ ] ISSUE-017: Migrate kit packaging to Claude Code plugin system _(track: platform, P1, 1.5d — spec)_
@@ -43,6 +42,7 @@
 - [x] ISSUE-011: Kill WebFetch reference fabrication — image-grounded references only _(track: platform, P1, 0.5d)_
 - [x] ISSUE-012: Reference Anchor tuning — 2-3 strong cues + 1 literal quote _(track: platform, P2, 0.5d)_
 - [x] ISSUE-013: Consolidate ui-reviewer / design-auditor agents — sharpen role boundaries _(track: platform, P2, 1d)_
+- [x] ISSUE-014: Verify Claude Code feature/version support matrix (spike) _(track: platform, P1, 0.5d)_
 - [x] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
 - [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
@@ -896,11 +896,11 @@ Revert both agent files. Both agents resume with overlapping checklists (today's
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-06-16)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-014-cc-feature-matrix
 - GH-Issue:
-- PR:
+- PR: #38
 - Depends-On: none
 
 #### Goal
