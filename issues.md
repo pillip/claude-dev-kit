@@ -20,7 +20,6 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} _(track: platform, P2, 1d)_
 - [ ] ISSUE-025: Model packs/ as plugin components; retire bespoke pack scripts _(track: platform, P2, 1.5d)_
 - [ ] ISSUE-026: Plugin distribution + /kit: namespacing + standalone short-name option _(track: platform, P2, 1d)_
 - [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d)_
@@ -56,6 +55,7 @@
 - [x] ISSUE-028: Remove lint enforcement from the kit (autoformat hook + linter configs) _(track: platform, P2, 0.5d)_
 
 ### Drop
+- [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
 
 ---
 
@@ -1425,12 +1425,14 @@ Revert to `worktree.sh root` resolution everywhere; the symlink path remains. No
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: drop
 - Owner:
 - Branch:
 - GH-Issue:
 - PR:
 - Depends-On: ISSUE-023
+
+> **Dropped 2026-06-22.** Verified (claude-code-guide vs official docs): `${CLAUDE_PLUGIN_DATA}` resolves to a **single global dir per plugin** (`~/.claude/plugins/data/{id}/`), shared across all projects, intended for persistent tooling (deps/caches) — **not** per-project ephemeral state. Moving `.claude/run/` state there would collide across projects; the `.claude-kit/` freeze marker is worktree-scoped and must stay in the worktree (freeze_guard reads `repo_root/.claude-kit/`). The kit's state is already correctly placed, so this issue is a no-op and is dropped. SPEC-017 + cc_feature_matrix corrected accordingly.
 
 #### Goal
 `.claude-kit/` markers and `.claude/run/` state write under `${CLAUDE_PLUGIN_DATA}` when present (surviving plugin updates), with the current paths as fallback.
@@ -1573,7 +1575,7 @@ Remove the marketplace/distribution config and README plugin section; standalone
 - Branch:
 - GH-Issue:
 - PR:
-- Depends-On: ISSUE-022, ISSUE-023, ISSUE-024, ISSUE-025, ISSUE-026
+- Depends-On: ISSUE-022, ISSUE-023, ISSUE-025, ISSUE-026
 
 #### Goal
 `install_project.sh` and the now-dead install scripts are removed, and the docs are flipped to plugin-first, after the plugin path is validated at parity with the installer.
@@ -1589,7 +1591,7 @@ Remove the marketplace/distribution config and README plugin section; standalone
 #### Acceptance Criteria (DoD)
 - [ ] Given the repo, when searched, then `install_project.sh` and dead install scripts are gone and nothing references them.
 - [ ] Given the docs, when read, then plugin install is the primary documented path.
-- [ ] Given ISSUE-022–026, when all are done, then this issue proceeds (gated on parity).
+- [ ] Given ISSUE-022/023/025/026, when all are done, then this issue proceeds (gated on parity).
 
 #### Implementation Notes
 - This is the only destructive step; do not start it until ISSUE-022–026 have landed and parity is confirmed.
