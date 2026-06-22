@@ -18,8 +18,11 @@ fi
 
 BRANCH="$1"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Prefer ${CLAUDE_PLUGIN_ROOT} for locating sibling scripts; fall back to this
+# script's directory (standalone). ISSUE-023.
+KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd -P)}"
 
-WT="$(bash "$SCRIPT_DIR/worktree.sh" create "$BRANCH")"
+WT="$(bash "$KIT_ROOT/scripts/worktree.sh" create "$BRANCH")"
 
 # Fallback freeze-marker write. On builds that fire the `WorktreeCreate` hook
 # (see project/.claude/hooks/worktree_freeze.py) this is redundant but idempotent;
