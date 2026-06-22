@@ -1,0 +1,45 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 4,
+      "tag": "dead-code",
+      "what": "_legacy_round never called"
+    },
+    {
+      "line": 10,
+      "tag": "missing-validation",
+      "what": "negative tax_rate"
+    },
+    {
+      "line": 10,
+      "tag": "missing-validation",
+      "what": "negative prices"
+    },
+    {
+      "line": 10,
+      "tag": "missing-validation",
+      "what": "empty list"
+    },
+    {
+      "line": 11,
+      "tag": "simplification",
+      "what": "use sum(prices)"
+    },
+    {
+      "line": 17,
+      "tag": "simplification",
+      "what": "use comprehension"
+    },
+    {
+      "line": 20,
+      "tag": "missing-validation",
+      "what": "KeyError on name"
+    },
+    {
+      "line": 17,
+      "tag": "weak-typing",
+      "what": "tighten list[dict]"
+    }
+  ]
+}

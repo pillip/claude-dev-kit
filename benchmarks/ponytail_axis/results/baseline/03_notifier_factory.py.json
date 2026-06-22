@@ -1,0 +1,50 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 5,
+      "tag": "missing-return-type",
+      "what": "annotate create"
+    },
+    {
+      "line": 4,
+      "tag": "no-abstraction",
+      "what": "factory one kind no base"
+    },
+    {
+      "line": 8,
+      "tag": "no-supported-kinds-list",
+      "what": "list valid kinds"
+    },
+    {
+      "line": 11,
+      "tag": "no-abstraction",
+      "what": "no Notifier protocol"
+    },
+    {
+      "line": 13,
+      "tag": "side-effect-in-library",
+      "what": "print not logger"
+    },
+    {
+      "line": 17,
+      "tag": "unnecessary-instantiation",
+      "what": "new factory each call"
+    },
+    {
+      "line": 18,
+      "tag": "hardcoded-kind",
+      "what": "hardcodes email"
+    },
+    {
+      "line": 1,
+      "tag": "missing-tests",
+      "what": "no tests"
+    },
+    {
+      "line": 4,
+      "tag": "class-order",
+      "what": "forward ref"
+    }
+  ]
+}

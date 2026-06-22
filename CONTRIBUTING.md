@@ -49,6 +49,24 @@ Thanks for your interest in contributing!
 2. Run `python3 scripts/gen_skills.py` to generate `SKILL.md`
 3. Never edit `SKILL.md` directly -- always edit the `.tmpl` file
 
+## Marking Tech Debt (KIT-DEBT)
+
+When you intentionally defer a simplification or take a shortcut, mark it inline so it
+becomes a *tracked* obligation instead of silent rot. Every marker must carry a
+**ceiling** (the constraint that makes the shortcut acceptable today) and an
+**upgrade trigger** (the condition that forces a revisit):
+
+```python
+# KIT-DEBT(ceiling=<=100 items, trigger=list grows unbounded or p95 > 50ms): linear scan; fine at current scale
+```
+```js
+// KIT-DEBT(ceiling=single region, trigger=multi-region rollout): hardcoded endpoint
+```
+
+- A marker **without** `trigger=` is flagged `no-trigger` ("later means never") — avoid it.
+- Harvest the ledger any time with `python3 scripts/debt_harvest.py` (use `--json` for tooling).
+- `/review` runs this as a non-blocking advisory phase and surfaces no-trigger markers in the review notes.
+
 ## Running Tests
 
 ```bash

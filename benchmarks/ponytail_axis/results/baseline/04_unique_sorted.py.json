@@ -1,0 +1,35 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 5,
+      "tag": "reinventing-set",
+      "what": "use dict.fromkeys/set"
+    },
+    {
+      "line": 7,
+      "tag": "unnecessary-flag-variable",
+      "what": "use not in"
+    },
+    {
+      "line": 13,
+      "tag": "reinventing-sort",
+      "what": "use sorted()"
+    },
+    {
+      "line": 4,
+      "tag": "no-none-guard",
+      "what": "None raises"
+    },
+    {
+      "line": 4,
+      "tag": "no-tests",
+      "what": "no tests"
+    },
+    {
+      "line": 1,
+      "tag": "docstring-incomplete",
+      "what": "docstring vague"
+    }
+  ]
+}

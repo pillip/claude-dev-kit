@@ -1,0 +1,30 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 4,
+      "tag": "yagni",
+      "what": "factory one impl"
+    },
+    {
+      "line": 16,
+      "tag": "yagni",
+      "what": "new factory each call"
+    },
+    {
+      "line": 11,
+      "tag": "yagni",
+      "what": "EmailNotifier wraps print"
+    },
+    {
+      "line": 5,
+      "tag": "delete",
+      "what": "dead dispatch"
+    },
+    {
+      "line": 16,
+      "tag": "shrink",
+      "what": "collapse notify_user"
+    }
+  ]
+}

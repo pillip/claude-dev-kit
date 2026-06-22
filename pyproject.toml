@@ -21,6 +21,11 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "strict"
 
+[tool.coverage.run]
+# Benchmark fixtures, captured agent outputs, and one-shot scorers are
+# demonstration data, not shipped kit code — exclude from the coverage gate.
+omit = ["benchmarks/*"]
+
 [dependency-groups]
 dev = [
     "locust>=2.43.4",

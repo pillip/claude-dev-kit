@@ -1,0 +1,41 @@
+{
+  "_doc": "Ground truth for the over-engineering detection benchmark. Each planted item is a deliberately-introduced over-engineering instance. A finding 'hits' a planted item if its reported line falls within [line_lo-3, line_hi+3]. Tag match is recorded but not required for a hit (reviewers may phrase the same cut differently). Lean fixtures must yield NO substantive cut findings — any cut on them is a false positive.",
+  "fixtures": {
+    "01_settings_loader.py": {
+      "lean": false,
+      "planted": [
+        {"id": "abc-one-impl", "tag": "yagni", "line_lo": 6, "line_hi": 9, "what": "SettingsSource ABC with a single implementation"},
+        {"id": "manual-json", "tag": "stdlib", "line_lo": 17, "line_hi": 22, "what": "hand-rolled JSON parsing; use json.load"}
+      ]
+    },
+    "02_order_totals.py": {
+      "lean": false,
+      "planted": [
+        {"id": "dead-legacy-round", "tag": "delete", "line_lo": 4, "line_hi": 7, "what": "_legacy_round is never called"},
+        {"id": "manual-sum", "tag": "stdlib", "line_lo": 11, "line_hi": 13, "what": "manual accumulation loop; use sum()"},
+        {"id": "manual-map", "tag": "shrink", "line_lo": 18, "line_hi": 21, "what": "append loop; use a comprehension"}
+      ]
+    },
+    "03_notifier_factory.py": {
+      "lean": false,
+      "planted": [
+        {"id": "factory-one-product", "tag": "yagni", "line_lo": 4, "line_hi": 8, "what": "NotifierFactory abstracts a single product"}
+      ]
+    },
+    "04_unique_sorted.py": {
+      "lean": false,
+      "planted": [
+        {"id": "manual-dedup", "tag": "stdlib", "line_lo": 5, "line_hi": 12, "what": "nested-loop dedup; use set()"},
+        {"id": "bubble-sort", "tag": "stdlib", "line_lo": 13, "line_hi": 18, "what": "hand-written bubble sort; use sorted()"}
+      ]
+    },
+    "05_lean_slugify.py": {
+      "lean": true,
+      "planted": []
+    },
+    "06_lean_withdraw.py": {
+      "lean": true,
+      "planted": []
+    }
+  }
+}

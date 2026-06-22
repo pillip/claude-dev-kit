@@ -1044,7 +1044,7 @@ def verify_review_checkout(issue_id: str, **_) -> bool:
 
 
 def verify_review_review(issue_id: str, **_) -> bool:
-    """review_notes.md has Code Review and Security Findings as markdown headers."""
+    """review_notes.md has Code Review, Security Findings, and Over-Engineering headers."""
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
         print(f"FAIL: no worktree found for {issue_id}")
@@ -1065,6 +1065,8 @@ def verify_review_review(issue_id: str, **_) -> bool:
         missing.append("Code Review")
     if not re.search(r"^#{1,6}\s+.*Security Findings", content, re.MULTILINE):
         missing.append("Security Findings")
+    if not re.search(r"^#{1,6}\s+.*Over-Engineering", content, re.MULTILINE):
+        missing.append("Over-Engineering")
 
     if missing:
         print(f"FAIL: review_notes.md missing header sections: {', '.join(missing)}")
@@ -1406,6 +1408,32 @@ def verify_review_figma_compliance(issue_id: str, **_) -> bool:
     return False
 
 
+def verify_review_debt(issue_id: str, **_) -> bool:
+    """Harvest KIT-DEBT markers — NON-BLOCKING advisory.
+
+    Always returns True (a debt ledger is informational, not a gate). Surfaces
+    markers missing an upgrade `trigger=` as silent-rot warnings the reviewer
+    should record in review notes. Scans the worktree if one exists, else the
+    main repo root.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    scan_path = wt_path or str(_repo_root())
+
+    result = _run(
+        ["python3", str(Path(__file__).resolve().parent / "debt_harvest.py"),
+         "--path", scan_path],
+        timeout=30,
+    )
+    if result.stdout:
+        for line in result.stdout.strip().splitlines():
+            print(f"  {line}")
+    if result.returncode != 0:
+        # Only a usage error (bad path) — non-blocking by design.
+        print("WARN: debt_harvest.py could not run — skipping debt ledger (non-blocking)")
+    print("PASS: debt ledger harvested (advisory — no-trigger markers are silent-rot risks)")
+    return True
+
+
 def verify_review_test(issue_id: str, **_) -> bool:
     """pytest exits 0 (inside worktree)."""
     return verify_implement_test(issue_id)
@@ -1690,6 +1718,7 @@ VERIFIERS = {
     ("review", "structural-match"): verify_review_structural_match,
     ("review", "layout"): verify_review_layout,
     ("review", "test-quality"): verify_review_test_quality,
+    ("review", "debt"): verify_review_debt,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,
     ("ship", "checks"): verify_ship_checks,
