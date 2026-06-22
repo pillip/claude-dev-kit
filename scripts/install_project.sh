@@ -40,21 +40,6 @@ python3 "$KIT_ROOT/scripts/ensure_permissions.py" \
 # Register merge=ours driver for shared registry files (issues.md, STATUS.md, CHANGELOG.md)
 git -C "$PROJ_ROOT" config merge.ours.driver true 2>/dev/null || true
 
-# ── Linter / Formatter tools ──────────────────────────────────────────
-# ruff (Python)
-if ! command -v ruff &>/dev/null; then
-  if command -v uv &>/dev/null; then
-    uv tool install ruff 2>/dev/null || true
-  else
-    pip install ruff 2>/dev/null || pip3 install ruff 2>/dev/null || true
-  fi
-fi
-
-# prettier (JS/TS/CSS/JSON)
-if ! command -v prettier &>/dev/null; then
-  npm install -g prettier 2>/dev/null || true
-fi
-
 # ── Expose kit scripts at the project root ────────────────────────────
 # Skill templates invoke `bash scripts/<name>` (checkpoint.sh, wt_setup.sh,
 # verify_checkpoint.py, …) from the repo root, and the permission allowlist is
@@ -77,10 +62,6 @@ if [ -e "$PROJ_ROOT/scripts" ] && [ ! -L "$PROJ_ROOT/scripts" ]; then
 else
   ln -sfn "$KIT_ROOT/scripts" "$PROJ_ROOT/scripts"
 fi
-
-# ── Linter config symlinks ────────────────────────────────────────────
-ln -sfn "$KIT_ROOT/linters/ruff.toml" "$PROJ_ROOT/ruff.toml"
-ln -sfn "$KIT_ROOT/linters/.prettierrc.json" "$PROJ_ROOT/.prettierrc.json"
 
 # ── Ignore the per-worktree freeze marker ─────────────────────────────
 # wt_setup.sh writes an absolute path into .claude-kit/freeze-dir.txt inside

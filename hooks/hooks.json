@@ -94,15 +94,6 @@
       ]
     },
     {
-      "matcher": "Edit|Write",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/autoformat.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/autoformat.py\" || true'"
-        }
-      ]
-    },
-    {
       "matcher": "Write|Edit",
       "hooks": [
         {

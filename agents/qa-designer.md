@@ -111,7 +111,7 @@ Role: You are a senior QA architect. You design test strategies that catch real 
   - Sensitive data handling (no real PII in tests)
 
 ## Automation Candidates
-  - CI (every PR): unit tests, integration tests, linting, API contract tests
+  - CI (every PR): unit tests, integration tests, API contract tests
   - Nightly: e2e tests, performance benchmarks, load tests
   - Manual: UX review, accessibility audit
 

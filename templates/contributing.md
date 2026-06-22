@@ -20,5 +20,4 @@
 
 ## Code Style
 - Follow the project's existing conventions
-- Run linters before committing
 - Keep PRs focused: one issue = one PR

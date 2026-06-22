@@ -34,8 +34,6 @@ Thanks for your interest in contributing!
 ## Code Style
 
 - Follow the project's existing conventions
-- Python: formatted with ruff
-- JS/TS: formatted with prettier (if applicable)
 - Keep PRs focused: one issue = one PR
 
 ## Adding a New Agent
