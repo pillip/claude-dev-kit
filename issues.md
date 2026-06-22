@@ -20,7 +20,6 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-025: Model packs/ as plugin components; retire bespoke pack scripts _(track: platform, P2, 1.5d)_
 - [ ] ISSUE-026: Plugin distribution + /kit: namespacing + standalone short-name option _(track: platform, P2, 1d)_
 - [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d)_
 
@@ -48,6 +47,7 @@
 - [x] ISSUE-017: Migrate kit packaging to Claude Code plugin system (SPEC) _(track: platform, P1, 1.5d — spec)_
 - [x] ISSUE-022: Plugin manifests + skill-hook path hygiene _(track: platform, P1, 1.5d)_
 - [x] ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT} (closes #34 bug class) _(track: platform, P1, 1d)_
+- [x] ISSUE-025: Model the sales pack as a dependent plugin (kit-sales → core) _(track: platform, P2, 1.5d)_
 - [x] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
 - [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
@@ -1475,12 +1475,14 @@ Revert to `.claude/run/` + worktree `.claude-kit/`. No data migration needed.
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P2
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-025-packs-components
 - GH-Issue:
-- PR:
+- PR: #47
 - Depends-On: ISSUE-022
+
+> **Scope correction (2026-06-22):** plugins are all-or-nothing — "optional components within one plugin" is **not supported** (verified vs docs). So the sales pack becomes its **own plugin** (`claude-dev-kit-sales`) declaring `dependencies: ["claude-dev-kit"]`. This issue adds that manifest; the marketplace that lists both plugins is **ISSUE-026**, and retiring `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py` is **ISSUE-027** (they must keep working during coexistence).
 
 #### Goal
 The `packs/` selection model is expressed via the plugin system (optional components or sub-plugins), and `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py` are adapted or retired — each retired script tied to the failure mode it caused.

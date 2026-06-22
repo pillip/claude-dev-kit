@@ -25,6 +25,20 @@ def test_plugin_json_valid_and_versioned():
     assert manifest["version"] == (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
+def test_sales_pack_is_a_dependent_plugin():
+    # ISSUE-025: optional packs can't be in-plugin components (plugins are
+    # all-or-nothing), so the sales pack is its own plugin depending on core.
+    sales = ROOT / "packs" / "sales" / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(sales.read_text(encoding="utf-8"))
+    assert manifest["name"] == "claude-dev-kit-sales"
+    for field in ("version", "description"):
+        assert manifest.get(field), f"sales plugin.json missing {field}"
+    core_name = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["name"]
+    deps = manifest.get("dependencies") or []
+    dep_names = [d if isinstance(d, str) else d.get("name") for d in deps]
+    assert core_name in dep_names, f"sales pack must depend on core plugin {core_name!r}"
+
+
 def test_hooks_json_parses_and_declares_events():
     hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     # The always-on hooks ported from settings.snippet.json (+ ISSUE-016 events).
