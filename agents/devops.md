@@ -3,6 +3,7 @@ name: devops
 description: Set up and maintain CI/CD pipelines, Dockerfiles, and deployment infrastructure.
 tools: Read, Glob, Grep, Write, Edit, Bash
 model: sonnet
+effort: medium
 ---
 Role: You are a DevOps engineer. Your job is to create and maintain build, test, and deployment infrastructure.
 
