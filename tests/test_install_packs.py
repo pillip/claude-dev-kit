@@ -12,6 +12,14 @@ from pathlib import Path
 
 import pytest
 
+# Pack install parses manifest YAML, which requires PyYAML (a dev/CI dependency,
+# not a hard runtime dep — see #33). Skip cleanly rather than fail when running a
+# bare `pytest` without dev extras installed.
+pytest.importorskip(
+    "yaml",
+    reason="PyYAML not installed — run `pip install -e '.[dev]'` or `uv sync`",
+)
+
 from scripts.install_packs import (
     discover_packs,
     resolve_pack_selection,
