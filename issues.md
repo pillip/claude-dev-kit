@@ -20,11 +20,11 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d)_
 
 ### Doing
 
 ### Waiting
+- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **blocked 2026-06-22**: destructive; un-block once a live `/plugin install` parity check passes (see the issue's Parity checklist). Deps 022/023/025/026 are done; only the live verification remains)_
 - [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d — **deferred 2026-06-14**: un-defer when sprint usage at N>1 produces a measurable signal worth analyzing)_
 - [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns)_
 - [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d — **deferred 2026-06-14**: structure value unverified; un-defer if review_lessons.md hits >20 entries or reviewer needs preamble injection)_
@@ -1574,7 +1574,7 @@ Remove the marketplace/distribution config and README plugin section; standalone
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: waiting
 - Owner:
 - Branch:
 - GH-Issue:
@@ -1598,7 +1598,15 @@ Remove the marketplace/distribution config and README plugin section; standalone
 - [ ] Given ISSUE-022/023/025/026, when all are done, then this issue proceeds (gated on parity).
 
 #### Implementation Notes
-- This is the only destructive step; do not start it until ISSUE-022–026 have landed and parity is confirmed.
+- This is the only destructive step; do not start it until ISSUE-022/023/025/026 have landed (they have) AND a live parity check passes (below).
+
+**Parity checklist (run in a real Claude Code session before deleting anything):**
+1. `/plugin marketplace add pillip/claude-dev-kit` then `/plugin install claude-dev-kit@claude-dev-kit` succeeds.
+2. A namespaced skill runs end-to-end: e.g. `/claude-dev-kit:implement` reaches its checkpoint flow; `checkpoint.sh` resolves `verify_checkpoint.py` via `${CLAUDE_PLUGIN_ROOT}` (ISSUE-023).
+3. The always-on hooks fire from `hooks.json` (agent_state writes `.claude/run/`; secret/dangerous guards trigger; `WorktreeCreate` writes the freeze marker — the matrix's last `test-verified` row, confirmed live here).
+4. `/freeze`,`/careful`,`/guard` skill-frontmatter hooks still block correctly under the plugin (script path resolves without `${CLAUDE_SKILL_DIR}`).
+5. `/plugin install claude-dev-kit-sales@claude-dev-kit` auto-enables core (declared dependency) and sales skills/agents load.
+6. Only after 1–5 pass: remove `install_project.sh` + `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py`, flip docs to plugin-first, and tie each removed script to the failure mode it caused.
 
 #### Tests
 - [ ] Grep guard: no references to removed installer scripts remain in docs or code.
