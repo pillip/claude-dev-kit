@@ -1,0 +1,50 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 17,
+      "tag": "resource-leak",
+      "what": "file never closed"
+    },
+    {
+      "line": 17,
+      "tag": "no-error-handling",
+      "what": "no try/except on IO"
+    },
+    {
+      "line": 19,
+      "tag": "fragile-parser",
+      "what": "hand-rolled JSON parse breaks on nested/commas"
+    },
+    {
+      "line": 20,
+      "tag": "unpack-error",
+      "what": "split(':') too many values"
+    },
+    {
+      "line": 19,
+      "tag": "empty-input",
+      "what": "empty file raises"
+    },
+    {
+      "line": 21,
+      "tag": "type-loss",
+      "what": "all values become strings"
+    },
+    {
+      "line": 25,
+      "tag": "unnecessary-indirection",
+      "what": "get_settings adds no value"
+    },
+    {
+      "line": 6,
+      "tag": "unused-abstraction",
+      "what": "ABC with one subclass"
+    },
+    {
+      "line": 1,
+      "tag": "missing-tests",
+      "what": "no tests"
+    }
+  ]
+}

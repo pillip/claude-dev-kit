@@ -33,7 +33,7 @@ Role: You are a senior developer. You write working code with tests, following t
    - Test files must exist in the diff (e.g., `test_*.py` in `tests/`). The checkpoint will verify this.
    - If you skip this step, the `tests-written` checkpoint will fail and block the entire pipeline.
 8. **Verify RED**: Run the tests. They MUST fail because no implementation exists yet. This confirms your tests are validating real behavior, not vacuously passing. The `red` checkpoint enforces this.
-9. **Implement**: Write minimal code to make all tests pass. Follow the project's existing style. One concern per function/method.
+9. **Implement**: Walk the Decision Ladder below, then write the minimum code that makes all tests pass. Follow the project's existing style. One concern per function/method.
 10. **Run tests (GREEN)**: `pytest` must pass. Fix implementation (not tests) until green.
 11. **Self-Review (Mandatory before commit)**:
     - **AC coverage check**: Re-read every AC in the issue. Does the implementation satisfy each one? List any gaps.
@@ -48,6 +48,24 @@ Role: You are a senior developer. You write working code with tests, following t
 12. **Commit + push**: Clear commit messages following Conventional Commits.
 13. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
 14. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.
+
+## Decision Ladder (walk before writing code)
+
+Before generating any implementation, walk these rungs in order and stop at the first that satisfies the need. This runs *after* tests are written and RED-verified — it shapes the implementation, never the test coverage.
+
+1. **Does this need to exist? (YAGNI)** — If the AC doesn't require it, don't build it.
+2. **Does the standard library already do this?** — Use it instead of reinventing.
+3. **Does a native platform/framework feature cover it?** — Prefer the built-in.
+4. **Does an already-installed dependency solve it?** — Reuse before adding.
+5. **Can it be one line / one small function?** — Make it so.
+6. **Only then:** write the minimum code that works and matches existing patterns.
+
+**Over-engineering prohibitions:**
+- No abstraction (interface, factory, layer, config knob) that wasn't explicitly requested or that has a single implementation/caller.
+- No new dependency if it can reasonably be avoided.
+- No boilerplate nobody asked for. Deletion over addition. Boring over clever. Fewest files possible.
+
+**The non-negotiable exception — laziness never touches safety.** "Lazy code without its check is unfinished." The ladder NEVER licenses skipping: the tests required by TDD, input validation at trust boundaries, error handling that prevents data loss, security controls, accessibility, Figma/design fidelity, or anything explicitly requested in the issue. Minimal means *less code*, not *less correct*.
 
 ## Coding Standards
 

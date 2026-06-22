@@ -665,7 +665,8 @@ class TestVerifyReviewReview:
         notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
         notes_dir.mkdir(parents=True)
         (notes_dir / "review_notes.md").write_text(
-            "# Code Review\nFindings here.\n\n# Security Findings\nNone.\n"
+            "# Code Review\nFindings here.\n\n# Security Findings\nNone.\n\n"
+            "# Over-Engineering\nLean already. Ship.\n"
         )
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
@@ -676,7 +677,8 @@ class TestVerifyReviewReview:
         notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
         notes_dir.mkdir(parents=True)
         (notes_dir / "review_notes.md").write_text(
-            "## Code Review\nFindings.\n\n## Security Findings\nNone.\n"
+            "## Code Review\nFindings.\n\n## Security Findings\nNone.\n\n"
+            "## Over-Engineering\nLean already. Ship.\n"
         )
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
@@ -689,11 +691,24 @@ class TestVerifyReviewReview:
         notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs" / "review_notes"
         notes_dir.mkdir(parents=True)
         (notes_dir / "ISSUE-001.md").write_text(
-            "# Code Review\nFindings.\n\n# Security Findings\nNone.\n"
+            "# Code Review\nFindings.\n\n# Security Findings\nNone.\n\n"
+            "# Over-Engineering\nLean already. Ship.\n"
         )
 
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
             assert vc.verify_review_review("ISSUE-001") is True
+
+    def test_fail_missing_over_engineering_section(self, tmp_path):
+        """Code Review + Security present but Over-Engineering missing must fail."""
+        wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"
+        notes_dir = tmp_path / "wt" / "issue" / "issue-001-slug" / "docs"
+        notes_dir.mkdir(parents=True)
+        (notes_dir / "review_notes.md").write_text(
+            "# Code Review\nFindings.\n\n# Security Findings\nNone.\n"
+        )
+
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is False
 
     def test_fail_missing_sections(self, tmp_path):
         wt_stdout = f"worktree {tmp_path}/wt/issue/issue-001-slug\n"

@@ -24,6 +24,10 @@
 - [ ] ISSUE-015: Adopt agent effort tiers + refresh model references _(track: platform, P2, 1d)_
 - [ ] ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup _(track: platform, P2, 1d)_
 - [ ] ISSUE-017: Migrate kit packaging to Claude Code plugin system _(track: platform, P1, 1.5d — spec)_
+- [ ] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
+- [ ] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
+- [ ] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
+- [ ] ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent _(track: platform, P2, 0.5d)_
 
 ### Doing
 
@@ -1085,3 +1089,212 @@ A reviewed SPEC (`docs/specs/SPEC-017.md`) defines how the kit is packaged as a 
 
 #### Rollback
 Abandon SPEC-017 (or mark `drop`). No runtime impact — the current installer remains in place until a future implementation issue replaces it.
+
+---
+
+### ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark)
+
+> Benchmarked from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (2026-06-22). The kit's review pipeline audits correctness, security, UI, a11y, and Figma fidelity — but has **no axis for over-engineering / minimal-code**. The kit's own TDD + Figma + multi-auditor structure is biased toward *adding* code, so a counterweight that flags unnecessary complexity is the missing dimension. ponytail's `/ponytail-review` proves the format works as a single compact pass.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec:
+- PRD-Ref: none (kit self-development; ponytail benchmark, conversation 2026-06-22)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+`reviewer` produces a dedicated **Over-Engineering** finding set (alongside Code Review / Security), and `/review` surfaces it in `docs/review_notes/$ARGUMENTS.md`, so PRs are graded on minimality as a first-class axis — not just correctness.
+
+#### Scope (In/Out)
+- In:
+  - Add an "Over-Engineering" checklist section to `agents/reviewer.md` using ponytail's tag taxonomy: **delete** (dead/speculative), **stdlib** (reinvented stdlib), **native** (dep doing the platform's job), **yagni** (abstraction with one impl), **shrink** (same logic, fewer lines).
+  - One-line-per-finding output format: `path:line: <tag> <what to cut> → <replacement>`, ending with net removable LOC; emit "Lean already. Ship." when nothing to cut.
+  - Add an **Over-Engineering** section to the review_notes output contract in `skills/review/SKILL.md.tmpl` (regenerate SKILL.md via `gen_skills.py`).
+  - Update `templates/review_notes.md` and (if present) `templates/review_lessons.md` to carry the new axis; allow review_lessons classification to include an `Over-Engineering` category.
+- Out:
+  - Auto-applying simplifications (reviewer still only fixes clear bugs per its existing NEVER-rewrite rule; over-engineering findings are reported, not auto-cut, unless trivial).
+  - A standalone `/simplify`-style skill (Claude Code already ships one; this is the *pipeline* axis, not an ad-hoc command).
+  - Quantitative LOC telemetry (that's ISSUE-020-adjacent / future).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a PR with a speculative abstraction used once, when `/review` runs, then the review notes contain a `yagni` finding naming the file:line and a concrete replacement.
+- [ ] Given a PR that reimplements a stdlib helper, when reviewed, then a `stdlib` finding is emitted.
+- [ ] Given a genuinely lean PR, when reviewed, then the Over-Engineering section reads "Lean already. Ship." (no false-positive padding).
+- [ ] Given the regenerated `skills/review/SKILL.md`, when diffed against the template, then it is in sync (gen_skills.py produces no further changes).
+- [ ] Given `agents/reviewer.md`, when read, then the new axis does not override the existing "NEVER rewrite/refactor during review" rule — findings are reported with severity, fixes limited to clear bugs.
+
+#### Implementation Notes
+- Reuse ponytail's exact audit phrasing as the seed prompt; adapt "L<line>" to the kit's `path:line` convention since reviews span multiple files.
+- Keep it a **section within `reviewer`**, not a new agent — avoids another subagent hop and keeps the single-pass review contract. (Revisit only if the combined prompt degrades focus.)
+- Severity mapping: `delete`/`stdlib`/`native` of risky surface → up to Medium; pure `shrink`/`yagni` → Low/advisory. Over-engineering is rarely a merge blocker by itself.
+
+#### Tests
+- [ ] reviewer prompt change is covered by a fixture review (if the repo has agent-output fixtures) OR a doc-lint test asserting the Over-Engineering section + tag taxonomy exist in `agents/reviewer.md`.
+- [ ] `gen_skills.py` round-trip test: regenerating leaves `skills/review/SKILL.md` unchanged (template is the source of truth).
+
+#### Rollback
+Remove the Over-Engineering section from `agents/reviewer.md` and the review_notes contract, regenerate SKILL.md. Review reverts to the current 4-axis behavior.
+
+---
+
+### ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark)
+
+> Benchmarked from ponytail (2026-06-22). `skills/implement` Phase 8 says "write minimal code" but gives no operational test for *minimal*. ponytail's six-rung Decision Ladder (YAGNI → stdlib → native → installed-dep → one-line → minimal) turns "minimal" into checkable gates. It complements — does not conflict with — the kit's TDD: ponytail's own rule is "lazy code without its check is unfinished," which is exactly the kit's RED/GREEN requirement.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec:
+- PRD-Ref: none (kit self-development; ponytail benchmark, conversation 2026-06-22)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+The developer subagent (`agents/developer.md`) and the implement Phase 8 prompt carry an explicit Decision Ladder the model must walk before generating code, so implementations default to the smallest correct change.
+
+#### Scope (In/Out)
+- In:
+  - Add the six-rung ladder + over-engineering prohibitions ("no abstractions not explicitly requested", "no new dependency if avoidable", "deletion over addition") to `agents/developer.md`.
+  - Add a short "Minimality gate" note to `skills/implement/SKILL.md.tmpl` Phase 8 (Implement minimal code), regenerate SKILL.md.
+  - Preserve the existing Figma structure-source prohibition and TDD ordering verbatim — the ladder is additive, placed before "write the code".
+- Out:
+  - Any change to the test-first ordering or checkpoints.
+  - Enforcement tooling (this is prompt guidance; measurement is future work).
+  - The mobile/desktop UI developer agents (can adopt the same block in a follow-up if it proves out on `developer.md` first).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `agents/developer.md`, when read, then it contains the six-rung ladder and the over-engineering prohibitions, positioned before code generation and after the TDD/check requirement.
+- [ ] Given the regenerated `skills/implement/SKILL.md`, when diffed against the template, then it is in sync.
+- [ ] Given the new block, when read alongside the existing "Self-Review Requirements" and Figma prohibition, then there is no contradictory instruction (ladder never licenses skipping tests, validation, or Figma fidelity).
+
+#### Implementation Notes
+- Keep the wording tight — the developer prompt is already long; a 6-line ladder + 3-line prohibition list, not a lecture.
+- Explicitly carve out the ponytail exception ("laziness never extends to validation/security/a11y/explicitly-requested work") so it cannot be read as license to cut corners on trust boundaries.
+
+#### Tests
+- [ ] Doc-lint/round-trip: `gen_skills.py` regeneration leaves `skills/implement/SKILL.md` in sync; assertion that the ladder block exists in `agents/developer.md`.
+
+#### Rollback
+Remove the ladder block from `agents/developer.md` and Phase 8; regenerate SKILL.md. No behavioral dependency elsewhere.
+
+---
+
+### ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark)
+
+> Benchmarked from ponytail's `/ponytail-debt` (2026-06-22). The kit has no structured convention for marking *intentionally deferred* simplifications, so deferrals become silent rot. ponytail requires each debt marker to carry a **ceiling** (the constraint that holds today) and an **upgrade trigger** (the condition that forces a revisit); markers without a trigger are flagged as silent-rot risk. This fits the kit's checkpoint philosophy: make the obligation explicit and machine-checkable.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec:
+- PRD-Ref: none (kit self-development; ponytail benchmark, conversation 2026-06-22)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A documented `KIT-DEBT:` marker convention (with mandatory ceiling + upgrade trigger), a `scripts/debt_harvest.py` that produces a ledger, and a non-blocking review checkpoint that flags markers missing a trigger as silent-rot risk.
+
+#### Scope (In/Out)
+- In:
+  - Define the marker grammar (e.g. `# KIT-DEBT(ceiling=…, trigger=…): <what was simplified>`) in `docs/` (or CONTRIBUTING.md) — choose a kit-namespaced token, not `ponytail:`.
+  - `scripts/debt_harvest.py`: grep the tree (excluding `.git`, `.venv`, `node_modules`, build output), parse markers, emit a ledger (location, simplification, ceiling, trigger); flag `no-trigger` entries; print "No KIT-DEBT. Clean ledger." when empty. Mirror the existing script conventions (argparse, exit codes, stdlib-only).
+  - A `/review` checkpoint phase (`debt`) wired through `verify_checkpoint.py` that runs the harvester as a **non-blocking warning** — surfaces no-trigger markers in review notes; does not fail the build.
+  - Unit tests under `tests/` following existing patterns.
+- Out:
+  - Auto-creating issues from debt markers (possible future link to issues.md).
+  - Making the checkpoint blocking (start advisory; promote later only if it earns it).
+  - Back-filling markers across the existing codebase.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given source files with valid `KIT-DEBT(ceiling=…, trigger=…)` markers, when `debt_harvest.py` runs, then the ledger lists each with its location, ceiling, and trigger.
+- [ ] Given a marker with no `trigger=`, when harvested, then it is flagged `no-trigger` in the ledger and counted in the summary.
+- [ ] Given a clean tree, when harvested, then it prints "No KIT-DEBT. Clean ledger." and exits 0.
+- [ ] Given `/review`, when the `debt` checkpoint runs, then no-trigger markers appear as a warning in `docs/review_notes/$ARGUMENTS.md` without failing the review.
+- [ ] Given malformed markers, when harvested, then the script does not crash (reports them as malformed, exits non-zero only on its own usage error, not on content).
+
+#### Implementation Notes
+- Reuse the excludes and grep approach already used elsewhere in `scripts/`; keep it stdlib-only (consistent with the kit's pyyaml-is-the-only-hard-dep stance).
+- Wire the checkpoint via the existing `verify_checkpoint.py --skill review --phase debt` dispatch so the SKILL template stays a single prefix-matchable command.
+- Keep it advisory first — a blocking debt gate on a young convention would just train people to omit markers.
+
+#### Tests
+- [ ] `debt_harvest.py`: valid markers parsed; no-trigger flagged; clean tree message; malformed markers handled.
+- [ ] `verify_checkpoint.py` review/debt phase returns warning (exit 0) and writes the ledger summary where review notes can pick it up.
+
+#### Rollback
+Delete `scripts/debt_harvest.py`, remove the `debt` checkpoint phase and the convention doc. No runtime dependency — markers are inert comments if the harvester is gone.
+
+---
+
+### ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent
+
+> Discovered 2026-06-22 while running the full suite during the ISSUE-018~020 work. On a venv without PyYAML, `tests/test_validate_pack_manifest.py` and `tests/test_install_packs.py` produce **23 hard failures**, all tracing to the lazy-fail guard added in #33 (`PyYAML is required for pack manifest parsing`). With PyYAML installed, all 36 tests pass. CI is unaffected (it `pip install`s pyyaml explicitly), but a contributor running bare `pytest` sees a misleading wall of red and cannot tell it apart from a real regression. This is the exact confusion that cost time this session.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec:
+- PRD-Ref: none (kit self-development; discovered during ISSUE-018~020, conversation 2026-06-22)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Running `pytest` without PyYAML yields clean **skips** (with a clear reason) for the pyyaml-dependent tests instead of 23 failures, so a bare local run is trustworthy and distinguishable from a real regression.
+
+#### Scope (In/Out)
+- In:
+  - Guard the pyyaml-dependent tests with `pytest.importorskip("yaml", reason="PyYAML not installed; install dev extras")` (module-level in `test_validate_pack_manifest.py` and `test_install_packs.py`, or via a shared fixture/conftest marker).
+  - Document the dev-dependency install path (`pip install -e '.[dev]'` / `uv sync`) in CONTRIBUTING's "Running Tests" section so the dep is obvious.
+- Out:
+  - Making PyYAML a hard runtime dependency (deliberately rejected in #33 — it lazy-fails at parse time by design; this issue is about *test* ergonomics, not runtime).
+  - Changing the production lazy-fail message or behavior.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a venv WITHOUT PyYAML, when `pytest` runs, then the pack-manifest/install tests report as skipped (not failed) with a reason naming PyYAML, and the overall run shows 0 failures attributable to a missing pyyaml.
+- [ ] Given a venv WITH PyYAML, when `pytest` runs, then those tests execute and pass exactly as today (no behavior change).
+- [ ] Given CONTRIBUTING.md, when read, then the dev-extras install command is documented in the test section.
+
+#### Implementation Notes
+- Prefer `importorskip` at module top — least invasive, no per-test edits, and the skip reason is visible in `-v` output.
+- Confirm no other test files import `yaml` indirectly through a helper; if so, guard those too.
+- Verify the coverage gate still holds (skipped tests don't execute their target code, but those modules are already exercised in CI where pyyaml is present).
+
+#### Tests
+- [ ] Meta: a check (or manual verification documented in the PR) that the suite reports skips, not failures, when `yaml` is uninstallable. A monkeypatch-based test that simulates `ModuleNotFoundError` for `yaml` is acceptable but optional.
+
+#### Rollback
+Remove the `importorskip` guards; behavior reverts to today's hard failures when PyYAML is absent. No runtime impact.

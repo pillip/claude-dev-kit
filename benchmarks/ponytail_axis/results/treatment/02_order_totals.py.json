@@ -1,0 +1,30 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 4,
+      "tag": "delete",
+      "what": "_legacy_round dead"
+    },
+    {
+      "line": 11,
+      "tag": "stdlib",
+      "what": "use sum()"
+    },
+    {
+      "line": 18,
+      "tag": "stdlib",
+      "what": "use comprehension"
+    },
+    {
+      "line": 10,
+      "tag": "correctness",
+      "what": "no validation"
+    },
+    {
+      "line": 17,
+      "tag": "correctness",
+      "what": "KeyError on name"
+    }
+  ]
+}

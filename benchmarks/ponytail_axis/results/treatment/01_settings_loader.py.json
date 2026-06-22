@@ -1,0 +1,35 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 6,
+      "tag": "yagni",
+      "what": "ABC single impl"
+    },
+    {
+      "line": 17,
+      "tag": "native",
+      "what": "use with open"
+    },
+    {
+      "line": 18,
+      "tag": "stdlib",
+      "what": "use json.load"
+    },
+    {
+      "line": 25,
+      "tag": "yagni",
+      "what": "get_settings indirection"
+    },
+    {
+      "line": 19,
+      "tag": "correctness",
+      "what": "comma/colon in values"
+    },
+    {
+      "line": 21,
+      "tag": "correctness",
+      "what": "type loss"
+    }
+  ]
+}

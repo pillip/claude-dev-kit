@@ -1,0 +1,30 @@
+{
+  "lean_verdict": false,
+  "findings": [
+    {
+      "line": 5,
+      "tag": "stdlib",
+      "what": "use dict.fromkeys"
+    },
+    {
+      "line": 7,
+      "tag": "shrink",
+      "what": "use not in"
+    },
+    {
+      "line": 13,
+      "tag": "stdlib",
+      "what": "use sorted()"
+    },
+    {
+      "line": 4,
+      "tag": "shrink",
+      "what": "return sorted(set(tags))"
+    },
+    {
+      "line": 1,
+      "tag": "delete",
+      "what": "no tests"
+    }
+  ]
+}

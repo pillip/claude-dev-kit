@@ -28,9 +28,10 @@ Steps:
    - `docs/architecture.md` — if exists (for conformance checks)
    - For UI issues, also read in parallel: `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`, `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`).
 
-   Ask reviewer subagent to perform code review + security audit:
+   Ask reviewer subagent to perform code review + security audit + over-engineering audit:
    - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
    - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
+   - Over-engineering (minimality axis): scan the diff for unnecessary complexity, tagging each finding `delete` / `stdlib` / `native` / `yagni` / `shrink`, one line per finding (`path:line: <tag> <what to cut> → <replacement>`), ending with net removable lines — or `Lean already. Ship.` if nothing to cut. This axis never overrides safety (validation, error handling, security, a11y, explicitly-requested work).
    - Pass gathered context (review_lessons, architecture) so the reviewer can identify recurring patterns.
 
 3.5) **Figma compliance check** (auto-skips if no Figma data) — **runs BEFORE UI review to ensure Figma fidelity first**:
@@ -117,9 +118,17 @@ Steps:
 > Run: `bash scripts/checkpoint.sh --skill review --phase test-quality --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
+4.7) **Tech-debt ledger** (advisory — harvests `KIT-DEBT` markers):
+
+> **CHECKPOINT — advisory (non-blocking)**
+> Run: `bash scripts/checkpoint.sh --skill review --phase debt --issue $ARGUMENTS`
+> Always exits 0. Lists every `KIT-DEBT(ceiling=…, trigger=…)` marker; flags markers missing a `trigger=` as **silent-rot risk**.
+> Record any `no-trigger` markers in the Over-Engineering / follow-ups section of the review notes so deferrals don't become permanent. Does NOT block the review.
+
 5) Update docs/review_notes/$ARGUMENTS.md (inside `$WT/`) with sections:
    - **Code Review**: findings, changes, follow-ups.
    - **Security Findings**: severity-classified list with remediation steps.
+   - **Over-Engineering**: tagged findings (`delete`/`stdlib`/`native`/`yagni`/`shrink`), one line each, ending with net removable lines — or `Lean already. Ship.`
    - **UI Review** (from ui-reviewer, if applicable): State Coverage, Copy, Tokens, Accessibility.
    - **Design Audit** (from design-auditor, if applicable): Token Consistency, Component Completeness, Philosophy Compliance.
    - **Accessibility Audit** (from a11y-auditor, if applicable): WCAG 2.1 AA findings and remediation.
