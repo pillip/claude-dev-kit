@@ -7,7 +7,7 @@ hooks:
     - matcher: Bash
       hooks:
         - type: command
-          command: "python3 ${CLAUDE_SKILL_DIR}/careful_guard.py"
+          command: "bash -c 'for D in \"$CLAUDE_PLUGIN_ROOT/skills/careful\" \"$CLAUDE_SKILL_DIR\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/skills/careful\"; do [ -n \"$D\" ] && [ -f \"$D/careful_guard.py\" ] && exec python3 \"$D/careful_guard.py\"; done; true'"
 ---
 Careful mode is now **active**. All Bash commands are screened for destructive patterns before execution.
 

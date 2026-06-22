@@ -20,7 +20,6 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-022: Plugin manifests + move /freeze /careful /guard hooks to hooks.json _(track: platform, P1, 1.5d)_
 - [ ] ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT} (closes #34 bug class) _(track: platform, P1, 1d)_
 - [ ] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} _(track: platform, P2, 1d)_
 - [ ] ISSUE-025: Model packs/ as plugin components; retire bespoke pack scripts _(track: platform, P2, 1.5d)_
@@ -49,6 +48,7 @@
 - [x] ISSUE-015: Adopt agent effort tiers + refresh model references _(track: platform, P2, 1d)_
 - [x] ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup _(track: platform, P2, 1d)_
 - [x] ISSUE-017: Migrate kit packaging to Claude Code plugin system (SPEC) _(track: platform, P1, 1.5d — spec)_
+- [x] ISSUE-022: Plugin manifests + skill-hook path hygiene _(track: platform, P1, 1.5d)_
 - [x] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
 - [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
@@ -1307,9 +1307,11 @@ Remove the `importorskip` guards; behavior reverts to today's hard failures when
 
 ---
 
-### ISSUE-022: Plugin manifests + move /freeze /careful /guard hooks to hooks.json
+### ISSUE-022: Plugin manifests + skill-hook path hygiene
 
-> SPEC-017 step 1 (Authoring & hooks migration). First, independently-revertable step of the phased-hybrid plugin migration. Adds native plugin packaging alongside the existing installer — no installer change yet.
+> SPEC-017 step 1. First, independently-revertable step of the phased-hybrid plugin migration. Adds native plugin packaging alongside the existing installer — no installer change yet.
+>
+> **Scope correction (2026-06-22):** the original premise — "move `/freeze`,`/careful`,`/guard` hooks to `hooks.json`" — was wrong. Per `hooks.md`, plugin **skills** DO honor frontmatter `hooks:` (the restriction is **agents-only**), so the skill hooks **stay in frontmatter**. The real defect was their use of the **undocumented `${CLAUDE_SKILL_DIR}`** variable; this issue fixes that resolution and corrects SPEC-017 + the feature matrix.
 
 - Track: platform
 - UI: false
@@ -1320,40 +1322,41 @@ Remove the `importorskip` guards; behavior reverts to today's hard failures when
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-022-plugin-manifests
 - GH-Issue:
-- PR:
+- PR: #43
 - Depends-On: none
 
 #### Goal
-The kit carries a valid `.claude-plugin/plugin.json`, `hooks/hooks.json`, and `.mcp.json`, and the hooks currently embedded in `/freeze`, `/careful`, `/guard` skill frontmatter are reproduced in `hooks.json` so they still fire under a plugin (where subagent frontmatter hooks are ignored).
+The kit carries a valid `.claude-plugin/plugin.json` and `hooks/hooks.json` (the already-always-on `settings.snippet.json` hooks, in plugin form), and `/freeze`,`/careful`,`/guard` keep their frontmatter hooks but resolve their guard scripts via documented variables (`${CLAUDE_PLUGIN_ROOT}` first, `${CLAUDE_PROJECT_DIR}` fallback) instead of the undocumented `${CLAUDE_SKILL_DIR}`.
 
 #### Scope (In/Out)
 - In:
-  - Author `.claude-plugin/plugin.json` (name, version, description), `hooks/hooks.json` (port the existing `project/.claude/settings.snippet.json` hook wiring), and `.mcp.json` (if any MCP servers ship).
-  - Move the `hooks:` blocks from `/freeze`, `/careful`, `/guard` skill frontmatter into `hooks.json` (per the confirmed plugin-subagent restriction in `docs/cc_feature_matrix.md` row 6).
-  - Tests proving the migrated hooks fire under a plugin-style layout (or a faithful simulation).
+  - Author `.claude-plugin/plugin.json` (name, version=VERSION, description) and `hooks/hooks.json` porting the always-on `settings.snippet.json` hooks via `${CLAUDE_PLUGIN_ROOT}`.
+  - Fix the `/freeze`,`/careful`,`/guard` skill hook commands to resolve the guard script via a documented-variable fallback chain (keeps `${CLAUDE_SKILL_DIR}` as one fallback so it can never regress).
+  - Correct `docs/specs/SPEC-017.md` and `docs/cc_feature_matrix.md` (agent-vs-skill: plugin skills DO support frontmatter hooks).
+  - Tests for manifest validity + skill-hook robustness.
 - Out:
-  - Path/root changes (`${CLAUDE_PLUGIN_ROOT}` is ISSUE-023).
+  - `.mcp.json` — the kit ships no MCP servers (YAGNI).
+  - Path/root changes for `scripts/` (`${CLAUDE_PLUGIN_ROOT}` resolution is ISSUE-023).
   - Removing or changing `install_project.sh` (ISSUE-027).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given the repo, when the plugin manifest is validated, then `.claude-plugin/plugin.json` + `hooks/hooks.json` parse and declare the kit's hooks.
-- [ ] Given a plugin-style install, when `/freeze`/`/careful`/`/guard` would have used frontmatter hooks, then the equivalent hooks fire from `hooks.json` instead.
-- [ ] Given the standalone (`.claude/`) install, when used, then existing hook behavior is unchanged (no regression during the coexistence window).
+- [x] Given the repo, when validated, then `.claude-plugin/plugin.json` (version matches VERSION) + `hooks/hooks.json` parse and declare the kit's always-on hook events.
+- [x] Given the skill hooks, when inspected, then they prefer `${CLAUDE_PLUGIN_ROOT}` and retain a `${CLAUDE_PROJECT_DIR}` fallback, and the referenced guard scripts exist.
+- [x] Given the standalone (`.claude/`) install, when used, then hook behavior is unchanged (the fallback chain still includes the prior resolution).
 
 #### Implementation Notes
-- Reuse the commondir-aware inline hook pattern already in `settings.snippet.json` so hooks resolve inside worktrees.
-- Keep frontmatter hooks for the standalone path during the window; `hooks.json` is the plugin path. Document the duplication (SPEC-017 trade-off).
+- Skill hooks stay in frontmatter (supported for plugin skills); only the script-path resolution changed.
+- `hooks.json` references scripts at their current `project/.claude/hooks/` location under `${CLAUDE_PLUGIN_ROOT}`; relocating them to a cleaner path is deferred to ISSUE-024.
 
 #### Tests
-- [ ] Manifest parse/lint for `plugin.json` + `hooks.json`.
-- [ ] Hook-fires-from-hooks.json test for freeze/careful/guard equivalents.
+- [x] `tests/test_plugin_manifest.py`: plugin.json valid + versioned; hooks.json declares events; skill hooks prefer documented vars; guard scripts exist; skill hooks NOT moved into hooks.json.
 
 #### Rollback
-Delete the manifests and restore frontmatter-only hooks. Standalone install is unaffected.
+Delete `.claude-plugin/plugin.json` + `hooks/hooks.json`, restore the `${CLAUDE_SKILL_DIR}` skill commands. Standalone install is unaffected.
 
 ---
 

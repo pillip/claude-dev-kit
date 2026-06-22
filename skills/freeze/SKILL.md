@@ -8,11 +8,11 @@ hooks:
     - matcher: "Edit"
       hooks:
         - type: command
-          command: "python3 ${CLAUDE_SKILL_DIR}/freeze_guard.py"
+          command: "bash -c 'for D in \"$CLAUDE_PLUGIN_ROOT/skills/freeze\" \"$CLAUDE_SKILL_DIR\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/skills/freeze\"; do [ -n \"$D\" ] && [ -f \"$D/freeze_guard.py\" ] && exec python3 \"$D/freeze_guard.py\"; done; true'"
     - matcher: "Write"
       hooks:
         - type: command
-          command: "python3 ${CLAUDE_SKILL_DIR}/freeze_guard.py"
+          command: "bash -c 'for D in \"$CLAUDE_PLUGIN_ROOT/skills/freeze\" \"$CLAUDE_SKILL_DIR\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/skills/freeze\"; do [ -n \"$D\" ] && [ -f \"$D/freeze_guard.py\" ] && exec python3 \"$D/freeze_guard.py\"; done; true'"
 ---
 Freeze mode activated.
 
