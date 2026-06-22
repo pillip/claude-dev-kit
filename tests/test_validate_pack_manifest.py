@@ -4,6 +4,14 @@ from pathlib import Path
 
 import pytest
 
+# Pack-manifest parsing requires PyYAML (a dev/CI dependency, not a hard runtime
+# dep — see #33). Skip cleanly rather than fail with a confusing wall of errors
+# when running a bare `pytest` without dev extras installed.
+pytest.importorskip(
+    "yaml",
+    reason="PyYAML not installed — run `pip install -e '.[dev]'` or `uv sync`",
+)
+
 from scripts.validate_pack_manifest import main, validate_packs
 
 

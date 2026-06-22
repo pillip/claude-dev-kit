@@ -24,10 +24,6 @@
 - [ ] ISSUE-015: Adopt agent effort tiers + refresh model references _(track: platform, P2, 1d)_
 - [ ] ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup _(track: platform, P2, 1d)_
 - [ ] ISSUE-017: Migrate kit packaging to Claude Code plugin system _(track: platform, P1, 1.5d — spec)_
-- [ ] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
-- [ ] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
-- [ ] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
-- [ ] ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent _(track: platform, P2, 0.5d)_
 
 ### Doing
 
@@ -47,6 +43,10 @@
 - [x] ISSUE-011: Kill WebFetch reference fabrication — image-grounded references only _(track: platform, P1, 0.5d)_
 - [x] ISSUE-012: Reference Anchor tuning — 2-3 strong cues + 1 literal quote _(track: platform, P2, 0.5d)_
 - [x] ISSUE-013: Consolidate ui-reviewer / design-auditor agents — sharpen role boundaries _(track: platform, P2, 1d)_
+- [x] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
+- [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
+- [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
+- [x] ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent _(track: platform, P2, 0.5d)_
 
 ### Drop
 
@@ -1105,11 +1105,11 @@ Abandon SPEC-017 (or mark `drop`). No runtime impact — the current installer r
 - PRD-Ref: none (kit self-development; ponytail benchmark, conversation 2026-06-22)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: chore/issues-ponytail-benchmark
 - GH-Issue:
-- PR:
+- PR: #36
 - Depends-On: none
 
 #### Goal
@@ -1160,11 +1160,11 @@ Remove the Over-Engineering section from `agents/reviewer.md` and the review_not
 - PRD-Ref: none (kit self-development; ponytail benchmark, conversation 2026-06-22)
 - Priority: P2
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: chore/issues-ponytail-benchmark
 - GH-Issue:
-- PR:
+- PR: #36
 - Depends-On: none
 
 #### Goal
@@ -1210,11 +1210,11 @@ Remove the ladder block from `agents/developer.md` and Phase 8; regenerate SKILL
 - PRD-Ref: none (kit self-development; ponytail benchmark, conversation 2026-06-22)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: chore/issues-ponytail-benchmark
 - GH-Issue:
-- PR:
+- PR: #36
 - Depends-On: none
 
 #### Goal
@@ -1265,11 +1265,11 @@ Delete `scripts/debt_harvest.py`, remove the `debt` checkpoint phase and the con
 - PRD-Ref: none (kit self-development; discovered during ISSUE-018~020, conversation 2026-06-22)
 - Priority: P2
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-021-pyyaml-skip
 - GH-Issue:
-- PR:
+- PR: #37
 - Depends-On: none
 
 #### Goal
