@@ -20,6 +20,12 @@
 ## Board
 
 ### Backlog
+- [ ] ISSUE-022: Plugin manifests + move /freeze /careful /guard hooks to hooks.json _(track: platform, P1, 1.5d)_
+- [ ] ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT} (closes #34 bug class) _(track: platform, P1, 1d)_
+- [ ] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} _(track: platform, P2, 1d)_
+- [ ] ISSUE-025: Model packs/ as plugin components; retire bespoke pack scripts _(track: platform, P2, 1.5d)_
+- [ ] ISSUE-026: Plugin distribution + /kit: namespacing + standalone short-name option _(track: platform, P2, 1d)_
+- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d)_
 
 ### Doing
 
@@ -1298,3 +1304,292 @@ Running `pytest` without PyYAML yields clean **skips** (with a clear reason) for
 
 #### Rollback
 Remove the `importorskip` guards; behavior reverts to today's hard failures when PyYAML is absent. No runtime impact.
+
+---
+
+### ISSUE-022: Plugin manifests + move /freeze /careful /guard hooks to hooks.json
+
+> SPEC-017 step 1 (Authoring & hooks migration). First, independently-revertable step of the phased-hybrid plugin migration. Adds native plugin packaging alongside the existing installer — no installer change yet.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; decomposed from SPEC-017)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+The kit carries a valid `.claude-plugin/plugin.json`, `hooks/hooks.json`, and `.mcp.json`, and the hooks currently embedded in `/freeze`, `/careful`, `/guard` skill frontmatter are reproduced in `hooks.json` so they still fire under a plugin (where subagent frontmatter hooks are ignored).
+
+#### Scope (In/Out)
+- In:
+  - Author `.claude-plugin/plugin.json` (name, version, description), `hooks/hooks.json` (port the existing `project/.claude/settings.snippet.json` hook wiring), and `.mcp.json` (if any MCP servers ship).
+  - Move the `hooks:` blocks from `/freeze`, `/careful`, `/guard` skill frontmatter into `hooks.json` (per the confirmed plugin-subagent restriction in `docs/cc_feature_matrix.md` row 6).
+  - Tests proving the migrated hooks fire under a plugin-style layout (or a faithful simulation).
+- Out:
+  - Path/root changes (`${CLAUDE_PLUGIN_ROOT}` is ISSUE-023).
+  - Removing or changing `install_project.sh` (ISSUE-027).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the repo, when the plugin manifest is validated, then `.claude-plugin/plugin.json` + `hooks/hooks.json` parse and declare the kit's hooks.
+- [ ] Given a plugin-style install, when `/freeze`/`/careful`/`/guard` would have used frontmatter hooks, then the equivalent hooks fire from `hooks.json` instead.
+- [ ] Given the standalone (`.claude/`) install, when used, then existing hook behavior is unchanged (no regression during the coexistence window).
+
+#### Implementation Notes
+- Reuse the commondir-aware inline hook pattern already in `settings.snippet.json` so hooks resolve inside worktrees.
+- Keep frontmatter hooks for the standalone path during the window; `hooks.json` is the plugin path. Document the duplication (SPEC-017 trade-off).
+
+#### Tests
+- [ ] Manifest parse/lint for `plugin.json` + `hooks.json`.
+- [ ] Hook-fires-from-hooks.json test for freeze/careful/guard equivalents.
+
+#### Rollback
+Delete the manifests and restore frontmatter-only hooks. Standalone install is unaffected.
+
+---
+
+### ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT}
+
+> SPEC-017 step 2. Replaces the repo-root `scripts/` symlink assumption that caused the #34 bug class. Also the place to finally exercise `WorktreeCreate` (ISSUE-014/016 `needs-verify`) under a plugin layout.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; decomposed from SPEC-017)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-022
+
+#### Goal
+`checkpoint.sh`, `worktree.sh`, and skill commands resolve the kit's `scripts/` location via `${CLAUDE_PLUGIN_ROOT}` when present, falling back to the current symlink resolution when it is not — so the kit works under both the plugin and standalone layouts and the #34 symlink bug class is closed.
+
+#### Scope (In/Out)
+- In:
+  - Introduce a single root-resolution helper that prefers `${CLAUDE_PLUGIN_ROOT}` and falls back to the existing `worktree.sh root` / symlink logic.
+  - Update `checkpoint.sh`, `worktree.sh`, and any skill command that assumes a repo-root `scripts/` symlink.
+  - Exercise `WorktreeCreate` under the plugin layout and flip the `docs/cc_feature_matrix.md` row from `needs-verify` to `local`.
+- Out:
+  - Runtime state relocation (ISSUE-024).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `${CLAUDE_PLUGIN_ROOT}` is set, when a checkpoint runs, then it resolves `scripts/` under the plugin root (no symlink needed).
+- [ ] Given `${CLAUDE_PLUGIN_ROOT}` is unset (standalone), when a checkpoint runs, then it resolves via the current symlink logic (no regression).
+- [ ] Given the matrix, when ISSUE-023 lands, then the `WorktreeCreate` row is updated with local-probe evidence.
+
+#### Implementation Notes
+- Keep the command prefix-matchable for permission allowlists (the reason `checkpoint.sh` exists).
+- Single helper, two callers minimum — avoid duplicating the resolution logic.
+
+#### Tests
+- [ ] Root helper prefers `${CLAUDE_PLUGIN_ROOT}` when set; falls back otherwise.
+- [ ] checkpoint.sh resolves verify_checkpoint.py under both layouts.
+
+#### Rollback
+Revert to `worktree.sh root` resolution everywhere; the symlink path remains. No data impact.
+
+---
+
+### ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA}
+
+> SPEC-017 step 3. Relocates per-project runtime state so it survives plugin updates. Composes with the ISSUE-016 lifecycle hooks.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; decomposed from SPEC-017)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-023
+
+#### Goal
+`.claude-kit/` markers and `.claude/run/` state write under `${CLAUDE_PLUGIN_DATA}` when present (surviving plugin updates), with the current paths as fallback.
+
+#### Scope (In/Out)
+- In:
+  - Resolve the state directory via `${CLAUDE_PLUGIN_DATA}` with fallback to `.claude/run/` and worktree `.claude-kit/`.
+  - Update `agent_state.py`, `worktree_freeze.py`, `run_cleanup.py`, and `wt_setup.sh` resolution accordingly.
+- Out:
+  - Telemetry schema (ISSUE-001).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `${CLAUDE_PLUGIN_DATA}` is set, when state is written, then it lands under that directory.
+- [ ] Given it is unset, when state is written, then it lands under the current paths (no regression).
+- [ ] Given a plugin update, when it occurs, then prior run state is preserved (manual or simulated verification noted).
+
+#### Implementation Notes
+- Reuse the ISSUE-023 root helper pattern for consistency.
+- Keep the freeze marker discoverable by `/freeze`/`/guard` under both layouts.
+
+#### Tests
+- [ ] State path resolution prefers `${CLAUDE_PLUGIN_DATA}`; falls back otherwise.
+- [ ] Lifecycle hooks write/cleanup under the resolved directory.
+
+#### Rollback
+Revert to `.claude/run/` + worktree `.claude-kit/`. No data migration needed.
+
+---
+
+### ISSUE-025: Model packs/ as plugin components; retire bespoke pack scripts
+
+> SPEC-017 step 4. Replaces the hand-rolled pack selection (`install_packs.py` + `merge_settings.py` + `validate_pack_manifest.py` + `packs/*/manifest.yaml`) with native plugin components.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; decomposed from SPEC-017)
+- Priority: P2
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-022
+
+#### Goal
+The `packs/` selection model is expressed via the plugin system (optional components or sub-plugins), and `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py` are adapted or retired — each retired script tied to the failure mode it caused.
+
+#### Scope (In/Out)
+- In:
+  - Decide and implement: one plugin with optional components vs. multiple plugins (resolve SPEC-017 Open Question 1).
+  - Migrate the sales pack accordingly; adapt or delete the three bespoke pack scripts.
+  - Update or remove `tests/test_install_packs.py` / `tests/test_validate_pack_manifest.py` (the ISSUE-021 `importorskip` guards may become moot).
+- Out:
+  - Removing `install_project.sh` itself (ISSUE-027).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the plugin packaging, when a pack is selected, then its components install via the plugin mechanism (no `merge_settings.py`).
+- [ ] Given each retired script, when removed, then the SPEC/PR notes which failure mode it caused (e.g. ISSUE-021 PyYAML hard-fail).
+- [ ] Given the test suite, when run, then pack tests reflect the new mechanism (no orphaned tests).
+
+#### Implementation Notes
+- This is where the PyYAML manifest dependency (ISSUE-021) can disappear entirely if `manifest.yaml` is replaced by `plugin.json` component declarations.
+- Preserve the sales pack's current file set; only the selection/wiring changes.
+
+#### Tests
+- [ ] Pack component install/selection under the plugin mechanism.
+- [ ] No dead references to retired scripts remain (grep guard).
+
+#### Rollback
+Restore the bespoke pack scripts + `manifest.yaml`; revert component declarations. The installer path returns.
+
+---
+
+### ISSUE-026: Plugin distribution + /kit: namespacing + standalone short-name option
+
+> SPEC-017 step 5. Establishes how teams install the kit as a plugin and documents the namespacing change.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; decomposed from SPEC-017)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-022
+
+#### Goal
+The kit is installable via `/plugin install` from a chosen distribution channel, the `/kit:` skill namespace is documented, and a standalone-install path that preserves short skill names is offered for the deprecation window.
+
+#### Scope (In/Out)
+- In:
+  - Set up distribution (resolve SPEC-017 Open Question 3: private git marketplace vs. skills-directory channel).
+  - Document `/plugin install kit@…`, the `/kit:` namespace (`/kit:implement` etc.), and the standalone short-name option in `README.md`.
+- Out:
+  - Retiring the installer (ISSUE-027).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the chosen channel, when a user runs `/plugin install`, then the kit installs and `/kit:*` skills are available.
+- [ ] Given the README, when read, then it documents the namespace and the standalone short-name alternative.
+- [ ] Given a standalone install, when used, then short names (`/implement`) still work during the window.
+
+#### Implementation Notes
+- Namespacing is mandatory for plugins — set expectations clearly so the `/implement`→`/kit:implement` change doesn't surprise users.
+
+#### Tests
+- [ ] N/A automated for distribution; document the manual install-verification steps in the PR. A manifest/namespace lint is acceptable.
+
+#### Rollback
+Remove the marketplace/distribution config and README plugin section; standalone install remains the documented path.
+
+---
+
+### ISSUE-027: Deprecate install_project.sh after plugin parity
+
+> SPEC-017 step 6 (final). Removes the bespoke installer once the plugin path reaches parity, closing the coexistence window.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-017.md
+- PRD-Ref: none (kit self-development; decomposed from SPEC-017)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-022, ISSUE-023, ISSUE-024, ISSUE-025, ISSUE-026
+
+#### Goal
+`install_project.sh` and the now-dead install scripts are removed, and the docs are flipped to plugin-first, after the plugin path is validated at parity with the installer.
+
+#### Scope (In/Out)
+- In:
+  - Remove `install_project.sh` and any install scripts made dead by ISSUE-022–026.
+  - Flip README/CONTRIBUTING install instructions to plugin-first.
+  - Final grep/CI guard that no doc or script references the removed installer.
+- Out:
+  - Any new packaging behavior (all landed in ISSUE-022–026).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the repo, when searched, then `install_project.sh` and dead install scripts are gone and nothing references them.
+- [ ] Given the docs, when read, then plugin install is the primary documented path.
+- [ ] Given ISSUE-022–026, when all are done, then this issue proceeds (gated on parity).
+
+#### Implementation Notes
+- This is the only destructive step; do not start it until ISSUE-022–026 have landed and parity is confirmed.
+
+#### Tests
+- [ ] Grep guard: no references to removed installer scripts remain in docs or code.
+
+#### Rollback
+`git revert` the removal commit to restore `install_project.sh`. Because the plugin path is already in place, both install methods work again immediately.
