@@ -80,7 +80,7 @@
 - Sensitive data handling (no real PII in tests)
 
 ## Automation Candidates
-- CI (every PR): unit tests, integration tests, linting
+- CI (every PR): unit tests, integration tests
 - Nightly: e2e tests, performance benchmarks
 - Manual: UX review, accessibility audit
 

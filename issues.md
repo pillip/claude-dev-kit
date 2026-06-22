@@ -53,6 +53,7 @@
 - [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
 - [x] ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent _(track: platform, P2, 0.5d)_
+- [x] ISSUE-028: Remove lint enforcement from the kit (autoformat hook + linter configs) _(track: platform, P2, 0.5d)_
 
 ### Drop
 
@@ -1598,3 +1599,54 @@ Remove the marketplace/distribution config and README plugin section; standalone
 
 #### Rollback
 `git revert` the removal commit to restore `install_project.sh`. Because the plugin path is already in place, both install methods work again immediately.
+
+---
+
+### ISSUE-028: Remove lint enforcement from the kit
+
+> The kit imposed its own lint/format tooling on every consuming project, which caused friction project-to-project: the `autoformat.py` PostToolUse hook ran `ruff`/`prettier` on every edit and **blocked the edit** (`decision: block`) on any residual lint error, and `install_project.sh` symlinked the kit's `linters/ruff.toml` + `.prettierrc.json` into each project root — overriding the project's own config. Decision (conversation 2026-06-22): the kit should not impose lint; remove it entirely.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec:
+- PRD-Ref: none (kit self-development; conversation 2026-06-22)
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: chore/remove-lint
+- GH-Issue:
+- PR: #45
+- Depends-On: none
+
+#### Goal
+The kit no longer ships, installs, runs, or instructs lint/format tooling. No consuming project is auto-formatted, has edits blocked on lint, or gets kit lint configs symlinked into it.
+
+#### Scope (In/Out)
+- In:
+  - Delete `project/.claude/hooks/autoformat.py` and remove its wiring from `project/.claude/settings.snippet.json` and `hooks/hooks.json`.
+  - Delete `linters/` (`ruff.toml`, `.prettierrc.json`).
+  - Remove the ruff/prettier install block and the linter-config symlinks from `scripts/install_project.sh`.
+  - Scrub lint instructions from prose: `CONTRIBUTING.md`, `templates/contributing.md`, `templates/test_plan.md`, `agents/qa-designer.md`, `docs/PRD_agent_system_v0.md`.
+- Out:
+  - `agents/codebase-scanner.md` lint *detection* — kept deliberately. The scanner *reading* a target project's existing lint setup is read-only analysis, not the kit imposing lint; removing it would blind a useful capability.
+  - `autotest.py` (tests, not lint) — unchanged.
+
+#### Acceptance Criteria (DoD)
+- [x] Given a project the kit installs into, when files are edited, then no autoformat/lint hook runs and no edit is blocked on lint.
+- [x] Given `install_project.sh`, when run, then it neither installs ruff/prettier nor symlinks any linter config.
+- [x] Given the repo, when grepped, then no lint *tooling* references remain except codebase-scanner's detection list.
+- [x] Given the test suite, when run, then it passes (no test depended on lint tooling).
+
+#### Implementation Notes
+- `autoformat.py` had no tests, so removal is clean.
+- `settings.snippet.json` and `hooks.json` keep `agent_state` + `autotest` PostToolUse hooks; only the autoformat matcher was removed.
+
+#### Tests
+- [x] Existing suite green after removal (no lint-specific test existed).
+
+#### Rollback
+`git revert` the removal commit to restore `autoformat.py`, `linters/`, the install wiring, and the prose. No data impact.
