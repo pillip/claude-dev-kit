@@ -20,7 +20,6 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-026: Plugin distribution + /kit: namespacing + standalone short-name option _(track: platform, P2, 1d)_
 - [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d)_
 
 ### Doing
@@ -48,6 +47,7 @@
 - [x] ISSUE-022: Plugin manifests + skill-hook path hygiene _(track: platform, P1, 1.5d)_
 - [x] ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT} (closes #34 bug class) _(track: platform, P1, 1d)_
 - [x] ISSUE-025: Model the sales pack as a dependent plugin (kit-sales → core) _(track: platform, P2, 1.5d)_
+- [x] ISSUE-026: Plugin distribution (marketplace.json) + namespacing docs _(track: platform, P2, 1d)_
 - [x] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
 - [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
@@ -1526,12 +1526,14 @@ Restore the bespoke pack scripts + `manifest.yaml`; revert component declaration
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-026-distribution
 - GH-Issue:
-- PR:
+- PR: #48
 - Depends-On: ISSUE-022
+
+> **Resolved (2026-06-22):** the repo itself is the marketplace (`.claude-plugin/marketplace.json` listing core + sales). Namespace is the plugin name (`/claude-dev-kit:<skill>`); the submodule install keeps short names (`/implement`). Bespoke-script retirement remains ISSUE-027.
 
 #### Goal
 The kit is installable via `/plugin install` from a chosen distribution channel, the `/kit:` skill namespace is documented, and a standalone-install path that preserves short skill names is offered for the deprecation window.

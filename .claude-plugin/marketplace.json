@@ -1,0 +1,19 @@
+{
+  "name": "claude-dev-kit",
+  "owner": {
+    "name": "pillip"
+  },
+  "description": "PRD-driven AI dev team control plane for Claude Code — core kit plus optional domain packs.",
+  "plugins": [
+    {
+      "name": "claude-dev-kit",
+      "source": "./",
+      "description": "Core kit: agents, skills, and the GitHub-first sprint workflow."
+    },
+    {
+      "name": "claude-dev-kit-sales",
+      "source": "./packs/sales",
+      "description": "Optional sales pack (discovery, proposals, meetings). Depends on the core kit."
+    }
+  ]
+}
