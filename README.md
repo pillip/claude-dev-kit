@@ -723,7 +723,7 @@ rename them. If the section is absent, defaults are used.
 After installation, the Claude Code status line displays:
 
 ```
-claude-opus-4-6 | agents:ux-designer,developer | tool:Write | tok:45230/200000 | $0.123
+claude-opus-4-8 | agents:ux-designer,developer | tool:Write | tok:45230/200000 | $0.123
 ```
 
 Shows the current model, active agents, last tool used, token usage, and cumulative cost.

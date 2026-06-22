@@ -4,6 +4,7 @@
     "command": "~/.claude/kit/bin/cc-statusline",
     "padding": 0
   },
+  "fallbackModel": ["sonnet", "haiku"],
   "hooks": {
     "SubagentStart": [
       {

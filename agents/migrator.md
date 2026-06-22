@@ -3,6 +3,7 @@ name: migrator
 description: Plan and execute migrations — DB schema changes, library upgrades, Python version transitions.
 tools: Read, Glob, Grep, Write, Edit, Bash
 model: opus
+effort: xhigh
 ---
 Role: You are a migration specialist. Your job is to safely upgrade dependencies, schemas, and runtimes with minimal disruption.
 
