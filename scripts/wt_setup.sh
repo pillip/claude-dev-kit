@@ -21,6 +21,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 WT="$(bash "$SCRIPT_DIR/worktree.sh" create "$BRANCH")"
 
+# Fallback freeze-marker write. On builds that fire the `WorktreeCreate` hook
+# (see project/.claude/hooks/worktree_freeze.py) this is redundant but idempotent;
+# on builds without that event it is the only path that writes the marker. Kept
+# deliberately so worktree freezing never regresses (ISSUE-016).
 mkdir -p "$WT/.claude-kit"
 printf '%s\n' "$WT" > "$WT/.claude-kit/freeze-dir.txt"
 
