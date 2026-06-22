@@ -286,6 +286,23 @@ your-service-repo/
 
 > Re-running the installer with a different `--pack` set is destructive of the pack entries from the previous install (the install set IS the active install). Symlinks are per-entry so core + selected packs coexist in the same `.claude/agents/` and `.claude/skills/`.
 
+### Alternative: install as a Claude Code plugin
+
+The repo also ships as a Claude Code **plugin marketplace** (`.claude-plugin/marketplace.json`), so you can install without the submodule/installer:
+
+```bash
+# Add the marketplace (the repo itself), then install the core plugin
+/plugin marketplace add pillip/claude-dev-kit
+/plugin install claude-dev-kit@claude-dev-kit
+
+# Optionally add the sales pack — enabling it auto-enables core (declared dependency)
+/plugin install claude-dev-kit-sales@claude-dev-kit
+```
+
+**Namespacing:** plugin skills are namespaced by plugin name — e.g. `/claude-dev-kit:implement`, `/claude-dev-kit:review`. This is mandatory for plugins (it prevents cross-plugin collisions).
+
+**Short names (standalone option):** if you prefer the bare `/implement`, `/review`, … keep using the **submodule + `install_project.sh`** path above — standalone `.claude/skills/` keeps short, un-namespaced names. The plugin and submodule paths are equivalent in behavior; they differ only in skill-name prefixing and how updates are delivered (`/plugin` versioning vs `git submodule update`). _(The bespoke installer is retired in a later step — see ISSUE-027 — once the plugin path reaches parity.)_
+
 ### 4. Verify gh authentication
 
 ```bash
