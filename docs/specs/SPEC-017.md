@@ -12,7 +12,7 @@ The kit hand-rolls its own plugin/marketplace layer: `install_project.sh` symlin
 ## Context
 
 - **Verified platform support** (`docs/cc_feature_matrix.md`, build 2.1.185): full plugin component schema, `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}`, `/plugin install` with user/project/local scopes, marketplaces, and `version` gating are all present.
-- **Hard constraint — plugin subagents drop `hooks`/`mcpServers`/`permissionMode`** (official, security boundary). The kit's `/freeze`, `/careful`, `/guard` skills embed `hooks:` in frontmatter; under a plugin these are silently ignored unless moved to `hooks.json`.
+- **Constraint — plugin _agents_ drop `hooks`/`mcpServers`/`permissionMode`** (official, security boundary). **This applies to agents only.** _Correction (2026-06-22, ISSUE-022): plugin **skills** DO honor `hooks:` in frontmatter (`hooks.md` "Hooks in Skill Frontmatter"), so `/freeze`,`/careful`,`/guard` need NOT move to `hooks.json`._ The real defect is that those skills resolve their guard scripts via the **undocumented `${CLAUDE_SKILL_DIR}`** variable; the supported variables are `${CLAUDE_PROJECT_DIR}`/`${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}`.
 - **Mandatory namespacing**: plugin skills become `/<plugin>:<skill>` (e.g. `/kit:implement`). Standalone `.claude/` skills keep short names. Muscle-memory `/implement` would change for every user.
 - **No manifest version floor**: `plugin.json` has no `requiredMinimumVersion`; only Claude Code settings (managed) can hard-gate a version.
 - **Current consumers of the bespoke layer**: `install_project.sh`, `install_packs.py`, `merge_settings.py`, `validate_pack_manifest.py`, `packs/*/manifest.yaml`, and the repo-root `scripts/` symlink resolved by `checkpoint.sh` / `worktree.sh`.
@@ -49,13 +49,13 @@ The trade-off line "+1 deprecation window (~6 issues, ≤1.5d each) for 6× roll
 - **Dual-maintenance window** (~3 issues of overlap): both the plugin layout and `install_project.sh` must work until ISSUE-027 retires the installer. Mitigated by keeping a single source of truth (`agents/`, `skills/`, `hooks/`) that both packagings read.
 - **Namespacing cost**: under the plugin, skills are `/kit:implement` etc. Users wanting short names must use the standalone-install path. Documented in ISSUE-026; not silently changed.
 - **No manifest version gate**: the kit cannot self-declare "needs CC ≥ 2.1.x" from `plugin.json` — enforced via README prerequisites and (optionally, for orgs) managed settings. A user on too-old a build may see a skill misbehave rather than a clean refusal.
-- **`hooks.json` divergence from frontmatter**: `/freeze`/`/careful`/`/guard` lose their inline `hooks:` under a plugin; the behavior must be reproduced in `hooks.json` and tested, accepting that standalone and plugin installs now express the same hooks in two places until the window closes.
+- **Skill hooks stay in frontmatter**: `/freeze`/`/careful`/`/guard` keep their inline `hooks:` (supported for plugin skills). The accepted cost is fixing their script-path resolution off the undocumented `${CLAUDE_SKILL_DIR}` onto documented variables with a fallback chain (ISSUE-022), which is slightly more verbose per hook command.
 
 ## Migration
 
 Implemented as 6 sequenced, independently-revertable issues (each ≤1.5d). They are **stubs defined here**; they are filed as real issues when the migration is scheduled (this SPEC issue ships the plan, not the code).
 
-1. **ISSUE-022 — Authoring & hooks migration (1.5d)**: add `.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`; move `/freeze`,`/careful`,`/guard` hooks from skill frontmatter into `hooks.json`; tests proving the hooks still fire under a plugin layout. No installer change yet.
+1. **ISSUE-022 — Authoring & hook hygiene (1.5d)**: add `.claude-plugin/plugin.json` and `hooks/hooks.json` (porting the already-always-on `settings.snippet.json` hooks); **keep** `/freeze`,`/careful`,`/guard` hooks in skill frontmatter (supported) but fix their `${CLAUDE_SKILL_DIR}` resolution onto documented vars with a fallback; no `.mcp.json` (the kit ships no MCP servers). No installer change yet.
 2. **ISSUE-023 — Root resolution via `${CLAUDE_PLUGIN_ROOT}` (1d)**: replace the repo-root `scripts/` symlink assumption in `checkpoint.sh`/`worktree.sh`/skill commands with `${CLAUDE_PLUGIN_ROOT}`, falling back to the symlink when the var is unset (works under both layouts). Directly closes the #34 bug class.
 3. **ISSUE-024 — Runtime state to `${CLAUDE_PLUGIN_DATA}` (1d)**: move `.claude-kit/` markers and `.claude/run/` state to `${CLAUDE_PLUGIN_DATA}` when present (survives plugin updates), with the current paths as fallback. Composes with ISSUE-016 hooks.
 4. **ISSUE-025 — Packs as optional components (1.5d)**: model `packs/` as plugin components (or sub-plugins); adapt or retire `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py`. Each retired script must be tied to the failure mode it caused.

@@ -8,15 +8,15 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "python3 ${CLAUDE_SKILL_DIR}/../careful/careful_guard.py"
+          command: "bash -c 'for D in \"$CLAUDE_PLUGIN_ROOT/skills/careful\" \"$CLAUDE_SKILL_DIR/../careful\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/skills/careful\"; do [ -n \"$D\" ] && [ -f \"$D/careful_guard.py\" ] && exec python3 \"$D/careful_guard.py\"; done; true'"
     - matcher: "Edit"
       hooks:
         - type: command
-          command: "python3 ${CLAUDE_SKILL_DIR}/../freeze/freeze_guard.py"
+          command: "bash -c 'for D in \"$CLAUDE_PLUGIN_ROOT/skills/freeze\" \"$CLAUDE_SKILL_DIR/../freeze\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/skills/freeze\"; do [ -n \"$D\" ] && [ -f \"$D/freeze_guard.py\" ] && exec python3 \"$D/freeze_guard.py\"; done; true'"
     - matcher: "Write"
       hooks:
         - type: command
-          command: "python3 ${CLAUDE_SKILL_DIR}/../freeze/freeze_guard.py"
+          command: "bash -c 'for D in \"$CLAUDE_PLUGIN_ROOT/skills/freeze\" \"$CLAUDE_SKILL_DIR/../freeze\" \"${CLAUDE_PROJECT_DIR:-.}/.claude/skills/freeze\"; do [ -n \"$D\" ] && [ -f \"$D/freeze_guard.py\" ] && exec python3 \"$D/freeze_guard.py\"; done; true'"
 ---
 Guard mode activated — combines `/careful` and `/freeze`.
 
