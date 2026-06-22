@@ -22,6 +22,9 @@ FILE="$1"
 shift
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(bash "$SCRIPT_DIR/worktree.sh" root)"
+# Prefer ${CLAUDE_PLUGIN_ROOT} for locating sibling scripts; fall back to this
+# script's directory (standalone). ISSUE-023.
+KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd -P)}"
+ROOT="$(bash "$KIT_ROOT/scripts/worktree.sh" root)"
 
-exec bash "$SCRIPT_DIR/flock_edit.sh" "$ROOT/$FILE" "$@"
+exec bash "$KIT_ROOT/scripts/flock_edit.sh" "$ROOT/$FILE" "$@"

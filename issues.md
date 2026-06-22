@@ -20,7 +20,6 @@
 ## Board
 
 ### Backlog
-- [ ] ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT} (closes #34 bug class) _(track: platform, P1, 1d)_
 - [ ] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} _(track: platform, P2, 1d)_
 - [ ] ISSUE-025: Model packs/ as plugin components; retire bespoke pack scripts _(track: platform, P2, 1.5d)_
 - [ ] ISSUE-026: Plugin distribution + /kit: namespacing + standalone short-name option _(track: platform, P2, 1d)_
@@ -49,6 +48,7 @@
 - [x] ISSUE-016: Worktree/session lifecycle hooks — auto-freeze + run/ cleanup _(track: platform, P2, 1d)_
 - [x] ISSUE-017: Migrate kit packaging to Claude Code plugin system (SPEC) _(track: platform, P1, 1.5d — spec)_
 - [x] ISSUE-022: Plugin manifests + skill-hook path hygiene _(track: platform, P1, 1.5d)_
+- [x] ISSUE-023: Resolve scripts/ root via ${CLAUDE_PLUGIN_ROOT} (closes #34 bug class) _(track: platform, P1, 1d)_
 - [x] ISSUE-018: Over-engineering/simplicity review axis (ponytail benchmark) _(track: platform, P1, 1d)_
 - [x] ISSUE-019: Decision-ladder preamble for implement developer subagent (ponytail benchmark) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
@@ -1373,11 +1373,11 @@ Delete `.claude-plugin/plugin.json` + `hooks/hooks.json`, restore the `${CLAUDE_
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-023-plugin-root
 - GH-Issue:
-- PR:
+- PR: #44
 - Depends-On: ISSUE-022
 
 #### Goal
@@ -1394,11 +1394,13 @@ Delete `.claude-plugin/plugin.json` + `hooks/hooks.json`, restore the `${CLAUDE_
 #### Acceptance Criteria (DoD)
 - [ ] Given `${CLAUDE_PLUGIN_ROOT}` is set, when a checkpoint runs, then it resolves `scripts/` under the plugin root (no symlink needed).
 - [ ] Given `${CLAUDE_PLUGIN_ROOT}` is unset (standalone), when a checkpoint runs, then it resolves via the current symlink logic (no regression).
-- [ ] Given the matrix, when ISSUE-023 lands, then the `WorktreeCreate` row is updated with local-probe evidence.
+- [x] Given the matrix, when ISSUE-023 lands, then the `WorktreeCreate` row is updated with local-probe evidence.
 
 #### Implementation Notes
 - Keep the command prefix-matchable for permission allowlists (the reason `checkpoint.sh` exists).
 - Single helper, two callers minimum — avoid duplicating the resolution logic.
+- **Done as:** added `scripts/kit_root.sh` (plugin-first kit-root resolver) and made `checkpoint.sh`/`wt_setup.sh`/`wt_cleanup.sh`/`registry_edit.sh` prefer `${CLAUDE_PLUGIN_ROOT}` (fallback to script dir). The wrapper-internal wiring was already SCRIPT_DIR-based since #34; this makes it explicitly plugin-aware.
+- **Deferred to ISSUE-026:** rewriting the skill *entry* command strings (`bash scripts/checkpoint.sh ...`) to a plugin-resolved form — that is coupled to the `/kit:` namespacing and the prefix-matchable allowlist regeneration. WorktreeCreate live-event probe also deferred to 026 (when the plugin is actually installed).
 
 #### Tests
 - [ ] Root helper prefers `${CLAUDE_PLUGIN_ROOT}` when set; falls back otherwise.

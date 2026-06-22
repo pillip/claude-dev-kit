@@ -13,7 +13,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# verify_checkpoint.py always lives beside this script, so resolve it via
-# SCRIPT_DIR rather than "$ROOT/scripts/…". This keeps the checkpoint working
-# even when the kit's scripts/ isn't symlinked at the repo root.
-exec python3 "$SCRIPT_DIR/verify_checkpoint.py" "$@"
+# Resolve the kit root, preferring ${CLAUDE_PLUGIN_ROOT} (plugin install) and
+# falling back to this script's own directory (standalone / symlinked scripts/).
+# verify_checkpoint.py lives under <kit-root>/scripts/, so this works under both
+# layouts without a repo-root symlink — closes the #34 bug class. ISSUE-023.
+KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd -P)}"
+exec python3 "$KIT_ROOT/scripts/verify_checkpoint.py" "$@"

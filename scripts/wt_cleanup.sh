@@ -19,7 +19,10 @@ fi
 
 BRANCH="$1"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Prefer ${CLAUDE_PLUGIN_ROOT} for locating sibling scripts; fall back to this
+# script's directory (standalone). ISSUE-023.
+KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd -P)}"
 
-ROOT="$(bash "$SCRIPT_DIR/worktree.sh" root)"
+ROOT="$(bash "$KIT_ROOT/scripts/worktree.sh" root)"
 cd "$ROOT"
-exec bash "$SCRIPT_DIR/worktree.sh" remove "$BRANCH"
+exec bash "$KIT_ROOT/scripts/worktree.sh" remove "$BRANCH"
