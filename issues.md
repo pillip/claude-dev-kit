@@ -24,6 +24,7 @@
 ### Doing
 
 ### Waiting
+- [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **held 2026-07-16**: implemented on a divergent local line whose issue numbering collided with the remote ISSUE-018~020 ponytail work; main returned to origin. Work preserved on branch `hold/spec-019-platform-first-delegation`; un-hold when the delegation design is re-prioritized)_
 - [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **blocked 2026-06-22**: destructive; un-block once a live `/plugin install` parity check passes (see the issue's Parity checklist). Deps 022/023/025/026 are done; only the live verification remains)_
 - [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d — **deferred 2026-06-14**: un-defer when sprint usage at N>1 produces a measurable signal worth analyzing)_
 - [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns)_
@@ -1664,3 +1665,52 @@ The kit no longer ships, installs, runs, or instructs lint/format tooling. No co
 
 #### Rollback
 `git revert` the removal commit to restore `autoformat.py`, `linters/`, the install wiring, and the prose. No data impact.
+
+---
+
+### ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills
+
+> Held work from a divergent local line (2026-07-16). The local branch implemented these as its own ISSUE-018/019/020 while the remote line spent the same numbers on the ponytail minimality work — main returned to origin, and this issue re-registers the local work under a fresh number.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: SPEC-019 (on the hold branch)
+- PRD-Ref: none (kit self-development)
+- Priority: P2
+- Estimate: 1.5d
+- Status: waiting
+- Owner:
+- Branch: hold/spec-019-platform-first-delegation
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Where the Claude Code runtime exposes an equivalent skill, kit skills delegate instead of reimplementing: `/review` → `/code-review` + `/security-review`, `/brainstorm` and `/bizanalysis` → `/deep-research`. Each delegation keeps a degraded-path fallback (probe via `scripts/has_skill.py`) plus a thin synthesis layer that preserves the kit's output contracts.
+
+#### Scope (In/Out)
+- In (all already implemented on the hold branch):
+  - `scripts/has_skill.py` runtime probe + per-dimension primary/degraded branching.
+  - `/review`: runtime delegation, `scripts/synthesize_review_notes.py` (findings.json → canonical review notes), `review-merge-auditor` agent, degraded-path `reviewer` rewrite.
+  - `/brainstorm`, `/bizanalysis`: `/deep-research` delegation + `research-auditor` / `synthesizer-auditor` agents.
+  - Cache-friendly authoring lint + caching audit guide; feature-matrix S1–S8 / C1–C6 rows documenting the runtime-skill and caching evidence.
+- Out:
+  - The minimality (over-engineering) axis and tech-debt ledger — already landed on main via the remote ISSUE-018~020 line.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a runtime exposing /code-review and /security-review, when /review runs, then both are invoked and their findings survive synthesis verbatim (merge-auditor green).
+- [ ] Given a runtime missing either skill, when /review runs, then the degraded reviewer agent covers exactly the missing dimension(s).
+- [ ] Given the hold branch, when rebased onto current main, then the remote minimality axis + tech-debt ledger are reconciled into the delegation flow (a worked reconciliation exists in merge commit 0401257 on the hold branch).
+
+#### Implementation Notes
+- Un-hold = rebase `hold/spec-019-platform-first-delegation` onto main. The branch tip already contains a reviewed semantic merge with the ponytail work (minimality axis as a third reviewer dimension); reuse it rather than re-deriving.
+- Known open design question at hold time: whether the minimality axis stays a kit reviewer dimension on the primary path or maps /code-review's simplification findings into the kit tag taxonomy instead (dedupe concern).
+
+#### Tests
+- [ ] Probe/branching, synthesizer contract, and auditor tests exist on the hold branch (`test_has_skill.py`, `test_synthesize_review_notes.py`, etc.); they ride along with the rebase.
+
+#### Rollback
+Delete the board entry and this section; the hold branch is untouched by rollback.
