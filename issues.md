@@ -20,15 +20,18 @@
 ## Board
 
 ### Backlog
+- [ ] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — harness audit 2026-07-16: all 33 agents pin opus/sonnet, capping subagents below the session model as models improve; matrix row 2 already confirms `inherit` is the CC default)_
+- [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
+- [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
+- [ ] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — harness audit 2026-07-16: kit_update_check + contributor-mode config check run on every skill invocation and 35–85 preamble lines are duplicated into all 28 generated SKILL.md files)_
+- [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection)_
 
 ### Doing
 
 ### Waiting
-- [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **held 2026-07-16**: implemented on a divergent local line whose issue numbering collided with the remote ISSUE-018~020 ponytail work; main returned to origin. Work preserved on branch `hold/spec-019-platform-first-delegation`; un-hold when the delegation design is re-prioritized)_
 - [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **blocked 2026-06-22**: destructive; un-block once a live `/plugin install` parity check passes (see the issue's Parity checklist). Deps 022/023/025/026 are done; only the live verification remains)_
 - [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d — **deferred 2026-06-14**: un-defer when sprint usage at N>1 produces a measurable signal worth analyzing)_
 - [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns)_
-- [ ] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store _(track: platform, P1, 1.5d — **deferred 2026-06-14**: structure value unverified; un-defer if review_lessons.md hits >20 entries or reviewer needs preamble injection)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d — **deferred 2026-06-14**: was already gated on ISSUE-001 telemetry; un-defer when a real polyrepo team requests it)_
 
 ### Done
@@ -57,6 +60,7 @@
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
+- [x] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store — **dropped 2026-07-16** (superseded by ISSUE-033: CC native persistent memory replaces the patterns.jsonl + preamble-injection design; review_lessons.md never accumulated an entry) _(track: platform, P1, 1.5d)_
 
 ---
 
@@ -176,6 +180,7 @@ Remove the advisory block from `skills/ship/SKILL.md`, delete `scripts/eval_revi
 
 ### ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store
 
+> **Dropped 2026-07-16 — superseded by ISSUE-033.** Claude Code shipped a native persistent memory directory; the patterns.jsonl + preamble-injection design below is obsolete, and `docs/review_lessons.md` never accumulated a single entry. Kept for design history.
 > **Deferred 2026-06-14.** `docs/review_lessons.md` already exists as a markdown accumulation surface and `reviewer` reads it. Promoting to `patterns.jsonl` + preamble injection is a structure bet — the hypothesis is that structured-ness improves reviewer behavior, but the hypothesis is unverified. Also depends on ISSUE-002. Un-defer when (a) `review_lessons.md` grows past ~20 entries and contributors complain about navigating it, OR (b) preamble token budget for reviewer becomes a measured constraint, OR (c) a real pattern keeps recurring despite being in `review_lessons.md`, suggesting the markdown surface isn't getting consumed.
 
 - Track: platform
@@ -185,7 +190,7 @@ Remove the advisory block from `skills/ship/SKILL.md`, delete `scripts/eval_revi
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
 - Estimate: 1.5d
-- Status: waiting
+- Status: drop (superseded by ISSUE-033, 2026-07-16)
 - Owner:
 - Branch:
 - GH-Issue:
@@ -1671,6 +1676,7 @@ The kit no longer ships, installs, runs, or instructs lint/format tooling. No co
 ### ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills
 
 > Held work from a divergent local line (2026-07-16). The local branch implemented these as its own ISSUE-018/019/020 while the remote line spent the same numbers on the ponytail minimality work — main returned to origin, and this issue re-registers the local work under a fresh number.
+> **Un-held 2026-07-16** (same-day harness audit): the runtime's /code-review + /security-review (effort tiers, --fix/--comment, ultra) outclass the kit's single-pass reviewer agent, making this the largest platform-overlap in the kit. Moved to Backlog.
 
 - Track: platform
 - UI: false
@@ -1681,7 +1687,7 @@ The kit no longer ships, installs, runs, or instructs lint/format tooling. No co
 - PRD-Ref: none (kit self-development)
 - Priority: P2
 - Estimate: 1.5d
-- Status: waiting
+- Status: backlog
 - Owner:
 - Branch: hold/spec-019-platform-first-delegation
 - GH-Issue:
@@ -1714,3 +1720,198 @@ Where the Claude Code runtime exposes an equivalent skill, kit skills delegate i
 
 #### Rollback
 Delete the board entry and this section; the hold branch is untouched by rollback.
+
+---
+
+### ISSUE-030: Remove agent model pins — default to `inherit`
+
+> Harness audit 2026-07-16. All 33 agents pin `model: opus` (16) or `model: sonnet` (17); zero use `inherit`/omission. Pins were a guarantee when written; on modern Claude Code they are a ceiling — a session running a stronger model (e.g. Fable 5) spawns subagents that silently downgrade. The kit's own feature matrix (row 2) confirms `inherit` is the CC default.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; harness audit 2026-07-16)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Agents follow the session model by default. `model:` appears in an agent file only where a pin is a deliberate, documented decision (e.g. cost control on high-volume extraction agents), not as boilerplate.
+
+#### Scope (In/Out)
+- In:
+  - Remove `model:` from agent frontmatter (CC defaults to `inherit`), or set `model: inherit` explicitly where self-documentation is preferred.
+  - Decide per-agent whether any sonnet pins stay for cost reasons; document each surviving pin with a one-line rationale comment in the agent file.
+  - Keep `effort:` tiers as the per-agent knob (they compose with any session model).
+  - Update `tests/test_agent_effort.py` (currently asserts every agent has a model in VALID_BY_MODEL) to accept omitted/inherit.
+  - Update the feature-matrix consumer note (row 2) and README agent docs if they state pins.
+- Out:
+  - Effort tier values (landed in ISSUE-015; unchanged).
+  - fallbackModel chain (unchanged).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a session on any model, when a kit agent spawns, then it runs the session model unless its file documents a deliberate pin.
+- [ ] Given the agents/ dir, when grepped for `model:`, then every remaining pin has an adjacent rationale.
+- [ ] Given the test suite, when run, then it passes with omitted/inherit models accepted.
+
+#### Implementation Notes
+- Bedrock/Vertex caveat (matrix row 3): `opus` alias resolves differently there; `inherit` sidesteps the alias-drift problem entirely.
+- `xhigh` effort on a session model that caps at `high` auto-falls-back (matrix row 1) — no guard needed.
+
+#### Tests
+- [ ] test_agent_effort.py updated: model omitted/inherit is valid; surviving pins still validated against VALID_BY_MODEL.
+
+#### Rollback
+`git revert` — pins are plain frontmatter lines.
+
+---
+
+### ISSUE-031: Checkpoint diet — demote existence-check gates to advisory
+
+> Harness audit 2026-07-16. 61 "CHECKPOINT — MANDATORY — NEVER SKIP" gates across skills (11 each in /implement and /review). The behavior gates (tests run, TDD red, hollow-test detection, Figma computed-style suite) verify things a model cannot self-certify — keep them blocking. The existence checks (GH issue field populated, worktree exists, code changed, registry status set) verify steps modern models perform reliably, and their hard-STOP semantics forbid autonomous recovery: one false negative halts the whole pipeline instead of letting the model fix and continue.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; harness audit 2026-07-16)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Blocking checkpoints exist only where they verify behavior the model cannot self-certify. Existence-style checks become advisory (report-and-continue, modeled on the ISSUE-020 debt checkpoint: always exit 0, surface findings) or are folded into the nearest behavior gate.
+
+#### Scope (In/Out)
+- In:
+  - Classify all 61 checkpoints as behavior vs existence (starting split from the audit: keep test/red/tests-written/test-quality/figma-compliance/computed-styles/structural-match/layout/visual-diff blocking; demote issue/worktree/code/registry/checkout/push/pr).
+  - Demoted phases: verify_checkpoint.py returns 0 with a warning line; SKILL.md.tmpl text changes from "STOP immediately" to "report and self-correct, then continue".
+  - Regenerate skills via gen_skills.py.
+- Out:
+  - Removing checkpoint.sh plumbing (the advisory path reuses it).
+  - Sprint orchestration logic (sprint has no checkpoints).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a demoted phase that fails, when the skill runs, then the model is instructed to fix and continue rather than halt.
+- [ ] Given a behavior gate that fails, when the skill runs, then it still hard-blocks.
+- [ ] Given verify_checkpoint tests, when run, then advisory phases assert exit 0 + warning output.
+
+#### Implementation Notes
+- Precedent: the `debt` phase (ISSUE-020) already implements the advisory pattern ("Always exits 0 ... Does NOT block").
+- Keep the checkpoint *names* stable so telemetry (ISSUE-001, if un-deferred) can compare before/after failure rates.
+
+#### Tests
+- [ ] test_verify_checkpoint.py: per-phase blocking/advisory contract table.
+
+#### Rollback
+`git revert`; checkpoint.sh interface is unchanged.
+
+---
+
+### ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles
+
+> Harness audit 2026-07-16. Every one of the 28 generated SKILL.md files embeds a 35–85 line preamble (~1.3k duplicated lines), and every skill invocation re-runs `kit_update_check.py` and the contributor-mode config check. On modern CC these are session-level concerns: run them once in a SessionStart hook, keep skill bodies as task instructions.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; harness audit 2026-07-16)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Skill bodies contain task instructions only. Session-level startup (update check, contributor mode detection, project context detection) runs once per session via hooks; per-skill preamble shrinks to the patterns the specific tier actually uses (checkpoint/worktree/registry for pipeline skills).
+
+#### Scope (In/Out)
+- In:
+  - Add a SessionStart hook entry (hooks/hooks.json + project/.claude/settings.snippet.json) running kit_update_check.py and contributor-mode detection once.
+  - Trim preambles.py: drop Kit Update Check + Contributor Mode from all tiers; drop Behavioral Rules lines that duplicate CLAUDE.md-level guidance; keep tier-2/3 operational patterns (checkpoint, worktree, registry, self-review) where the skill uses them.
+  - Regenerate all skills; verify no skill lost an instruction it references (grep for orphaned mentions of removed sections).
+- Out:
+  - The gen_skills.py generation mechanism itself (kept).
+  - hooks.json always-on guards (agent_state, secret/dangerous — unchanged).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a new session, when it starts, then the update check runs exactly once (hook), and no skill invocation re-runs it.
+- [ ] Given the generated skills, when line-counted, then total preamble duplication drops by ≥50%.
+- [ ] Given contributor mode enabled, when any skill runs, then field-report behavior still works (detection moved, behavior preserved).
+
+#### Implementation Notes
+- Plugin path: SessionStart hook must resolve scripts via ${CLAUDE_PLUGIN_ROOT} (ISSUE-023 pattern).
+- Matrix row 4c confirms SessionEnd/Stop exist; verify SessionStart is available at the targeted build and add a matrix row for it as part of this issue.
+
+#### Tests
+- [ ] test_lifecycle_hooks.py extended: SessionStart entry present and script path resolves.
+- [ ] gen_skills output test: no skill references a preamble section that no longer exists.
+
+#### Rollback
+`git revert` + regenerate skills; hook entry removal restores per-skill checks.
+
+---
+
+### ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003
+
+> Harness audit 2026-07-16. The kit's learning surface (`docs/review_lessons.md` + planned patterns.jsonl promotion, ISSUE-003) never accumulated a single [RL-NNN] entry, while Claude Code shipped a native persistent per-project memory directory with an index (MEMORY.md) that loads across sessions. Redesign the loop on the platform primitive instead of a bespoke store.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; supersedes ISSUE-003)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Review learnings persist in Claude Code's native memory (one fact per file + MEMORY.md index) instead of docs/review_lessons.md, and get recalled automatically in later sessions without kit-side preamble injection.
+
+#### Scope (In/Out)
+- In:
+  - /review Learning Extraction step writes preventable patterns as native memory files (type: feedback/project) with Why/How-to-apply, replacing the review_lessons.md registry_edit flow.
+  - reviewer/planner agent prompts drop "read docs/review_lessons.md" in favor of relying on recalled memories (plus an explicit memory-dir read where separate-context agents don't get recall).
+  - Migration note: review_lessons.md format retired; no data to migrate (0 entries).
+- Out:
+  - ISSUE-002's eval gate (still independent).
+  - Cross-project/team-shared memory (out of scope; native memory is per-project).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a review that finds a preventable pattern, when Learning Extraction runs, then a memory file + index line exist and no review_lessons.md write occurs.
+- [ ] Given a later session reviewing similar code, when the reviewer runs, then the stored pattern is available to it (recall or explicit read).
+- [ ] Given the kit docs, when grepped, then review_lessons.md references are gone or marked historical.
+
+#### Implementation Notes
+- Caveat: subagents spawned via Task may not receive automatic memory recall — verify, and if absent, have the skill pass relevant memory file contents into the agent prompt (thin, explicit, no preamble store).
+- Duplicate-prevention: reuse the native convention (check index before writing; update instead of duplicating) rather than the [RL-NNN] Frequency counter.
+
+#### Tests
+- [ ] Skill-text test: /review Learning Extraction step references the memory dir, not review_lessons.md.
+
+#### Rollback
+Revert skill/agent text; memory files already written are inert data.
