@@ -2,7 +2,7 @@
 
 > SSOT: Progress and completion are tracked by the Status field in this document (not inferred from code analysis)
 > Rule: **1 Issue = 1 PR** (GitHub-first)
-> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 38 agents / 27 skills primitive set.
+> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 33 agents / 28 skills primitive set (counts asserted by tests/test_agent_effort.py and the skill generator).
 
 ## Conventions
 - Track: `product` | `platform`
@@ -25,6 +25,7 @@
 - [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
 - [ ] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — harness audit 2026-07-16: kit_update_check + contributor-mode config check run on every skill invocation and 35–85 preamble lines are duplicated into all 28 generated SKILL.md files)_
 - [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection)_
+- [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Coordinate with ISSUE-030 — same files)_
 
 ### Doing
 
@@ -1918,3 +1919,54 @@ Review learnings persist in Claude Code's native memory (one fact per file + MEM
 
 #### Rollback
 Revert skill/agent text; memory files already written are inert data.
+
+---
+
+### ISSUE-034: Agent roster diet — consolidate thin persona agents
+
+> Harness audit 2026-07-16 (registered 2026-07-21). Roughly 16 of the 33 agents are thin personas — a role header plus a generic checklist in 60–100 lines (e.g. diagnostician, prd-writer, migrator, brainstormer, devops, business-analyst) — with no instructions a modern session model doesn't already follow. Each separate agent costs an orchestration hop (spawn + context handoff + result relay) and a maintenance surface (frontmatter, effort tier, tests) without a measurable quality contribution. ISSUE-013 (ui-reviewer/design-auditor merge) is the precedent: consolidation raised quality by sharpening boundaries.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; harness audit 2026-07-16)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+An agent file exists only where it carries differentiated instructions the calling skill cannot express inline (distinct tool restrictions, a real methodology, or an adversarial/separate-context role). Thin personas are absorbed into their calling skill's prompt or merged into a neighboring substantive agent.
+
+#### Scope (In/Out)
+- In:
+  - Classify all 33 agents: **keep** (differentiated methodology or separate-context guarantee — e.g. reviewer, developer, architect, the auditor family, uiux developers), **absorb** (persona folds into the calling skill's Task prompt), **merge** (two near-duplicate roles become one, per ISSUE-013).
+  - Apply absorb/merge; regenerate skills; update HEAVY/LIGHT sets and the roster count in `tests/test_agent_effort.py`.
+  - Update README agent roster docs and the issues.md header count.
+- Out:
+  - Adding new agents or changing kept agents' instructions beyond merge reconciliation.
+  - Skill-level flow changes (which phases run) — this issue only changes who executes them.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the classification table (in the PR description), when reviewed, then every removed agent has a stated absorb/merge target and every kept agent a one-line differentiation rationale.
+- [ ] Given a skill whose agent was absorbed, when it runs, then the same phase executes via inline Task prompt with no output-contract change (skill-text tests updated, not deleted).
+- [ ] Given the test suite, when run, then roster-count and HEAVY/LIGHT assertions match the new roster.
+- [ ] **Predictability guard**: separate-context roles that exist to prevent self-grading (auditors, pilot-gate critic) are in the keep set — consolidation never collapses a grader into the graded.
+
+#### Implementation Notes
+- Sequence with ISSUE-030 (model pins) — same files; do 030 first (mechanical) so this issue's diffs are semantic only.
+- Absorb direction beats deletion: the persona text usually contains 2–3 genuinely useful checklist lines — graft those into the calling skill phase, drop the rest.
+- Scan-family agents (scan-analyst/-architect/-data-modeler/-qa-designer) are one merge candidate cluster; brainstormer/business-analyst overlap with the ISSUE-029 delegation path — if 029 lands first, they may already be degraded-path-only.
+
+#### Tests
+- [ ] test_agent_effort.py: updated roster count + HEAVY/LIGHT membership.
+- [ ] Skill-text tests assert absorbed phases still present in the generated SKILL.md.
+
+#### Rollback
+`git revert` restores agent files and skill text; no state migration.
