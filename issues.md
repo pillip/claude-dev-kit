@@ -1710,6 +1710,7 @@ Where the Claude Code runtime exposes an equivalent skill, kit skills delegate i
 - [ ] Given a runtime exposing /code-review and /security-review, when /review runs, then both are invoked and their findings survive synthesis verbatim (merge-auditor green).
 - [ ] Given a runtime missing either skill, when /review runs, then the degraded reviewer agent covers exactly the missing dimension(s).
 - [ ] Given the hold branch, when rebased onto current main, then the remote minimality axis + tech-debt ledger are reconciled into the delegation flow (a worked reconciliation exists in merge commit 0401257 on the hold branch).
+- [ ] **Predictability guard**: given any probe outcome (both/one/none of the runtime skills present), when /review runs, then a test asserts every review dimension is covered by exactly one path (runtime or degraded) — delegation may never silently no-op a dimension on runtime drift.
 
 #### Implementation Notes
 - Un-hold = rebase `hold/spec-019-platform-first-delegation` onto main. The branch tip already contains a reviewed semantic merge with the ponytail work (minimality axis as a third reviewer dimension); reuse it rather than re-deriving.
@@ -1760,6 +1761,7 @@ Agents follow the session model by default. `model:` appears in an agent file on
 - [ ] Given a session on any model, when a kit agent spawns, then it runs the session model unless its file documents a deliberate pin.
 - [ ] Given the agents/ dir, when grepped for `model:`, then every remaining pin has an adjacent rationale.
 - [ ] Given the test suite, when run, then it passes with omitted/inherit models accepted.
+- [ ] **Predictability guard**: given a production deployment that needs deterministic agent behavior, when it sets the model once in project settings (single control point, documented in README), then all inherit-agents follow it — restoring the old 33-pin guarantee from one place.
 
 #### Implementation Notes
 - Bedrock/Vertex caveat (matrix row 3): `opus` alias resolves differently there; `inherit` sidesteps the alias-drift problem entirely.
@@ -1808,6 +1810,7 @@ Blocking checkpoints exist only where they verify behavior the model cannot self
 - [ ] Given a demoted phase that fails, when the skill runs, then the model is instructed to fix and continue rather than halt.
 - [ ] Given a behavior gate that fails, when the skill runs, then it still hard-blocks.
 - [ ] Given verify_checkpoint tests, when run, then advisory phases assert exit 0 + warning output.
+- [ ] **Predictability guard**: given the blocking set (test/red/tests-written/test-quality/figma-compliance/computed-styles/structural-match/layout/visual-diff), when any phase's blocking/advisory classification changes, then a test enumerating the full set fails — no gate can be demoted silently.
 
 #### Implementation Notes
 - Precedent: the `debt` phase (ISSUE-020) already implements the advisory pattern ("Always exits 0 ... Does NOT block").
