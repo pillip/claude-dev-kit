@@ -125,6 +125,7 @@ Revert the hook patch and delete `scripts/trace_query.py` + `docs/telemetry_sche
 ### ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality
 
 > **Deferred 2026-06-14.** Cluster D's role split (ISSUE-013) + Pilot Gate hardening (ISSUE-010) already raised reviewer signal quality through structural changes, not eval scoring. Eval gate adds ANTHROPIC_API_KEY dependency + token cost + self-grading loop risk (kit eval-ing kit's review). Un-defer when (a) a regression in review quality is felt and not explainable by the existing scope split, OR (b) a multi-reviewer setup needs an automated tie-break, OR (c) eval signal becomes the bottleneck blocking a downstream decision.
+> **Design updated 2026-07-21 (no separate billing).** The judge runs via `claude -p` (headless CLI) on the user's existing Claude Code auth — NOT the Anthropic API. This removes the ANTHROPIC_API_KEY + `anthropic` SDK dependency and the separate-billing objection above; the remaining un-defer conditions stand. Recommended sequencing: after ISSUE-029, so the judge grades platform /code-review output rather than the kit grading its own review.
 
 - Track: platform
 - UI: false
@@ -162,9 +163,9 @@ A new `scripts/eval_review.py` runs an LLM-as-judge pass on a `review_notes.md` 
 - [ ] Given `docs/review_eval_<pr>.md`, when read, then every concern cites a diff line range + rubric category.
 
 #### Implementation Notes
-- Use Claude API directly (not a sub-agent) so the eval is deterministic-temperature and independent of the harness orchestration state.
-- **Prerequisite + degraded mode**: requires `ANTHROPIC_API_KEY` env var and the `anthropic` SDK (added to `pyproject.toml` under `[project.optional-dependencies.eval]`). If the key is missing OR the SDK is not installed, `/ship` prints a one-line warning (`eval skipped: ANTHROPIC_API_KEY not set` / `anthropic SDK not installed`) and **continues without blocking**. Never fail the ship gate on a missing eval dependency.
-- Prompt cache the PR diff + rubric across the two determinism runs.
+- Judge invocation: `claude -p` headless with `--model` pinned and structured (JSON) output — a fresh process/context, so judge independence from the harness session holds without the API. **No separate billing**: never introduce an ANTHROPIC_API_KEY / `anthropic` SDK path (user decision 2026-07-21).
+- Determinism caveat: the CLI exposes no temperature control, so the ≥80% overlap AC is the operative determinism floor — do not tighten it to exact-match.
+- **Prerequisite + degraded mode**: requires the `claude` CLI on PATH with working auth. If missing, `/ship` prints a one-line warning (`eval skipped: claude CLI not available`) and **continues without blocking**. Never fail the ship gate on a missing eval dependency.
 - Keep the rubric in `templates/review_eval_rubric.md` so it can be versioned and tuned without touching code.
 - This eval is the seed for ISSUE-003's anti-pattern DB — design the report schema so memory layer can ingest it.
 
