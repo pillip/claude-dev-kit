@@ -19,20 +19,22 @@
 
 ## Board
 
+> **Work order (agreed 2026-07-21):** 027 (live parity check — manual) → 001 (minimal baseline re-scope) → 030 → 032 → 031 → 029 → 002 → 033 → 034. Constraints: 001 must land **and capture a before-baseline run** before 030 starts; 002 follows 029 so the judge grades platform /code-review output; 002→033 is synergy only, NOT a hard dep — do not block 033 if 002 slips. 027 needs a manual live session and may run in parallel without blocking the rest. Backlog below is sorted in this order.
+
 ### Backlog
-- [ ] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — harness audit 2026-07-16: all 33 agents pin opus/sonnet, capping subagents below the session model as models improve; matrix row 2 already confirms `inherit` is the CC default)_
-- [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
-- [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
+- [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, re-scoped 0.5d — **un-deferred 2026-07-21**, work-order slot 2: minimal baseline only (tokens, turns, checkpoint failures, user interventions) to measure the 030–033 harness changes before/after; full spec (flock guarantees, schema doc, trace_query breadth) stays follow-up)_
+- [ ] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — harness audit 2026-07-16: all 33 agents pin opus/sonnet, capping subagents below the session model as models improve; matrix row 2 already confirms `inherit` is the CC default. **Do not start before ISSUE-001's baseline run is captured**)_
 - [ ] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — harness audit 2026-07-16: kit_update_check + contributor-mode config check run on every skill invocation and 35–85 preamble lines are duplicated into all 28 generated SKILL.md files)_
-- [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection)_
-- [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Coordinate with ISSUE-030 — same files)_
+- [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
+- [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
+- [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection. Ordered after 002 for eval-report ingestion synergy, but independent of it)_
+- [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Last in the work order: after 030 (same files) and 029 (brainstormer/business-analyst may become degraded-path-only))_
 
 ### Doing
 
 ### Waiting
-- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **blocked 2026-06-22**: destructive; un-block once a live `/plugin install` parity check passes (see the issue's Parity checklist). Deps 022/023/025/026 are done; only the live verification remains)_
-- [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 1.5d — **deferred 2026-06-14**: un-defer when sprint usage at N>1 produces a measurable signal worth analyzing)_
-- [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns)_
+- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **blocked 2026-06-22**: destructive; un-block once a live `/plugin install` parity check passes (see the issue's Parity checklist). Deps 022/023/025/026 are done; only the live verification remains. **Work-order step 1 (2026-07-21)**: the unblock action itself — a manual live session — is the next human task; runs in parallel, does not block the rest)_
+- [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns. **Work-order slot after 029 (2026-07-21)**: un-defer when 029 lands so the judge grades platform /code-review output; design updated to `claude -p` — no separate billing)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d — **deferred 2026-06-14**: was already gated on ISSUE-001 telemetry; un-defer when a real polyrepo team requests it)_
 
 ### Done
@@ -70,6 +72,7 @@
 ### ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook
 
 > **Deferred 2026-06-14.** Telemetry needs N>1 sprint usage to produce meaningful signal — at single-user sub-monthly cadence, the data is a diary not a statistic. Un-defer when (a) sprint usage produces ≥10 runs/week, OR (b) a felt diagnostic gap appears ("which agent fails most often?" can't be answered by feel), OR (c) ISSUE-002 / ISSUE-008 actually moves to doing and needs telemetry as a prerequisite.
+> **Un-deferred 2026-07-21 (condition (b) met), re-scoped to a minimal baseline.** The 030–033 harness changes need a before/after measurement, which is exactly the diagnostic gap clause (b) describes. Minimal scope for this pass: per-run tokens, turn count, checkpoint failures, and user-intervention count — enough to compare a benchmark issue run before and after each harness change. Out (moved to follow-up): flock/PIPE_BUF concurrency guarantees, `docs/telemetry_schema.md`, and the full `trace_query.py` query set (lead-time only). **Definition of done for work-order purposes: the hook lands AND one benchmark-issue baseline run is captured before ISSUE-030 starts.**
 
 - Track: platform
 - UI: false
@@ -77,8 +80,8 @@
 - Manual: false
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
-- Estimate: 1.5d
-- Status: waiting
+- Estimate: 0.5d (minimal re-scope 2026-07-21; original full spec was 1.5d)
+- Status: backlog
 - Owner:
 - Branch:
 - GH-Issue:
