@@ -160,9 +160,12 @@ class TestDryRun:
             encoding="utf-8",
         )
 
-        # Point gen_skills module-level globals at the fake tree
+        # Point gen_skills module-level globals at the fake tree.
+        # PACKS_DIR must be patched too — otherwise generate_all() regenerates
+        # the REAL packs/*/skills SKILL.md files (discover_templates globs it).
         monkeypatch.setattr(gen_skills, "KIT_ROOT", fake_kit_root)
         monkeypatch.setattr(gen_skills, "SKILLS_DIR", fake_skills)
+        monkeypatch.setattr(gen_skills, "PACKS_DIR", fake_kit_root / "packs")
 
         # Generate fresh content from the fake template
         gen_skills.generate_all()

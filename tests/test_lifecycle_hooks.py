@@ -1,4 +1,11 @@
-"""Tests for ISSUE-016 lifecycle hooks: WorktreeCreate freeze + SessionEnd cleanup."""
+"""Tests for ISSUE-016 lifecycle hooks: SessionEnd/Stop cleanup.
+
+The WorktreeCreate freeze hook was removed in ISSUE-027: the live probe +
+official docs showed WorktreeCreate is a CREATOR contract ("replaces default
+git behavior" — the hook must create the worktree and print its path; no
+output aborts creation). The kit's notification-consumer hook therefore broke
+native worktree creation for plugin users. Freeze markers are written by
+scripts/wt_setup.sh on the skill path instead."""
 
 import json
 import subprocess
@@ -7,7 +14,6 @@ import tempfile
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / "project" / ".claude" / "hooks"
-FREEZE = HOOKS / "worktree_freeze.py"
 CLEANUP = HOOKS / "run_cleanup.py"
 
 
@@ -25,40 +31,6 @@ def _run(script: Path, payload, cwd: Path, env_root: Path | None = None) -> int:
         stderr=subprocess.PIPE,
     )
     return proc.returncode
-
-
-# ── WorktreeCreate freeze hook ───────────────────────────────────────
-
-
-def test_freeze_writes_marker_from_payload_path():
-    with tempfile.TemporaryDirectory() as td:
-        wt = Path(td) / "wt" / "issue-x"
-        wt.mkdir(parents=True)
-        rc = _run(FREEZE, {"hook_event_name": "WorktreeCreate", "worktree_path": str(wt)}, Path(td))
-        assert rc == 0
-        marker = wt / ".claude-kit" / "freeze-dir.txt"
-        assert marker.exists()
-        assert marker.read_text().strip() == str(wt)
-
-
-def test_freeze_falls_back_to_cwd_when_no_path_key():
-    with tempfile.TemporaryDirectory() as td:
-        wt = Path(td)
-        rc = _run(FREEZE, {"hook_event_name": "WorktreeCreate", "cwd": str(wt)}, wt)
-        assert rc == 0
-        assert (wt / ".claude-kit" / "freeze-dir.txt").read_text().strip() == str(wt)
-
-
-def test_freeze_noops_on_empty_payload():
-    with tempfile.TemporaryDirectory() as td:
-        rc = _run(FREEZE, "", Path(td))
-        assert rc == 0  # no crash, no marker
-
-
-def test_freeze_noops_on_malformed_payload():
-    with tempfile.TemporaryDirectory() as td:
-        rc = _run(FREEZE, "not json at all {", Path(td))
-        assert rc == 0
 
 
 # ── SessionEnd / Stop cleanup hook ───────────────────────────────────

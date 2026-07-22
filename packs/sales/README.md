@@ -22,25 +22,23 @@ Opt-in domain bundle for account / customer-success teams that share a repo with
 
 ## How it works with core
 
-The sales pack **depends on core** (`depends_on: [core]` in `manifest.yaml`). Sales workflows reuse core's primitives — `/prd`, `/kickoff`, `/issue`, `/sprint` — and shared templates (`issues.md`, `sprint_state.md`). Installing sales without core is not supported by the install script.
+The sales pack **depends on core** (`dependencies: ["claude-dev-kit"]` in its `plugin.json`; mirrored as `depends_on: [core]` in `manifest.yaml`). Sales workflows reuse core's primitives — `/prd`, `/kickoff`, `/issue`, `/sprint` — and shared templates (`issues.md`, `sprint_state.md`). Installing the sales plugin auto-installs core.
 
 A typical sales team layout uses `accounts/<company>/` subdirectories at the repo root (one subdir per active account, each holding the deliverables produced by the skills above). That accumulation pattern is the same shape engineering teams use for `services/<name>/` — the repo IS the team boundary, no extra layer is needed.
 
 ## Install
 
-> The `--pack` install flag lands in ISSUE-009. Until then, the pack exists on disk under `packs/sales/` but is not yet wired into the default `install_project.sh` flow. Track that work in `issues.md` ISSUE-009.
+The pack ships as the `claude-dev-kit-sales` plugin in the repo's marketplace:
 
-After ISSUE-009 lands:
 ```bash
-bash .claude-kit/scripts/install_project.sh --pack=sales
+/plugin marketplace add pillip/claude-dev-kit
+/plugin install claude-dev-kit-sales@claude-dev-kit   # auto-installs core (declared dependency)
 ```
-This installs core + sales together. To get sales plus any future pack:
-```bash
-bash .claude-kit/scripts/install_project.sh --pack=all
-```
+
+Sales skills are namespaced by the plugin name — e.g. `/claude-dev-kit-sales:proposal`.
 
 ## Why a separate pack (not core)
 
 The kit's positioning is "trustworthy code in collaboration → AI dev team control plane." Sales workflows are domain-specific and would dilute that positioning if bundled into the default install. The pack boundary lets sales-using teams install both layers while engineering-only teams get a clean install.
 
-This is **not a step toward a separate repo**. The kit stays monorepo with install-time pack boundaries — shared primitives (`/prd`, `/kickoff`, hooks, install scripts) are heavily reused by sales, and splitting would create version-matrix overhead without capability gain. Rationale documented in `docs/specs/SPEC-004.md`.
+This is **not a step toward a separate repo**. The kit stays monorepo with plugin-boundary packs — shared primitives (`/prd`, `/kickoff`, hooks, helper scripts) are heavily reused by sales, and splitting would create version-matrix overhead without capability gain. Rationale documented in `docs/specs/SPEC-004.md`.

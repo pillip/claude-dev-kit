@@ -56,11 +56,22 @@ def test_marketplace_lists_core_and_sales():
 
 
 def test_hooks_json_parses_and_declares_events():
-    hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    doc = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    # Current plugin schema wraps events in a top-level "hooks" object — the
+    # flat form loads zero hooks (found by the ISSUE-027 live parity run).
+    assert set(doc.keys()) == {"hooks"}, "hooks.json must wrap events in a 'hooks' object"
+    hooks = doc["hooks"]
     # The always-on hooks ported from settings.snippet.json (+ ISSUE-016 events).
-    for event in ("WorktreeCreate", "SessionEnd", "Stop", "SubagentStart",
+    for event in ("SessionEnd", "Stop", "SubagentStart",
                   "SubagentStop", "PreToolUse", "PostToolUse", "PostToolUseFailure"):
         assert event in hooks, f"hooks.json missing {event}"
+    # WorktreeCreate is a CREATOR contract on current builds (the hook must
+    # create the worktree and print its path; no output aborts creation).
+    # The kit must NOT register it — a passive hook breaks native worktree
+    # creation for every plugin user (ISSUE-027 live probe, 2026-07-22).
+    assert "WorktreeCreate" not in hooks, (
+        "WorktreeCreate is a creator contract — do not re-add a passive hook"
+    )
     # Plugin hooks resolve scripts via the documented ${CLAUDE_PLUGIN_ROOT}.
     blob = json.dumps(hooks)
     assert "CLAUDE_PLUGIN_ROOT" in blob

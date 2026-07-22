@@ -34,7 +34,6 @@
 ### Doing
 
 ### Waiting
-- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **parity items 1/3/4/5 passed 2026-07-22** (after manifest fixes) and **item 2 re-verified same day** post-ISSUE-035: checkpoint + kit_update_check ran via absolute prefix in a plugin-only headless session. Remaining before deletion: the WorktreeCreate live probe (needs an in-session worktree), then the destructive step 6)_
 - [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns. **Work-order slot after 029 (2026-07-21)**: un-defer when 029 lands so the judge grades platform /code-review output; design updated to `claude -p` — no separate billing)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d — **deferred 2026-06-14**: was already gated on ISSUE-001 telemetry; un-defer when a real polyrepo team requests it)_
 
@@ -62,6 +61,7 @@
 - [x] ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent _(track: platform, P2, 0.5d)_
 - [x] ISSUE-028: Remove lint enforcement from the kit (autoformat hook + linter configs) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-035: Plugin-resolved skill entry commands — make `scripts/` invocations work under plugin install _(track: platform, P1, 1d — done 2026-07-22: Kit Script Root preamble section rides CC's load-time `${CLAUDE_PLUGIN_ROOT}` text substitution; plugin-root allowlist patterns added; AUTO-GEN header moved below frontmatter (byte-0 rule — frontmatter was silently dropped for all 25 generated skills). Live-verified headless: checkpoint + kit_update_check execute via absolute prefix in a plugin-only project)_
+- [x] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — done 2026-07-22: all parity items live-verified. The WorktreeCreate probe exposed a creator-contract mismatch — docs say the hook must CREATE the worktree and print its path, so the kit's passive freeze hook was breaking native worktree creation; hook removed (platform-first), guard test added. Installer + install_packs/merge_settings removed with their tests; README/packs docs flipped plugin-first; grep-guard test blocks re-references. Deviations: validate_pack_manifest.py kept (pack-authoring lint), install_user.sh kept (user-scope statusline, not the project installer))_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -1584,6 +1584,7 @@ Remove the marketplace/distribution config and README plugin section; standalone
 > - **Item 4 ✓** — `/claude-dev-kit:guard` invoked headlessly; skill-frontmatter hooks fired via the `$CLAUDE_PLUGIN_ROOT` fallback chain: in-boundary Write passed, out-of-boundary Write blocked with the `[freeze]` message.
 > - **Item 5 ✓** — installing the sales pack alone auto-installs + enables core ("+ 1 dependency: claude-dev-kit").
 > - Extra finding: `claude plugin validate ./packs/sales` warns all 5 sales skills lack frontmatter — folded into ISSUE-035 scope.
+> **Done 2026-07-22** (post-ISSUE-035). Item 2 re-verified: checkpoint + kit_update_check executed via the substituted absolute prefix in a plugin-only headless session (checkpoint failed on *phase logic*, not path). **WorktreeCreate probe verdict**: official docs confirm a CREATOR contract — *"The hook is responsible for creating the worktree… It replaces default git behavior"*; a configured hook that prints no path **aborts creation with no fallback**. The kit's passive `worktree_freeze.py` was therefore breaking native worktree creation for plugin users (probe reproduced it live, then confirmed creation works after removal). Hook + handler + wiring removed (platform-first: creation belongs to CC; freeze markers stay on the `wt_setup.sh` skill path); `test_plugin_manifest.py` now fails if a WorktreeCreate hook is re-added; matrix row 4 rewritten. Deletion executed: `install_project.sh`, `install_packs.py`, `merge_settings.py` + their tests removed; README installation section, pack table, repo tree, Updating section, `packs/README.md`, `packs/sales/README.md` flipped plugin-first with a migration note; `tests/test_no_installer_references.py` grep guard over active surfaces (docs/specs + issues.md exempt as history). **Deviations from the checklist**: `validate_pack_manifest.py` kept — it is the pack-authoring lint (packs/README step 5), not installer-only; `install_user.sh` kept — user-scope statusline install, independent of the project installer.
 
 - Track: platform
 - UI: false
@@ -1594,9 +1595,9 @@ Remove the marketplace/distribution config and README plugin section; standalone
 - PRD-Ref: none (kit self-development; decomposed from SPEC-017)
 - Priority: P2
 - Estimate: 1d
-- Status: waiting
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-027-deprecate-install-project
 - GH-Issue:
 - PR:
 - Depends-On: ISSUE-022, ISSUE-023, ISSUE-025, ISSUE-026, ISSUE-035
@@ -1613,23 +1614,23 @@ Remove the marketplace/distribution config and README plugin section; standalone
   - Any new packaging behavior (all landed in ISSUE-022–026).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given the repo, when searched, then `install_project.sh` and dead install scripts are gone and nothing references them.
-- [ ] Given the docs, when read, then plugin install is the primary documented path.
-- [ ] Given ISSUE-022/023/025/026, when all are done, then this issue proceeds (gated on parity).
+- [x] Given the repo, when searched, then `install_project.sh` and dead install scripts are gone and nothing references them. *(grep guard enforces; docs/specs + issues.md exempt as history)*
+- [x] Given the docs, when read, then plugin install is the primary documented path. *(README Installation/Updating/pack table/tree + both pack READMEs)*
+- [x] Given ISSUE-022/023/025/026, when all are done, then this issue proceeds (gated on parity). *(plus ISSUE-035, added after the first parity run)*
 
 #### Implementation Notes
 - This is the only destructive step; do not start it until ISSUE-022/023/025/026 have landed (they have) AND a live parity check passes (below).
 
-**Parity checklist (run in a real Claude Code session before deleting anything):**
-1. `/plugin marketplace add pillip/claude-dev-kit` then `/plugin install claude-dev-kit@claude-dev-kit` succeeds.
-2. A namespaced skill runs end-to-end: e.g. `/claude-dev-kit:implement` reaches its checkpoint flow; `checkpoint.sh` resolves `verify_checkpoint.py` via `${CLAUDE_PLUGIN_ROOT}` (ISSUE-023).
-3. The always-on hooks fire from `hooks.json` (agent_state writes `.claude/run/`; secret/dangerous guards trigger; `WorktreeCreate` writes the freeze marker — the matrix's last `test-verified` row, confirmed live here).
-4. `/freeze`,`/careful`,`/guard` skill-frontmatter hooks still block correctly under the plugin (script path resolves without `${CLAUDE_SKILL_DIR}`).
-5. `/plugin install claude-dev-kit-sales@claude-dev-kit` auto-enables core (declared dependency) and sales skills/agents load.
-6. Only after 1–5 pass: remove `install_project.sh` + `install_packs.py`/`merge_settings.py`/`validate_pack_manifest.py`, flip docs to plugin-first, and tie each removed script to the failure mode it caused.
+**Parity checklist (final statuses, 2026-07-22):**
+1. ✅ `claude plugin marketplace add` + `claude plugin install claude-dev-kit@claude-dev-kit` succeed (after the author-object + hooks-wrapper manifest fixes).
+2. ✅ Checkpoint flow works under the plugin: the Kit Script Root rule (ISSUE-035) resolves the substituted absolute prefix; `checkpoint.sh` reached `verify_checkpoint.py` and failed on phase logic, not path.
+3. ✅ Always-on hooks fire (secret_guard blocked a Write; agent_state wrote `.claude/run/events.jsonl`). WorktreeCreate: **contract mismatch found** — creator contract, passive hook removed; native worktree creation confirmed working after removal.
+4. ✅ `/freeze`,`/careful`,`/guard` frontmatter hooks block correctly under the plugin (`${CLAUDE_PLUGIN_ROOT}` fallback chain).
+5. ✅ Sales pack install auto-installs + enables core ("+ 1 dependency").
+6. ✅ Removed `install_project.sh`, `install_packs.py`, `merge_settings.py` (+ tests); docs flipped plugin-first. `validate_pack_manifest.py` deliberately kept (pack-authoring lint, not installer-only). Failure modes tied: install_project (symlink drift — #34 bug class, config overrides per ISSUE-028), install_packs/merge_settings (dead once packs became dependent plugins in ISSUE-025).
 
 #### Tests
-- [ ] Grep guard: no references to removed installer scripts remain in docs or code.
+- [x] Grep guard: `tests/test_no_installer_references.py` — removed scripts stay gone; no active-surface references.
 
 #### Rollback
 `git revert` the removal commit to restore `install_project.sh`. Because the plugin path is already in place, both install methods work again immediately.

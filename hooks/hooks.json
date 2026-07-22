@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "WorktreeCreate": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/worktree_freeze.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/worktree_freeze.py\" || true'"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "matcher": "*",

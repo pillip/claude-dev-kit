@@ -4,19 +4,11 @@
     "command": "~/.claude/kit/bin/cc-statusline",
     "padding": 0
   },
-  "fallbackModel": ["sonnet", "haiku"],
+  "fallbackModel": [
+    "sonnet",
+    "haiku"
+  ],
   "hooks": {
-    "WorktreeCreate": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'R=$(git rev-parse --show-toplevel 2>/dev/null || echo \".\"); G=$(git rev-parse --git-dir 2>/dev/null || echo \".git\"); [ -f \"$G/commondir\" ] && R=$(cd \"$G/$(cat \"$G/commondir\")/..\" && pwd); [ -f \"$R/.claude/hooks/worktree_freeze.py\" ] && HOOK_ROOT=\"$R\" python3 \"$R/.claude/hooks/worktree_freeze.py\" || true'"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "matcher": "*",

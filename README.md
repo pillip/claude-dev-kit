@@ -140,14 +140,12 @@ The default install ships the **core** layer — engineering agents, design pack
 
 | Pack | What it adds | Install command |
 |---|---|---|
-| **core** (default) | 33 engineering agents + 23 skills | `bash .claude-kit/scripts/install_project.sh` |
-| **sales** | 5 sales agents + 5 sales skills + 7 sales templates | `bash .claude-kit/scripts/install_project.sh --pack=sales` |
-| (every declared pack) | core + every pack under `packs/` | `bash .claude-kit/scripts/install_project.sh --pack=all` |
+| **core** (default) | 33 engineering agents + 23 skills | `/plugin install claude-dev-kit@claude-dev-kit` |
+| **sales** | 5 sales agents + 5 sales skills + 7 sales templates | `/plugin install claude-dev-kit-sales@claude-dev-kit` |
 
 Rules:
-- **Packs are additive on top of core, never substitutes.** Every pack's `manifest.yaml` declares `depends_on: [core]`. The installer enforces this — there is no "pack-only" install.
-- Pack entries (agents / skills) live alongside core's in `.claude/agents/` and `.claude/skills/` via per-entry symlinks. Re-running the installer with a different `--pack` set is the supported way to add / remove packs.
-- Pack `settings.snippet.json` (if declared) merges after core's, with pack values winning on key collision.
+- **Packs are additive on top of core, never substitutes.** Every pack plugin declares `dependencies: ["claude-dev-kit"]` in its `plugin.json` — installing a pack auto-installs and enables core.
+- Pack skills are namespaced by their plugin name (`/claude-dev-kit-sales:proposal`), so pack and core entries never collide.
 
 See `packs/README.md` for the manifest schema and rules for contributing new packs.
 
@@ -234,76 +232,43 @@ START
 
 ## Installation
 
-claude-kit is installed into a service repo as a **git submodule**.
+claude-dev-kit ships as a Claude Code **plugin marketplace** (`.claude-plugin/marketplace.json`).
 
-### 1. Add the submodule
+### 1. Install the plugin
 
-```bash
-cd your-service-repo
-git submodule add git@github.com:pillip/claude-dev-kit.git .claude-kit
-```
-
-### 2. Install user tools
-
-Installs the status line script to `~/.claude/kit/bin/`. Run once per machine.
-
-```bash
-bash .claude-kit/scripts/install_user.sh
-```
-
-### 3. Install into project
-
-Symlinks core agents, skills, hooks, and settings into the project's `.claude/` directory. Default install is **core only**:
-
-```bash
-bash .claude-kit/scripts/install_project.sh
-```
-
-To include the sales pack (account-research / discovery / proposal / meeting-capture / follow-up):
-
-```bash
-bash .claude-kit/scripts/install_project.sh --pack=sales
-```
-
-To include every declared pack:
-
-```bash
-bash .claude-kit/scripts/install_project.sh --pack=all
-```
-
-After installation:
-
-```
-your-service-repo/
-├── .claude/
-│   ├── agents/          # 33 core agents (or +5 if --pack=sales)
-│   ├── skills/          # 23 core skills (or +5 if --pack=sales)
-│   ├── hooks/           # agent_state.py (agent state tracking)
-│   └── settings.json    # Status line + hook config (auto-merged)
-├── .claude-kit/         # submodule (source — contains packs/ subtree too)
-└── ...
-```
-
-> Re-running the installer with a different `--pack` set is destructive of the pack entries from the previous install (the install set IS the active install). Symlinks are per-entry so core + selected packs coexist in the same `.claude/agents/` and `.claude/skills/`.
-
-### Alternative: install as a Claude Code plugin
-
-The repo also ships as a Claude Code **plugin marketplace** (`.claude-plugin/marketplace.json`), so you can install without the submodule/installer:
+Inside a Claude Code session:
 
 ```bash
 # Add the marketplace (the repo itself), then install the core plugin
 /plugin marketplace add pillip/claude-dev-kit
 /plugin install claude-dev-kit@claude-dev-kit
 
-# Optionally add the sales pack — enabling it auto-enables core (declared dependency)
+# Optionally add the sales pack — installing it auto-installs core (declared dependency)
 /plugin install claude-dev-kit-sales@claude-dev-kit
+```
+
+Or from a shell (same effect, scriptable):
+
+```bash
+claude plugin marketplace add pillip/claude-dev-kit
+claude plugin install claude-dev-kit@claude-dev-kit          # --scope user|project|local
 ```
 
 **Namespacing:** plugin skills are namespaced by plugin name — e.g. `/claude-dev-kit:implement`, `/claude-dev-kit:review`. This is mandatory for plugins (it prevents cross-plugin collisions).
 
-**Short names (standalone option):** if you prefer the bare `/implement`, `/review`, … keep using the **submodule + `install_project.sh`** path above — standalone `.claude/skills/` keeps short, un-namespaced names. The plugin and submodule paths are equivalent in behavior; they differ only in skill-name prefixing and how updates are delivered (`/plugin` versioning vs `git submodule update`). _(The bespoke installer is retired in a later step — see ISSUE-027 — once the plugin path reaches parity.)_
+**Script resolution:** kit helper scripts (checkpoints, worktree wrappers) resolve through `${CLAUDE_PLUGIN_ROOT}`, which Claude Code substitutes into skill text at load time — no files are copied into your project, and the absolute prefix keeps working from inside worktrees.
 
-### 4. Verify gh authentication
+### 2. Install user tools (optional)
+
+Installs the status line script to `~/.claude/kit/bin/`. Run once per machine (needs a clone of this repo):
+
+```bash
+bash scripts/install_user.sh
+```
+
+> **Migrating from the retired submodule installer?** The symlink-based project installer was removed after the plugin path reached parity (ISSUE-027). Remove the old symlinks from your project's `.claude/agents/`, `.claude/skills/`, and `.claude/hooks/`, drop the `.claude-kit` submodule if you no longer need it, and install the plugin as above. Skill names gain the `/claude-dev-kit:` prefix.
+
+### 3. Verify gh authentication
 
 ```bash
 gh auth status
@@ -651,12 +616,10 @@ claude-dev-kit/
 │   └── .claude/
 │       ├── hooks/agent_state.py
 │       └── settings.snippet.json
-├── scripts/                 # Install and utility scripts
-│   ├── install_user.sh
-│   ├── install_project.sh
+├── scripts/                 # Utility scripts
+│   ├── install_user.sh      # Status line install (user scope; project install is /plugin)
 │   ├── ensure_gh.sh
 │   ├── ensure_permissions.py
-│   ├── merge_settings.py
 │   ├── gen_skills.py        # Template → SKILL.md generator
 │   ├── preambles.py         # Tiered preamble injection
 │   ├── validate_issues.py   # issues.md format validator
@@ -755,14 +718,11 @@ Tests cover merge logic, agent state hooks, worktree lifecycle, file locking, in
 
 ## Updating
 
-Pull the latest submodule changes and re-run the project install script:
-
 ```bash
-cd .claude-kit
-git pull origin main
-cd ..
-bash .claude-kit/scripts/install_project.sh
+claude plugin update claude-dev-kit        # restart the session to apply
 ```
+
+Or in-session: `/plugin` → claude-dev-kit → update.
 
 ## Concurrency
 
