@@ -1074,8 +1074,13 @@ class TestMain:
             assert vc.main(["--skill", "implement", "--phase", "issue", "--issue", "ISSUE-001"]) == 0
 
     def test_returns_1_on_fail(self):
+        # implement/issue became advisory in ISSUE-031; use a blocking phase.
+        with patch.dict(vc.VERIFIERS, {("implement", "red"): lambda *a, **k: False}):
+            assert vc.main(["--skill", "implement", "--phase", "red", "--issue", "ISSUE-001"]) == 1
+
+    def test_advisory_phase_returns_0_on_fail(self):
         with patch.dict(vc.VERIFIERS, {("implement", "issue"): lambda *a, **k: False}):
-            assert vc.main(["--skill", "implement", "--phase", "issue", "--issue", "ISSUE-001"]) == 1
+            assert vc.main(["--skill", "implement", "--phase", "issue", "--issue", "ISSUE-001"]) == 0
 
     def test_returns_2_on_unknown_phase(self):
         assert vc.main(["--skill", "implement", "--phase", "nonexistent", "--issue", "ISSUE-001"]) == 2

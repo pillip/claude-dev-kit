@@ -23,7 +23,6 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
 - [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
 - [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection. Ordered after 002 for eval-report ingestion synergy, but independent of it)_
 - [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Last in the work order: after 030 (same files) and 029 (brainstormer/business-analyst may become degraded-path-only))_
@@ -62,6 +61,7 @@
 - [x] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 0.5d minimal re-scope — done 2026-07-23: agent_state.py emits SHAPE-ONLY events (the old full-payload dump leaked tool inputs/file contents into the trace), with checkpoint pass/fail extraction + UserPromptSubmit turn counting; scripts/trace_query.py `summary` derives turns/tool-calls/failures/spawns/checkpoints/duration per session. **Baseline captured** (docs/baselines/2026-07-23-diagnose-baseline.md): headless /diagnose fixture run — 74s, 10 API turns, 6.8k in / 4.4k out / 262k cache-read, $1.01, and 0 checkpoints + 0 subagents actually exercised (harness bypassed — direct before-signal for 031/032). Full spec (flock guarantees, schema doc, lead-time query) stays follow-up)_
 - [x] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — done 2026-07-23: all 33 core + 5 sales agents now inherit the session model (zero surviving pins); effort tiers stay as the per-agent knob. README agent table shows Effort instead of Model and documents the single-point deterministic pin (project `model` setting / `--model`) — the predictability guard. test_agent_effort.py rewritten: any future pin requires an adjacent `# pin:` rationale comment; xhigh valid under inherit (auto-fallback); matrix rows 2/3 updated)_
 - [x] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — done 2026-07-23: new session_start.py hook (plugin hooks.json + standalone snippet) runs kit_update_check + contributor-mode detection once per session, stdout injected into context — **live-verified under plugin install**. Preamble diet: dropped Kit Update Check / Contributor Mode / Self-Review, slimmed Behavioral Rules→Kit Rules, compressed Kit Script Root — **1385 → 618 total preamble lines (56% cut, AC ≥50%)** with a 700-line budget lint; kit_update_check dropped from 10 allowlists; orphan-reference guard test; matrix row 4e (SessionStart) added)_
+- [x] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — done 2026-07-23: 18 existence-style phases (implement issue/worktree/code/push/pr/registry, review checkout/push, generic worktree/push ×5 skills) now print `ADVISORY:` and exit 0 — report, self-correct, continue; 30 behavior gates (test/red/tests-written/test-quality, Figma suite, ship, uiux) stay hard-blocking. Skill text converted per-tier (18 blocks + intro rules in 8 skills + preamble pattern); checkpoint names/plumbing unchanged. **Predictability guard**: test_verify_checkpoint_contract.py enumerates the full 48-phase partition — any silent tier change is a build failure)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -1795,6 +1795,7 @@ Agents follow the session model by default. `model:` appears in an agent file on
 ### ISSUE-031: Checkpoint diet — demote existence-check gates to advisory
 
 > Harness audit 2026-07-16. 61 "CHECKPOINT — MANDATORY — NEVER SKIP" gates across skills (11 each in /implement and /review). The behavior gates (tests run, TDD red, hollow-test detection, Figma computed-style suite) verify things a model cannot self-certify — keep them blocking. The existence checks (GH issue field populated, worktree exists, code changed, registry status set) verify steps modern models perform reliably, and their hard-STOP semantics forbid autonomous recovery: one false negative halts the whole pipeline instead of letting the model fix and continue.
+> **Done 2026-07-23.** Final partition of the 48 registered (skill, phase) verifiers: **18 advisory** — implement issue/worktree/code/push/pr/registry, review checkout/push, and worktree/push in each of diagnose/refactor/devops/migrate/testgen — vs **30 blocking** (implement test-plan/figma/tests-written/red/test, the full review artifact+Figma suite, all ship phases, generic test/validate, uiux context/philosophy/system; review/debt stays advisory-by-internal-design outside ADVISORY_PHASES). Mechanism: verify_checkpoint.py `ADVISORY_PHASES` — a failed advisory verifier prints `ADVISORY: … report, self-correct, then continue` and exits 0; verifier internals and names untouched (telemetry comparability preserved — the ISSUE-001 trace records checkpoint pass/fail either way). Skill text converted mechanically per tier: 18 block headers → "CHECKPOINT — ADVISORY (report & continue)" with continue-wording, per-block STOP lines swapped, two-tier Checkpoint Rules intro in 8 skills + the tier-2/3 preamble pattern. **Predictability guard delivered**: tests/test_verify_checkpoint_contract.py enumerates the exact 48-phase partition (exact-set equality on both tiers), asserts exit-code behavior for both tiers, and lints generated skill text wording per tier — no gate can change tier silently.
 
 - Track: platform
 - UI: false
@@ -1804,9 +1805,9 @@ Agents follow the session model by default. `model:` appears in an agent file on
 - PRD-Ref: none (kit self-development; harness audit 2026-07-16)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-031-checkpoint-diet
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -1824,17 +1825,17 @@ Blocking checkpoints exist only where they verify behavior the model cannot self
   - Sprint orchestration logic (sprint has no checkpoints).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a demoted phase that fails, when the skill runs, then the model is instructed to fix and continue rather than halt.
-- [ ] Given a behavior gate that fails, when the skill runs, then it still hard-blocks.
-- [ ] Given verify_checkpoint tests, when run, then advisory phases assert exit 0 + warning output.
-- [ ] **Predictability guard**: given the blocking set (test/red/tests-written/test-quality/figma-compliance/computed-styles/structural-match/layout/visual-diff), when any phase's blocking/advisory classification changes, then a test enumerating the full set fails — no gate can be demoted silently.
+- [x] Given a demoted phase that fails, when the skill runs, then the model is instructed to fix and continue rather than halt. *(ADVISORY line + exit 0; skill text per-tier)*
+- [x] Given a behavior gate that fails, when the skill runs, then it still hard-blocks. *(exit 1, STOP wording kept)*
+- [x] Given verify_checkpoint tests, when run, then advisory phases assert exit 0 + warning output.
+- [x] **Predictability guard**: given the blocking set (test/red/tests-written/test-quality/figma-compliance/computed-styles/structural-match/layout/visual-diff), when any phase's blocking/advisory classification changes, then a test enumerating the full set fails — no gate can be demoted silently. *(exact-partition + wording lint in test_verify_checkpoint_contract.py)*
 
 #### Implementation Notes
 - Precedent: the `debt` phase (ISSUE-020) already implements the advisory pattern ("Always exits 0 ... Does NOT block").
-- Keep the checkpoint *names* stable so telemetry (ISSUE-001, if un-deferred) can compare before/after failure rates.
+- Keep the checkpoint *names* stable so telemetry (ISSUE-001, if un-deferred) can compare before/after failure rates. *(kept; ISSUE-001 landed first — its trace records checkpoint verdicts either way)*
 
 #### Tests
-- [ ] test_verify_checkpoint.py: per-phase blocking/advisory contract table.
+- [x] test_verify_checkpoint_contract.py: exact-partition contract table + exit-code behavior per tier + generated-text wording lint; legacy marker-count tests updated to count both tiers.
 
 #### Rollback
 `git revert`; checkpoint.sh interface is unchanged.

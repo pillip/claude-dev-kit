@@ -1749,6 +1749,42 @@ VERIFIERS = {
 }
 
 
+# ── Advisory tier (ISSUE-031) ────────────────────────────────────────
+#
+# Existence-style checkpoints verify steps modern models perform reliably
+# (an issue field is populated, a worktree exists, code changed, a status was
+# set). Hard-STOPping on them forbids autonomous recovery: one false negative
+# halts the pipeline instead of letting the model fix and continue. These
+# phases now REPORT failures (ADVISORY line) and exit 0.
+#
+# Behavior gates — things a model cannot self-certify (tests actually ran,
+# TDD red observed, hollow-test detection, the Figma computed-style suite) —
+# stay blocking. The debt phase already follows the advisory pattern
+# internally (always exits 0). This set is enumerated by a contract test in
+# tests/test_verify_checkpoint_contract.py — changing a phase's tier without
+# updating the test is a build failure, so no gate can be demoted silently.
+ADVISORY_PHASES = {
+    ("implement", "issue"),
+    ("implement", "worktree"),
+    ("implement", "code"),
+    ("implement", "push"),
+    ("implement", "pr"),
+    ("implement", "registry"),
+    ("review", "checkout"),
+    ("review", "push"),
+    ("diagnose", "worktree"),
+    ("diagnose", "push"),
+    ("refactor", "worktree"),
+    ("refactor", "push"),
+    ("devops", "worktree"),
+    ("devops", "push"),
+    ("migrate", "worktree"),
+    ("migrate", "push"),
+    ("testgen", "worktree"),
+    ("testgen", "push"),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Verify skill phase checkpoint")
@@ -1768,6 +1804,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     ok = VERIFIERS[key](args.issue)
+    if not ok and key in ADVISORY_PHASES:
+        print(
+            f"ADVISORY: checkpoint {args.skill}/{args.phase} FAILED (see above) — "
+            "not blocking: report the gap, self-correct, then continue (ISSUE-031)."
+        )
+        return 0
     return 0 if ok else 1
 
 

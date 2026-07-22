@@ -26,8 +26,9 @@ Run these checks silently at the start. Use results to adapt behavior:
 - Verify `gh auth status` before any GitHub operation.
 
 ### Checkpoint Verification Pattern
-Every phase has a mandatory checkpoint. Run the verification command and check exit code.
-If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
+Every phase has a checkpoint. Run the verification command and check the exit code.
+- Exit non-zero (blocking gate): **STOP immediately**, report failure, do NOT proceed.
+- Exit 0 with an `ADVISORY:` line (advisory gate): report the gap, self-correct, continue.
 Standard prefix:
 ```
 bash scripts/checkpoint.sh
@@ -55,7 +56,7 @@ bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
 ## Checkpoint Rules — MANDATORY
-Every phase in this skill has a CHECKPOINT block. You MUST run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase. Skipping checkpoints is a critical violation.
+Every phase in this skill has a CHECKPOINT block. You MUST run the verification command after completing each phase. Blocking gates (**MANDATORY — NEVER SKIP**) exit non-zero on failure: STOP immediately, report, do NOT proceed. Advisory gates (**ADVISORY (report & continue)**) always exit 0 and print an `ADVISORY:` line on failure: report the gap, self-correct, then continue — do NOT halt on them (ISSUE-031). Never skip running a checkpoint of either tier.
 
 **Path convention**: Checkpoint commands use the `bash scripts/checkpoint.sh` wrapper, which resolves the main repo root internally (via `scripts/worktree.sh root`). This ensures the verification script is found regardless of whether CWD is the main repo or a worktree, and keeps the command prefix-matchable for permission allowlists.
 
@@ -231,9 +232,9 @@ The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans
    - **File lock**: wrap the issues.md write-back with:
      `bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'`
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase issue --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 5) Create worktree for the branch (and auto-initialize the freeze marker):
    ```bash
@@ -247,9 +248,9 @@ The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans
    (`issues.md`, `STATUS.md`) are updated via `bash scripts/registry_edit.sh`
    from the main repo root — this is the only exception.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase worktree --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 6) **Write tests FIRST (TDD Red phase)** inside `$WT/`.
    This project follows TDD: write failing tests before writing implementation code.
@@ -303,9 +304,9 @@ The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans
    - Instead, the developer prompt MUST say: "The visual source of truth is `prototype/screens/desktop.html` (and tablet/mobile variants). Reproduce its structure exactly. Use other project files only as a reference for coding conventions, not for layout."
    - Rationale: a previous incident produced a page that visually matched a sibling product instead of the Figma design, because the orchestrator prompt reframed an unrelated template as the structure source. Static checkpoints cannot detect this drift after the fact — the prohibition must be enforced at prompt-authoring time.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase code --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 9) **Run tests (GREEN phase)** inside `$WT/`.
    All tests must pass. If any fail, fix the implementation (not the tests) until green.
@@ -403,17 +404,17 @@ The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans
 
 10) Commit + push (from `$WT/`).
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase push --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 11) Create PR (or update):
    - Title: `[$ARGUMENTS] <title>`
    - Body begins with `Closes #<issue_number>`
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase pr --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 12) Record PR URL in issues.md; set Status=done; update STATUS.md.
    Use `registry_edit.sh` — it resolves the main repo root internally so
@@ -423,9 +424,9 @@ The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans
    bash scripts/registry_edit.sh STATUS.md -- bash -c '<update command>'
    ```
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill implement --phase registry --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.

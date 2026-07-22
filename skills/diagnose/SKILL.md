@@ -26,8 +26,9 @@ Run these checks silently at the start. Use results to adapt behavior:
 - Verify `gh auth status` before any GitHub operation.
 
 ### Checkpoint Verification Pattern
-Every phase has a mandatory checkpoint. Run the verification command and check exit code.
-If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
+Every phase has a checkpoint. Run the verification command and check the exit code.
+- Exit non-zero (blocking gate): **STOP immediately**, report failure, do NOT proceed.
+- Exit 0 with an `ADVISORY:` line (advisory gate): report the gap, self-correct, continue.
 Standard prefix:
 ```
 bash scripts/checkpoint.sh
@@ -55,7 +56,7 @@ bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
 ## Checkpoint Rules — MANDATORY
-Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. Blocking gates exit non-zero on failure: STOP immediately, report, do NOT proceed. Advisory gates always exit 0 and print an `ADVISORY:` line on failure: report the gap, self-correct, then continue (ISSUE-031). Never skip running either tier.
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `fix/bookmark-none-subscript`) for use in checkpoint commands.
 
@@ -90,9 +91,9 @@ Steps:
    `.claude-kit/freeze-dir.txt` atomically. Apply the fix inside `$WT/`,
    run tests from `$WT/`.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill diagnose --phase worktree --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill diagnose --phase test --issue "$SLUG"`
@@ -103,9 +104,9 @@ Steps:
     - Body must include: error summary, root cause analysis, fix description, and affected files.
 11) Commit + push (from `$WT/`).
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill diagnose --phase push --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 12) Create PR:
     - `gh pr create --title "fix: <concise bug description>" --body "Closes #<issue_number>\n\n<details>"`

@@ -250,7 +250,10 @@ def test_skill_has_checkpoint_markers(skill, min_checkpoints):
     path = SKILL_DIR / skill / "SKILL.md"
     assert path.exists(), f"skills/{skill}/SKILL.md not found"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    # ISSUE-031: checkpoints are two-tier — blocking (MANDATORY — NEVER SKIP)
+    # plus advisory (report & continue). Both count as checkpoint markers.
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))
     assert count >= min_checkpoints, (
         f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
     )
@@ -484,7 +487,8 @@ def test_secondary_skill_has_checkpoint_markers(skill, min_checkpoints):
     path = SKILL_DIR / skill / "SKILL.md"
     assert path.exists(), f"skills/{skill}/SKILL.md not found"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))
     assert count >= min_checkpoints, (
         f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
     )
@@ -771,7 +775,8 @@ def test_design_skill_has_checkpoint_markers(skill, min_checkpoints):
     path = SKILL_DIR / skill / "SKILL.md"
     assert path.exists(), f"skills/{skill}/SKILL.md not found"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))  # two-tier since ISSUE-031
     assert count >= min_checkpoints, (
         f"skills/{skill}/SKILL.md has {count} CHECKPOINT markers, expected >= {min_checkpoints}"
     )
@@ -821,7 +826,8 @@ def test_readme_has_decision_tree():
 def test_kickoff_has_checkpoint_markers():
     path = SKILL_DIR / "kickoff" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))  # two-tier since ISSUE-031
     assert count >= 5, (
         f"skills/kickoff/SKILL.md has {count} CHECKPOINT markers, expected >= 5"
     )
@@ -1043,7 +1049,8 @@ def test_test_generator_has_self_review():
 def test_testgen_skill_has_checkpoint_markers():
     path = SKILL_DIR / "testgen" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))  # two-tier since ISSUE-031
     assert count >= 3, (
         f"skills/testgen/SKILL.md has {count} CHECKPOINT markers, expected >= 3"
     )
@@ -1248,7 +1255,8 @@ def test_implement_skill_has_enough_checkpoints():
     """Implement skill should have 8+ checkpoints after TDD conversion."""
     path = SKILL_DIR / "implement" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))  # two-tier since ISSUE-031
     assert count >= 8, (
         f"skills/implement/SKILL.md has {count} CHECKPOINT markers, expected >= 8 after TDD"
     )
@@ -1261,7 +1269,8 @@ def test_ship_skill_has_enough_checkpoints():
     """Ship skill should have 4+ checkpoints after smoke addition."""
     path = SKILL_DIR / "ship" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))  # two-tier since ISSUE-031
     assert count >= 4, (
         f"skills/ship/SKILL.md has {count} CHECKPOINT markers, expected >= 4 after smoke"
     )
@@ -1274,7 +1283,8 @@ def test_review_skill_has_enough_checkpoints():
     """Review skill should have 6+ checkpoints after test-quality addition."""
     path = SKILL_DIR / "review" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    count = content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+    count = (content.count("CHECKPOINT — MANDATORY — NEVER SKIP")
+             + content.count("CHECKPOINT — ADVISORY"))  # two-tier since ISSUE-031
     assert count >= 6, (
         f"skills/review/SKILL.md has {count} CHECKPOINT markers, expected >= 6 after test-quality"
     )

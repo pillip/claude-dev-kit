@@ -26,8 +26,9 @@ Run these checks silently at the start. Use results to adapt behavior:
 - Verify `gh auth status` before any GitHub operation.
 
 ### Checkpoint Verification Pattern
-Every phase has a mandatory checkpoint. Run the verification command and check exit code.
-If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
+Every phase has a checkpoint. Run the verification command and check the exit code.
+- Exit non-zero (blocking gate): **STOP immediately**, report failure, do NOT proceed.
+- Exit 0 with an `ADVISORY:` line (advisory gate): report the gap, self-correct, continue.
 Standard prefix:
 ```
 bash scripts/checkpoint.sh
@@ -65,9 +66,9 @@ Steps:
    `.claude-kit/freeze-dir.txt` atomically. All subsequent file operations
    happen inside `$WT/`.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill review --phase checkout --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 3) Gather review context:
    **Read all applicable context files via parallel Read tool calls in a single message.**
@@ -195,9 +196,9 @@ Steps:
 
 6) Commit + push from `$WT/`.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill review --phase push --issue $ARGUMENTS`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 7) If PR is draft and ready: `gh pr ready`.
 

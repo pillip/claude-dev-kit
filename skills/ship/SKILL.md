@@ -25,8 +25,9 @@ Run these checks silently at the start. Use results to adapt behavior:
 - Verify `gh auth status` before any GitHub operation.
 
 ### Checkpoint Verification Pattern
-Every phase has a mandatory checkpoint. Run the verification command and check exit code.
-If exit code is not 0, **STOP immediately** and report failure. Do NOT proceed to the next phase.
+Every phase has a checkpoint. Run the verification command and check the exit code.
+- Exit non-zero (blocking gate): **STOP immediately**, report failure, do NOT proceed.
+- Exit 0 with an `ADVISORY:` line (advisory gate): report the gap, self-correct, continue.
 Standard prefix:
 ```
 bash scripts/checkpoint.sh

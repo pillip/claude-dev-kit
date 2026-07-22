@@ -25,7 +25,7 @@ Run these checks silently at the start. Use results to adapt behavior:
 ### Kit Rules
 - Verify `gh auth status` before any GitHub operation.
 ## Checkpoint Rules — MANDATORY
-Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. Blocking gates exit non-zero on failure: STOP immediately, report, do NOT proceed. Advisory gates always exit 0 and print an `ADVISORY:` line on failure: report the gap, self-correct, then continue (ISSUE-031). Never skip running either tier.
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `migrate/django-5.0`) for use in checkpoint commands.
 
@@ -48,9 +48,9 @@ Steps:
    `.claude-kit/freeze-dir.txt` atomically. All subsequent file operations
    happen inside `$WT/`.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill migrate --phase worktree --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 8) Execute changes incrementally inside `$WT/`, running tests after each step.
 9) Run the full test suite to confirm no regressions.
@@ -65,9 +65,9 @@ Steps:
     - Body must include: migration scope, affected files/APIs, step-by-step plan, and rollback instructions.
 12) Commit + push (from `$WT/`).
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill migrate --phase push --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 13) Create PR:
     - `gh pr create --title "migrate: <target description>" --body "Closes #<issue_number>\n\n<details>"`

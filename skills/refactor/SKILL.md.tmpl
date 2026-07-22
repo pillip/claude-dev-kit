@@ -8,7 +8,7 @@ allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *)
 
 {{PREAMBLE}}
 ## Checkpoint Rules — MANDATORY
-Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. Blocking gates exit non-zero on failure: STOP immediately, report, do NOT proceed. Advisory gates always exit 0 and print an `ADVISORY:` line on failure: report the gap, self-correct, then continue (ISSUE-031). Never skip running either tier.
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `refactor/extract-views-helpers`) for use in checkpoint commands.
 
@@ -30,9 +30,9 @@ Steps:
    `.claude-kit/freeze-dir.txt` atomically. All subsequent file operations
    happen inside `$WT/`.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill refactor --phase worktree --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 7) Apply refactorings one at a time inside `$WT/`, running tests after each step.
 8) Confirm all tests pass after the final change.
@@ -46,9 +46,9 @@ Steps:
     - Body must include: identified code smells, applied refactoring patterns, affected files, and test results.
 10) Commit + push (from `$WT/`).
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill refactor --phase push --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 11) Create PR:
     - `gh pr create --title "refactor: <concise description>" --body "Closes #<issue_number>\n\n<details>"`

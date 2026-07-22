@@ -25,7 +25,7 @@ Run these checks silently at the start. Use results to adapt behavior:
 ### Kit Rules
 - Verify `gh auth status` before any GitHub operation.
 ## Checkpoint Rules — MANDATORY
-Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. If the exit code is not 0, STOP immediately and report the failure. Do NOT proceed to the next phase.
+Every phase in this skill that has a CHECKPOINT block must be verified. Run the verification command after completing each phase. Blocking gates exit non-zero on failure: STOP immediately, report, do NOT proceed. Advisory gates always exit 0 and print an `ADVISORY:` line on failure: report the gap, self-correct, then continue (ISSUE-031). Never skip running either tier.
 
 **Slug convention**: After creating the worktree, store the branch slug (e.g., `testgen/add-missing-tests`) for use in checkpoint commands.
 
@@ -91,9 +91,9 @@ Algorithm:
    `.claude-kit/freeze-dir.txt` atomically. All subsequent file operations
    happen inside `$WT/`.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill testgen --phase worktree --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 6) **Generate tests** inside `$WT/`:
    For each approved gap, ask test-generator subagent to:
@@ -122,9 +122,9 @@ Algorithm:
    - Body must include: gap report summary, number of tests generated, coverage improvement.
 9) Commit + push (from `$WT/`).
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> **CHECKPOINT — ADVISORY (report & continue)**
 > Run: `bash scripts/checkpoint.sh --skill testgen --phase push --issue "$SLUG"`
-> If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
+> Advisory: exits 0 even on failure, printing an `ADVISORY:` line — report the gap, self-correct, then continue.
 
 10) Create PR:
     - `gh pr create --title "test: add missing tests for [scope]" --body "Closes #<issue_number>\n\n<gap report summary>"`
