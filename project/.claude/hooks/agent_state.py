@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
-import json, os, sys, time
+"""Agent-state tracking + minimal run telemetry (ISSUE-001).
+
+Two outputs under <project>/.claude/run/:
+- agent-state.json — live snapshot (active agents, last event/tool).
+- events.jsonl     — append-only trace, one SLIM event per hook firing.
+
+Telemetry is shape-only by design: no tool inputs, file contents, prompts, or
+message bodies are ever logged — only event names, tool names, agent types,
+session ids, and checkpoint verdicts. This keeps every line well under 4KB
+(single-write atomic under POSIX O_APPEND) and PII-free.
+
+Metrics derivable from the trace (scripts/trace_query.py):
+- turns              — UserPromptSubmit count per session
+- tool calls/fails   — PreToolUse / PostToolUseFailure counts
+- subagent spawns    — SubagentStart by agent_type
+- checkpoint runs    — Bash commands invoking checkpoint.sh, with pass/fail
+- wall-clock         — first→last event timestamp per session
+Token usage is NOT hook-visible; capture it from `claude -p --output-format
+json` (headless) or /cost when recording a baseline run.
+"""
+import json, os, re, sys, time
 from pathlib import Path
 
 def now():
@@ -20,42 +40,69 @@ def find_project_root(start: Path) -> Path:
             return start
         cur = cur.parent
 
-payload = json.load(sys.stdin)
-event = payload.get("hook_event_name", "Unknown")
-cwd = Path(payload.get("cwd") or os.getcwd())
+_CHECKPOINT_ARG = re.compile(r"--(skill|phase|issue)[= ]([\w.-]+)")
 
-project_root = find_project_root(cwd)
-run_dir = project_root / ".claude" / "run"
-run_dir.mkdir(parents=True, exist_ok=True)
+def slim_event(payload: dict, ts: str) -> dict:
+    """Reduce a hook payload to its shape — never include content fields."""
+    event = payload.get("hook_event_name", "Unknown")
+    rec = {"ts": ts, "event": event}
+    for key in ("session_id", "agent_id", "agent_type", "tool_name"):
+        val = payload.get(key)
+        if isinstance(val, str) and val:
+            rec[key] = val
 
-state_path = run_dir / "agent-state.json"
-log_path = run_dir / "events.jsonl"
+    # Checkpoint detection: Bash invocations of checkpoint.sh are the kit's
+    # phase gates. Record which gate ran and (on completion events) whether it
+    # passed — the args, never the full command line.
+    if payload.get("tool_name") == "Bash":
+        command = (payload.get("tool_input") or {}).get("command") or ""
+        if "checkpoint.sh" in command:
+            rec["checkpoint"] = dict(_CHECKPOINT_ARG.findall(command))
+            if event == "PostToolUse":
+                rec["checkpoint_ok"] = True
+            elif event == "PostToolUseFailure":
+                rec["checkpoint_ok"] = False
+    return rec
 
-try:
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-except FileNotFoundError:
-    state = {"active_agents": {}, "last_event": None, "last_tool": None, "updated_at": None}
+def main() -> None:
+    payload = json.load(sys.stdin)
+    event = payload.get("hook_event_name", "Unknown")
+    cwd = Path(payload.get("cwd") or os.getcwd())
 
-if event == "SubagentStart":
-    agent_id = payload.get("agent_id")
-    agent_type = payload.get("agent_type")
-    if agent_id and agent_type:
-        state["active_agents"][agent_id] = agent_type
-elif event == "SubagentStop":
-    agent_id = payload.get("agent_id")
-    if agent_id:
-        state["active_agents"].pop(agent_id, None)
+    project_root = find_project_root(cwd)
+    run_dir = project_root / ".claude" / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
 
-if event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
-    state["last_tool"] = payload.get("tool_name")
+    state_path = run_dir / "agent-state.json"
+    log_path = run_dir / "events.jsonl"
 
-state["last_event"] = event
-state["updated_at"] = now()
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        state = {"active_agents": {}, "last_event": None, "last_tool": None, "updated_at": None}
 
-tmp = state_path.with_suffix(".json.tmp")
-tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-tmp.replace(state_path)
+    if event == "SubagentStart":
+        agent_id = payload.get("agent_id")
+        agent_type = payload.get("agent_type")
+        if agent_id and agent_type:
+            state["active_agents"][agent_id] = agent_type
+    elif event == "SubagentStop":
+        agent_id = payload.get("agent_id")
+        if agent_id:
+            state["active_agents"].pop(agent_id, None)
 
-payload["_ts"] = state["updated_at"]
-with log_path.open("a", encoding="utf-8") as f:
-    f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    if event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
+        state["last_tool"] = payload.get("tool_name")
+
+    state["last_event"] = event
+    state["updated_at"] = now()
+
+    tmp = state_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(state_path)
+
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(slim_event(payload, state["updated_at"]), ensure_ascii=False) + "\n")
+
+if __name__ == "__main__":
+    main()

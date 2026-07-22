@@ -23,8 +23,7 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, re-scoped 0.5d — **un-deferred 2026-07-21**, work-order slot 2: minimal baseline only (tokens, turns, checkpoint failures, user interventions) to measure the 030–033 harness changes before/after; full spec (flock guarantees, schema doc, trace_query breadth) stays follow-up)_
-- [ ] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — harness audit 2026-07-16: all 33 agents pin opus/sonnet, capping subagents below the session model as models improve; matrix row 2 already confirms `inherit` is the CC default. **Do not start before ISSUE-001's baseline run is captured**)_
+- [ ] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — harness audit 2026-07-16: all 33 agents pin opus/sonnet, capping subagents below the session model as models improve; matrix row 2 already confirms `inherit` is the CC default. Baseline prerequisite met 2026-07-23 (docs/baselines/); note the baseline exercised 0 subagent spawns — judge 030's quality effect on a /review or /implement run)_
 - [ ] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — harness audit 2026-07-16: kit_update_check + contributor-mode config check run on every skill invocation and 35–85 preamble lines are duplicated into all 28 generated SKILL.md files)_
 - [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
 - [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
@@ -62,6 +61,7 @@
 - [x] ISSUE-028: Remove lint enforcement from the kit (autoformat hook + linter configs) _(track: platform, P2, 0.5d)_
 - [x] ISSUE-035: Plugin-resolved skill entry commands — make `scripts/` invocations work under plugin install _(track: platform, P1, 1d — done 2026-07-22: Kit Script Root preamble section rides CC's load-time `${CLAUDE_PLUGIN_ROOT}` text substitution; plugin-root allowlist patterns added; AUTO-GEN header moved below frontmatter (byte-0 rule — frontmatter was silently dropped for all 25 generated skills). Live-verified headless: checkpoint + kit_update_check execute via absolute prefix in a plugin-only project)_
 - [x] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — done 2026-07-22: all parity items live-verified. The WorktreeCreate probe exposed a creator-contract mismatch — docs say the hook must CREATE the worktree and print its path, so the kit's passive freeze hook was breaking native worktree creation; hook removed (platform-first), guard test added. Installer + install_packs/merge_settings removed with their tests; README/packs docs flipped plugin-first; grep-guard test blocks re-references. Deviations: validate_pack_manifest.py kept (pack-authoring lint), install_user.sh kept (user-scope statusline, not the project installer))_
+- [x] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 0.5d minimal re-scope — done 2026-07-23: agent_state.py emits SHAPE-ONLY events (the old full-payload dump leaked tool inputs/file contents into the trace), with checkpoint pass/fail extraction + UserPromptSubmit turn counting; scripts/trace_query.py `summary` derives turns/tool-calls/failures/spawns/checkpoints/duration per session. **Baseline captured** (docs/baselines/2026-07-23-diagnose-baseline.md): headless /diagnose fixture run — 74s, 10 API turns, 6.8k in / 4.4k out / 262k cache-read, $1.01, and 0 checkpoints + 0 subagents actually exercised (harness bypassed — direct before-signal for 031/032). Full spec (flock guarantees, schema doc, lead-time query) stays follow-up)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -75,6 +75,7 @@
 
 > **Deferred 2026-06-14.** Telemetry needs N>1 sprint usage to produce meaningful signal — at single-user sub-monthly cadence, the data is a diary not a statistic. Un-defer when (a) sprint usage produces ≥10 runs/week, OR (b) a felt diagnostic gap appears ("which agent fails most often?" can't be answered by feel), OR (c) ISSUE-002 / ISSUE-008 actually moves to doing and needs telemetry as a prerequisite.
 > **Un-deferred 2026-07-21 (condition (b) met), re-scoped to a minimal baseline.** The 030–033 harness changes need a before/after measurement, which is exactly the diagnostic gap clause (b) describes. Minimal scope for this pass: per-run tokens, turn count, checkpoint failures, and user-intervention count — enough to compare a benchmark issue run before and after each harness change. Out (moved to follow-up): flock/PIPE_BUF concurrency guarantees, `docs/telemetry_schema.md`, and the full `trace_query.py` query set (lead-time only). **Definition of done for work-order purposes: the hook lands AND one benchmark-issue baseline run is captured before ISSUE-030 starts.**
+> **Done 2026-07-23 (minimal scope).** Delivered: (1) `agent_state.py` now appends **shape-only** events to `.claude/run/events.jsonl` — the previous version dumped the full hook payload, which leaked tool inputs (file contents, commands) into the trace; the slim schema keeps ts/event/session_id/agent_type/tool_name plus checkpoint arg extraction (`--skill/--phase/--issue`) with pass/fail from PostToolUse(Failure), guaranteeing <4KB lines and zero PII. (2) `UserPromptSubmit` wired into both hook surfaces (plugin `hooks.json` + standalone `settings.snippet.json`) for turn counting. (3) `scripts/trace_query.py summary [--json]` — per-session turns, tool calls/failures, subagent spawns by type, checkpoint runs/failures by phase, wall-clock. Lead-time-per-issue replaced by session wall-clock as the baseline proxy (issue-id events don't exist yet — follow-up). Tokens are not hook-visible: recorded from `claude -p --output-format json` usage alongside the trace, documented in the baseline. (4) **Baseline captured**: `docs/baselines/2026-07-23-diagnose-baseline.md` with the exact re-run recipe. Headline finding: the headless /diagnose run **bypassed the harness** (0 checkpoints, 0 subagents) while carrying 262k cache-read tokens of skill/preamble context — the clearest before-signal yet for 031 (gates don't bind) and 032 (context cost without behavior shaping). ISSUE-030's subagent-pin effect is NOT exercised by this benchmark; measure it on a /review or /implement run.
 
 - Track: platform
 - UI: false
@@ -83,9 +84,9 @@
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
 - Estimate: 0.5d (minimal re-scope 2026-07-21; original full spec was 1.5d)
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-001-telemetry-minimal
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -104,11 +105,11 @@ Every agent invocation, tool call, and skill phase emits a structured trace even
   - Cross-run aggregation / time-series DB (follow-up).
   - LLM-based event interpretation.
 
-#### Acceptance Criteria (DoD)
-- [ ] Given a `/sprint` run, when it completes, then `.claude/runs/<run-id>.jsonl` contains ≥2 events per agent invocation (a `agent_start` and `agent_end` pair) with `ts`, `agent`, `event_type`, `phase`, `issue_id` fields.
-- [ ] Given a trace file, when `scripts/trace_query.py lead-time <run-id>` runs, then it prints lead time per issue (ready → shipped) in seconds.
-- [ ] Given the existing test suite, when run, then no existing test regresses; new hook tests cover emission + schema validity.
-- [ ] Given `docs/telemetry_schema.md`, when read, then every event type has field list + example.
+#### Acceptance Criteria (DoD — minimal re-scope; original full-spec ACs moved to follow-up)
+- [x] Given any hooked session, when agents/tools run, then `.claude/run/events.jsonl` records SubagentStart/Stop, tool events, and UserPromptSubmit with `ts`/`session_id` — shape-only, no content fields. *(tests/test_run_telemetry.py)*
+- [x] Given a trace, when `trace_query.py summary` runs, then per-session turns, tool calls/failures, subagent spawns, checkpoint runs/failures, and wall-clock are reported. *(session wall-clock stands in for lead-time in the minimal scope)*
+- [x] Given the existing test suite, when run, then no existing test regresses; new hook tests cover emission + schema (PII-leak guard, checkpoint verdicts, CLI smoke).
+- [x] Given ISSUE-030, when it starts, then a baseline run exists — `docs/baselines/2026-07-23-diagnose-baseline.md` (recipe + metrics + caveats).
 
 #### Implementation Notes
 - Reuse the existing `agent_state.py` hook plumbing — do not introduce a new hook surface.

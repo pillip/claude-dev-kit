@@ -103,6 +103,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
+          }
+        ]
+      }
     ]
   }
 }
