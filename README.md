@@ -724,6 +724,16 @@ claude plugin update claude-dev-kit        # restart the session to apply
 
 Or in-session: `/plugin` → claude-dev-kit → update.
 
+## Uninstalling
+
+```bash
+claude plugin uninstall claude-dev-kit-sales   # if installed (packs first — they depend on core)
+claude plugin uninstall claude-dev-kit
+claude plugin marketplace remove claude-dev-kit
+```
+
+Or in-session via `/plugin`. Plugin files live in Claude Code's cache (`~/.claude/plugins/`), so uninstalling leaves nothing behind in your project — any `.claude-kit/` runtime state in a project can be deleted freely.
+
 ## Concurrency
 
 Multiple skill sessions (e.g., two `/implement` runs on different issues) can
