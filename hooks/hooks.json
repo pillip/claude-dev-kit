@@ -1,117 +1,119 @@
 {
-  "WorktreeCreate": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/worktree_freeze.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/worktree_freeze.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "SessionEnd": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "Stop": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "SubagentStart": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "SubagentStop": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "PreToolUse": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
-        }
-      ]
-    },
-    {
-      "matcher": "Write|Edit",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/secret_guard.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/secret_guard.py\" || true'"
-        }
-      ]
-    },
-    {
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/dangerous_command_guard.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/dangerous_command_guard.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "PostToolUse": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
-        }
-      ]
-    },
-    {
-      "matcher": "Write|Edit",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/autotest.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/autotest.py\" || true'"
-        }
-      ]
-    }
-  ],
-  "PostToolUseFailure": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/worktree_freeze.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/worktree_freeze.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/run_cleanup.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/secret_guard.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/secret_guard.py\" || true'"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/dangerous_command_guard.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/dangerous_command_guard.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/autotest.py\" ] && python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/autotest.py\" || true'"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/agent_state.py\" || true'"
+          }
+        ]
+      }
+    ]
+  }
 }

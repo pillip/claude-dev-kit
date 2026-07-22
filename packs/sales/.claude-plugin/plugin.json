@@ -2,6 +2,6 @@
   "name": "claude-dev-kit-sales",
   "version": "0.1.0",
   "description": "Sales-domain pack for claude-dev-kit — discovery, champion mapping, proposals, meetings, follow-up. Depends on the core kit.",
-  "author": "claude-dev-kit",
+  "author": { "name": "claude-dev-kit" },
   "dependencies": ["claude-dev-kit"]
 }

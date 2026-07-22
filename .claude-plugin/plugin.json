@@ -2,5 +2,5 @@
   "name": "claude-dev-kit",
   "version": "0.1.0",
   "description": "PRD-driven AI dev team control plane for Claude Code — agents, skills, and a GitHub-first sprint workflow.",
-  "author": "claude-dev-kit"
+  "author": { "name": "claude-dev-kit" }
 }
