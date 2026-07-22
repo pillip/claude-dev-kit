@@ -1,9 +1,12 @@
-"""Lint tests for ISSUE-015: agent effort tiers + model reference hygiene.
+"""Lint tests for agent model/effort hygiene (ISSUE-015 effort tiers, ISSUE-030 inherit).
 
-Enforces the support matrix (docs/cc_feature_matrix.md):
-- every agent declares a valid `effort` for its `model`
-- `xhigh` only on opus (sonnet caps at `high`); `max` is session-only (never frontmatter)
-- the heavy/light split matches the issue scope
+Enforces the support matrix (docs/cc_feature_matrix.md) after ISSUE-030:
+- agents do NOT pin a model — they inherit the session model; any surviving pin
+  must carry an adjacent `# pin:` rationale comment in the frontmatter
+- every agent declares a valid `effort` (`max` is session-only, never frontmatter)
+- `xhigh` is safe everywhere under inherit (auto-fallback on models capping at
+  `high`), but a *pinned* sonnet/haiku must not claim it
+- the heavy/light split matches the ISSUE-015 scope
 - no retired model id is presented as current in the README
 - the settings snippet parses and its fallbackModel is a list of <=3
 """
@@ -14,16 +17,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = sorted((ROOT / "agents").glob("*.md"))
+SALES_AGENTS = sorted((ROOT / "packs" / "sales" / "agents").glob("*.md"))
 
-# Valid persisted effort values per model. `max` is session-only (excluded).
+VALID_EFFORT = {"low", "medium", "high", "xhigh"}
+
+# Persisted effort values per *pinned* model (only relevant if a pin survives).
 VALID_BY_MODEL = {
     "opus": {"low", "medium", "high", "xhigh"},
     "sonnet": {"low", "medium", "high"},
     "haiku": {"low", "medium", "high"},
     "fable": {"low", "medium", "high", "xhigh"},
+    "inherit": VALID_EFFORT,  # auto-fallback applies (matrix row 1)
 }
 
-# Agents the issue scope names as heavy (deep reasoning) and light (extraction).
+# Agents the ISSUE-015 scope names as heavy (deep reasoning) and light (extraction).
 HEAVY = {"architect", "developer", "reviewer", "diagnostician", "refactorer",
          "planner", "desktop-uiux-developer", "mobile-uiux-developer", "uiux-developer"}
 LIGHT = {"scan-analyst", "scan-architect", "scan-data-modeler", "scan-qa-designer",
@@ -31,12 +38,16 @@ LIGHT = {"scan-analyst", "scan-architect", "scan-data-modeler", "scan-qa-designe
          "codebase-scanner"}
 
 
-def _frontmatter(path: Path) -> dict:
+def _frontmatter_block(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     parts = text.split("---")
     assert len(parts) >= 3, f"{path.name}: no frontmatter block"
+    return parts[1]
+
+
+def _frontmatter(path: Path) -> dict:
     fm = {}
-    for line in parts[1].splitlines():
+    for line in _frontmatter_block(path).splitlines():
         m = re.match(r"^(\w+):\s*(.*)$", line)
         if m:
             fm[m.group(1)] = m.group(2).strip()
@@ -45,32 +56,47 @@ def _frontmatter(path: Path) -> dict:
 
 def test_all_agents_present():
     assert len(AGENTS) == 33
+    assert len(SALES_AGENTS) == 5
 
 
-def test_every_agent_has_valid_effort_for_its_model():
+def test_agents_inherit_session_model():
+    # ISSUE-030: no model pins. A pin may survive only as a deliberate,
+    # documented decision — flagged by a `# pin:` rationale comment in the
+    # frontmatter block. Today the roster has zero pins.
+    for a in AGENTS + SALES_AGENTS:
+        fm = _frontmatter(a)
+        if "model" in fm and fm["model"] != "inherit":
+            block = _frontmatter_block(a)
+            assert re.search(r"^#\s*pin:", block, flags=re.M), (
+                f"{a.name}: pins model={fm['model']!r} without an adjacent "
+                f"'# pin: <rationale>' comment (ISSUE-030)"
+            )
+            assert fm["model"] in VALID_BY_MODEL, f"{a.name}: unknown model {fm['model']!r}"
+
+
+def test_every_core_agent_has_valid_effort():
     for a in AGENTS:
         fm = _frontmatter(a)
-        assert "model" in fm, f"{a.name}: missing model"
         assert "effort" in fm, f"{a.name}: missing effort"
-        model, effort = fm["model"], fm["effort"]
-        assert model in VALID_BY_MODEL, f"{a.name}: unexpected model {model!r}"
-        assert effort in VALID_BY_MODEL[model], (
-            f"{a.name}: effort {effort!r} invalid for model {model!r} "
-            f"(allowed: {sorted(VALID_BY_MODEL[model])})"
+        model = fm.get("model", "inherit")
+        allowed = VALID_BY_MODEL.get(model, VALID_EFFORT)
+        assert fm["effort"] in allowed, (
+            f"{a.name}: effort {fm['effort']!r} invalid for model {model!r} "
+            f"(allowed: {sorted(allowed)})"
         )
 
 
-def test_no_xhigh_on_non_opus_capable_models():
-    for a in AGENTS:
+def test_no_xhigh_on_pinned_incapable_models():
+    for a in AGENTS + SALES_AGENTS:
         fm = _frontmatter(a)
-        if fm.get("effort") == "xhigh":
-            assert fm.get("model") in {"opus", "fable"}, (
-                f"{a.name}: xhigh requires opus/fable, got {fm.get('model')!r}"
+        if fm.get("effort") == "xhigh" and "model" in fm:
+            assert fm["model"] in {"opus", "fable", "inherit"}, (
+                f"{a.name}: xhigh with pinned model {fm['model']!r} (caps at high)"
             )
 
 
 def test_no_session_only_effort_in_frontmatter():
-    for a in AGENTS:
+    for a in AGENTS + SALES_AGENTS:
         fm = _frontmatter(a)
         assert fm.get("effort") not in {"max", "ultracode"}, (
             f"{a.name}: {fm.get('effort')!r} is session-only, not valid in frontmatter"
@@ -98,6 +124,12 @@ def test_light_agents_run_low_or_medium():
 def test_readme_has_no_retired_model_id():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "claude-opus-4-6" not in readme, "retired model id claude-opus-4-6 still in README"
+
+
+def test_readme_agent_table_shows_effort_not_model():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "| Agent | Effort | Role | Tools |" in readme
+    assert "| Agent | Model |" not in readme
 
 
 def test_settings_snippet_fallback_model_valid():

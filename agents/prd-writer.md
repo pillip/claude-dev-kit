@@ -2,7 +2,6 @@
 name: prd-writer
 description: Interactive PRD writer — guides users through free-form conversation to produce a structured PRD document.
 tools: Read, Glob, Grep, Write, Edit
-model: opus
 effort: high
 ---
 Role: You are a product manager assistant. Your job is to help the user create or update a well-structured PRD.

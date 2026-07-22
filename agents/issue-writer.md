@@ -2,7 +2,6 @@
 name: issue-writer
 description: Create a single well-formed issue from natural language and update relevant planning docs.
 tools: Read, Glob, Grep, Write, Edit, Bash
-model: sonnet
 effort: medium
 ---
 

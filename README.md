@@ -528,43 +528,45 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-**33 core engineering agents** (default install) with optimized model assignments — opus for judgment/creativity, sonnet for structured extraction. **The sales pack adds 5 more** (`account-researcher`, `champion-mapper`, `discovery-coach`, `meeting-synthesizer`, `proposal-writer`) when installed with `--pack=sales`. See [Packs](#packs) for opt-in install.
+**33 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`). **The sales pack adds 5 more** (`account-researcher`, `champion-mapper`, `discovery-coach`, `meeting-synthesizer`, `proposal-writer`) via the `claude-dev-kit-sales` plugin. See [Packs](#packs).
 
-| Agent | Model | Role | Tools |
+> **Deterministic deployments:** to pin agent behavior for production use, set the model once at the session/project level (`model` in `.claude/settings.json`, or `claude --model <alias>`) — one control point instead of the old 33 per-agent pins. All inherit-agents follow it.
+
+| Agent | Effort | Role | Tools |
 |-------|-------|------|-------|
-| `brainstormer` | opus | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
-| `business-analyst` | opus | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
-| `prd-writer` | opus | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
-| `requirement-analyst` | sonnet | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
-| `ux-designer` | opus | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
-| `uiux-developer` | opus | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `mobile-uiux-developer` | opus | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `desktop-uiux-developer` | opus | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `copywriter` | opus | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
-| `figma-converter` | opus | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
-| `architect` | opus | Design software architecture | Read, Glob, Grep, Write, Edit |
-| `data-modeler` | opus | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
-| `planner` | opus | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
-| `issue-writer` | sonnet | Natural language → issue creation + planning/design docs update | Read, Glob, Grep, Write, Edit, Bash |
-| `qa-designer` | opus | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
-| `team-lead` | opus | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task |
-| `developer` | opus | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
-| `test-generator` | opus | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
-| `reviewer` | opus | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
-| `ui-reviewer` | sonnet | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
-| `design-auditor` | sonnet | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
-| `a11y-auditor` | sonnet | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
-| `documenter` | sonnet | Maintain documentation | Read, Glob, Grep, Write, Edit |
-| `diagnostician` | opus | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
-| `migrator` | opus | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
-| `refactorer` | opus | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
-| `devops` | sonnet | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
-| `codebase-scanner` | sonnet | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
-| `scan-analyst` | sonnet | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |
-| `scan-architect` | sonnet | Document as-is architecture from scan context | Read, Glob, Grep, Write, Edit |
-| `scan-data-modeler` | sonnet | Extract data models from ORM/migration/schema declarations | Read, Glob, Grep, Write, Edit |
-| `scan-qa-designer` | sonnet | Assess existing test coverage and identify gaps | Read, Glob, Grep, Write, Edit |
-| `scan-planner` | opus | Generate improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
+| `brainstormer` | high | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
+| `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
+| `prd-writer` | high | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
+| `requirement-analyst` | medium | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
+| `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
+| `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `mobile-uiux-developer` | xhigh | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `desktop-uiux-developer` | xhigh | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `copywriter` | medium | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
+| `figma-converter` | medium | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
+| `architect` | xhigh | Design software architecture | Read, Glob, Grep, Write, Edit |
+| `data-modeler` | xhigh | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
+| `planner` | xhigh | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
+| `issue-writer` | medium | Natural language → issue creation + planning/design docs update | Read, Glob, Grep, Write, Edit, Bash |
+| `qa-designer` | high | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
+| `team-lead` | xhigh | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task |
+| `developer` | xhigh | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
+| `test-generator` | high | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
+| `reviewer` | xhigh | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
+| `ui-reviewer` | high | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
+| `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
+| `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
+| `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
+| `diagnostician` | xhigh | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
+| `migrator` | xhigh | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
+| `refactorer` | xhigh | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
+| `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
+| `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
+| `scan-analyst` | low | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |
+| `scan-architect` | medium | Document as-is architecture from scan context | Read, Glob, Grep, Write, Edit |
+| `scan-data-modeler` | medium | Extract data models from ORM/migration/schema declarations | Read, Glob, Grep, Write, Edit |
+| `scan-qa-designer` | medium | Assess existing test coverage and identify gaps | Read, Glob, Grep, Write, Edit |
+| `scan-planner` | medium | Generate improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
 
 ## Roadmap
 

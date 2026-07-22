@@ -29,7 +29,9 @@ def _parse_frontmatter(path: Path) -> dict:
 
 
 AGENT_DIR = ROOT / "agents"
-AGENT_REQUIRED_KEYS = {"name", "description", "tools", "model"}
+# `model` is deliberately NOT required: agents inherit the session model
+# (ISSUE-030); a pin needs a `# pin:` rationale (see test_agent_effort.py).
+AGENT_REQUIRED_KEYS = {"name", "description", "tools"}
 
 
 def _agent_files():
