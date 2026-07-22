@@ -43,7 +43,10 @@ class TestScanTemplate:
         tmpl = self._find_scan_template()
         assert tmpl is not None
         content = process_template(tmpl)
-        assert content.startswith("<!-- AUTO-GENERATED")
+        # Header sits below the frontmatter block (ISSUE-035: frontmatter must
+        # start at byte 0 or Claude Code drops it).
+        assert "<!-- AUTO-GENERATED" in content
+        assert content.startswith("---\n")
 
     def test_no_unresolved_placeholders(self):
         tmpl = self._find_scan_template()

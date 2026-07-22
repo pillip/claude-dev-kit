@@ -127,6 +127,14 @@ def process_template(tmpl_path: Path) -> str:
             f"Unresolved placeholders in {tmpl_path.relative_to(KIT_ROOT)}: {remaining}"
         )
 
+    # YAML frontmatter must start at byte 0 or Claude Code ignores it entirely
+    # (name/description/allowed-tools all lost — found by the ISSUE-027 live
+    # parity run). Place the AUTO-GENERATED header after the frontmatter block.
+    if resolved.startswith("---\n"):
+        end = resolved.find("\n---", 4)
+        if end != -1:
+            insert_at = resolved.index("\n", end + 1) + 1
+            return resolved[:insert_at] + HEADER + resolved[insert_at:]
     return HEADER + resolved
 
 

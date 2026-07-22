@@ -73,7 +73,21 @@ class TestProcessTemplate:
         templates = discover_templates()
         assert templates, "No templates found"
         content = process_template(templates[0])
-        assert content.startswith("<!-- AUTO-GENERATED")
+        assert "<!-- AUTO-GENERATED" in content
+
+    def test_frontmatter_starts_at_byte_zero(self):
+        # Claude Code ignores the entire frontmatter block unless the file
+        # STARTS with `---` (ISSUE-035; found by the ISSUE-027 parity run).
+        # The AUTO-GENERATED header must come after the frontmatter, not before.
+        for tmpl in discover_templates():
+            content = process_template(tmpl)
+            if tmpl.read_text(encoding="utf-8").startswith("---\n"):
+                assert content.startswith("---\n"), (
+                    f"{tmpl.parent.name}: generated file must open with frontmatter"
+                )
+                assert not content.startswith("<!--"), (
+                    f"{tmpl.parent.name}: header before frontmatter breaks CC parsing"
+                )
 
     def test_no_unresolved_placeholders(self):
         import re

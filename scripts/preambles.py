@@ -29,6 +29,21 @@ SKILL_TIERS: dict[str, int] = {
 
 # -- Tier 1 sections --------------------------------------------------------
 
+# ${CLAUDE_PLUGIN_ROOT} below is NOT a shell variable: Claude Code substitutes
+# it as load-time TEXT replacement in plugin-installed skill bodies (verified
+# live 2026-07-22, ISSUE-035). It is NOT exported to the model's shell, so the
+# section teaches the model to use the substituted absolute path directly.
+_KIT_SCRIPT_ROOT = """\
+### Kit Script Root
+Kit root: `${CLAUDE_PLUGIN_ROOT}`
+- If the line above shows an **absolute path**, this is a plugin install (the
+  placeholder was substituted at load time). The project has no `scripts/` dir —
+  run every kit script command in this skill with that absolute prefix instead:
+  `bash <kit-root>/scripts/checkpoint.sh …`, `python3 <kit-root>/scripts/kit_update_check.py`.
+  The prefix is absolute, so these commands also work from inside worktrees.
+- If it still shows a literal `${…}` placeholder, this is the standalone layout —
+  run the commands exactly as written (e.g. `bash scripts/checkpoint.sh …`)."""
+
 _UPDATE_CHECK = """\
 ### Kit Update Check
 Run silently at the start:
@@ -133,6 +148,7 @@ def preamble_tier1(skill_name: str) -> str:
     """Generate Tier 1 preamble (lightweight skills)."""
     sections = [
         f"## Kit Preamble — {skill_name}",
+        _KIT_SCRIPT_ROOT,
         _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
@@ -145,6 +161,7 @@ def preamble_tier2(skill_name: str) -> str:
     """Generate Tier 2 preamble (pipeline skills). Includes all of Tier 1."""
     sections = [
         f"## Kit Preamble — {skill_name}",
+        _KIT_SCRIPT_ROOT,
         _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
@@ -161,6 +178,7 @@ def preamble_tier3(skill_name: str) -> str:
     """Generate Tier 3 preamble (orchestration skills). Includes all of Tier 2."""
     sections = [
         f"## Kit Preamble — {skill_name}",
+        _KIT_SCRIPT_ROOT,
         _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,

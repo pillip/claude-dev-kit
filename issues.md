@@ -23,7 +23,6 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-035: Plugin-resolved skill entry commands — make `scripts/` invocations work under plugin install _(track: platform, P1, 1d — live parity check 2026-07-22 (ISSUE-027): in a plugin-only project, skills instruct `bash scripts/checkpoint.sh` but the project has no `scripts/` and `$CLAUDE_PLUGIN_ROOT` is NOT exported to the model's shell — every checkpoint/worktree/registry command fails. The ISSUE-023 deferred rewrite that ISSUE-026 never picked up; blocks ISSUE-027)_
 - [ ] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, re-scoped 0.5d — **un-deferred 2026-07-21**, work-order slot 2: minimal baseline only (tokens, turns, checkpoint failures, user interventions) to measure the 030–033 harness changes before/after; full spec (flock guarantees, schema doc, trace_query breadth) stays follow-up)_
 - [ ] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — harness audit 2026-07-16: all 33 agents pin opus/sonnet, capping subagents below the session model as models improve; matrix row 2 already confirms `inherit` is the CC default. **Do not start before ISSUE-001's baseline run is captured**)_
 - [ ] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — harness audit 2026-07-16: kit_update_check + contributor-mode config check run on every skill invocation and 35–85 preamble lines are duplicated into all 28 generated SKILL.md files)_
@@ -35,7 +34,7 @@
 ### Doing
 
 ### Waiting
-- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **parity check ran 2026-07-22**: items 1/3/4/5 pass (after manifest fixes: author-object schema + hooks.json `hooks:` wrapper); **item 2 FAILS** — plugin-only projects can't run `bash scripts/...` skill commands. Now blocked on ISSUE-035; re-verify item 2 + the WorktreeCreate live probe after it lands, then proceed to deletion)_
+- [ ] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — **parity items 1/3/4/5 passed 2026-07-22** (after manifest fixes) and **item 2 re-verified same day** post-ISSUE-035: checkpoint + kit_update_check ran via absolute prefix in a plugin-only headless session. Remaining before deletion: the WorktreeCreate live probe (needs an in-session worktree), then the destructive step 6)_
 - [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns. **Work-order slot after 029 (2026-07-21)**: un-defer when 029 lands so the judge grades platform /code-review output; design updated to `claude -p` — no separate billing)_
 - [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d — **deferred 2026-06-14**: was already gated on ISSUE-001 telemetry; un-defer when a real polyrepo team requests it)_
 
@@ -62,6 +61,7 @@
 - [x] ISSUE-020: Tech-debt marker convention + harvester + review checkpoint (ponytail benchmark) _(track: platform, P2, 1d)_
 - [x] ISSUE-021: PyYAML-dependent tests should skip cleanly when the dep is absent _(track: platform, P2, 0.5d)_
 - [x] ISSUE-028: Remove lint enforcement from the kit (autoformat hook + linter configs) _(track: platform, P2, 0.5d)_
+- [x] ISSUE-035: Plugin-resolved skill entry commands — make `scripts/` invocations work under plugin install _(track: platform, P1, 1d — done 2026-07-22: Kit Script Root preamble section rides CC's load-time `${CLAUDE_PLUGIN_ROOT}` text substitution; plugin-root allowlist patterns added; AUTO-GEN header moved below frontmatter (byte-0 rule — frontmatter was silently dropped for all 25 generated skills). Live-verified headless: checkpoint + kit_update_check execute via absolute prefix in a plugin-only project)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -1989,6 +1989,7 @@ An agent file exists only where it carries differentiated instructions the calli
 ### ISSUE-035: Plugin-resolved skill entry commands — make `scripts/` invocations work under plugin install
 
 > ISSUE-027's live parity run (2026-07-22) proved this empirically: in a plugin-only project, a headless session sees `$CLAUDE_PLUGIN_ROOT` **empty in the model's shell** and `bash scripts/checkpoint.sh` fails with "No such file or directory". Every generated skill instructs project-relative `scripts/` commands (checkpoint/wt_setup/wt_cleanup/registry_edit/kit_update_check), so all 10 checkpoint-bearing skills are broken for plugin users. This is the rewrite ISSUE-023 explicitly deferred to ISSUE-026 ("rewriting the skill *entry* command strings to a plugin-resolved form"), which 026 never picked up. Contrast: skill-*frontmatter* hooks DO resolve — the guard skill's `$CLAUDE_PLUGIN_ROOT`-first fallback chain was verified live. The gap is model-shell-facing skill text only.
+> **Done 2026-07-22.** Spike answer: CC substitutes `${CLAUDE_PLUGIN_ROOT}` (braces form only) as **load-time text replacement** in plugin skill bodies; `$CLAUDE_PLUGIN_ROOT` stays literal and the env var is never exported to the shell. Implementation: (1) new **Kit Script Root** preamble section in all tiers — shows `Kit root: ${CLAUDE_PLUGIN_ROOT}`, which becomes an absolute path under plugin install, with the rule "absolute path → prefix all kit script commands; literal placeholder → standalone, run as written" (absolute prefix also fixes worktree cwd); (2) plugin-root patterns appended to 11 templates' allowed-tools; (3) **bonus root-cause fix**: gen_skills.py put the AUTO-GENERATED header *above* frontmatter — CC requires frontmatter at byte 0, so all 25 generated skills' frontmatter (name/description/allowed-tools) was being silently dropped under the plugin; header now goes below the block. Sandbox note: executing plugin-root scripts via absolute path works headless (only directory *listing* outside workdir was sandbox-blocked). Copy/materialize design (SessionStart hook) was probed viable but rejected — scripts referencing kit-root resources (templates/ etc.) would break outside the full tree. Live AC run: kit skill preamble showed the substituted absolute root; kit_update_check exit 0; checkpoint.sh reached verify_checkpoint.py and failed on *phase logic* ("issues.md not found"), not ENOENT. `claude plugin validate` clean for core + sales.
 
 - Track: platform
 - UI: false
@@ -1998,9 +1999,9 @@ An agent file exists only where it carries differentiated instructions the calli
 - PRD-Ref: none (kit self-development; ISSUE-027 parity run 2026-07-22)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-035-plugin-resolved-skill-commands
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -2019,10 +2020,10 @@ The script invocations that generated skills instruct the model to run resolve t
   - Checkpoint blocking/advisory semantics (ISSUE-031).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a plugin-only scratch project, when a headless session runs the skill-instructed checkpoint command, then verify_checkpoint.py executes (exit reflects phase logic, not ENOENT).
-- [ ] Given a standalone project (symlinked scripts/), when the same commands run, then behavior is unchanged — no regression.
-- [ ] Given the regenerated skill frontmatter, when permission allowlists are checked, then every script command remains prefix-matchable.
-- [ ] Given `claude plugin validate ./packs/sales`, when run, then zero frontmatter warnings.
+- [x] Given a plugin-only scratch project, when a headless session runs the skill-instructed checkpoint command, then verify_checkpoint.py executes (exit reflects phase logic, not ENOENT). *(live-verified 2026-07-22)*
+- [x] Given a standalone project (symlinked scripts/), when the same commands run, then behavior is unchanged — no regression. *(commands unchanged for standalone; full suite green)*
+- [x] Given the regenerated skill frontmatter, when permission allowlists are checked, then every script command remains prefix-matchable. *(relative forms kept; plugin-root forms are additional prefix patterns)*
+- [x] Given `claude plugin validate ./packs/sales`, when run, then zero frontmatter warnings. *(root cause was the header-above-frontmatter bug, not missing frontmatter)*
 
 #### Implementation Notes
 - Evidence probe (reproduce): `claude plugin marketplace add <repo>` → install into a scratch project (`--scope local`) → `claude -p 'run: echo "[$CLAUDE_PLUGIN_ROOT]" && bash scripts/checkpoint.sh'` → `[]` + ENOENT.
@@ -2030,8 +2031,8 @@ The script invocations that generated skills instruct the model to run resolve t
 - Coordinate with ISSUE-032: if its SessionStart hook lands first, that hook is the natural place to write the kit-root pointer; don't build a second session-init surface.
 
 #### Tests
-- [ ] Skill-text lint: no bare `bash scripts/`/`python3 scripts/` remains in generated SKILL.md files.
-- [ ] Root-resolution unit test covers both layouts (plugin root set / unset).
+- [x] Skill-text lint (tests/test_plugin_root_resolution.py): every generated skill instructing `scripts/` commands carries the Kit Script Root section + placeholder; allowed-tools carry plugin-root patterns; frontmatter at byte 0.
+- [x] Root-resolution unit test covers both layouts (CLAUDE_PLUGIN_ROOT set / unset) via checkpoint.sh subprocess probes.
 
 #### Rollback
 `git revert` the gen_skills change + regeneration commit; standalone layout keeps working throughout.
