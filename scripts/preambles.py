@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Preamble content generators for each tier.
 
+Session-level startup (kit update check, contributor-mode detection) moved to
+the SessionStart hook in ISSUE-032 — preambles carry only what the specific
+skill tier uses at task time.
+
 Tier 1: Lightweight skills (brainstorm, prd, bizanalysis, etc.)
 Tier 2: Pipeline skills (implement, review, ship, kickoff, diagnose)
 Tier 3: Orchestration skills (sprint)
@@ -36,21 +40,10 @@ SKILL_TIERS: dict[str, int] = {
 _KIT_SCRIPT_ROOT = """\
 ### Kit Script Root
 Kit root: `${CLAUDE_PLUGIN_ROOT}`
-- If the line above shows an **absolute path**, this is a plugin install (the
-  placeholder was substituted at load time). The project has no `scripts/` dir —
-  run every kit script command in this skill with that absolute prefix instead:
-  `bash <kit-root>/scripts/checkpoint.sh …`, `python3 <kit-root>/scripts/kit_update_check.py`.
-  The prefix is absolute, so these commands also work from inside worktrees.
-- If it still shows a literal `${…}` placeholder, this is the standalone layout —
-  run the commands exactly as written (e.g. `bash scripts/checkpoint.sh …`)."""
-
-_UPDATE_CHECK = """\
-### Kit Update Check
-Run silently at the start:
-```bash
-python3 scripts/kit_update_check.py 2>/dev/null
-```
-If exit code is 1 (update available), show the output to the user once. Do not block the workflow."""
+- Absolute path above → plugin install (substituted at load time; no project
+  `scripts/` dir): prefix every kit script command with it, e.g.
+  `bash <kit-root>/scripts/checkpoint.sh …`. Absolute paths also work from worktrees.
+- Literal `${…}` placeholder above → standalone layout: run commands as written."""
 
 _PROJECT_CONTEXT = """\
 ### Project Context Detection
@@ -60,28 +53,8 @@ Run these checks silently at the start. Use results to adapt behavior:
 - `[ -f docs/prd_digest.md ]` — if true, read it for quick project context before starting."""
 
 _BEHAVIORAL_RULES = """\
-### Behavioral Rules
-- Verify `gh auth status` before any GitHub operation.
-- Never commit secrets, API keys, or credentials. Use environment variables.
-- Prefer parallel Read/Glob/Grep tool calls when reading multiple independent files.
-- When uncertain about intent, ask the user rather than guessing.
-- Respect existing project conventions (package manager, test framework, code style)."""
-
-_CONTRIBUTOR_MODE = """\
-### Contributor Mode
-At the start of this skill, check if contributor mode is enabled:
-```bash
-python3 scripts/kit_config.py get contributor_mode
-```
-If the result is `true`:
-1. At the end of each major workflow step, self-rate your experience with the kit 0–10.
-2. If rating < 10 and there is an actionable improvement, file a field report:
-   ```bash
-   python3 scripts/contributor_report.py --skill <name> --step "<step>" --rating <N> --notes "<friction or suggestion>"
-   ```
-3. Maximum 3 reports per session. Skip if a report for the same step already exists.
-4. Do NOT stop the workflow to file reports — do it inline.
-5. Only report kit/skill issues (unclear instructions, missing checkpoints, bad ergonomics). Do NOT report user-app bugs or network errors."""
+### Kit Rules
+- Verify `gh auth status` before any GitHub operation."""
 
 # -- Tier 2 sections --------------------------------------------------------
 
@@ -118,14 +91,6 @@ bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches."""
 
-_SELF_REVIEW = """\
-### Self-Review Requirements
-Before completing any major phase, pause and verify:
-- Does the output satisfy the stated acceptance criteria?
-- Are there edge cases not covered?
-- Could this break existing functionality?
-- Rate confidence: **High** / **Medium** / **Low**. If Low, flag to the user before proceeding."""
-
 # -- Tier 3 sections --------------------------------------------------------
 
 _PARALLEL_MANAGEMENT = """\
@@ -149,10 +114,8 @@ def preamble_tier1(skill_name: str) -> str:
     sections = [
         f"## Kit Preamble — {skill_name}",
         _KIT_SCRIPT_ROOT,
-        _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
-        _CONTRIBUTOR_MODE,
     ]
     return "\n\n".join(sections)
 
@@ -162,14 +125,11 @@ def preamble_tier2(skill_name: str) -> str:
     sections = [
         f"## Kit Preamble — {skill_name}",
         _KIT_SCRIPT_ROOT,
-        _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
         _CHECKPOINT_PATTERN,
         _WORKTREE_PATTERN,
         _REGISTRY_UPDATE_PATTERN,
-        _SELF_REVIEW,
-        _CONTRIBUTOR_MODE,
     ]
     return "\n\n".join(sections)
 
@@ -179,16 +139,13 @@ def preamble_tier3(skill_name: str) -> str:
     sections = [
         f"## Kit Preamble — {skill_name}",
         _KIT_SCRIPT_ROOT,
-        _UPDATE_CHECK,
         _PROJECT_CONTEXT,
         _BEHAVIORAL_RULES,
         _CHECKPOINT_PATTERN,
         _WORKTREE_PATTERN,
         _REGISTRY_UPDATE_PATTERN,
-        _SELF_REVIEW,
         _PARALLEL_MANAGEMENT,
         _ESCALATION_RETRY,
-        _CONTRIBUTOR_MODE,
     ]
     return "\n\n".join(sections)
 

@@ -11,20 +11,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit
 
 ### Kit Script Root
 Kit root: `${CLAUDE_PLUGIN_ROOT}`
-- If the line above shows an **absolute path**, this is a plugin install (the
-  placeholder was substituted at load time). The project has no `scripts/` dir —
-  run every kit script command in this skill with that absolute prefix instead:
-  `bash <kit-root>/scripts/checkpoint.sh …`, `python3 <kit-root>/scripts/kit_update_check.py`.
-  The prefix is absolute, so these commands also work from inside worktrees.
-- If it still shows a literal `${…}` placeholder, this is the standalone layout —
-  run the commands exactly as written (e.g. `bash scripts/checkpoint.sh …`).
-
-### Kit Update Check
-Run silently at the start:
-```bash
-python3 scripts/kit_update_check.py 2>/dev/null
-```
-If exit code is 1 (update available), show the output to the user once. Do not block the workflow.
+- Absolute path above → plugin install (substituted at load time; no project
+  `scripts/` dir): prefix every kit script command with it, e.g.
+  `bash <kit-root>/scripts/checkpoint.sh …`. Absolute paths also work from worktrees.
+- Literal `${…}` placeholder above → standalone layout: run commands as written.
 
 ### Project Context Detection
 Run these checks silently at the start. Use results to adapt behavior:
@@ -32,12 +22,8 @@ Run these checks silently at the start. Use results to adapt behavior:
 - `[ -f docs/sprint_state.md ]` — if true and Status shows `running`, a sprint is active. Be aware of parallel work in worktrees.
 - `[ -f docs/prd_digest.md ]` — if true, read it for quick project context before starting.
 
-### Behavioral Rules
+### Kit Rules
 - Verify `gh auth status` before any GitHub operation.
-- Never commit secrets, API keys, or credentials. Use environment variables.
-- Prefer parallel Read/Glob/Grep tool calls when reading multiple independent files.
-- When uncertain about intent, ask the user rather than guessing.
-- Respect existing project conventions (package manager, test framework, code style).
 
 ### Checkpoint Verification Pattern
 Every phase has a mandatory checkpoint. Run the verification command and check exit code.
@@ -68,28 +54,6 @@ main repo root internally and delegates to `flock_edit.sh`:
 bash scripts/registry_edit.sh issues.md -- bash -c '<update command>'
 ```
 Never commit these files to feature branches.
-
-### Self-Review Requirements
-Before completing any major phase, pause and verify:
-- Does the output satisfy the stated acceptance criteria?
-- Are there edge cases not covered?
-- Could this break existing functionality?
-- Rate confidence: **High** / **Medium** / **Low**. If Low, flag to the user before proceeding.
-
-### Contributor Mode
-At the start of this skill, check if contributor mode is enabled:
-```bash
-python3 scripts/kit_config.py get contributor_mode
-```
-If the result is `true`:
-1. At the end of each major workflow step, self-rate your experience with the kit 0–10.
-2. If rating < 10 and there is an actionable improvement, file a field report:
-   ```bash
-   python3 scripts/contributor_report.py --skill <name> --step "<step>" --rating <N> --notes "<friction or suggestion>"
-   ```
-3. Maximum 3 reports per session. Skip if a report for the same step already exists.
-4. Do NOT stop the workflow to file reports — do it inline.
-5. Only report kit/skill issues (unclear instructions, missing checkpoints, bad ergonomics). Do NOT report user-app bugs or network errors.
 ## Algorithm
 
 ### Phase 1 — Setup

@@ -18,13 +18,15 @@ class TestTier1:
         result = preamble_tier1("brainstorm")
         assert "Project Context Detection" in result
 
-    def test_contains_behavioral_rules(self):
+    def test_contains_kit_rules(self):
         result = preamble_tier1("brainstorm")
-        assert "Behavioral Rules" in result
+        assert "Kit Rules" in result
 
-    def test_contains_contributor_mode(self):
+    def test_session_level_sections_moved_to_hook(self):
+        # ISSUE-032: update check + contributor mode run once in SessionStart.
         result = preamble_tier1("brainstorm")
-        assert "Contributor Mode" in result
+        assert "Kit Update Check" not in result
+        assert "Contributor Mode" not in result
 
     def test_contains_skill_name(self):
         result = preamble_tier1("brainstorm")
@@ -49,15 +51,16 @@ class TestTier2:
         result = preamble_tier2("implement")
         assert "Registry Update Pattern" in result
 
-    def test_contains_self_review(self):
+    def test_no_session_level_sections(self):
         result = preamble_tier2("implement")
-        assert "Self-Review Requirements" in result
+        assert "Kit Update Check" not in result
+        assert "Contributor Mode" not in result
+        assert "Self-Review Requirements" not in result  # dropped in ISSUE-032
 
     def test_includes_tier1_sections(self):
         result = preamble_tier2("implement")
         assert "Project Context Detection" in result
-        assert "Behavioral Rules" in result
-        assert "Contributor Mode" in result
+        assert "Kit Rules" in result
 
     def test_does_not_contain_tier3_sections(self):
         result = preamble_tier2("implement")
@@ -78,12 +81,11 @@ class TestTier3:
         result = preamble_tier3("sprint")
         assert "Checkpoint Verification Pattern" in result
         assert "Worktree Setup Pattern" in result
-        assert "Self-Review Requirements" in result
 
     def test_includes_tier1_sections(self):
         result = preamble_tier3("sprint")
         assert "Project Context Detection" in result
-        assert "Behavioral Rules" in result
+        assert "Kit Rules" in result
 
 
 class TestGeneratePreamble:
@@ -117,3 +119,15 @@ class TestGeneratePreamble:
             "sprint",
         }
         assert expected_skills == set(SKILL_TIERS.keys())
+
+
+class TestPreambleBudget:
+    def test_total_preamble_lines_stay_lean(self):
+        """ISSUE-032 cut total preamble duplication 1385 -> 618 lines (56%).
+        Keep the budget: regressing past 700 total lines fails this lint."""
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        skills = [p.parent.name for p in root.glob("skills/*/SKILL.md.tmpl")]
+        skills += [p.parent.name for p in root.glob("packs/*/skills/*/SKILL.md.tmpl")]
+        total = sum(generate_preamble(s).count("\n") + 1 for s in skills)
+        assert total <= 700, f"preamble duplication regressed: {total} lines (budget 700)"

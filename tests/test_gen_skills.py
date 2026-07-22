@@ -194,3 +194,20 @@ class TestReport:
         )
         assert result.returncode == 0
         assert "TOTAL" in result.stdout
+
+
+class TestNoOrphanedPreambleReferences:
+    """ISSUE-032: sections moved to the SessionStart hook must not be
+    referenced anywhere in generated skills (body or allowed-tools)."""
+
+    def test_generated_skills_free_of_moved_sections(self):
+        root = Path(__file__).resolve().parents[1]
+        offenders = []
+        for md in list(root.glob("skills/*/SKILL.md")) + list(root.glob("packs/*/skills/*/SKILL.md")):
+            text = md.read_text(encoding="utf-8")
+            for token in ("Kit Update Check", "Contributor Mode",
+                          "kit_update_check", "contributor_report",
+                          "Self-Review Requirements", "Behavioral Rules"):
+                if token in text:
+                    offenders.append(f"{md.parent.name}: {token}")
+        assert not offenders, f"orphaned references to moved preamble sections: {offenders}"

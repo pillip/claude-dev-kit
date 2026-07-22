@@ -23,7 +23,6 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — harness audit 2026-07-16: kit_update_check + contributor-mode config check run on every skill invocation and 35–85 preamble lines are duplicated into all 28 generated SKILL.md files)_
 - [ ] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — harness audit 2026-07-16: 61 blocking checkpoints; behavior gates (test/red/test-quality/figma) stay blocking, existence checks (issue/worktree/code/registry) stop hard-STOPping autonomous recovery)_
 - [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
 - [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection. Ordered after 002 for eval-report ingestion synergy, but independent of it)_
@@ -62,6 +61,7 @@
 - [x] ISSUE-027: Deprecate install_project.sh after plugin parity _(track: platform, P2, 1d — done 2026-07-22: all parity items live-verified. The WorktreeCreate probe exposed a creator-contract mismatch — docs say the hook must CREATE the worktree and print its path, so the kit's passive freeze hook was breaking native worktree creation; hook removed (platform-first), guard test added. Installer + install_packs/merge_settings removed with their tests; README/packs docs flipped plugin-first; grep-guard test blocks re-references. Deviations: validate_pack_manifest.py kept (pack-authoring lint), install_user.sh kept (user-scope statusline, not the project installer))_
 - [x] ISSUE-001: Run telemetry MVP — JSONL trace from agent_state hook _(track: platform, P1, 0.5d minimal re-scope — done 2026-07-23: agent_state.py emits SHAPE-ONLY events (the old full-payload dump leaked tool inputs/file contents into the trace), with checkpoint pass/fail extraction + UserPromptSubmit turn counting; scripts/trace_query.py `summary` derives turns/tool-calls/failures/spawns/checkpoints/duration per session. **Baseline captured** (docs/baselines/2026-07-23-diagnose-baseline.md): headless /diagnose fixture run — 74s, 10 API turns, 6.8k in / 4.4k out / 262k cache-read, $1.01, and 0 checkpoints + 0 subagents actually exercised (harness bypassed — direct before-signal for 031/032). Full spec (flock guarantees, schema doc, lead-time query) stays follow-up)_
 - [x] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — done 2026-07-23: all 33 core + 5 sales agents now inherit the session model (zero surviving pins); effort tiers stay as the per-agent knob. README agent table shows Effort instead of Model and documents the single-point deterministic pin (project `model` setting / `--model`) — the predictability guard. test_agent_effort.py rewritten: any future pin requires an adjacent `# pin:` rationale comment; xhigh valid under inherit (auto-fallback); matrix rows 2/3 updated)_
+- [x] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — done 2026-07-23: new session_start.py hook (plugin hooks.json + standalone snippet) runs kit_update_check + contributor-mode detection once per session, stdout injected into context — **live-verified under plugin install**. Preamble diet: dropped Kit Update Check / Contributor Mode / Self-Review, slimmed Behavioral Rules→Kit Rules, compressed Kit Script Root — **1385 → 618 total preamble lines (56% cut, AC ≥50%)** with a 700-line budget lint; kit_update_check dropped from 10 allowlists; orphan-reference guard test; matrix row 4e (SessionStart) added)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -1844,6 +1844,7 @@ Blocking checkpoints exist only where they verify behavior the model cannot self
 ### ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles
 
 > Harness audit 2026-07-16. Every one of the 28 generated SKILL.md files embeds a 35–85 line preamble (~1.3k duplicated lines), and every skill invocation re-runs `kit_update_check.py` and the contributor-mode config check. On modern CC these are session-level concerns: run them once in a SessionStart hook, keep skill bodies as task instructions.
+> **Done 2026-07-23.** (1) `project/.claude/hooks/session_start.py`: runs kit_update_check (prints only when an update exists) + contributor-mode detection (injects the field-report instructions only when ON — zero context cost when off); kit-root resolution is plugin-first (`CLAUDE_PLUGIN_ROOT` → `HOOK_ROOT` → own-location fallback for the standalone kit repo); never blocks session start. Wired into plugin `hooks.json` and standalone `settings.snippet.json`. **Live-verified**: a plugin-installed headless session quoted the injected CONTRIBUTOR MODE line from its context. (2) Preamble diet: dropped Kit Update Check + Contributor Mode (moved to hook) and Self-Review Requirements (generic for modern models; /review's own mandatory self-review lives in the reviewer flow), slimmed Behavioral Rules to the one kit-specific line (gh auth) as "Kit Rules", compressed Kit Script Root wording. **Total preamble duplication 1385 → 618 lines (56%)**; tier1 46→17, tier2 83→47, tier3 96→60. Budget lint (≤700 lines) prevents regression; orphan-reference guard asserts no generated skill still mentions the moved sections; `kit_update_check` removed from 10 allowed-tools lists. Matrix row 4e records SessionStart (doc + local, fires headless).
 
 - Track: platform
 - UI: false
@@ -1853,9 +1854,9 @@ Blocking checkpoints exist only where they verify behavior the model cannot self
 - PRD-Ref: none (kit self-development; harness audit 2026-07-16)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-032-sessionstart-preamble-diet
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -1873,17 +1874,18 @@ Skill bodies contain task instructions only. Session-level startup (update check
   - hooks.json always-on guards (agent_state, secret/dangerous — unchanged).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a new session, when it starts, then the update check runs exactly once (hook), and no skill invocation re-runs it.
-- [ ] Given the generated skills, when line-counted, then total preamble duplication drops by ≥50%.
-- [ ] Given contributor mode enabled, when any skill runs, then field-report behavior still works (detection moved, behavior preserved).
+- [x] Given a new session, when it starts, then the update check runs exactly once (hook), and no skill invocation re-runs it. *(preamble no longer instructs it; allowlists cleaned)*
+- [x] Given the generated skills, when line-counted, then total preamble duplication drops by ≥50%. *(1385 → 618 lines, 56%; ≤700 budget lint)*
+- [x] Given contributor mode enabled, when any skill runs, then field-report behavior still works (detection moved, behavior preserved). *(hook injects the instructions once per session; live-verified in a plugin-installed session)*
 
 #### Implementation Notes
 - Plugin path: SessionStart hook must resolve scripts via ${CLAUDE_PLUGIN_ROOT} (ISSUE-023 pattern).
-- Matrix row 4c confirms SessionEnd/Stop exist; verify SessionStart is available at the targeted build and add a matrix row for it as part of this issue.
+- Matrix row 4c confirms SessionEnd/Stop exist; verify SessionStart is available at the targeted build and add a matrix row for it as part of this issue. *(done — row 4e, fires in headless too)*
+- Deviation: Project Context Detection stayed in the preamble (6 lines, skill-relevant at task time); Self-Review Requirements was dropped rather than kept (generic modern-model behavior; /review's own self-review flow is in the reviewer instructions).
 
 #### Tests
-- [ ] test_lifecycle_hooks.py extended: SessionStart entry present and script path resolves.
-- [ ] gen_skills output test: no skill references a preamble section that no longer exists.
+- [x] test_lifecycle_hooks.py extended: SessionStart entries in both configs; session_start.py unit-tested (silent path, update+contributor path, no-kit-root no-op).
+- [x] gen_skills output test: orphan-reference guard over all generated skills; preamble budget lint in test_preambles.py.
 
 #### Rollback
 `git revert` + regenerate skills; hook entry removal restores per-skill checks.

@@ -102,22 +102,18 @@ class TestSnooze:
         assert "7d" in SNOOZE_DURATIONS
 
 
-class TestPreambleIncludesUpdateCheck:
-    def test_tier1_has_update_check(self):
-        from preambles import preamble_tier1
+class TestUpdateCheckMovedToSessionStart:
+    """ISSUE-032: the update check runs once per session in the SessionStart
+    hook — preambles must NOT re-instruct it per skill invocation."""
 
-        result = preamble_tier1("brainstorm")
-        assert "Kit Update Check" in result
-        assert "kit_update_check.py" in result
+    def test_no_tier_carries_update_check(self):
+        from preambles import preamble_tier1, preamble_tier2, preamble_tier3
 
-    def test_tier2_has_update_check(self):
-        from preambles import preamble_tier2
+        for result in (preamble_tier1("brainstorm"), preamble_tier2("implement"),
+                       preamble_tier3("sprint")):
+            assert "Kit Update Check" not in result
+            assert "kit_update_check.py" not in result
 
-        result = preamble_tier2("implement")
-        assert "Kit Update Check" in result
-
-    def test_tier3_has_update_check(self):
-        from preambles import preamble_tier3
-
-        result = preamble_tier3("sprint")
-        assert "Kit Update Check" in result
+    def test_session_start_hook_runs_update_check(self):
+        hook = Path(__file__).resolve().parents[1] / "project" / ".claude" / "hooks" / "session_start.py"
+        assert "kit_update_check.py" in hook.read_text(encoding="utf-8")

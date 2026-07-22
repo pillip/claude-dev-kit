@@ -22,7 +22,7 @@ class TestScanTierRegistration:
     def test_scan_preamble_is_tier1(self):
         result = generate_preamble("scan")
         assert "Project Context Detection" in result
-        assert "Behavioral Rules" in result
+        assert "Kit Rules" in result
         # Tier 1 should NOT have Tier 2 sections
         assert "Checkpoint Verification Pattern" not in result
         assert "Worktree Setup Pattern" not in result

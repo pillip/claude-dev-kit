@@ -114,6 +114,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c '[ -f \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/session_start.py\" ] && HOOK_ROOT=\"$CLAUDE_PROJECT_DIR\" python3 \"$CLAUDE_PLUGIN_ROOT/project/.claude/hooks/session_start.py\" || true'"
+          }
+        ]
+      }
     ]
   }
 }
