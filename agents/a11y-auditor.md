@@ -15,7 +15,7 @@ Role: You are a senior accessibility specialist. You audit designs and code agai
    - `docs/wireframes.md` (or `wireframes_mobile.md`, `wireframes_desktop.md`)
    - `docs/interactions.md` (or `interactions_mobile.md`, `interactions_desktop.md`)
    - `docs/copy_guide.md`
-   - `docs/review_lessons.md` — known recurring a11y issues (if exists)
+   - recalled **review lessons** (native memory) — known recurring a11y issues (if exists)
 2. **Scan implementation**: Read source code files (HTML, JSX/TSX, Vue, Svelte, React Native) in the target path.
 3. **Scan prototypes**: Read `prototype/`, `prototype-mobile/`, or `prototype-desktop/` files.
 4. **Execute audit** across all WCAG categories (see Audit Checklist below).
@@ -168,7 +168,7 @@ Role: You are a senior accessibility specialist. You audit designs and code agai
 
 ## Guidelines
 
-- Before auditing, check `docs/review_lessons.md` for recurring accessibility issues.
+- Before auditing, check recalled **review lessons** (native memory) for recurring accessibility issues.
 - If `docs/design_system.md` defines color tokens, compute contrast ratios from token values.
 - For React/Vue/Svelte components, check both the component definition and its usage.
 - If the project uses a UI library (Material UI, Chakra, etc.), note which a11y features the library provides vs. what must be added manually.

@@ -128,7 +128,7 @@ ship     → post-ship test gap scan
 test failure → team-lead invokes diagnostician for root cause analysis
             → diagnostician fix applied before retry
 
-review_lessons.md → patterns with Frequency ≥ 3 + Critical/High severity
+review lessons (native memory) → recurring high-impact patterns recalled next session
                   → team-lead creates preventive issues via planner
 ```
 
@@ -574,7 +574,7 @@ The next layer the kit is building: **AI dev team control plane** — telemetry 
 
 - **ISSUE-001 — Run telemetry**: every agent invocation, tool call, and phase emits a JSONL trace event so lead time, retry rate, and finding density can be measured without touching agent prompts.
 - **ISSUE-002 — Workflow eval gate**: LLM-as-judge scoring of `review_notes.md` against the PR diff. Non-blocking advisory at first; data feeds future thresholds.
-- **ISSUE-003 — Cumulative learning memory**: promote `docs/review_lessons.md` to a structured pattern store (`.claude/memory/patterns.jsonl` + `docs/decision_log.md`). The `reviewer` and `planner` agents consume top-N patterns as preamble context.
+- **ISSUE-033 — Native-memory learning loop** (supersedes ISSUE-003): `/review` records preventable patterns as **review lessons in Claude Code native memory** (one fact per entry + `MEMORY.md` index), auto-recalled into later sessions. Separate-context subagents receive relevant lessons injected by the calling skill (subagents get no auto-recall). Replaces the never-used `docs/review_lessons.md` registry.
 - **ISSUE-008 — Virtual monorepo wrapper code support**: per-service routing helpers + wrapper-root detection. Gated on telemetry signal (ISSUE-001) that polyrepo teams actually hit friction.
 
 Recently shipped (Cluster C + D this session): `/spec` skill + Spec-Required metadata (ISSUE-006), `/implement` Phase 0 spec gate (ISSUE-007), Pilot Gate hardening — neutral observation + separate-context critic + specificity + auto-cycle (ISSUE-010), Kill WebFetch reference fabrication (ISSUE-011), Reference Anchor tuning to 2–3 cues + literal_quote (ISSUE-012), `design-auditor` / `ui-reviewer` scope split (ISSUE-013). See `docs/specs/` for each SPEC.

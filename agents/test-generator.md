@@ -8,7 +8,7 @@ Role: You are a senior QA engineer who writes tests that catch real bugs. You pr
 
 ## Workflow
 
-1. **Read context**: Load `docs/test_plan.md` (if exists) for Risk Matrix and Critical Flows. Load `docs/architecture.md` (if exists) for tech stack. Check `docs/review_lessons.md` (if exists) for known recurring quality issues to guard against.
+1. **Read context**: Load `docs/test_plan.md` (if exists) for Risk Matrix and Critical Flows. Load `docs/architecture.md` (if exists) for tech stack. Check recalled **review lessons** (native memory; passed in your prompt when you run as a subagent) for known recurring quality issues to guard against.
    **Read all applicable documents via parallel Read tool calls in a single message.**
 2. **Study existing tests**: Before writing any new test, read at least 2 existing test files in the project to understand:
    - Naming conventions (`test_module.py` vs `module_test.py`, `.test.ts` vs `.spec.ts`)
@@ -131,7 +131,7 @@ describe('validateEmail', () => {
 
 ## Guidelines
 
-- Before writing tests, check `docs/review_lessons.md` (if exists) to proactively test against known recurring issues.
+- Before writing tests, check recalled **review lessons** (native memory; passed in your prompt when you run as a subagent) to proactively test against known recurring issues.
 - When in doubt about what to test, focus on: input validation, error handling, state transitions, and boundary conditions.
 - If a source file is purely declarative (config, constants, types), skip it — no test needed.
 - If you discover a bug while writing tests, document it but don't fix the source code — that's `/diagnose`'s job.

@@ -23,7 +23,6 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection. Ordered after 002 for eval-report ingestion synergy, but independent of it)_
 - [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Last in the work order: after 030 (same files) and 029 (brainstormer/business-analyst may become degraded-path-only))_
 
 ### Doing
@@ -62,7 +61,7 @@
 - [x] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — done 2026-07-23: new session_start.py hook (plugin hooks.json + standalone snippet) runs kit_update_check + contributor-mode detection once per session, stdout injected into context — **live-verified under plugin install**. Preamble diet: dropped Kit Update Check / Contributor Mode / Self-Review, slimmed Behavioral Rules→Kit Rules, compressed Kit Script Root — **1385 → 618 total preamble lines (56% cut, AC ≥50%)** with a 700-line budget lint; kit_update_check dropped from 10 allowlists; orphan-reference guard test; matrix row 4e (SessionStart) added)_
 - [x] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — done 2026-07-23: 18 existence-style phases (implement issue/worktree/code/push/pr/registry, review checkout/push, generic worktree/push ×5 skills) now print `ADVISORY:` and exit 0 — report, self-correct, continue; 30 behavior gates (test/red/tests-written/test-quality, Figma suite, ship, uiux) stay hard-blocking. Skill text converted per-tier (18 blocks + intro rules in 8 skills + preamble pattern); checkpoint names/plumbing unchanged. **Predictability guard**: test_verify_checkpoint_contract.py enumerates the full 48-phase partition — any silent tier change is a build failure)_
 - [x] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — done 2026-07-24: reconciled the hold branch (SPEC-018/019) onto current main rather than git-rebasing (issues.md/test/skill divergence too large). /review probes runtime via has_skill.py → primary path delegates correctness to /code-review + security to /security-review (per-dimension, mixed-mode) → synthesize_review_notes.py merges verbatim into the 2-section+Over-Engineering SSOT → review-merge-auditor (separate-context, refute-first) blocks on drops/downgrades/distortions; degraded path = reworked reviewer agent per dimension. /brainstorm + /bizanalysis delegate research to /deep-research (primary) or capture_source+validate_research_claim (degraded), synthesizer-auditor/research-auditor gate fabrication. 3 new auditor agents (inherit model per ISSUE-030 → roster 33→36). Reconciled with 030 (pins stripped), 031 (review checkout/push advisory + new synthesis-audit blocking gate), 032 (preamble auto-regen, kit_update_check allowlist dropped), 035 (plugin-root allowlists). synthesizer now always renders Over-Engineering. 106 delegation guard tests + telemetry_schema events)_
-
+- [x] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — done 2026-07-24: /review Learning Extraction now records preventable patterns as **review lessons in Claude Code native memory** (topic file + MEMORY.md index, dedup-in-place, no RL-NNN/Frequency), replacing the never-used docs/review_lessons.md registry (retired; template + [RL-NNN] flow removed). Confirmed via claude-code-guide: memory dir `~/.claude/projects/<project>/memory/` (overridable `autoMemoryDirectory`), MEMORY.md auto-loads at session start, **but Task subagents get NO auto-recall** — so the 26 consuming agents + kickoff/sprint/implement/testgen skills were reworded to "apply recalled/injected review lessons", and /review injects relevant lessons into separate-context subagent prompts. README/docs/roadmap updated; test_integration flipped to assert the native convention + guard against re-wiring the legacy registry)_
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
 - [x] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store — **dropped 2026-07-16** (superseded by ISSUE-033: CC native persistent memory replaces the patterns.jsonl + preamble-injection design; review_lessons.md never accumulated an entry) _(track: platform, P1, 1.5d)_
@@ -1897,6 +1896,7 @@ Skill bodies contain task instructions only. Session-level startup (update check
 ### ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003
 
 > Harness audit 2026-07-16. The kit's learning surface (`docs/review_lessons.md` + planned patterns.jsonl promotion, ISSUE-003) never accumulated a single [RL-NNN] entry, while Claude Code shipped a native persistent per-project memory directory with an index (MEMORY.md) that loads across sessions. Redesign the loop on the platform primitive instead of a bespoke store.
+> **Done 2026-07-24.** Mechanism confirmed via claude-code-guide against official docs: native memory lives at `~/.claude/projects/<project>/memory/` (overridable by the `autoMemoryDirectory` setting); `MEMORY.md` (first 200 lines / 25KB) auto-loads at session start; memory files are written with the normal Write/Edit tools and auto-indexed. **Critical caveat verified**: subagents spawned via Task do NOT inherit the main conversation's auto memory — so the loop cannot rely on recall alone for the kit's separate-context agents. Implementation: (1) /review step 5.5 records each preventable pattern as a **review lesson in native memory** (topic file `review-lessons.md` + a `## Review Lessons` pointer in MEMORY.md; one fact per entry with Why + How-to-apply; dedup-in-place against the index; no RL-NNN IDs, no Frequency counter, no `registry_edit.sh`). (2) The 26 consuming agents + the kickoff/sprint/implement/testgen skills were reworded from "read docs/review_lessons.md (if exists)" to "apply recalled review lessons (native memory); when running as a separate-context subagent, the calling skill injects the relevant lessons into your prompt". (3) ui-reviewer's own RL-NNN learning flow converted to the native convention; planner/team-lead RL-NNN references retitled to lesson-by-title. (4) `docs/review_lessons.md` registry + `templates/review_lessons.md` retired (0 entries ever); README/docs/roadmap updated.
 
 - Track: platform
 - UI: false
@@ -1906,9 +1906,9 @@ Skill bodies contain task instructions only. Session-level startup (update check
 - PRD-Ref: none (kit self-development; supersedes ISSUE-003)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-033-native-memory-learning
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -1926,16 +1926,17 @@ Review learnings persist in Claude Code's native memory (one fact per file + MEM
   - Cross-project/team-shared memory (out of scope; native memory is per-project).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a review that finds a preventable pattern, when Learning Extraction runs, then a memory file + index line exist and no review_lessons.md write occurs.
-- [ ] Given a later session reviewing similar code, when the reviewer runs, then the stored pattern is available to it (recall or explicit read).
-- [ ] Given the kit docs, when grepped, then review_lessons.md references are gone or marked historical.
+- [x] Given a review that finds a preventable pattern, when Learning Extraction runs, then a memory entry + MEMORY.md pointer are written and no review_lessons.md write occurs. *(step 5.5 rewritten; legacy-registry guard test)*
+- [x] Given a later session reviewing similar code, when the reviewer runs, then the stored pattern is available to it (recall in main session; injected by the skill for separate-context subagents — the verified no-auto-recall caveat).
+- [x] Given the kit docs, when grepped, then review_lessons.md references are gone or marked historical. *(only retired-mentions remain; template removed; README/docs updated)*
 
 #### Implementation Notes
-- Caveat: subagents spawned via Task may not receive automatic memory recall — verify, and if absent, have the skill pass relevant memory file contents into the agent prompt (thin, explicit, no preamble store).
-- Duplicate-prevention: reuse the native convention (check index before writing; update instead of duplicating) rather than the [RL-NNN] Frequency counter.
+- Caveat CONFIRMED: subagents spawned via Task do not receive automatic memory recall (official sub-agents docs) — the calling skill injects relevant lessons into the subagent prompt; agent text updated to expect that.
+- Duplicate-prevention: native convention (check the MEMORY.md index before writing; update in place) — no [RL-NNN] Frequency counter.
+- On-disk path is documented but not API-guaranteed; skill text routes through the model's memory capability / the `autoMemoryDirectory` setting rather than hard-coding, to stay portable across the plugin install.
 
 #### Tests
-- [ ] Skill-text test: /review Learning Extraction step references the memory dir, not review_lessons.md.
+- [x] test_integration: template retired; legacy-registry guard (no `registry_edit.sh docs/review_lessons` / `[RL-NNN]`); agent/skill references assert the native "review lessons" convention.
 
 #### Rollback
 Revert skill/agent text; memory files already written are inert data.

@@ -71,7 +71,7 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 **Step 5 & 6 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message (no dependency between them):**
 
 **planner → `issues.md`**
-- Context to pass: PRD + `docs/prd_digest.md` + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md` + `docs/review_lessons.md` (if exists)
+- Context to pass: PRD + `docs/prd_digest.md` + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md` + `docs/data_model.md` + recalled **review lessons** (native memory; passed in your prompt when you run as a subagent)
 - Agent produces: Issues sized 0.5d–1.5d with AC, tests, dependencies, implementation notes
 - Instruct the planner to set the `UI` field on each issue: `true` if the issue involves UI/frontend work (screens, components, styling, user-facing interactions), `false` otherwise.
 

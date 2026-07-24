@@ -11,7 +11,7 @@ This directory contains project-level documentation generated and managed by cla
 | `architecture.md` | `/kickoff` | System architecture and component design |
 | `data_model.md` | `/kickoff` | Database schema and entity relationships |
 | `prd_digest.md` | `/prd` | Condensed PRD for agent context |
-| `review_lessons.md` | `/review` | Recurring review patterns and lessons |
+| _review lessons_ | `/review` | Recurring review patterns — now in Claude Code **native memory** (ISSUE-033), not a doc file |
 | `review_notes.md` | `/review` | Per-PR review findings |
 | `sprint_state.md` | `/sprint` | Sprint progress checkpoint |
 | `test_plan.md` | `/review` | QA test plan and coverage tracking |

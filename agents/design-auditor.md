@@ -35,7 +35,7 @@ Role: You are a senior design system auditor. You evaluate the **design system i
    - `docs/wireframes.md` — screen inventory + components referenced
    - `docs/wireframes_mobile.md` / `docs/wireframes_desktop.md` (if exist)
    - `docs/copy_guide.md` — for internal-consistency audit ONLY
-   - `docs/review_lessons.md` — known recurring system issues (if exists)
+   - recalled **review lessons** (native memory) — known recurring system issues (if exists)
 2. **Do NOT scan prototypes** (`prototype/`, `prototype-mobile/`, `prototype-desktop/`). That's ui-reviewer's input.
 3. **Perform audit** across the 6 SYSTEM categories below.
 4. **Write report**: `docs/design_audit.md`.
@@ -148,6 +148,6 @@ Role: You are a senior design system auditor. You evaluate the **design system i
 
 ## Guidelines
 
-- Before auditing, check `docs/review_lessons.md` (if exists) to prioritize known recurring system issues.
+- Before auditing, check recalled **review lessons** (native memory; passed in your prompt when you run as a subagent) to prioritize known recurring system issues.
 - If no system documents exist at all, report: "No design system documents found. Run `/uiux` first."
 - Focus on systemic issues (broken scales, missing component definitions, philosophy drift) over individual styling details.

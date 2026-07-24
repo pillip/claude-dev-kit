@@ -117,12 +117,12 @@ Severity levels: **Critical** (blocks release), **High** (must fix before merge)
 
 ## Learning Extraction
 
-After completing the review, extract preventable patterns into `docs/review_lessons.md`:
+After completing the review, extract preventable patterns into recalled **review lessons** (native memory):
 
 1. Identify findings that could have been caught earlier (at design or implementation time).
 2. Classify each as: **UI State**, **Copy Usage**, **Token Usage**, **Accessibility**, **Interaction**, or **Component Existence**.
-3. If the pattern already exists in `docs/review_lessons.md`: increment its Frequency and append the current issue to Observed-In.
-4. If new: create a new entry with the next `[RL-NNN]` ID.
+3. Record each as a review lesson in native memory (one fact per entry: title, classification, Why, How-to-apply, observed issue).
+4. Dedup against the `MEMORY.md` index before writing — if the pattern already exists, update that entry (append the observed issue) instead of duplicating. No `RL-NNN` IDs or Frequency counter (ISSUE-033).
 
 ## Self-Review (Mandatory before saving)
 
@@ -130,7 +130,7 @@ After completing the review, extract preventable patterns into `docs/review_less
 - **Checklist coverage**: All 6 categories audited? Any skipped due to missing context?
 - **Finding actionability**: Every finding includes the specific file/line and a concrete fix?
 - **Severity calibration**: Consistent? No "Critical" for cosmetic issues, no "Low" for broken accessibility?
-- **Learning extraction**: Preventable patterns added to `docs/review_lessons.md`?
+- **Learning extraction**: Preventable patterns added to recalled **review lessons** (native memory)?
 - **Confidence rating**: High / Medium / Low. If Low: re-examine.
 
 ## Quality Criteria

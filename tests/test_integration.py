@@ -74,7 +74,8 @@ EXPECTED_TEMPLATES = {
     "prd_digest.md": ["Goals", "Target User", "Must-have Features"],
     "ux_spec.md": ["Key Flows", "Accessibility"],
     "issues.md": ["Conventions", "Board"],
-    "review_lessons.md": ["Patterns"],
+    # review_lessons.md retired in ISSUE-033 — review lessons now live in
+    # Claude Code native memory (see test_agents_reference_native_review_lessons).
 }
 
 
@@ -177,14 +178,28 @@ def test_validate_issues_script_exists_and_executable():
     assert mode & stat.S_IXUSR, "scripts/validate_issues.py is not executable (missing u+x)"
 
 
-# ── Test 9: review_lessons template and agent references ──────────
+# ── Test 9: native-memory review-lessons learning loop (ISSUE-033) ──
 
 
-def test_review_lessons_template_exists_and_has_patterns_header():
-    path = TEMPLATE_DIR / "review_lessons.md"
-    assert path.exists(), "Template review_lessons.md not found"
-    content = path.read_text(encoding="utf-8")
-    assert "Patterns" in content, "Template review_lessons.md missing section: Patterns"
+def test_review_lessons_template_is_retired():
+    # ISSUE-033: review lessons moved to Claude Code native memory; the bespoke
+    # docs/review_lessons.md registry + template are retired (0 entries ever).
+    assert not (TEMPLATE_DIR / "review_lessons.md").exists(), (
+        "templates/review_lessons.md should be removed — lessons live in native memory now"
+    )
+
+
+def test_no_active_surface_writes_legacy_review_lessons():
+    """No skill/agent may write docs/review_lessons.md or use the RL-NNN registry."""
+    offenders = []
+    for base in (AGENT_DIR, SKILL_DIR):
+        for md in base.rglob("*.md"):
+            text = md.read_text(encoding="utf-8")
+            # A retired-mention ("do not write", "retired") is allowed; a live
+            # registry_edit against review_lessons is not.
+            if "registry_edit.sh docs/review_lessons" in text or "[RL-NNN]" in text:
+                offenders.append(str(md.relative_to(ROOT)))
+    assert not offenders, f"legacy review_lessons registry still wired in: {offenders}"
 
 
 @pytest.mark.parametrize(
@@ -196,8 +211,8 @@ def test_agent_references_review_lessons(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
     assert path.exists(), f"agents/{agent_name}.md not found"
     content = path.read_text(encoding="utf-8")
-    assert "review_lessons" in content, (
-        f"agents/{agent_name}.md does not reference review_lessons"
+    assert "review lessons" in content, (
+        f"agents/{agent_name}.md no longer references review lessons (native memory)"
     )
 
 
@@ -281,8 +296,8 @@ def test_review_skill_references_ui_reviewer():
 def test_ui_reviewer_references_review_lessons():
     path = AGENT_DIR / "ui-reviewer.md"
     content = path.read_text(encoding="utf-8")
-    assert "review_lessons" in content, (
-        "agents/ui-reviewer.md does not reference review_lessons"
+    assert "review lessons" in content, (
+        "agents/ui-reviewer.md no longer references review lessons (native memory)"
     )
 
 
@@ -430,8 +445,8 @@ def test_agent_references_review_lessons_extended(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
     assert path.exists(), f"agents/{agent_name}.md not found"
     content = path.read_text(encoding="utf-8")
-    assert "review_lessons" in content, (
-        f"agents/{agent_name}.md does not reference review_lessons"
+    assert "review lessons" in content, (
+        f"agents/{agent_name}.md no longer references review lessons (native memory)"
     )
 
 
@@ -1075,8 +1090,8 @@ def test_testgen_skill_references_test_plan():
 def test_test_generator_references_review_lessons():
     path = AGENT_DIR / "test-generator.md"
     content = path.read_text(encoding="utf-8")
-    assert "review_lessons" in content, (
-        "agents/test-generator.md does not reference review_lessons"
+    assert "review lessons" in content, (
+        "agents/test-generator.md no longer references review lessons (native memory)"
     )
 
 

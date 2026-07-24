@@ -114,7 +114,7 @@ Never commit these files to feature branches.
    **Read all context files via parallel Read tool calls in a single message. Do NOT read them sequentially.**
    - `issues.md` — full content
    - `docs/sprint_state.md` — current state
-   - `docs/review_lessons.md` — if exists
+   - recalled **review lessons** (native memory) — if exists
    - `docs/architecture.md` — if exists
    - `docs/data_model.md` — if exists
    - `docs/prd_digest.md` — if exists (use as quick PRD context instead of full PRD)
@@ -161,7 +161,7 @@ Never commit these files to feature branches.
       ## Max Parallel: {N}
 
       ## Project Context
-      {Content of architecture.md, data_model.md, review_lessons.md, prd_digest.md}
+      {Content of architecture.md, data_model.md, review lessons (native memory), prd_digest.md}
 
       Execute this phase, update docs/sprint_state.md with results, then STOP.
       Do NOT loop.

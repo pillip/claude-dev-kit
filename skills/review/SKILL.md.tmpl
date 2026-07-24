@@ -1,6 +1,6 @@
 ---
 name: review
-description: Senior-level review against the PR. Per SPEC-019, delegates correctness + security passes to runtime /code-review and /security-review (primary path), or falls back to the kit's degraded reviewer agent (degraded path) when those runtime skills are not exposed. Layers kit-distinctive checks (over-engineering minimality axis, Figma 3.5-3.10, ui-reviewer, design-auditor, a11y-auditor, tech-debt ledger, review_lessons learning) on top.
+description: Senior-level review against the PR. Per SPEC-019, delegates correctness + security passes to runtime /code-review and /security-review (primary path), or falls back to the kit's degraded reviewer agent (degraded path) when those runtime skills are not exposed. Layers kit-distinctive checks (over-engineering minimality axis, Figma 3.5-3.10, ui-reviewer, design-auditor, a11y-auditor, tech-debt ledger, native-memory review-lessons learning) on top.
 argument-hint: [ISSUE-number]
 disable-model-invocation: true
 allowed-tools: Task, SlashCommand, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
@@ -24,7 +24,7 @@ Steps:
 
 3) Gather review context:
    **Read all applicable context files via parallel Read tool calls in a single message.**
-   - `docs/review_lessons.md` — if exists (for recurring pattern detection)
+   - **Recalled review lessons** — recurring patterns recorded by past reviews auto-recall from native memory into this session; apply them (the legacy `docs/review_lessons.md` is retired, ISSUE-033).
    - `docs/architecture.md` — if exists (for conformance checks)
    - For UI issues, also read in parallel: `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`, `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`).
 
@@ -45,7 +45,7 @@ Steps:
    - On the degraded code path, this is folded into the same `reviewer` agent invocation (the agent's Over-Engineering section covers it) — do not run it twice.
    - On the primary path, ask the `reviewer` subagent to run ONLY this axis; capture output to `docs/.review/minimality.md`.
    - When building `docs/.review/findings.json` (step 3.11), put each minimality finding into the `minimality_findings` array with its tag prefixed in the title (e.g. `[yagni] …`); the synthesizer renders these under the always-on **Over-Engineering** section (the kit's SSOT review-notes contract).
-   - Pass gathered context (review_lessons, architecture) so recurring patterns are recognized.
+   - Pass gathered context (recalled review lessons, architecture) so recurring patterns are recognized. Because separate-context subagents do not receive auto-recall, include the relevant recalled lessons verbatim in the subagent prompt.
 
 _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 complete — see steps 3.11 and 3.12 below. This sequencing lets the synthesizer merge runtime findings, kit-distinctive findings, and any degraded-path findings in a single pass.)_
 
@@ -99,7 +99,7 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 com
 
 3.8) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
    Ask ui-reviewer subagent to perform UI state review:
-   - Pass the UI context files gathered in step 3 plus `docs/review_lessons.md`.
+   - Pass the UI context files gathered in step 3 plus any recalled review lessons (inject them into the subagent prompt — subagents get no auto-recall).
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
    - Output: `docs/ui_review_notes/$ARGUMENTS.md` with severity-classified findings.
 
@@ -154,10 +154,11 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 com
 
 5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.11** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json` and re-invoke `review-merge-auditor`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
 
-5.5) **Learning Extraction** — runs on the MERGED notes (kit-distinctive, not duplicated by runtime). Identify findings in `docs/review_notes/$ARGUMENTS.md` that could have been prevented earlier (at kickoff or implementation time). Classify each into Code Quality / Security / Testing / Architecture / Over-Engineering. Update `docs/review_lessons.md`:
-   - For existing patterns: increment Frequency and append the current issue to Observed-In.
-   - For new patterns: create a new entry with the next `[RL-NNN]` ID.
-   - Update via `bash scripts/registry_edit.sh docs/review_lessons.md -- bash -c '<update command>'` for safe concurrent modification.
+5.5) **Learning Extraction → native memory** (kit-distinctive, not duplicated by runtime). Identify findings in `docs/review_notes/$ARGUMENTS.md` that could have been prevented earlier (at kickoff or implementation time), and record each preventable pattern as a **review lesson in Claude Code's native persistent memory** so it auto-recalls into future sessions — replacing the retired `docs/review_lessons.md` registry (ISSUE-033).
+   - Persist to the project memory topic file `review-lessons.md` (in the native auto-memory directory — `${autoMemoryDirectory}` if set, else `~/.claude/projects/<project>/memory/`; use your memory capability rather than a hard-coded path). Add a one-line pointer under a `## Review Lessons` heading in `MEMORY.md` so the index surfaces it at session start.
+   - Each lesson is one entry: a short title, the classification (Code Quality / Security / Testing / Architecture / Over-Engineering), **Why** it matters, and **How to apply** (the prevention step). Include the observed PR/issue.
+   - **Dedup, don't version-count**: before writing, check the `MEMORY.md` index and `review-lessons.md`; if the pattern already exists, update that entry (append the new observed issue) instead of creating a duplicate. No numeric lesson IDs, no Frequency counter — the native convention is one fact per entry, updated in place.
+   - Do **not** write `docs/review_lessons.md` or use `registry_edit.sh` for lessons; native memory is the store now.
 5.7) **Update test plan** (if `docs/test_plan.md` exists):
    - Ask qa-designer subagent to review and update `docs/test_plan.md` based on the PR changes.
    - Pass: PR diff summary, list of changed files, and current `docs/test_plan.md` content.

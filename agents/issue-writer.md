@@ -87,7 +87,7 @@ Before finalizing output, verify:
 
 ## Guidelines
 
-- Read `docs/review_lessons.md` if it exists. Reflect high-frequency patterns in Implementation Notes and AC.
+- Read recalled **review lessons** (native memory) if it exists. Reflect high-frequency patterns in Implementation Notes and AC.
 - Keep the issue independently shippable — it should be completable without other unfinished work (unless Depends-On is specified).
 - If the description is ambiguous, make reasonable assumptions and document them in Implementation Notes.
 - The issue output format must exactly match `templates/issues.md` conventions.

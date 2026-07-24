@@ -74,7 +74,7 @@ For each target issue:
    a) Read `docs/review_notes.md` from the worktree (`$WT/`).
    b) Extract findings with severity Critical or High that were NOT auto-fixed in review step 4.
    c) For each unresolved Critical/High finding:
-      - Invoke **planner** agent with: finding description + existing `issues.md` + `docs/review_lessons.md`
+      - Invoke **planner** agent with: finding description + existing `issues.md` + recalled **review lessons** (native memory)
       - Planner creates follow-up issue (Priority: P0 for Critical, P1 for High)
       - Set Depends-On to the current issue if the fix requires it to ship first
    d) Log created follow-up issues in `docs/sprint_state.md` > Discovered Issues section.
@@ -126,7 +126,7 @@ When executing a skill's algorithm:
    - GitHub operations → Bash (gh CLI)
 3. Pass all relevant context to sub-agents:
    - Issue spec from issues.md
-   - Architecture, data model, review_lessons docs
+   - Architecture, data model, review lessons docs
    - Design docs (for UI issues)
 
 ## Dynamic Issue Management
@@ -134,12 +134,12 @@ When executing a skill's algorithm:
 When sub-agents report findings that warrant new issues:
 
 1. **Developer reports**: "This needs rate limiting" / "Found a related bug" →
-   Invoke **planner** agent with: the finding + existing issues.md + review_lessons.md
+   Invoke **planner** agent with: the finding + existing issues.md + review lessons (native memory)
    Planner adds new issue(s) with proper Depends-On, Priority, AC.
 
 2. **Reviewer reports**: "Needs separate refactoring" / "Security concern in another module" →
    Invoke **planner** agent to create follow-up issue(s).
-   If the finding is in review_lessons.md, planner references the RL-NNN pattern.
+   If the finding traces to a review lesson (native memory), planner references that lesson by title.
 
 3. **Issue no longer needed**: Changed requirements, duplicate discovered →
    Invoke **planner** agent to set Status=drop with reason.
@@ -160,7 +160,7 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
 - **Manual issue handling**: If a target issue has `Manual: true`, skip it and report back. (Sprint orchestrator should not dispatch manual issues, but guard against it.)
 - **Worktree cleanup**: Clean up worktrees for each issue after the phase completes (success or failure). Run: `bash scripts/wt_cleanup.sh <branch>`. If cleanup fails, log a warning but do not block. On PIPELINE failure (e.g., IMPLEMENT fails before SHIP), still clean up the worktree before returning.
 - **Scope discipline**: For IMPLEMENT/REVIEW/SHIP, execute ONLY the requested phase. For PIPELINE, execute all three phases in order via sub-Tasks — but do NOT loop or restart phases.
-- **Sub-Task context**: When dispatching sub-Tasks, pass only the issue spec and phase instruction. The sub-Task's skill re-reads all project docs (architecture.md, review_lessons.md, etc.) from the file system — do NOT duplicate docs in the sub-Task prompt.
+- **Sub-Task context**: When dispatching sub-Tasks, pass only the issue spec and phase instruction. The sub-Task's skill re-reads all project docs (architecture.md, review lessons (native memory), etc.) from the file system — do NOT duplicate docs in the sub-Task prompt.
 
 ## Sprint State File (docs/sprint_state.md)
 
@@ -224,7 +224,7 @@ Before returning to the sprint orchestrator, verify:
 - **Batch limits**: Did execution respect MAX_PARALLEL? No over-dispatching?
 - **State consistency**: Does `docs/sprint_state.md` accurately reflect the current status of all target issues?
 - **Escalation check**: Are any target issues at 3+ attempts? Mark as waiting and note for escalation.
-- **Lessons escalation** (REVIEW phase only): Read `docs/review_lessons.md`. Any pattern with Frequency ≥ 3 and Severity Critical or High → invoke planner to create a preventive issue. Only create if no existing backlog issue already addresses the pattern.
+- **Lessons escalation** (REVIEW phase only): Read recalled **review lessons** (native memory). Any pattern with Frequency ≥ 3 and Severity Critical or High → invoke planner to create a preventive issue. Only create if no existing backlog issue already addresses the pattern.
 
 ## Quality Criteria
 

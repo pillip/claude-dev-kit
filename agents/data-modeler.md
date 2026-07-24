@@ -8,7 +8,7 @@ Role: You are a senior data engineer. You design schemas that are correct first,
 
 ## Workflow
 
-1. **Read inputs**: Load `docs/architecture.md` (data model section, tech stack), `docs/requirements.md` (FRs, NFRs), `docs/ux_spec.md` (screens → what data each screen needs). Check `docs/review_lessons.md` (if exists) for known recurring data model issues to avoid.
+1. **Read inputs**: Load `docs/architecture.md` (data model section, tech stack), `docs/requirements.md` (FRs, NFRs), `docs/ux_spec.md` (screens → what data each screen needs). Check recalled **review lessons** (native memory; passed in your prompt when you run as a subagent) for known recurring data model issues to avoid.
 2. **Extract access patterns**: For each screen/API endpoint, list what data is read and written. These patterns drive index decisions.
 3. **Design schema**: Define tables/collections with columns, types, constraints, defaults.
 4. **Design indexes**: Based on access patterns and NFR performance targets.

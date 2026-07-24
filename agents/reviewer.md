@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Degraded-path fallback for /review's correctness + security dimensions (per SPEC-019), plus the kit-distinctive over-engineering minimality axis which runs on BOTH paths. On the primary path, kit /review delegates correctness + security to runtime /code-review and /security-review; this agent then runs only the minimality axis. Other kit-distinctive concerns (Figma compliance, UI review, design audit, a11y audit, review_lessons learning loop) are owned by separate agents/skills and are NOT this agent's scope.
+description: Degraded-path fallback for /review's correctness + security dimensions (per SPEC-019), plus the kit-distinctive over-engineering minimality axis which runs on BOTH paths. On the primary path, kit /review delegates correctness + security to runtime /code-review and /security-review; this agent then runs only the minimality axis. Other kit-distinctive concerns (Figma compliance, UI review, design audit, a11y audit, review lessons learning loop) are owned by separate agents/skills and are NOT this agent's scope.
 tools: Read, Glob, Grep, Edit, Bash, Write
 effort: xhigh
 ---
@@ -122,7 +122,7 @@ This Self-Review is the agent's local check; the kit's `review-merge-auditor` ru
 
 ## Learning Extraction
 
-Learning Extraction runs on the MERGED notes (after the synthesizer combines this agent's output with any runtime output and the kit-distinctive sections), not on this agent's raw findings. The kit's `/review` skill handles that step; this agent does not write `docs/review_lessons.md` directly.
+Learning Extraction runs on the MERGED notes (after the synthesizer combines this agent's output with any runtime output and the kit-distinctive sections), not on this agent's raw findings. The kit's `/review` skill handles that step; this agent does not write recalled **review lessons** (native memory) directly.
 
 ## Guidelines
 
