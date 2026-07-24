@@ -2,7 +2,7 @@
 
 > SSOT: Progress and completion are tracked by the Status field in this document (not inferred from code analysis)
 > Rule: **1 Issue = 1 PR** (GitHub-first)
-> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 33 agents / 28 skills primitive set (counts asserted by tests/test_agent_effort.py and the skill generator).
+> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 32 agents / 28 skills primitive set (counts asserted by tests/test_agent_effort.py and the skill generator).
 
 ## Conventions
 - Track: `product` | `platform`
@@ -23,7 +23,6 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Last in the work order: after 030 (same files) and 029 (brainstormer/business-analyst may become degraded-path-only))_
 
 ### Doing
 
@@ -62,6 +61,7 @@
 - [x] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — done 2026-07-23: 18 existence-style phases (implement issue/worktree/code/push/pr/registry, review checkout/push, generic worktree/push ×5 skills) now print `ADVISORY:` and exit 0 — report, self-correct, continue; 30 behavior gates (test/red/tests-written/test-quality, Figma suite, ship, uiux) stay hard-blocking. Skill text converted per-tier (18 blocks + intro rules in 8 skills + preamble pattern); checkpoint names/plumbing unchanged. **Predictability guard**: test_verify_checkpoint_contract.py enumerates the full 48-phase partition — any silent tier change is a build failure)_
 - [x] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — done 2026-07-24: reconciled the hold branch (SPEC-018/019) onto current main rather than git-rebasing (issues.md/test/skill divergence too large). /review probes runtime via has_skill.py → primary path delegates correctness to /code-review + security to /security-review (per-dimension, mixed-mode) → synthesize_review_notes.py merges verbatim into the 2-section+Over-Engineering SSOT → review-merge-auditor (separate-context, refute-first) blocks on drops/downgrades/distortions; degraded path = reworked reviewer agent per dimension. /brainstorm + /bizanalysis delegate research to /deep-research (primary) or capture_source+validate_research_claim (degraded), synthesizer-auditor/research-auditor gate fabrication. 3 new auditor agents (inherit model per ISSUE-030 → roster 33→36). Reconciled with 030 (pins stripped), 031 (review checkout/push advisory + new synthesis-audit blocking gate), 032 (preamble auto-regen, kit_update_check allowlist dropped), 035 (plugin-root allowlists). synthesizer now always renders Over-Engineering. 106 delegation guard tests + telemetry_schema events)_
 - [x] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — done 2026-07-24: /review Learning Extraction now records preventable patterns as **review lessons in Claude Code native memory** (topic file + MEMORY.md index, dedup-in-place, no RL-NNN/Frequency), replacing the never-used docs/review_lessons.md registry (retired; template + [RL-NNN] flow removed). Confirmed via claude-code-guide: memory dir `~/.claude/projects/<project>/memory/` (overridable `autoMemoryDirectory`), MEMORY.md auto-loads at session start, **but Task subagents get NO auto-recall** — so the 26 consuming agents + kickoff/sprint/implement/testgen skills were reworded to "apply recalled/injected review lessons", and /review injects relevant lessons into separate-context subagent prompts. README/docs/roadmap updated; test_integration flipped to assert the native convention + guard against re-wiring the legacy registry)_
+- [x] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — done 2026-07-24: full classification found the audit's "~16 thin" over-counted — most "thin personas" are inline skills or sprint routing labels, not live orchestration hops. Absorbed the **4 genuinely-dead persona files** (diagnostician/migrator/refactorer/prd-writer — never Task-invoked, their skills have no Task at all) into their skills as "Execution Principles" grafts (root-cause discipline, one-major-bump migrations, behavior-preserving refactor, PRD completeness); roster 36→32; team-lead test-failure path rerouted to /diagnose. **Kept with rationale**: 3 auditors + reviewer/developer/architect/planner/uiux-developers (differentiated methodology / separate-context self-grading guard — the predictability guard), scan-family (real 4-pass per-domain pipeline; merging loses separate context), brainstormer/business-analyst (029 degraded-path research agents, freshly guard-tested). test_agent_effort roster+HEAVY, test_integration param lists/self-review/sprint-table + README/issues-header updated)_
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
 - [x] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store — **dropped 2026-07-16** (superseded by ISSUE-033: CC native persistent memory replaces the patterns.jsonl + preamble-injection design; review_lessons.md never accumulated an entry) _(track: platform, P1, 1.5d)_
@@ -1946,6 +1946,18 @@ Revert skill/agent text; memory files already written are inert data.
 ### ISSUE-034: Agent roster diet — consolidate thin persona agents
 
 > Harness audit 2026-07-16 (registered 2026-07-21). Roughly 16 of the 33 agents are thin personas — a role header plus a generic checklist in 60–100 lines (e.g. diagnostician, prd-writer, migrator, brainstormer, devops, business-analyst) — with no instructions a modern session model doesn't already follow. Each separate agent costs an orchestration hop (spawn + context handoff + result relay) and a maintenance surface (frontmatter, effort tier, tests) without a measurable quality contribution. ISSUE-013 (ui-reviewer/design-auditor merge) is the precedent: consolidation raised quality by sharpening boundaries.
+> **Done 2026-07-24.** Investigation corrected the premise: the "~16 thin" count assumed each persona is a live orchestration hop, but the coupling map showed most are NOT Task-invoked — they are either **inline skills** (`/diagnose`, `/migrate`, `/refactor`, `/prd` carry the full workflow and have no `Task` in allowed-tools, so they *cannot* spawn their persona) or **sprint routing labels** (the routing table dispatches the *skill*, not the agent). So the real cost is maintenance surface, not spawn overhead. **Absorbed 4 genuinely-dead persona files** — `diagnostician`, `migrator`, `refactorer`, `prd-writer` (verified: no `subagent_type:` spawn, no Task caller, skills carry the work) — grafting each one's distinctive discipline into its skill as an "Execution Principles" section (root-cause-before-fix + fail-before/pass-after regression test; one-major-bump + per-step rollback migrations; behavior-preserving one-transformation-per-commit refactor; PRD section-completeness + no-invented-requirements). Roster **36→32**. team-lead's test-failure path rerouted from "invoke diagnostician agent" to "run /diagnose". **Kept, with rationale** (classification table below).
+>
+> | Agent(s) | Verdict | Rationale |
+> |---|---|---|
+> | diagnostician, migrator, refactorer, prd-writer | **absorb** | dead files — never invoked; skill carries the workflow; discipline grafted in |
+> | research-auditor, review-merge-auditor, synthesizer-auditor | keep | separate-context refute-first graders — the predictability guard forbids collapsing a grader into the graded |
+> | reviewer, developer, architect, planner, team-lead | keep | substantive differentiated methodology + separate-context/effort control |
+> | uiux-developer, mobile-uiux-developer, desktop-uiux-developer, figma-converter | keep | large design-system/prototype methodology; sprint dispatches the first two by name |
+> | ui-reviewer, design-auditor, a11y-auditor, qa-designer, test-generator | keep | distinct review/QA lenses with separate-context value (ISSUE-013 precedent) |
+> | scan-analyst, scan-architect, scan-data-modeler, scan-qa-designer, scan-planner | keep | /scan's real 4-pass per-domain pipeline; merging would lose separate context per pass |
+> | codebase-scanner, data-modeler, requirement-analyst, ux-designer, issue-writer, documenter, copywriter, devops | keep | invoked by name from kickoff/scan/ship/uiux/issue skills; carry per-domain methodology |
+> | brainstormer, business-analyst | keep | ISSUE-029 degraded-path research agents, freshly guard-tested (removing them would fight 029) |
 
 - Track: platform
 - UI: false
@@ -1955,9 +1967,9 @@ Revert skill/agent text; memory files already written are inert data.
 - PRD-Ref: none (kit self-development; harness audit 2026-07-16)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-034-agent-roster-diet
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -1975,19 +1987,19 @@ An agent file exists only where it carries differentiated instructions the calli
   - Skill-level flow changes (which phases run) — this issue only changes who executes them.
 
 #### Acceptance Criteria (DoD)
-- [ ] Given the classification table (in the PR description), when reviewed, then every removed agent has a stated absorb/merge target and every kept agent a one-line differentiation rationale.
-- [ ] Given a skill whose agent was absorbed, when it runs, then the same phase executes via inline Task prompt with no output-contract change (skill-text tests updated, not deleted).
-- [ ] Given the test suite, when run, then roster-count and HEAVY/LIGHT assertions match the new roster.
-- [ ] **Predictability guard**: separate-context roles that exist to prevent self-grading (auditors, pilot-gate critic) are in the keep set — consolidation never collapses a grader into the graded.
+- [x] Given the classification table (above), when reviewed, then every removed agent has a stated absorb target and every kept agent a one-line differentiation rationale.
+- [x] Given a skill whose agent was absorbed, when it runs, then the same phase executes inline with no output-contract change (the 4 skills were already inline; discipline grafted; skill-text test added).
+- [x] Given the test suite, when run, then roster-count (32) and HEAVY assertions match the new roster.
+- [x] **Predictability guard**: separate-context roles that prevent self-grading (the 3 auditors, pilot-gate critic) are all in the keep set — no grader collapsed into the graded.
 
 #### Implementation Notes
-- Sequence with ISSUE-030 (model pins) — same files; do 030 first (mechanical) so this issue's diffs are semantic only.
-- Absorb direction beats deletion: the persona text usually contains 2–3 genuinely useful checklist lines — graft those into the calling skill phase, drop the rest.
-- Scan-family agents (scan-analyst/-architect/-data-modeler/-qa-designer) are one merge candidate cluster; brainstormer/business-analyst overlap with the ISSUE-029 delegation path — if 029 lands first, they may already be degraded-path-only.
+- Sequenced after ISSUE-030 (pins already stripped) and ISSUE-029 (auditors added, brainstormer/business-analyst reworked) — so this diff is purely the 4 absorptions + reroute.
+- Absorb-not-delete honored: each persona's Quality-Criteria/Self-Review essence grafted into its skill as "Execution Principles".
+- Scan-family and brainstormer/business-analyst evaluated and **kept** (see table) — the audit's merge suggestions were higher-risk/lower-value than estimated, or entangled with freshly-landed 029 work.
 
 #### Tests
-- [ ] test_agent_effort.py: updated roster count + HEAVY/LIGHT membership.
-- [ ] Skill-text tests assert absorbed phases still present in the generated SKILL.md.
+- [x] test_agent_effort.py: roster 32 + HEAVY minus diagnostician/refactorer.
+- [x] test_integration: absorbed agents dropped from param lists; diagnostician self-review test → diagnose-skill-carries-principles test; sprint-table assertion updated.
 
 #### Rollback
 `git revert` restores agent files and skill text; no state migration.

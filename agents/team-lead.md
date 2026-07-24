@@ -103,8 +103,8 @@ For each target issue:
 1. **Update sprint_state.md**: Write current progress for all target issues.
 2. **Update STATUS.md**: Reflect progress (via flock_edit.sh).
 3. **Test failure handling**: If any test failure occurs during the phase:
-   - Invoke **diagnostician** agent with the failing test output and relevant source files.
-   - If diagnostician identifies a fix with High confidence, apply it and re-run tests.
+   - Run the **`/diagnose`** skill with the failing test output and relevant source files (root-cause discipline lives there — ISSUE-034 absorbed the diagnostician persona into the skill).
+   - If diagnosis yields a High-confidence fix, apply it and re-run tests.
    - If Low/Medium confidence or fix doesn't resolve: log failure, increment Attempts.
 4. **STOP and return.** The sprint orchestrator will read sprint_state.md and decide the next action.
 

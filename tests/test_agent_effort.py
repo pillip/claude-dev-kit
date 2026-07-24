@@ -31,7 +31,7 @@ VALID_BY_MODEL = {
 }
 
 # Agents the ISSUE-015 scope names as heavy (deep reasoning) and light (extraction).
-HEAVY = {"architect", "developer", "reviewer", "diagnostician", "refactorer",
+HEAVY = {"architect", "developer", "reviewer",
          "planner", "desktop-uiux-developer", "mobile-uiux-developer", "uiux-developer"}
 LIGHT = {"scan-analyst", "scan-architect", "scan-data-modeler", "scan-qa-designer",
          "documenter", "issue-writer", "requirement-analyst", "a11y-auditor",
@@ -55,9 +55,10 @@ def _frontmatter(path: Path) -> dict:
 
 
 def test_all_agents_present():
-    # 33 core + 3 delegation auditors (research-auditor, review-merge-auditor,
-    # synthesizer-auditor — ISSUE-029 platform-first delegation).
-    assert len(AGENTS) == 36
+    # 29 core + 3 delegation auditors (ISSUE-029). ISSUE-034 absorbed 4 dead
+    # persona files (diagnostician, migrator, refactorer, prd-writer) into their
+    # skills — they were never invoked (no Task/subagent_type spawn).
+    assert len(AGENTS) == 32
     assert len(SALES_AGENTS) == 5
 
 

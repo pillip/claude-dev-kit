@@ -125,8 +125,8 @@ review   → review_notes.md with severity-classified findings
 ship     → post-ship test gap scan
          → team-lead auto-triggers /testgen for uncovered files
 
-test failure → team-lead invokes diagnostician for root cause analysis
-            → diagnostician fix applied before retry
+test failure → team-lead runs /diagnose for root cause analysis
+            → diagnosed fix applied before retry
 
 review lessons (native memory) → recurring high-impact patterns recalled next session
                   → team-lead creates preventive issues via planner
@@ -438,7 +438,7 @@ Scans source files for missing or hollow tests (empty functions, no assertions).
 /sprint
 ```
 
-Runs a phase-based sprint loop: each iteration reads `sprint_state.md`, picks the highest-priority phase (ship first, review second, implement last), and dispatches the team-lead agent for that single phase. This structural enforcement guarantees every issue completes the full implement → review → ship pipeline — no phase gets skipped. Includes automated feedback loops: review findings create follow-up issues, test failures trigger diagnostician, and shipped code gets test gap detection.
+Runs a phase-based sprint loop: each iteration reads `sprint_state.md`, picks the highest-priority phase (ship first, review second, implement last), and dispatches the team-lead agent for that single phase. This structural enforcement guarantees every issue completes the full implement → review → ship pipeline — no phase gets skipped. Includes automated feedback loops: review findings create follow-up issues, test failures trigger /diagnose, and shipped code gets test gap detection.
 
 ### Implement — Build an issue
 
@@ -536,7 +536,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 |-------|-------|------|-------|
 | `brainstormer` | high | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
 | `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
-| `prd-writer` | high | Interactive PRD co-writing via conversation | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | medium | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
@@ -557,9 +556,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
 | `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
 | `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
-| `diagnostician` | xhigh | Analyze bugs and propose targeted fixes | Read, Glob, Grep, Write, Edit, Bash |
-| `migrator` | xhigh | Plan and execute migrations | Read, Glob, Grep, Write, Edit, Bash |
-| `refactorer` | xhigh | Improve code structure without changing behavior | Read, Glob, Grep, Write, Edit, Bash |
 | `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 | `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
 | `scan-analyst` | low | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |

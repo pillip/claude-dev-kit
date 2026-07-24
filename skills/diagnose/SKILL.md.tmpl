@@ -107,3 +107,9 @@ These are registry files managed only on main. Always use `bash scripts/registry
 - Always write a regression test that fails before the fix and passes after.
 - Present hypotheses ranked by likelihood — let the user help narrow down if needed.
 - Document the chain of causation in the GH Issue body for future reference.
+
+## Execution Principles (absorbed from the diagnostician persona — ISSUE-034)
+- Trace backward from the error to the **root cause** before proposing any fix — symptom suppression creates new bugs.
+- One bug per PR; do not refactor surrounding code or fix unrelated bugs in the same change.
+- Write a **regression test that fails before the fix and passes after**. Never "fix" by suppressing errors (bare `except`, empty `catch`).
+- If multiple causes are possible, present them ranked by likelihood and ask before applying a fix. Document the causation chain in the issue body.

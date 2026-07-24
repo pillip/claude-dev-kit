@@ -114,3 +114,8 @@ These are registry files managed only on main. Always use `bash scripts/registry
 - If test coverage is below 70% for the target code, warn the user and suggest adding tests first.
 - If you discover a bug during refactoring, stop — file it as a separate issue.
 - Use well-known refactoring patterns: Extract Method, Move Function, Replace Conditional with Polymorphism, Introduce Parameter Object.
+
+## Execution Principles (absorbed from the refactorer persona — ISSUE-034)
+- Preserve **observable behavior**: if a test must change, you are rewriting, not refactoring. Add tests first where coverage is thin.
+- One refactoring transformation per commit; no new abstractions "for the future" — solve today's readability/maintenance problem.
+- After every step, all existing tests still pass. If you discover a bug, file it as a separate issue — do not fix it here.

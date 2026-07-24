@@ -212,9 +212,9 @@ Team-lead uses this table to determine which agent(s) to dispatch per issue:
 | UI/frontend (web) | uiux-developer | skills/implement/SKILL.md + UI context |
 | UI/frontend (mobile) | mobile-uiux-developer | skills/implement/SKILL.md + mobile context |
 | Infrastructure/CI/CD | devops | skills/devops/SKILL.md |
-| Bug fix | diagnostician | skills/diagnose/SKILL.md |
-| Refactoring | refactorer | skills/refactor/SKILL.md |
-| DB migration | migrator | skills/migrate/SKILL.md |
+| Bug fix | (run the diagnose skill) | skills/diagnose/SKILL.md |
+| Refactoring | (run the refactor skill) | skills/refactor/SKILL.md |
+| DB migration | (run the migrate skill) | skills/migrate/SKILL.md |
 | Architecture change needed | architect → data-modeler → developer | sequential |
 | Any completed implementation | reviewer | skills/review/SKILL.md |
 | UI implementation completed | reviewer + ui-reviewer | skills/review/SKILL.md |

@@ -385,15 +385,15 @@ def test_ship_skill_references_documenter():
     )
 
 
-# ── Test 17: debugger self-review ────────────────────────────────────
+# ── Test 17: diagnose self-review ────────────────────────────────────
 
 
-def test_diagnostician_agent_has_self_review():
-    path = AGENT_DIR / "diagnostician.md"
-    content = path.read_text(encoding="utf-8")
-    assert "Self-Review" in content, (
-        "agents/diagnostician.md does not contain Self-Review section"
-    )
+def test_diagnose_skill_carries_absorbed_diagnostician_principles():
+    # ISSUE-034: the diagnostician persona (never invoked) was absorbed into
+    # /diagnose. Its root-cause discipline must survive in the skill body.
+    content = (SKILL_DIR / "diagnose" / "SKILL.md").read_text(encoding="utf-8")
+    assert "root cause" in content.lower(), "diagnose skill lost root-cause principle"
+    assert "regression test" in content.lower(), "diagnose skill lost regression-test principle"
 
 
 def test_diagnose_skill_has_self_review():
@@ -409,13 +409,13 @@ def test_diagnose_skill_has_self_review():
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer",
+    ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
      "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
-     "mobile-uiux-developer", "prd-writer", "refactorer", "requirement-analyst",
+     "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
-    ids=["developer", "reviewer", "architect", "migrator", "data-modeler", "planner", "qa-designer",
+    ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
          "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
-         "mobile-uiux-developer", "prd-writer", "refactorer", "requirement-analyst",
+         "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
 def test_agent_has_self_review(agent_name):
@@ -432,13 +432,13 @@ def test_agent_has_self_review(agent_name):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["diagnostician", "refactorer", "devops", "migrator",
+    ["devops",
      "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
-     "documenter", "mobile-uiux-developer", "prd-writer", "qa-designer",
+     "documenter", "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
-    ids=["diagnostician", "refactorer", "devops", "migrator",
+    ids=["devops",
          "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
-         "documenter", "mobile-uiux-developer", "prd-writer", "qa-designer",
+         "documenter", "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )
 def test_agent_references_review_lessons_extended(agent_name):
@@ -773,7 +773,7 @@ def test_sprint_skill_has_agent_selection_table():
     assert "Agent Selection" in content, (
         "sprint SKILL.md missing Agent Selection table"
     )
-    assert "developer" in content and "diagnostician" in content, (
+    assert "developer" in content and "diagnose" in content, (
         "sprint SKILL.md Agent Selection table is incomplete"
     )
 
