@@ -1,9 +1,9 @@
 ---
 name: review
-description: Performs a senior-level review against the PR, applying minimal fixes/tests/review notes.
+description: Senior-level review against the PR. Per SPEC-019, delegates correctness + security passes to runtime /code-review and /security-review (primary path), or falls back to the kit's degraded reviewer agent (degraded path) when those runtime skills are not exposed. Layers kit-distinctive checks (over-engineering minimality axis, Figma 3.5-3.10, ui-reviewer, design-auditor, a11y-auditor, tech-debt ledger, review_lessons learning) on top.
 argument-hint: [ISSUE-number]
 disable-model-invocation: true
-allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
+allowed-tools: Task, SlashCommand, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 {{PREAMBLE}}
@@ -28,11 +28,26 @@ Steps:
    - `docs/architecture.md` — if exists (for conformance checks)
    - For UI issues, also read in parallel: `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`, `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`).
 
-   Ask reviewer subagent to perform code review + security audit + over-engineering audit:
-   - Code quality: correctness, edge cases, maintainability, complexity, test coverage.
-   - Security: injection, auth issues, hardcoded secrets, dependency CVEs, input validation, XSS, misconfiguration.
-   - Over-engineering (minimality axis): scan the diff for unnecessary complexity, tagging each finding `delete` / `stdlib` / `native` / `yagni` / `shrink`, one line per finding (`path:line: <tag> <what to cut> → <replacement>`), ending with net removable lines — or `Lean already. Ship.` if nothing to cut. This axis never overrides safety (validation, error handling, security, a11y, explicitly-requested work).
-   - Pass gathered context (review_lessons, architecture) so the reviewer can identify recurring patterns.
+3.1) **Runtime probe** (per SPEC-019 platform-first delegation):
+   ```bash
+   python3 scripts/has_skill.py code-review;       CR_EXIT=$?
+   python3 scripts/has_skill.py security-review;   SR_EXIT=$?
+   ```
+   Branch per dimension:
+   - `CR_EXIT` in {0, 2} → primary path for code dimension (invoke runtime `/code-review`).
+   - `CR_EXIT` == 1 → degraded path for code dimension (invoke `reviewer` agent with `--dimension code`).
+   - Same for `SR_EXIT` with `/security-review` / `--dimension security`.
+
+   Mixed mode (one runtime + one degraded) is supported. Run code-quality and security in parallel where possible; capture outputs to `docs/.review/code-review.md` and `docs/.review/security-review.md` (the synthesizer expects these paths). On the primary path, emit telemetry events `review_delegated_to_code_review` and/or `review_delegated_to_security_review`; on the degraded path, emit `review_degraded_path_used` with the dimension name.
+
+3.2) **Over-engineering audit (minimality axis)** — kit-distinctive, runs on BOTH paths:
+   Scan the diff for unnecessary complexity only — not correctness (that is the code dimension above). Tag each finding `delete` / `stdlib` / `native` / `yagni` / `shrink`, one line per finding (`path:line: <tag> <what to cut> → <replacement>`), ending with net removable lines — or `Lean already. Ship.` if nothing to cut. This axis never overrides safety (validation, error handling, security, a11y, explicitly-requested work).
+   - On the degraded code path, this is folded into the same `reviewer` agent invocation (the agent's Over-Engineering section covers it) — do not run it twice.
+   - On the primary path, ask the `reviewer` subagent to run ONLY this axis; capture output to `docs/.review/minimality.md`.
+   - When building `docs/.review/findings.json` (step 3.11), put each minimality finding into the `minimality_findings` array with its tag prefixed in the title (e.g. `[yagni] …`); the synthesizer renders these under the always-on **Over-Engineering** section (the kit's SSOT review-notes contract).
+   - Pass gathered context (review_lessons, architecture) so recurring patterns are recognized.
+
+_(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 complete — see steps 3.11 and 3.12 below. This sequencing lets the synthesizer merge runtime findings, kit-distinctive findings, and any degraded-path findings in a single pass.)_
 
 3.5) **Figma compliance check** (auto-skips if no Figma data) — **runs BEFORE UI review to ensure Figma fidelity first**:
 
@@ -106,6 +121,18 @@ Steps:
    - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
    - Output: `docs/a11y_audit.md` with findings and fix suggestions.
 
+3.11) **Synthesize** runtime code/security outputs (from step 3.1) + kit-distinctive findings (Figma 3.5–3.10, UI review, design audit, a11y audit) into `docs/review_notes/$ARGUMENTS.md`:
+   - Build the structured intermediate `docs/.review/findings.json` with `code_findings` and `security_findings` (extracted verbatim from runtime outputs or the degraded reviewer agent), plus optional `ui_findings` / `design_findings` / `a11y_findings` / `figma_findings` arrays from whichever kit-distinctive checks ran.
+   - Run: `python3 scripts/synthesize_review_notes.py --input docs/.review/findings.json --out docs/review_notes/$ARGUMENTS.md`
+   - The synthesizer preserves severity verbatim from upstream, sorts findings within each section by severity (Critical → Low), and renders empty runtime sections with the `_No findings._` literal. Kit-distinctive sections appear only when they ran.
+
+3.12) **Audit the merge**: invoke Task with `subagent_type: review-merge-auditor`, inputs = (merged `docs/review_notes/$ARGUMENTS.md`, raw runtime outputs under `docs/.review/`, any kit-distinctive outputs that ran). The auditor returns structured findings of verdict `finding_dropped` / `severity_changed` / `evidence_distorted` / `scope_change` / `ok`. **Block save** on any non-`ok` verdict whose `severity_change.direction` is `down` or whose verdict is one of the first three. Severity UPGRADES (direction `up`) are surfaced for human review but do not block by default. Emit `review_merge_audit_finding` per finding and the aggregate via telemetry.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase synthesis-audit --issue $ARGUMENTS`
+> Confirms `docs/review_notes/$ARGUMENTS.md` exists and the merge-auditor returned no blocking findings.
+> If exit code ≠ 0: STOP immediately and report the auditor's findings. Do NOT proceed.
+
 4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit + Figma compliance); re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
@@ -123,18 +150,14 @@ Steps:
 > **CHECKPOINT — advisory (non-blocking)**
 > Run: `bash scripts/checkpoint.sh --skill review --phase debt --issue $ARGUMENTS`
 > Always exits 0. Lists every `KIT-DEBT(ceiling=…, trigger=…)` marker; flags markers missing a `trigger=` as **silent-rot risk**.
-> Record any `no-trigger` markers in the Over-Engineering / follow-ups section of the review notes so deferrals don't become permanent. Does NOT block the review.
+> Record any `no-trigger` markers as Low-severity `code_findings` entries (title prefixed `[debt]`) in `docs/.review/findings.json` so deferrals don't become permanent. Does NOT block the review.
 
-5) Update docs/review_notes/$ARGUMENTS.md (inside `$WT/`) with sections:
-   - **Code Review**: findings, changes, follow-ups.
-   - **Security Findings**: severity-classified list with remediation steps.
-   - **Over-Engineering**: tagged findings (`delete`/`stdlib`/`native`/`yagni`/`shrink`), one line each, ending with net removable lines — or `Lean already. Ship.`
-   - **UI Review** (from ui-reviewer, if applicable): State Coverage, Copy, Tokens, Accessibility.
-   - **Design Audit** (from design-auditor, if applicable): Token Consistency, Component Completeness, Philosophy Compliance.
-   - **Accessibility Audit** (from a11y-auditor, if applicable): WCAG 2.1 AA findings and remediation.
-5.5) Ask reviewer subagent to update `docs/review_lessons.md`:
+5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.11** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json` and re-invoke `review-merge-auditor`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
+
+5.5) **Learning Extraction** — runs on the MERGED notes (kit-distinctive, not duplicated by runtime). Identify findings in `docs/review_notes/$ARGUMENTS.md` that could have been prevented earlier (at kickoff or implementation time). Classify each into Code Quality / Security / Testing / Architecture / Over-Engineering. Update `docs/review_lessons.md`:
+   - For existing patterns: increment Frequency and append the current issue to Observed-In.
+   - For new patterns: create a new entry with the next `[RL-NNN]` ID.
    - Update via `bash scripts/registry_edit.sh docs/review_lessons.md -- bash -c '<update command>'` for safe concurrent modification.
-   - Add new preventable patterns or increment frequency of existing ones.
 5.7) **Update test plan** (if `docs/test_plan.md` exists):
    - Ask qa-designer subagent to review and update `docs/test_plan.md` based on the PR changes.
    - Pass: PR diff summary, list of changed files, and current `docs/test_plan.md` content.

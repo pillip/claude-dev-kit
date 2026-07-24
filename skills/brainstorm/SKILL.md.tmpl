@@ -3,7 +3,7 @@ name: brainstorm
 description: Explores ideas and defines problems through free-form conversation. Use before /prd when direction is unclear.
 argument-hint: [output file path, default docs/brainstorm_notes.md]
 disable-model-invocation: false
-allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, WebSearch, Bash(python3 scripts/has_skill.py *), Bash(python3 scripts/capture_source.py *), Bash(python3 scripts/validate_research_claim.py *), Bash(python3 scripts/synthesize_from_deep_research.py *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 {{PREAMBLE}}
@@ -15,25 +15,30 @@ Steps:
 3a) Ask the user to freely describe their idea, problem, or direction — anything goes.
 4a) **Discovery phase**: Explore the problem space with Socratic questions:
     - Who has this problem? Why does it matter?
-    - What solutions exist today? What are their limitations?
     - What does success look like? What constraints exist?
-    Ask 1–2 questions at a time. Do not overwhelm.
-5a) **Ideation phase**: Once the problem is clear, propose 2–3 solution directions with brief pros/cons for each. Help the user narrow down.
-6a) Synthesize findings into the brainstorm notes format (Problem Space, Existing Landscape, Idea Candidates, Decisions).
+    Ask 1–2 questions at a time. Do not overwhelm. **Discovery is conversational and not research-grounded** — keep it light.
+5a) **Existing Landscape research** (only this section is research-grounded; per SPEC-018 platform-first delegation):
+    - Probe runtime: `python3 scripts/has_skill.py deep-research`
+      - Exit 0 OR 2 → **primary path**: invoke `/deep-research` with a scoped question about competing solutions / existing tools / market landscape for the user's problem. Pass the report through `python3 scripts/synthesize_from_deep_research.py --mode brainstorm` to render the Existing Landscape section. Then run the synthesizer-auditor: invoke Task with `subagent_type: synthesizer-auditor`, inputs = (rendered Existing Landscape draft, /deep-research report). Block save on `claim_dropped` / `claim_distorted` / `evidence_distorted` / `scope_change` findings.
+      - Exit 1 → **degraded path**: ask the user for 1–3 source URLs about existing solutions. For each URL: `python3 scripts/capture_source.py <url>`. Construct each landscape claim per `templates/research_claim.md`. Validate every claim with `python3 scripts/validate_research_claim.py --claim-file <claim>.json`; block save on non-ok verdicts. Run Task with `subagent_type: research-auditor`, inputs = (draft, snapshot directory). Block save on `context_contradicts` / `scope_change` findings.
+      - No source available on either path → render the section as the literal line `Data: not available — re-run /deep-research with a sharper question or accept "no data".` Never paraphrase to fill in.
+6a) **Ideation phase**: Once the problem is clear, propose 2–3 solution directions with brief pros/cons for each. Help the user narrow down. This step is authored opinion, not research-grounded.
+7a) Synthesize findings into the brainstorm notes format (Problem Space, Existing Landscape, Idea Candidates, Decisions).
 
 ### If the file DOES exist (Continue Session):
 3b) Read the existing notes and present a brief recap.
 4b) Ask the user which section or direction they want to develop further.
-5b) Repeat Discovery/Ideation as needed for that area.
+5b) Repeat Discovery / Existing Landscape / Ideation as needed for that area. Existing Landscape edits MUST follow the same primary/degraded path probe — never re-introduce free-form web claims.
 6b) Merge new insights into the existing notes.
 
 ### Common (both modes):
-7) Present the draft to the user and incorporate feedback.
-8) Save the final notes to the output path.
-9) Inform the user they can run `/bizanalysis` next to validate business viability, or `/prd` to go straight to PRD creation — brainstorm notes will be automatically used as context in both.
+8) Present the draft to the user and incorporate feedback.
+9) Save the final notes to the output path.
+10) Inform the user they can run `/bizanalysis` next to validate business viability, or `/prd` to go straight to PRD creation — brainstorm notes will be automatically used as context in both.
 
 ## Error Handling
 - If the output path is not writable: report the error and ask for an alternative path.
+- If `has_skill.py` reports exit code 2 (runtime-built-in, filesystem-invisible) and `/deep-research` returns a "skill not found" error inline, fall back to the degraded path and emit telemetry event `research_degraded_path_used`.
 
 ## Quality Criteria
 
@@ -42,6 +47,7 @@ Steps:
 - Ask more than 2 questions at a time — keep it conversational
 - Jump to solutions before the problem space is understood
 - Steer toward a single direction — always present alternatives
+- **Author Existing Landscape claims from training-data knowledge.** Every claim with a `Source:` line must trace back to either a `/deep-research` report (primary path) or a captured snapshot under `docs/references/research/` (degraded path).
 
 **INSTEAD:**
 - Mirror the user's words and terminology
@@ -49,7 +55,11 @@ Steps:
 - Clearly separate problem exploration from solution exploration
 - Use "what if..." prompts when the user seems stuck
 
+## Limits
+
+`/deep-research` adversarial verification + the synthesizer-auditor's drop/distortion check lower the floor on Existing Landscape fabrication. They do NOT push it to zero — a claim that is verbatim in the upstream report but interpreted wrong (conditional forecast cited as fact, scope mismatch) survives both. Discovery and Ideation phases are authored opinion and carry no such gate; they are the user's call to trust.
+
 ## Guidelines
 - This is an interactive, conversational skill — engage naturally.
-- If the user says "that's enough" or similar, synthesize the best notes possible with available information.
+- If the user says "that's enough" or similar, synthesize the best notes possible with available information. If Existing Landscape sources are unavailable, render the no-data literal rather than ship paraphrased claims.
 - After saving, suggest next step: `/prd` to create a PRD using the brainstorm notes as context.

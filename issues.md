@@ -23,7 +23,6 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
-- [ ] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — **un-held 2026-07-16** per harness audit: runtime /code-review + /security-review outclass the kit's single-pass reviewer. Resume by rebasing `hold/spec-019-platform-first-delegation`, which carries a worked reconciliation with the minimality axis)_
 - [ ] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — harness audit 2026-07-16: review_lessons.md never materialized (0 entries) while CC shipped a native persistent memory dir; redesign the loop on that instead of patterns.jsonl + preamble injection. Ordered after 002 for eval-report ingestion synergy, but independent of it)_
 - [ ] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — harness audit 2026-07-16 follow-up: ~16 of 33 agents are thin role-prompt personas (60–100 lines, checklist + persona header) whose separation adds orchestration hops without differentiated instructions; ISSUE-013 is the consolidation precedent. Last in the work order: after 030 (same files) and 029 (brainstormer/business-analyst may become degraded-path-only))_
 
@@ -62,6 +61,7 @@
 - [x] ISSUE-030: Remove agent model pins — default to `inherit` _(track: platform, P1, 0.5d — done 2026-07-23: all 33 core + 5 sales agents now inherit the session model (zero surviving pins); effort tiers stay as the per-agent knob. README agent table shows Effort instead of Model and documents the single-point deterministic pin (project `model` setting / `--model`) — the predictability guard. test_agent_effort.py rewritten: any future pin requires an adjacent `# pin:` rationale comment; xhigh valid under inherit (auto-fallback); matrix rows 2/3 updated)_
 - [x] ISSUE-032: Move per-skill startup checks to a SessionStart hook + slim skill preambles _(track: platform, P2, 1d — done 2026-07-23: new session_start.py hook (plugin hooks.json + standalone snippet) runs kit_update_check + contributor-mode detection once per session, stdout injected into context — **live-verified under plugin install**. Preamble diet: dropped Kit Update Check / Contributor Mode / Self-Review, slimmed Behavioral Rules→Kit Rules, compressed Kit Script Root — **1385 → 618 total preamble lines (56% cut, AC ≥50%)** with a 700-line budget lint; kit_update_check dropped from 10 allowlists; orphan-reference guard test; matrix row 4e (SessionStart) added)_
 - [x] ISSUE-031: Checkpoint diet — demote existence-check gates to advisory _(track: platform, P2, 1d — done 2026-07-23: 18 existence-style phases (implement issue/worktree/code/push/pr/registry, review checkout/push, generic worktree/push ×5 skills) now print `ADVISORY:` and exit 0 — report, self-correct, continue; 30 behavior gates (test/red/tests-written/test-quality, Figma suite, ship, uiux) stay hard-blocking. Skill text converted per-tier (18 blocks + intro rules in 8 skills + preamble pattern); checkpoint names/plumbing unchanged. **Predictability guard**: test_verify_checkpoint_contract.py enumerates the full 48-phase partition — any silent tier change is a build failure)_
+- [x] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — done 2026-07-24: reconciled the hold branch (SPEC-018/019) onto current main rather than git-rebasing (issues.md/test/skill divergence too large). /review probes runtime via has_skill.py → primary path delegates correctness to /code-review + security to /security-review (per-dimension, mixed-mode) → synthesize_review_notes.py merges verbatim into the 2-section+Over-Engineering SSOT → review-merge-auditor (separate-context, refute-first) blocks on drops/downgrades/distortions; degraded path = reworked reviewer agent per dimension. /brainstorm + /bizanalysis delegate research to /deep-research (primary) or capture_source+validate_research_claim (degraded), synthesizer-auditor/research-auditor gate fabrication. 3 new auditor agents (inherit model per ISSUE-030 → roster 33→36). Reconciled with 030 (pins stripped), 031 (review checkout/push advisory + new synthesis-audit blocking gate), 032 (preamble auto-regen, kit_update_check allowlist dropped), 035 (plugin-root allowlists). synthesizer now always renders Over-Engineering. 106 delegation guard tests + telemetry_schema events)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -1693,19 +1693,20 @@ The kit no longer ships, installs, runs, or instructs lint/format tooling. No co
 
 > Held work from a divergent local line (2026-07-16). The local branch implemented these as its own ISSUE-018/019/020 while the remote line spent the same numbers on the ponytail minimality work — main returned to origin, and this issue re-registers the local work under a fresh number.
 > **Un-held 2026-07-16** (same-day harness audit): the runtime's /code-review + /security-review (effort tiers, --fix/--comment, ultra) outclass the kit's single-pass reviewer agent, making this the largest platform-overlap in the kit. Moved to Backlog.
+> **Done 2026-07-24 — reconciled, not rebased.** The hold branch predated the plugin migration (022–027) and 001/030/031/032, so a git-rebase would have collided across issues.md (729 lines), test_agent_effort.py, and every touched skill template. Instead the 20 net-new delegation artifacts (has_skill/synthesize_*/validate_research_claim/capture_source/lint_skill_cache_order, SPEC-018/019, research_claim template, 3 auditor agents, their tests) were brought over clean, and the reworked skill templates + reviewer/brainstormer/business-analyst agents + telemetry_schema were hand-reconciled onto current main. Reconciliation points: model pins stripped from all 6 touched/new agents (ISSUE-030) → roster 33→36 (test updated); review checkout/push demoted to advisory + new **synthesis-audit** blocking gate added to VERIFIERS and the 031 contract partition; preamble auto-regenerated (032) and the stale `kit_update_check` allowlist dropped; plugin-root allowlists added to the 3 templates (035); the synthesizer now **always** renders the Over-Engineering section (fed by `minimality_findings`) to satisfy main's `verify_review_review` SSOT contract, and the template routes minimality findings there instead of folding into `code_findings`. has_skill.py comment de-referenced the deleted installer (027). 106 delegation guard tests green + full suite.
 
 - Track: platform
 - UI: false
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: SPEC-019 (on the hold branch)
+- Spec: docs/specs/SPEC-018.md, docs/specs/SPEC-019.md
 - PRD-Ref: none (kit self-development)
 - Priority: P2
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch: hold/spec-019-platform-first-delegation
+- Branch: issue/ISSUE-029-platform-first-delegation
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -1723,20 +1724,20 @@ Where the Claude Code runtime exposes an equivalent skill, kit skills delegate i
   - The minimality (over-engineering) axis and tech-debt ledger — already landed on main via the remote ISSUE-018~020 line.
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a runtime exposing /code-review and /security-review, when /review runs, then both are invoked and their findings survive synthesis verbatim (merge-auditor green).
-- [ ] Given a runtime missing either skill, when /review runs, then the degraded reviewer agent covers exactly the missing dimension(s).
-- [ ] Given the hold branch, when rebased onto current main, then the remote minimality axis + tech-debt ledger are reconciled into the delegation flow (a worked reconciliation exists in merge commit 0401257 on the hold branch).
-- [ ] **Predictability guard**: given any probe outcome (both/one/none of the runtime skills present), when /review runs, then a test asserts every review dimension is covered by exactly one path (runtime or degraded) — delegation may never silently no-op a dimension on runtime drift.
+- [x] Given a runtime exposing /code-review and /security-review, when /review runs, then both are invoked and their findings survive synthesis verbatim (merge-auditor green). *(synthesize_review_notes preserves severity+evidence verbatim; review-merge-auditor blocks on drops/downgrades/distortions)*
+- [x] Given a runtime missing either skill, when /review runs, then the degraded reviewer agent covers exactly the missing dimension(s). *(reviewer.md reworked to per-dimension degraded-only; mixed-mode supported)*
+- [x] Given the hold branch, when reconciled onto current main, then the remote minimality axis + tech-debt ledger are reconciled into the delegation flow. *(minimality → always-on Over-Engineering section; debt ledger advisory phase intact)*
+- [x] **Predictability guard**: given any probe outcome (both/one/none of the runtime skills present), when /review runs, then a test asserts every review dimension is covered by exactly one path (runtime or degraded) — delegation may never silently no-op a dimension on runtime drift. *(test_review_delegation_guard)*
 
 #### Implementation Notes
 - Un-hold = rebase `hold/spec-019-platform-first-delegation` onto main. The branch tip already contains a reviewed semantic merge with the ponytail work (minimality axis as a third reviewer dimension); reuse it rather than re-deriving.
 - Known open design question at hold time: whether the minimality axis stays a kit reviewer dimension on the primary path or maps /code-review's simplification findings into the kit tag taxonomy instead (dedupe concern).
 
 #### Tests
-- [ ] Probe/branching, synthesizer contract, and auditor tests exist on the hold branch (`test_has_skill.py`, `test_synthesize_review_notes.py`, etc.); they ride along with the rebase.
+- [x] Probe/branching, synthesizer contract, and auditor tests brought over (`test_has_skill.py`, `test_synthesize_review_notes.py`, `test_synthesize_from_deep_research.py`, `test_validate_research_claim.py`, `test_capture_source.py`, `test_research_fabrication_guard.py`, `test_review_delegation_guard.py`, `test_lint_skill_cache_order.py`) — 106 pass; `verify_review_synthesis_audit` added to the 031 contract partition.
 
 #### Rollback
-Delete the board entry and this section; the hold branch is untouched by rollback.
+`git revert` the reconciliation commit; the hold branch remains as historical reference.
 
 ---
 

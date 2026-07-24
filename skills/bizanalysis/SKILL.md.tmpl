@@ -3,59 +3,74 @@ name: bizanalysis
 description: Analyzes and critiques business viability. Use after /brainstorm and before /prd.
 argument-hint: [output file path, default docs/business_analysis.md]
 disable-model-invocation: false
-allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, WebSearch, Bash(python3 scripts/has_skill.py *), Bash(python3 scripts/capture_source.py *), Bash(python3 scripts/validate_research_claim.py *), Bash(python3 scripts/synthesize_from_deep_research.py *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 {{PREAMBLE}}
 Steps:
 1) Determine the output path ($ARGUMENTS or `docs/business_analysis.md`).
 2) Check if the file already exists at that path.
-3) Check if `docs/brainstorm_notes.md` exists. If it does, read it and use as
-   context — problem space, target users, chosen direction.
+3) Check if `docs/brainstorm_notes.md` exists. If it does, read it and use as context — problem space, target users, chosen direction.
+4) **Probe runtime** (per SPEC-018 platform-first delegation): `python3 scripts/has_skill.py deep-research`. Branch:
+   - Exit 0 OR 2 → primary path (steps 5–9 use `/deep-research` per dimension).
+   - Exit 1 → degraded path (steps 5–9 use `capture_source.py` + `validate_research_claim.py` per source).
 
 ### If the file does NOT exist (New Analysis):
-4a) If brainstorm notes exist, summarize the idea from them. Otherwise, ask the user to describe their idea.
-5a) **Market Research**: Use WebSearch/WebFetch to investigate market size, trends, TAM/SAM/SOM. Cite sources.
-6a) **Competitive Analysis**: Identify competitors and alternatives. Build a comparison table.
-7a) **Business Model Exploration**: Explore revenue model candidates and pricing strategy directions.
-8a) **Risk Assessment**: Identify key risks (market, technical, regulatory, competitive) and propose mitigations.
-9a) **Critique**: Produce a SWOT analysis and a Go/Pivot/No-Go recommendation. Discuss with the user.
+5a) If brainstorm notes exist, summarize the idea from them. Otherwise, ask the user to describe their idea.
+
+**Primary path (runtime probe = 0 or 2):**
+6a-P) **Market Analysis**: invoke `/deep-research` with a refined question about market size, trends, and TAM/SAM/SOM for the specific segment. Emit telemetry event `research_delegated_to_deep_research`.
+7a-P) **Competitive Landscape**: invoke `/deep-research` with a refined question about direct competitors, alternatives, and positioning differences. Emit `research_delegated_to_deep_research`.
+8a-P) **Business Model + Risks**: invoke `/deep-research` with a refined question about prevailing revenue models in the segment and the key market / regulatory / competitive risks. Emit `research_delegated_to_deep_research`.
+9a-P) **Synthesize**: pass the per-dimension `/deep-research` reports through `python3 scripts/synthesize_from_deep_research.py --mode bizanalysis`. The synthesizer maps cited claims into the kit's 5-section template, preserves `[single-source]` / `[contested]` flags verbatim from upstream, and renders empty sections as the literal line `Data: not available — re-run /deep-research with a sharper question or accept "no data".`
+10a-P) **Audit**: invoke Task with `subagent_type: synthesizer-auditor`, inputs = (rendered draft, all `/deep-research` reports). Block save on `claim_dropped` / `claim_distorted` / `evidence_distorted` / `scope_change` findings until resolved.
+
+**Degraded path (runtime probe = 1):**
+6a-D) **Market Analysis**: ask the user for source URLs about market size + trends. For each: `python3 scripts/capture_source.py <url>`. Construct each claim per `templates/research_claim.md`. TAM/SAM/SOM values with only 1 distinct-domain source render as `range: <low–high> [single-source]`, not a point number. Emit `research_degraded_path_used` once at the start of the path.
+7a-D) **Competitive Landscape**: capture sources for each competitor mentioned. Build a comparison table where every cell with a quantitative claim carries a claim record.
+8a-D) **Business Model + Risks**: capture sources or render the no-data literal where no source is available.
+9a-D) **Validate**: for every claim authored on this path, run `python3 scripts/validate_research_claim.py --claim-file <claim>.json`. Block save on any non-`ok` verdict (`quote_missing` / `stale` / `snapshot_absent` / `bad_input`).
+10a-D) **Audit**: invoke Task with `subagent_type: research-auditor`, inputs = (rendered draft, `docs/references/research/`). Block save on `context_contradicts` / `scope_change` findings.
+
+11a) **Critique**: Produce a SWOT analysis and a Go/Pivot/No-Go recommendation. The SWOT is authored synthesis over the validated claims; it inherits the no-data literal for any dimension where the underlying analysis section is empty. Discuss the recommendation with the user.
 
 ### If the file DOES exist (Continue Analysis):
-4b) Read the existing analysis and present a brief recap.
-5b) Ask the user which section they want to develop, challenge, or update.
-6b) Repeat research and analysis as needed for the chosen area.
-7b) Merge new insights into the existing analysis.
+5b) Read the existing analysis and present a brief recap.
+6b) Ask the user which section they want to develop, challenge, or update.
+7b) Repeat the chosen dimension via the same primary/degraded path the runtime probe selects. **Never** re-introduce free-form web-page claim extraction on either path — both delegation and capture-snapshot flows remain mandatory (SPEC-018).
+8b) Merge new insights into the existing analysis. The audit step (synthesizer-auditor or research-auditor) re-runs after the merge.
 
 ### Common (both modes):
-10) Present the draft to the user and incorporate feedback.
-11) Save the final analysis to the output path with five sections:
-    - Executive Summary (one-line + Go/Pivot/No-Go)
-    - Market Analysis (size, trends, TAM/SAM/SOM)
-    - Competitive Landscape (comparison table, differentiation)
-    - Business Model (revenue models, pricing direction)
-    - Risks & Mitigations (risks, severity, mitigation strategies)
-12) Inform the user they can run `/prd` next — business analysis and brainstorm notes will be automatically used as context.
+12) Present the draft to the user and incorporate feedback.
+13) Save the final analysis to the output path with the five sections (Executive Summary / Market Analysis / Competitive Landscape / Business Model / Risks & Mitigations). The synthesizer enforces canonical section order regardless of input order.
+14) Inform the user they can run `/prd` next — business analysis and brainstorm notes will be automatically used as context.
 
 ## Error Handling
 - If the output path is not writable: report the error and ask for an alternative path.
+- If `has_skill.py` reports exit code 2 (runtime-built-in, filesystem-invisible) and `/deep-research` returns a "skill not found" error inline, fall back to the degraded path and emit `research_degraded_path_used`.
+- If the synthesizer-auditor or research-auditor returns an `audit_confidence: low`, surface its summary to the user before save and confirm intent rather than silently proceeding.
 
 ## Quality Criteria
 
 **NEVER:**
-- Fabricate market size numbers — back up with web research or label as "rough estimate"
-- Unconditionally praise the user's idea — provide honest critique
-- Ask more than 3 questions at a time — keep it conversational
-- Jump to conclusions without analysis — show your reasoning
+- Fabricate market size numbers. **Every quantitative claim must carry a `Source:` line that traces back to either a `/deep-research` report (primary path) or a captured snapshot under `docs/references/research/` (degraded path).**
+- Unconditionally praise the user's idea — provide honest critique.
+- Ask more than 3 questions at a time — keep it conversational.
+- Jump to conclusions without analysis — show your reasoning.
+- Skip the audit step. The validator catches quote presence; only the auditor catches context-mismatched usage.
 
 **INSTEAD:**
-- Cite sources when presenting market data
-- Present both strengths and weaknesses
-- Use concrete numbers and comparisons
-- Clearly state uncertainty when data is unavailable
-- Propose actionable next steps for each risk
+- Cite sources verbatim through the synthesizer (primary) or the claim record (degraded).
+- Present both strengths and weaknesses.
+- Use concrete numbers AND their source citation — never numbers in isolation.
+- Render the no-data literal explicitly when sources are unavailable.
+- Propose actionable next steps for each risk identified.
+
+## Limits
+
+`/deep-research`'s multi-agent adversarial verification (primary path) lowers the research-correctness floor far below anything the kit could build inline. The synthesizer-auditor catches kit-side paraphrase distortion. Together they push fabrication to near-zero, but **the floor is not zero**: a claim that is verbatim in the upstream report AND not directly contradicted by surrounding context can still be misinterpreted by the user (conditional forecast cited as fact, scope mismatch). Document this honestly in the Risks section of the output; do NOT promise zero fabrication in any user-facing message.
 
 ## Guidelines
 - This is an interactive, conversational skill — engage naturally.
-- If the user says "that's enough" or similar, produce the best analysis possible with available information.
+- If the user says "that's enough" or similar, produce the best analysis possible with **only the validated claims**. If a section's sources are unavailable, render the no-data literal rather than ship paraphrased claims.
 - After saving, suggest next step: `/prd` to create a PRD using both business analysis and brainstorm notes as context.

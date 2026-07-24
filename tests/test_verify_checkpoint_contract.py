@@ -46,6 +46,7 @@ EXPECTED_BLOCKING = {
     ("implement", "red"),
     ("implement", "test"),
     ("review", "review"),
+    ("review", "synthesis-audit"),
     ("review", "ui-review"),
     ("review", "figma-compliance"),
     ("review", "computed-styles"),

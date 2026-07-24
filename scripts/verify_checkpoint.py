@@ -1043,6 +1043,18 @@ def verify_review_checkout(issue_id: str, **_) -> bool:
     return verify_implement_worktree(issue_id)
 
 
+def verify_review_synthesis_audit(issue_id: str, **_) -> bool:
+    """The synthesizer produced review_notes with the canonical section headers.
+
+    ISSUE-029: the merge-auditor's block decision (finding dropped / severity
+    downgraded / evidence distorted) is enforced by the model reading the
+    auditor's structured output — a script cannot re-run a separate-context
+    agent. This gate confirms the synthesizer ran and its output carries the
+    required contract sections, which is the machine-checkable half.
+    """
+    return verify_review_review(issue_id)
+
+
 def verify_review_review(issue_id: str, **_) -> bool:
     """review_notes.md has Code Review, Security Findings, and Over-Engineering headers."""
     wt_path = _find_worktree_path(issue_id)
@@ -1711,6 +1723,7 @@ VERIFIERS = {
     ("implement", "registry"): verify_implement_registry,
     ("review", "checkout"): verify_review_checkout,
     ("review", "review"): verify_review_review,
+    ("review", "synthesis-audit"): verify_review_synthesis_audit,
     ("review", "ui-review"): verify_review_ui_review,
     ("review", "figma-compliance"): verify_review_figma_compliance,
     ("review", "computed-styles"): verify_review_computed_styles,

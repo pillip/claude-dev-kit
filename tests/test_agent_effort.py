@@ -55,7 +55,9 @@ def _frontmatter(path: Path) -> dict:
 
 
 def test_all_agents_present():
-    assert len(AGENTS) == 33
+    # 33 core + 3 delegation auditors (research-auditor, review-merge-auditor,
+    # synthesizer-auditor — ISSUE-029 platform-first delegation).
+    assert len(AGENTS) == 36
     assert len(SALES_AGENTS) == 5
 
 
