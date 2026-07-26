@@ -27,8 +27,6 @@
 ### Doing
 
 ### Waiting
-- [ ] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — **deferred 2026-06-14**: ISSUE-013's role split already raised review quality; un-defer when a felt reviewer-quality pain returns. **Work-order slot after 029 (2026-07-21)**: un-defer when 029 lands so the judge grades platform /code-review output; design updated to `claude -p` — no separate billing)_
-- [ ] ISSUE-008: Virtual monorepo wrapper — polyrepo team support _(track: platform, P2, 1.5d — **deferred 2026-06-14**: was already gated on ISSUE-001 telemetry; un-defer when a real polyrepo team requests it)_
 
 ### Done
 - [x] ISSUE-004: Sales pack file move + manifest schema _(track: platform, P1, 1d)_
@@ -62,9 +60,11 @@
 - [x] ISSUE-029: Platform-first delegation of /review, /brainstorm, /bizanalysis to runtime skills _(track: platform, P2, 1.5d — done 2026-07-24: reconciled the hold branch (SPEC-018/019) onto current main rather than git-rebasing (issues.md/test/skill divergence too large). /review probes runtime via has_skill.py → primary path delegates correctness to /code-review + security to /security-review (per-dimension, mixed-mode) → synthesize_review_notes.py merges verbatim into the 2-section+Over-Engineering SSOT → review-merge-auditor (separate-context, refute-first) blocks on drops/downgrades/distortions; degraded path = reworked reviewer agent per dimension. /brainstorm + /bizanalysis delegate research to /deep-research (primary) or capture_source+validate_research_claim (degraded), synthesizer-auditor/research-auditor gate fabrication. 3 new auditor agents (inherit model per ISSUE-030 → roster 33→36). Reconciled with 030 (pins stripped), 031 (review checkout/push advisory + new synthesis-audit blocking gate), 032 (preamble auto-regen, kit_update_check allowlist dropped), 035 (plugin-root allowlists). synthesizer now always renders Over-Engineering. 106 delegation guard tests + telemetry_schema events)_
 - [x] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — done 2026-07-24: /review Learning Extraction now records preventable patterns as **review lessons in Claude Code native memory** (topic file + MEMORY.md index, dedup-in-place, no RL-NNN/Frequency), replacing the never-used docs/review_lessons.md registry (retired; template + [RL-NNN] flow removed). Confirmed via claude-code-guide: memory dir `~/.claude/projects/<project>/memory/` (overridable `autoMemoryDirectory`), MEMORY.md auto-loads at session start, **but Task subagents get NO auto-recall** — so the 26 consuming agents + kickoff/sprint/implement/testgen skills were reworded to "apply recalled/injected review lessons", and /review injects relevant lessons into separate-context subagent prompts. README/docs/roadmap updated; test_integration flipped to assert the native convention + guard against re-wiring the legacy registry)_
 - [x] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — done 2026-07-24: full classification found the audit's "~16 thin" over-counted — most "thin personas" are inline skills or sprint routing labels, not live orchestration hops. Absorbed the **4 genuinely-dead persona files** (diagnostician/migrator/refactorer/prd-writer — never Task-invoked, their skills have no Task at all) into their skills as "Execution Principles" grafts (root-cause discipline, one-major-bump migrations, behavior-preserving refactor, PRD completeness); roster 36→32; team-lead test-failure path rerouted to /diagnose. **Kept with rationale**: 3 auditors + reviewer/developer/architect/planner/uiux-developers (differentiated methodology / separate-context self-grading guard — the predictability guard), scan-family (real 4-pass per-domain pipeline; merging loses separate context), brainstormer/business-analyst (029 degraded-path research agents, freshly guard-tested). test_agent_effort roster+HEAVY, test_integration param lists/self-review/sprint-table + README/issues-header updated)_
+- [x] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — done 2026-07-26: `scripts/eval_review.py` runs a fresh `claude -p` judge over review_notes + the PR diff, scoring coverage/false-positive/actionability/traceability (rubric in `templates/review_eval_rubric.md`), emitting `docs/review_eval_<pr>.md`. Wired as a **non-blocking** step 8 in /ship — always exits 0; missed Critical/High or a dimension ≤2 → `concerns`, else `pass`. **No separate billing** (session auth, not ANTHROPIC_API_KEY); degraded-mode skips silently if the CLI/notes are absent. Determinism via `--runs N` (Critical/High Jaccard overlap; ≥80% is the floor — CLI has no temperature control). 17 unit tests cover rubric contract, verdict derivation (judge "pass" + missed High → concerns), determinism math, degraded mode, never-blocks-on-error, and the /ship wiring. Judge grades the platform /code-review-fed notes post-029, sidestepping self-grading)_
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
 - [x] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store — **dropped 2026-07-16** (superseded by ISSUE-033: CC native persistent memory replaces the patterns.jsonl + preamble-injection design; review_lessons.md never accumulated an entry) _(track: platform, P1, 1.5d)_
+- [x] ISSUE-008: Virtual monorepo wrapper — polyrepo team support — **dropped 2026-07-26** (speculative until a real polyrepo team hits friction; building it now is YAGNI. The virtual-monorepo *layout* pattern stays documented for teams that want it — see the ISSUE-008 detail; only the code-level routing support is dropped. Re-open with a fresh number if a team actually requests it) _(track: platform, P2, 1.5d)_
 
 ---
 
@@ -131,6 +131,7 @@ Revert the hook patch and delete `scripts/trace_query.py` + `docs/telemetry_sche
 
 > **Deferred 2026-06-14.** Cluster D's role split (ISSUE-013) + Pilot Gate hardening (ISSUE-010) already raised reviewer signal quality through structural changes, not eval scoring. Eval gate adds ANTHROPIC_API_KEY dependency + token cost + self-grading loop risk (kit eval-ing kit's review). Un-defer when (a) a regression in review quality is felt and not explainable by the existing scope split, OR (b) a multi-reviewer setup needs an automated tie-break, OR (c) eval signal becomes the bottleneck blocking a downstream decision.
 > **Design updated 2026-07-21 (no separate billing).** The judge runs via `claude -p` (headless CLI) on the user's existing Claude Code auth — NOT the Anthropic API. This removes the ANTHROPIC_API_KEY + `anthropic` SDK dependency and the separate-billing objection above; the remaining un-defer conditions stand. Recommended sequencing: after ISSUE-029, so the judge grades platform /code-review output rather than the kit grading its own review.
+> **Done 2026-07-26.** Un-deferred once 029 landed (judge grades platform /code-review-fed notes, not the kit's own single-agent review — self-grading concern resolved). `scripts/eval_review.py`: I/O (gh pr diff, `claude -p`) split from pure functions (rubric load, verdict parse+derive, determinism overlap, report render) so the CLI path is thin and the logic is unit-tested without invoking the model. Rubric `templates/review_eval_rubric.md` (4 dimensions, JSON output contract). Verdict is **derived**, not trusted: a judge that returns "pass" while listing a missed Critical/High — or any dimension ≤2 — is normalized to `concerns`. Wired as non-blocking /ship step 8 (always exit 0; degraded-skip on missing CLI/notes; never fails the gate). Determinism `--runs N` = mean pairwise Jaccard overlap of Critical/High finding keys (≥80% floor; no temperature control on the CLI). 17 tests. **Live judge invocation not exercised in CI** (would call the model) — the report seeds ISSUE-033's memory layer schema as intended.
 
 - Track: platform
 - UI: false
@@ -139,9 +140,9 @@ Revert the hook patch and delete `scripts/trace_query.py` + `docs/telemetry_sche
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30)
 - Priority: P1
 - Estimate: 1.5d
-- Status: waiting
+- Status: done
 - Owner:
-- Branch:
+- Branch: issue/ISSUE-002-eval-gate
 - GH-Issue:
 - PR:
 - Depends-On: none
@@ -162,10 +163,10 @@ A new `scripts/eval_review.py` runs an LLM-as-judge pass on a `review_notes.md` 
   - Auto-improvement of `reviewer` agent prompt based on findings (follow-up).
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a PR with a known critical bug intentionally missed by the reviewer, when `eval_review.py` runs, then it flags the missed finding with severity + diff line reference.
-- [ ] Given `/ship` runs on a PR, when complete, then the run log shows the eval advisory section (pass/concerns) without changing exit code.
-- [ ] Given the same input run twice, when reports are compared, then critical/high findings overlap ≥80% (determinism floor documented).
-- [ ] Given `docs/review_eval_<pr>.md`, when read, then every concern cites a diff line range + rubric category.
+- [x] Given a PR with a known critical bug intentionally missed by the reviewer, when `eval_review.py` runs, then it flags the missed finding with severity + diff line reference. *(verdict derivation + missing-critical test; report renders severity + `diff_ref`)*
+- [x] Given `/ship` runs on a PR, when complete, then the run log shows the eval advisory section (pass/concerns) without changing exit code. *(non-blocking step 8; always exit 0; wiring test)*
+- [x] Given the same input run twice, when reports are compared, then critical/high findings overlap ≥80% (determinism floor documented). *(`--runs N` Jaccard overlap; floor in rubric + issue)*
+- [x] Given `docs/review_eval_<pr>.md`, when read, then every concern cites a diff line range + rubric category. *(rubric output contract requires `diff_ref` + `rubric` on every entry; render includes them)*
 
 #### Implementation Notes
 - Judge invocation: `claude -p` headless with `--model` pinned and structured (JSON) output — a fresh process/context, so judge independence from the harness session holds without the API. **No separate billing**: never introduce an ANTHROPIC_API_KEY / `anthropic` SDK path (user decision 2026-07-21).
@@ -175,10 +176,11 @@ A new `scripts/eval_review.py` runs an LLM-as-judge pass on a `review_notes.md` 
 - This eval is the seed for ISSUE-003's anti-pattern DB — design the report schema so memory layer can ingest it.
 
 #### Tests
-- [ ] Rubric loader handles missing/extra sections without crashing.
-- [ ] Synthetic "good review" fixture scores high; "missing critical" fixture scores low with correct flag.
-- [ ] Ship skill advisory section renders even when eval fails (degraded mode).
-- [ ] Determinism harness: 2 runs, report variance calculation correct.
+- [x] Rubric loader requires the 4 dimension headers, tolerates extra prose; rejects a truncated rubric.
+- [x] "good review" fixture → pass; "missing critical" fixture → concerns with the flagged High + diff_ref.
+- [x] Degraded mode: main() exits 0 with a warning when the CLI or notes are absent, and never blocks on a judge error.
+- [x] Determinism harness: 2 mocked runs, overlap math correct; report renders the percentage.
+- [x] /ship advisory wiring test (references eval_review.py, non-blocking, no-separate-billing).
 
 #### Rollback
 Remove the advisory block from `skills/ship/SKILL.md`, delete `scripts/eval_review.py` + `templates/review_eval_rubric.md`. No persistent state to clean up.
@@ -516,6 +518,7 @@ Revert `/implement` gate logic; the signal scanner and `--skip-spec-gate` flag b
 ### ISSUE-008: Virtual monorepo wrapper — polyrepo team support
 
 > **Deferred 2026-06-14.** Already gated on ISSUE-001 telemetry, which itself is now deferred. The wrapper pattern is **documented** in README's Team-scale usage section (ISSUE-005) — users who want it today can adopt the pattern manually without code support. Un-defer when (a) a real polyrepo team adopts the kit and surfaces friction with the manual pattern, OR (b) ISSUE-001 lands and produces signal showing polyrepo path-resolution errors.
+> **Dropped 2026-07-26.** Building code-level polyrepo routing before any team hits friction is YAGNI — the manual virtual-monorepo *layout* (documented below + in README) is enough for anyone who wants it today, and ISSUE-001 landed without producing a single polyrepo path-resolution error. The design notes below stay as a reference for a future re-open (fresh number) if a real team requests it.
 
 - Track: platform
 - UI: false
@@ -524,7 +527,7 @@ Revert `/implement` gate logic; the signal scanner and `--skip-spec-gate` flag b
 - PRD-Ref: none (kit self-development; rationale in conversation 2026-05-30 — polyrepo team friction; deferred until measured)
 - Priority: P2
 - Estimate: 1.5d
-- Status: waiting
+- Status: drop (2026-07-26 — YAGNI; manual layout suffices; re-open with a fresh number on real demand)
 - Owner:
 - Branch:
 - GH-Issue:
