@@ -8,13 +8,13 @@
     {
       "name": "claude-dev-kit",
       "source": "./",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Core kit: agents, skills, and the GitHub-first sprint workflow."
     },
     {
       "name": "claude-dev-kit-sales",
       "source": "./packs/sales",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Optional sales pack (discovery, proposals, meetings). Depends on the core kit."
     }
   ]

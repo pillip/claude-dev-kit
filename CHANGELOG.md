@@ -3,6 +3,12 @@
 All notable changes to claude-dev-kit. Versions are the plugin `version` field;
 release tags are `claude-dev-kit--v<version>` (and `claude-dev-kit-sales--v<version>`).
 
+## 0.2.1 — 2026-07-26
+
+- Sync the root `VERSION` file with the plugin version (it was left at 0.1.0
+  by the 0.2.0 release, breaking the CI version-match test and the
+  `kit_update_check` local/remote comparison).
+
 ## 0.2.0 — 2026-07-26
 
 The "harness fits modern Claude Code" release: the kit now installs purely as a
