@@ -717,10 +717,13 @@ Tests cover merge logic, agent state hooks, worktree lifecycle, file locking, in
 ## Updating
 
 ```bash
-claude plugin update claude-dev-kit        # restart the session to apply
+claude plugin marketplace update claude-dev-kit   # refresh the catalog
+claude plugin update claude-dev-kit               # then update; restart the session to apply
 ```
 
-Or in-session: `/plugin` → claude-dev-kit → update.
+Or in-session: `/plugin` → claude-dev-kit → update. Releases are tagged
+`claude-dev-kit--v<version>`; see [CHANGELOG.md](CHANGELOG.md) for behavior
+changes between versions.
 
 ## Uninstalling
 
