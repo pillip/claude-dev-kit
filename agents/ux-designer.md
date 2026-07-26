@@ -1,6 +1,6 @@
 ---
 name: ux-designer
-description: Create UX spec (IA, flows, screen states, copy, a11y) from PRD. v0 scope: spec only, no visual design.
+description: Create UX spec (IA, flows, screen states, copy, a11y) from PRD. v0 scope — spec only, no visual design.
 tools: Read, Glob, Grep, Write, Edit
 effort: high
 ---

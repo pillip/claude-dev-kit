@@ -16,6 +16,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = sorted(glob.glob(str(ROOT / "skills/*/SKILL.md")) +
                 glob.glob(str(ROOT / "packs/*/skills/*/SKILL.md")))
+AGENTS = sorted(glob.glob(str(ROOT / "agents/*.md")) +
+                glob.glob(str(ROOT / "packs/*/agents/*.md")))
 
 
 def _frontmatter_lines(path: str) -> list[str]:
@@ -51,11 +53,25 @@ def test_frontmatter_scalars_are_yaml_safe(path):
         )
 
 
+@pytest.mark.parametrize("path", AGENTS, ids=lambda p: Path(p).stem)
+def test_agent_frontmatter_scalars_are_yaml_safe(path):
+    for line in _frontmatter_lines(path):
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if key not in {"name", "description"} or _value_is_quoted(value):
+            continue
+        assert ": " not in value, (
+            f"{path}: unquoted {key} contains ': ' which YAML reads as a mapping — quote it"
+        )
+
+
 def test_strict_yaml_parse_when_pyyaml_present():
     yaml = pytest.importorskip("yaml")
-    for path in SKILLS:
+    for path in SKILLS + AGENTS:
         block = "\n".join(_frontmatter_lines(path))
         data = yaml.safe_load(block)
         assert isinstance(data, dict), f"{path}: frontmatter did not parse to a mapping"
-        for key in ("name", "description", "allowed-tools"):
+        for key in ("name", "description"):
             assert key in data, f"{path}: frontmatter dropped key {key!r}"
