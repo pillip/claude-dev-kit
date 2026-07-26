@@ -1,7 +1,7 @@
 ---
 name: prd
 description: Collaboratively writes a PRD through free-form conversation.
-argument-hint: [output file path, default PRD.md]
+argument-hint: '[output file path, default PRD.md]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit
 ---

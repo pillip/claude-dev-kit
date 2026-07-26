@@ -1,7 +1,7 @@
 ---
 name: devops
 description: Set up or update CI/CD pipelines, Dockerfiles, and deployment configs, then create a GH Issue + PR.
-argument-hint: [target, e.g. "github-actions", "docker", "compose"]
+argument-hint: '[target, e.g. "github-actions", "docker", "compose"]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(docker *), Bash(docker-compose *), Bash(act *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

@@ -1,7 +1,7 @@
 ---
 name: bizanalysis
 description: Analyzes and critiques business viability. Use after /brainstorm and before /prd.
-argument-hint: [output file path, default docs/business_analysis.md]
+argument-hint: '[output file path, default docs/business_analysis.md]'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, WebSearch, Bash(python3 scripts/has_skill.py *), Bash(python3 scripts/capture_source.py *), Bash(python3 scripts/validate_research_claim.py *), Bash(python3 scripts/synthesize_from_deep_research.py *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

@@ -1,7 +1,7 @@
 ---
 name: migrate
 description: Plan and execute a migration, then create a GH Issue + PR.
-argument-hint: [migration target, e.g. "Django 5.0" or "Python 3.12"]
+argument-hint: '[migration target, e.g. "Django 5.0" or "Python 3.12"]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(uv *), Bash(pip *), Bash(docker *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

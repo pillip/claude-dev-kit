@@ -1,7 +1,7 @@
 ---
 name: refactor
 description: Improve code structure without changing behavior, then create a GH Issue + PR.
-argument-hint: [file or module path to refactor]
+argument-hint: '[file or module path to refactor]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

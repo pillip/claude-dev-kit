@@ -1,7 +1,7 @@
 ---
 name: followup
 description: Generates post-meeting follow-up assets — customer-facing email draft, internal action list, CRM update fields, account_brief updates, champion status tracking. Run after any sales meeting.
-argument-hint: <meeting_notes_path> [followup_output_path, default docs/followup.md]
+argument-hint: '<meeting_notes_path> [followup_output_path, default docs/followup.md]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Task
 ---

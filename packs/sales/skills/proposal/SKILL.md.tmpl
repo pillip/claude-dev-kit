@@ -1,7 +1,7 @@
 ---
 name: proposal
 description: Generates a closing proposal from demo meeting notes + the actual PoC + account brief. Business-value first; technical specs in appendix. Run after a demo meeting, before contract negotiation.
-argument-hint: <demo_meeting_notes_path> [proposal_output_path, default docs/proposal.md]
+argument-hint: '<demo_meeting_notes_path> [proposal_output_path, default docs/proposal.md]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Task
 ---

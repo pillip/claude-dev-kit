@@ -1,7 +1,7 @@
 ---
 name: kickoff
 description: Generates requirements/UX spec/architecture/data model/issues/test plan from a PRD. Runs 6 subagents in sequence.
-argument-hint: [PRD.md path]
+argument-hint: '[PRD.md path]'
 disable-model-invocation: true
 allowed-tools: Task, Read, Glob, Grep, Write, Edit
 ---

@@ -1,7 +1,7 @@
 ---
 name: review
 description: Senior-level review against the PR. Per SPEC-019, delegates correctness + security passes to runtime /code-review and /security-review (primary path), or falls back to the kit's degraded reviewer agent (degraded path) when those runtime skills are not exposed. Layers kit-distinctive checks (over-engineering minimality axis, Figma 3.5-3.10, ui-reviewer, design-auditor, a11y-auditor, tech-debt ledger, native-memory review-lessons learning) on top.
-argument-hint: [ISSUE-number]
+argument-hint: '[ISSUE-number]'
 disable-model-invocation: true
 allowed-tools: Task, SlashCommand, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

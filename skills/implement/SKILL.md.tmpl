@@ -1,7 +1,7 @@
 ---
 name: implement
 description: Implements a single issue, creates a GitHub Issue/PR, and links them with `Closes #N`. (1 issue = 1 PR)
-argument-hint: [ISSUE-number]
+argument-hint: '[ISSUE-number]'
 disable-model-invocation: true
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

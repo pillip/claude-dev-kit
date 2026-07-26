@@ -1,7 +1,7 @@
 ---
 name: figma2proto
 description: Fetch Figma design via API and generate a complete design deliverable — prototype HTML, design system, design philosophy, interactions, and copy guide. Supports web, mobile, and desktop platforms.
-argument-hint: [--mobile|--desktop] <Figma URL(s)>
+argument-hint: '[--mobile|--desktop] <Figma URL(s)>'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(python3 scripts/*), WebSearch, WebFetch, Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

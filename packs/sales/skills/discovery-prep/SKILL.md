@@ -1,7 +1,7 @@
 ---
 name: discovery-prep
 description: Generates a Discovery meeting plan from an account brief — SPIN questions, MEDDIC checklist, hypothesized pain points with verification questions, objection prep, time-boxed agenda. Run after /account-brief, before the meeting.
-argument-hint: [output file path, default docs/discovery_plan.md]
+argument-hint: '[output file path, default docs/discovery_plan.md]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Task
 ---

@@ -1,7 +1,7 @@
 ---
 name: meeting-capture
 description: Converts sales-written meeting notes (discovery type) into a PRD draft for PoC building, and updates account_brief.md with newly learned facts. The bridge between sales discovery and engineering PoC. Run after a discovery meeting, before /kickoff.
-argument-hint: <meeting_notes_path> [prd_output_path, default docs/prd_draft.md]
+argument-hint: '<meeting_notes_path> [prd_output_path, default docs/prd_draft.md]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Task
 ---

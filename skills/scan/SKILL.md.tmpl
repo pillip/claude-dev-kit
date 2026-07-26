@@ -1,7 +1,7 @@
 ---
 name: scan
 description: Analyze an existing codebase and generate context documents (architecture, requirements, test plan) for downstream skills.
-argument-hint: [directory path, or omit for project root]
+argument-hint: '[directory path, or omit for project root]'
 disable-model-invocation: true
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ---

@@ -1,7 +1,7 @@
 ---
 name: uiux
-description: Establishes a design philosophy based on kickoff outputs, and generates a design system/wireframes/HTML prototype. Recommended flow: /prd → /kickoff → /uiux
-argument-hint: [PRD.md path (optional)]
+description: Establishes a design philosophy based on kickoff outputs, and generates a design system/wireframes/HTML prototype. Recommended flow — /prd → /kickoff → /uiux
+argument-hint: '[PRD.md path (optional)]'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 ---

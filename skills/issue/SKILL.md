@@ -1,7 +1,7 @@
 ---
 name: issue
 description: Creates issues from a natural language description — single or batch — and auto-updates related planning and design docs.
-argument-hint: [issue description]
+argument-hint: '[issue description]'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash
 ---

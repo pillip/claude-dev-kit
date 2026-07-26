@@ -1,7 +1,7 @@
 ---
 name: mobile-uiux
-description: Establishes a mobile design philosophy based on kickoff outputs, and generates a mobile design system/wireframes/React Native (Expo) prototype. Recommended flow: /prd → /kickoff → /mobile-uiux
-argument-hint: [PRD.md path (optional)]
+description: Establishes a mobile design philosophy based on kickoff outputs, and generates a mobile design system/wireframes/React Native (Expo) prototype. Recommended flow — /prd → /kickoff → /mobile-uiux
+argument-hint: '[PRD.md path (optional)]'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 ---

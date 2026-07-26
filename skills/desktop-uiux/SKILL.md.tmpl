@@ -1,7 +1,7 @@
 ---
 name: desktop-uiux
-description: Establishes a desktop design philosophy based on kickoff outputs, and generates a desktop design system/wireframes/Electron prototype. Recommended flow: /prd → /kickoff → /desktop-uiux
-argument-hint: [PRD.md path (optional)]
+description: Establishes a desktop design philosophy based on kickoff outputs, and generates a desktop design system/wireframes/Electron prototype. Recommended flow — /prd → /kickoff → /desktop-uiux
+argument-hint: '[PRD.md path (optional)]'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 ---

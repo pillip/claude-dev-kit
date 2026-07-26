@@ -1,7 +1,7 @@
 ---
 name: spec
 description: Writes a tech spec / RFC (docs/specs/SPEC-NNN.md) for a feature flagged Spec-Required, capturing Problem / Options ≥2 / Trade-offs / Decision / Migration / Rollback before code is written.
-argument-hint: [ISSUE-NNN | (empty for ad-hoc)] [--rewrite]
+argument-hint: '[ISSUE-NNN | (empty for ad-hoc)] [--rewrite]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash(python3 scripts/validate_spec.py *), Bash(python3 scripts/validate_issues.py *), Bash(ls *), Bash(test *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

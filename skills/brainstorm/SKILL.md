@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 description: Explores ideas and defines problems through free-form conversation. Use before /prd when direction is unclear.
-argument-hint: [output file path, default docs/brainstorm_notes.md]
+argument-hint: '[output file path, default docs/brainstorm_notes.md]'
 disable-model-invocation: false
 allowed-tools: Task, Read, Glob, Grep, Write, Edit, WebSearch, Bash(python3 scripts/has_skill.py *), Bash(python3 scripts/capture_source.py *), Bash(python3 scripts/validate_research_claim.py *), Bash(python3 scripts/synthesize_from_deep_research.py *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---

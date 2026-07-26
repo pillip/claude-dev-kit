@@ -1,7 +1,7 @@
 ---
 name: account-brief
 description: Pre-meeting B2B account research. Produces a structured account brief (company overview, recent news, tech stack, decision structure hypothesis, hypothesized pain points, approach strategy). Use before /discovery-prep.
-argument-hint: [output file path, default docs/account_brief.md]
+argument-hint: '[output file path, default docs/account_brief.md]'
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch, Task
 ---
