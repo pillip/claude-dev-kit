@@ -34,6 +34,9 @@ jobs:
       - name: Check SKILL.md freshness
         run: python3 scripts/gen_skills.py --dry-run
 
+      - name: Validate skill/agent frontmatter (strict YAML)
+        run: python3 scripts/validate_frontmatter.py
+
       - name: Validate issues.md (if exists)
         run: |
           if [ -f issues.md ]; then
