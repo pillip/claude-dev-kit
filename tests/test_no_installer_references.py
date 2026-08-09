@@ -1,7 +1,7 @@
 """ISSUE-027 grep guard: the bespoke installer is retired.
 
 `install_project.sh`, `install_packs.py`, and `merge_settings.py` were removed
-once the plugin path reached parity. No active surface (code, skills, packs,
+once the plugin path reached parity. No active surface (code, skills,
 templates, README/CONTRIBUTING) may reference them again — the plugin is the
 only install path. Historical records (docs/specs/, issues.md) are exempt.
 """
@@ -17,7 +17,6 @@ ACTIVE_SURFACES = (
     "CONTRIBUTING.md",
     "agents",
     "skills",
-    "packs",
     "project",
     "hooks",
     "scripts",

@@ -128,6 +128,5 @@ class TestPreambleBudget:
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
         skills = [p.parent.name for p in root.glob("skills/*/SKILL.md.tmpl")]
-        skills += [p.parent.name for p in root.glob("packs/*/skills/*/SKILL.md.tmpl")]
         total = sum(generate_preamble(s).count("\n") + 1 for s in skills)
         assert total <= 700, f"preamble duplication regressed: {total} lines (budget 700)"

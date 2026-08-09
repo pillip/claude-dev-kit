@@ -67,8 +67,8 @@ becomes a *tracked* obligation instead of silent rot. Every marker must carry a
 
 ## Running Tests
 
-Install the dev extras first so optional test dependencies (e.g. PyYAML, used by
-the pack-manifest tests) are present — otherwise those tests **skip** with a reason:
+Install the dev extras first so optional test dependencies (e.g. PyYAML) are
+present — otherwise the tests that need them **skip** with a reason:
 
 ```bash
 pip install -e '.[dev]'        # or: uv sync

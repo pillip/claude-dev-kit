@@ -22,9 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-GENERATED = sorted(
-    list(ROOT.glob("skills/*/SKILL.md")) + list(ROOT.glob("packs/*/skills/*/SKILL.md"))
-)
+GENERATED = sorted(ROOT.glob("skills/*/SKILL.md"))
 
 SCRIPT_CMD_RE = re.compile(r"(?:bash|python3) scripts/")
 
@@ -34,7 +32,7 @@ def _has_tmpl(skill_md: Path) -> bool:
 
 
 def test_generated_skills_discovered():
-    assert len(GENERATED) >= 25
+    assert len(GENERATED) >= 23
 
 
 def test_script_using_skills_carry_kit_script_root_section():

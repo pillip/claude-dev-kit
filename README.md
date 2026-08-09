@@ -2,9 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-917%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-1116%20passing-brightgreen.svg)]()
 
-Turn a PRD into shipped code. **33 engineering agents + 23 skills** (default install) handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how. An optional **sales pack** (5 agents + 5 skills, opt-in via `--pack=sales`) covers account / discovery / proposal workflows for teams sharing a repo with engineering.
+Turn a PRD into shipped code. **33 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
 
 ## Why claude-kit?
 
@@ -17,7 +17,7 @@ Claude Code is powerful on its own, but without structure it produces inconsiste
 - **Decision capture**: Non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / Trade-offs / Decision / Rollback. Sprint mode auto-runs it; non-sprint mode HOLDs for review.
 - **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
 - **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
-- **Zero configuration**: Install as a git submodule, run one script, and all agents/skills/hooks are ready. Pack opt-in via a single flag.
+- **Zero configuration**: Install the plugin and all agents/skills/hooks are ready.
 
 In short: claude-kit turns Claude Code from a smart assistant into a **development team that follows engineering best practices**.
 
@@ -134,21 +134,6 @@ review lessons (native memory) → recurring high-impact patterns recalled next 
 
 Standalone skills (`/testgen`, `/diagnose`, `/refactor`) register their work in `issues.md` when it exists, so team-lead can track all work in `sprint_state.md`.
 
-### Packs
-
-The default install ships the **core** layer — engineering agents, design pack (uiux / mobile-uiux / desktop-uiux), and safety guardrails. Domain-specific workflows live in opt-in **packs** that depend on core.
-
-| Pack | What it adds | Install command |
-|---|---|---|
-| **core** (default) | 33 engineering agents + 23 skills | `/plugin install claude-dev-kit@claude-dev-kit` |
-| **sales** | 5 sales agents + 5 sales skills + 7 sales templates | `/plugin install claude-dev-kit-sales@claude-dev-kit` |
-
-Rules:
-- **Packs are additive on top of core, never substitutes.** Every pack plugin declares `dependencies: ["claude-dev-kit"]` in its `plugin.json` — installing a pack auto-installs and enables core.
-- Pack skills are namespaced by their plugin name (`/claude-dev-kit-sales:proposal`), so pack and core entries never collide.
-
-See `packs/README.md` for the manifest schema and rules for contributing new packs.
-
 ### Decision Tree — Which skill should I use?
 
 ```
@@ -239,12 +224,9 @@ claude-dev-kit ships as a Claude Code **plugin marketplace** (`.claude-plugin/ma
 Inside a Claude Code session:
 
 ```bash
-# Add the marketplace (the repo itself), then install the core plugin
+# Add the marketplace (the repo itself), then install the plugin
 /plugin marketplace add pillip/claude-dev-kit
 /plugin install claude-dev-kit@claude-dev-kit
-
-# Optionally add the sales pack — installing it auto-installs core (declared dependency)
-/plugin install claude-dev-kit-sales@claude-dev-kit
 ```
 
 Or from a shell (same effect, scriptable):
@@ -280,25 +262,21 @@ If not authenticated, run `gh auth login`.
 
 The kit assumes **the repo IS the team boundary**. Two adoption patterns cover the common shapes — and there is deliberately no separate "team layer."
 
-### Pattern (a) — Monorepo (engineering or sales)
+### Pattern (a) — Monorepo
 
 The common pattern. One repo holds all team work; the kit installs once at the root.
 
 - **Engineering team**: services live under `services/<name>/` subdirectories. Each service worktree is created from the repo root via `scripts/worktree.sh`. Shared state (`issues.md`, `STATUS.md`, `sprint_state.md`) sits at the root.
-- **Sales team**: accounts live under `accounts/<company>/` subdirectories. Cross-account patterns accumulate in repo-root `docs/sales_lessons.md`. Walk-up resolution via `scripts/find_shared.sh` finds shared sales-pack files (e.g., `sales_email_persona.md`) from inside any account directory.
 
 ```
 ~/work/my-team/                       # team boundary == repo boundary
 ├── .claude-kit/                      # submodule
-├── .claude/                          # installed (--pack=sales for sales)
+├── .claude/
 ├── issues.md, STATUS.md
 ├── docs/                             # shared knowledge
-├── services/auth/                    # (engineering) one git checkout
+├── services/auth/                    # one git checkout
 ├── services/gateway/                 # ...
 │   └── ...
-# OR
-├── accounts/customer-a/              # (sales) one account
-├── accounts/customer-b/              # ...
 ```
 
 ### Pattern (b) — Virtual monorepo wrapper (polyrepo teams)
@@ -323,11 +301,9 @@ Per-service work routes to the right subdirectory; kit state stays at the wrappe
 ### Why no separate "team layer"
 
 A separate layer would add concepts (a new manifest type, a new install scope) without adding capability:
-- **Sales team accumulation** already works via `accounts/<company>/` subdirectories in a sales-pack install. The repo's accounts directory IS the team asset store.
-- **Cross-team installation** uses the existing `--pack` flag (one repo can install core + sales together).
 - **Polyrepo collaboration** uses the wrapper pattern above. The wrapper directory IS the team boundary.
 
-Adding a "team layer" would raise the onboarding cost (more concepts to learn, more install steps) for zero new capability over what the existing core + pack + wrapper model already provides. **This decision is intentional, not a transitional state.** Documented here so contributors don't re-propose it.
+Adding a "team layer" would raise the onboarding cost (more concepts to learn, more install steps) for zero new capability over what the existing monorepo + wrapper model already provides. **This decision is intentional, not a transitional state.** Documented here so contributors don't re-propose it.
 
 ## Usage
 
@@ -528,7 +504,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-**33 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`). **The sales pack adds 5 more** (`account-researcher`, `champion-mapper`, `discovery-coach`, `meeting-synthesizer`, `proposal-writer`) via the `claude-dev-kit-sales` plugin. See [Packs](#packs).
+**33 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
 
 > **Deterministic deployments:** to pin agent behavior for production use, set the model once at the session/project level (`model` in `.claude/settings.json`, or `claude --model <alias>`) — one control point instead of the old 33 per-agent pins. All inherit-agents follow it.
 
@@ -581,12 +557,6 @@ Recently shipped (Cluster C + D this session): `/spec` skill + Spec-Required met
 claude-dev-kit/
 ├── agents/                  # Core engineering agents (33)
 ├── skills/                  # Core engineering / design / safety skills (23)
-├── packs/                   # Opt-in domain packs
-│   └── sales/               # Sales pack (5 agents + 5 skills + 7 templates)
-│       ├── agents/
-│       ├── skills/
-│       ├── templates/
-│       └── manifest.yaml
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
 │   ├── prd/SKILL.md
@@ -728,7 +698,6 @@ changes between versions.
 ## Uninstalling
 
 ```bash
-claude plugin uninstall claude-dev-kit-sales   # if installed (packs first — they depend on core)
 claude plugin uninstall claude-dev-kit
 claude plugin marketplace remove claude-dev-kit
 ```

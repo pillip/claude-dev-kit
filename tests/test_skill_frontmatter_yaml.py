@@ -14,10 +14,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILLS = sorted(glob.glob(str(ROOT / "skills/*/SKILL.md")) +
-                glob.glob(str(ROOT / "packs/*/skills/*/SKILL.md")))
-AGENTS = sorted(glob.glob(str(ROOT / "agents/*.md")) +
-                glob.glob(str(ROOT / "packs/*/agents/*.md")))
+SKILLS = sorted(glob.glob(str(ROOT / "skills/*/SKILL.md")))
+AGENTS = sorted(glob.glob(str(ROOT / "agents/*.md")))
 
 
 def _frontmatter_lines(path: str) -> list[str]:

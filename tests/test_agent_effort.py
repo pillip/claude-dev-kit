@@ -17,7 +17,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = sorted((ROOT / "agents").glob("*.md"))
-SALES_AGENTS = sorted((ROOT / "packs" / "sales" / "agents").glob("*.md"))
 
 VALID_EFFORT = {"low", "medium", "high", "xhigh"}
 
@@ -59,14 +58,13 @@ def test_all_agents_present():
     # persona files (diagnostician, migrator, refactorer, prd-writer) into their
     # skills — they were never invoked (no Task/subagent_type spawn).
     assert len(AGENTS) == 32
-    assert len(SALES_AGENTS) == 5
 
 
 def test_agents_inherit_session_model():
     # ISSUE-030: no model pins. A pin may survive only as a deliberate,
     # documented decision — flagged by a `# pin:` rationale comment in the
     # frontmatter block. Today the roster has zero pins.
-    for a in AGENTS + SALES_AGENTS:
+    for a in AGENTS:
         fm = _frontmatter(a)
         if "model" in fm and fm["model"] != "inherit":
             block = _frontmatter_block(a)
@@ -90,7 +88,7 @@ def test_every_core_agent_has_valid_effort():
 
 
 def test_no_xhigh_on_pinned_incapable_models():
-    for a in AGENTS + SALES_AGENTS:
+    for a in AGENTS:
         fm = _frontmatter(a)
         if fm.get("effort") == "xhigh" and "model" in fm:
             assert fm["model"] in {"opus", "fable", "inherit"}, (
@@ -99,7 +97,7 @@ def test_no_xhigh_on_pinned_incapable_models():
 
 
 def test_no_session_only_effort_in_frontmatter():
-    for a in AGENTS + SALES_AGENTS:
+    for a in AGENTS:
         fm = _frontmatter(a)
         assert fm.get("effort") not in {"max", "ultracode"}, (
             f"{a.name}: {fm.get('effort')!r} is session-only, not valid in frontmatter"

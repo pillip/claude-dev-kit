@@ -161,11 +161,8 @@ class TestDryRun:
         )
 
         # Point gen_skills module-level globals at the fake tree.
-        # PACKS_DIR must be patched too — otherwise generate_all() regenerates
-        # the REAL packs/*/skills SKILL.md files (discover_templates globs it).
         monkeypatch.setattr(gen_skills, "KIT_ROOT", fake_kit_root)
         monkeypatch.setattr(gen_skills, "SKILLS_DIR", fake_skills)
-        monkeypatch.setattr(gen_skills, "PACKS_DIR", fake_kit_root / "packs")
 
         # Generate fresh content from the fake template
         gen_skills.generate_all()
@@ -203,7 +200,7 @@ class TestNoOrphanedPreambleReferences:
     def test_generated_skills_free_of_moved_sections(self):
         root = Path(__file__).resolve().parents[1]
         offenders = []
-        for md in list(root.glob("skills/*/SKILL.md")) + list(root.glob("packs/*/skills/*/SKILL.md")):
+        for md in root.glob("skills/*/SKILL.md"):
             text = md.read_text(encoding="utf-8")
             for token in ("Kit Update Check", "Contributor Mode",
                           "kit_update_check", "contributor_report",

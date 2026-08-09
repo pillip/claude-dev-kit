@@ -88,9 +88,9 @@ class TestCacheOrderLint:
 
 
 class TestAllCurrentTemplatesPass:
-    """Regression guard: every current skill template (core + packs) must
-    satisfy the cache-order rule. If this test fails after a template edit,
-    the edit broke cache-friendliness — fix the template, not this test.
+    """Regression guard: every current skill template must satisfy the
+    cache-order rule. If this test fails after a template edit, the edit
+    broke cache-friendliness — fix the template, not this test.
     """
 
     def test_every_current_template_passes(self):

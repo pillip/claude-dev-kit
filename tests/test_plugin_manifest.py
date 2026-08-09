@@ -25,34 +25,16 @@ def test_plugin_json_valid_and_versioned():
     assert manifest["version"] == (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
-def test_sales_pack_is_a_dependent_plugin():
-    # ISSUE-025: optional packs can't be in-plugin components (plugins are
-    # all-or-nothing), so the sales pack is its own plugin depending on core.
-    sales = ROOT / "packs" / "sales" / ".claude-plugin" / "plugin.json"
-    manifest = json.loads(sales.read_text(encoding="utf-8"))
-    assert manifest["name"] == "claude-dev-kit-sales"
-    for field in ("version", "description"):
-        assert manifest.get(field), f"sales plugin.json missing {field}"
-    core_name = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["name"]
-    deps = manifest.get("dependencies") or []
-    dep_names = [d if isinstance(d, str) else d.get("name") for d in deps]
-    assert core_name in dep_names, f"sales pack must depend on core plugin {core_name!r}"
-
-
-def test_marketplace_lists_core_and_sales():
-    # ISSUE-026: the repo is a marketplace listing both the core plugin (root)
-    # and the sales plugin (./packs/sales).
+def test_marketplace_lists_core():
+    # ISSUE-026: the repo is a marketplace listing the core plugin (root).
     mkt = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
     assert mkt.get("name"), "marketplace.json missing name"
     assert mkt.get("owner", {}).get("name"), "marketplace.json missing owner.name"
     entries = {p["name"]: p for p in mkt.get("plugins", [])}
     core_name = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["name"]
-    sales_name = json.loads((ROOT / "packs" / "sales" / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["name"]
     assert core_name in entries, f"marketplace missing core plugin {core_name!r}"
-    assert sales_name in entries, f"marketplace missing sales plugin {sales_name!r}"
-    # Sources point at the right locations.
+    # Source points at the right location.
     assert entries[core_name]["source"] in ("./", "."), entries[core_name]["source"]
-    assert entries[sales_name]["source"].rstrip("/").endswith("packs/sales")
 
 
 def test_hooks_json_parses_and_declares_events():

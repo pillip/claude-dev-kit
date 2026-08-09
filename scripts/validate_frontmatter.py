@@ -26,9 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 FILES = (
     sorted(glob.glob(str(ROOT / "skills/*/SKILL.md")))
-    + sorted(glob.glob(str(ROOT / "packs/*/skills/*/SKILL.md")))
     + sorted(glob.glob(str(ROOT / "agents/*.md")))
-    + sorted(glob.glob(str(ROOT / "packs/*/agents/*.md")))
 )
 
 SCALAR_KEYS = {"name", "description", "argument-hint"}
