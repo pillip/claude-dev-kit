@@ -1,7 +1,27 @@
 # Changelog
 
 All notable changes to claude-dev-kit. Versions are the plugin `version` field;
-release tags are `claude-dev-kit--v<version>` (and `claude-dev-kit-sales--v<version>`).
+release tags are `claude-dev-kit--v<version>`.
+
+## 0.3.0 — 2026-08-09
+
+### Removed
+- **Sales pack removed entirely** — the `claude-dev-kit-sales` plugin, the whole
+  `packs/` subtree (5 agents, 5 skills, 7 templates, manifest), `docs/sales-pipeline.md`,
+  `templates/poc_results.md`, and `scripts/find_shared.sh`. It saw no real use and
+  only added complexity to the kit.
+- **Pack infrastructure removed with it** (sales was the only pack):
+  `scripts/validate_pack_manifest.py` + its tests, the CI pack-manifest step,
+  the marketplace `claude-dev-kit-sales` entry, and all `packs/*/` discovery
+  globs in `gen_skills.py`, `validate_frontmatter.py`, and the lint tests.
+- README/docs no longer document packs: install commands, the Packs section,
+  sales team-scale patterns, and the sales rows in `docs/README.md` are gone.
+
+### Migration
+- New installs simply won't see `claude-dev-kit-sales` in the marketplace after
+  `/plugin marketplace update claude-dev-kit`.
+- If you had it installed, remove it manually: `claude plugin uninstall claude-dev-kit-sales`.
+  Historical releases remain available at the `claude-dev-kit-sales--v*` tags.
 
 ## 0.2.1 — 2026-07-26
 
