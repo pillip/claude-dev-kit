@@ -1546,4 +1546,73 @@ class TestKitCheckpointTestTimeoutInvalidEnv:
         with patch.object(vc, "_run", side_effect=side_effect):
             # Must not raise despite the garbage env value
             assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+
+
+class TestKitCheckpointTestTimeoutImplementTestFallback:
+    """TC-046f — verify_implement_test's no-runner fallback pytest run must
+    use the configurable test-phase timeout (same seam, scope addition)."""
+
+    def _run_fallback(self, tmp_path):
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            if "pytest" in cmd:
+                timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect), \
+             patch.object(vc, "_find_worktree_path", return_value=str(tmp_path)), \
+             patch.object(vc, "_ensure_deps_installed", return_value=True), \
+             patch.object(vc, "_detect_test_runners", return_value=(False, False)), \
+             patch.object(vc, "_test_plan_has_high_risk", return_value=False), \
+             patch.object(vc, "_run_verify_gates", return_value=True):
+            assert vc.verify_implement_test("ISSUE-001") is True
+        return timeouts
+
+    def test_implement_test_fallback_timeout_default_600(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        assert self._run_fallback(tmp_path) == [_DEFAULT_TEST_TIMEOUT]
+
+    def test_implement_test_fallback_timeout_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        assert self._run_fallback(tmp_path) == [45]
+
+
+class TestKitCheckpointTestTimeoutShipSmoke:
+    """TC-046g — verify_ship_smoke's full-suite pytest and npm runs must use
+    the configurable test-phase timeout (scope addition). No special 124
+    handling there — a timeout simply remains a smoke-gate failure."""
+
+    def _run_smoke(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vc, "_repo_root", lambda: tmp_path)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        (tmp_path / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        timeouts: dict = {}
+
+        def side_effect(cmd, **kwargs):
+            if cmd == ["git", "branch", "--show-current"]:
+                return _mock_run(0, stdout="main\n")
+            if "pytest" in cmd:
+                timeouts["pytest"] = kwargs.get("timeout")
+            if cmd[:2] == ["npm", "test"]:
+                timeouts["npm"] = kwargs.get("timeout")
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect), \
+             patch.object(vc, "_run_verify_gates", return_value=True):
+            assert vc.verify_ship_smoke("ISSUE-001") is True
+        return timeouts
+
+    def test_ship_smoke_timeouts_default_600(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        timeouts = self._run_smoke(tmp_path, monkeypatch)
+        assert timeouts["pytest"] == _DEFAULT_TEST_TIMEOUT
+        assert timeouts["npm"] == _DEFAULT_TEST_TIMEOUT
+
+    def test_ship_smoke_timeouts_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        timeouts = self._run_smoke(tmp_path, monkeypatch)
+        assert timeouts["pytest"] == 45
+        assert timeouts["npm"] == 45
         assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
