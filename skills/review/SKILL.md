@@ -92,10 +92,10 @@ Steps:
    Scan the diff for unnecessary complexity only — not correctness (that is the code dimension above). Tag each finding `delete` / `stdlib` / `native` / `yagni` / `shrink`, one line per finding (`path:line: <tag> <what to cut> → <replacement>`), ending with net removable lines — or `Lean already. Ship.` if nothing to cut. This axis never overrides safety (validation, error handling, security, a11y, explicitly-requested work).
    - On the degraded code path, this is folded into the same `reviewer` agent invocation (the agent's Over-Engineering section covers it) — do not run it twice.
    - On the primary path, ask the `reviewer` subagent to run ONLY this axis; capture output to `docs/.review/minimality.md`.
-   - When building `docs/.review/findings.json` (step 3.11), put each minimality finding into the `minimality_findings` array with its tag prefixed in the title (e.g. `[yagni] …`); the synthesizer renders these under the always-on **Over-Engineering** section (the kit's SSOT review-notes contract).
+   - When building `docs/.review/findings.json` (step 3.14), put each minimality finding into the `minimality_findings` array with its tag prefixed in the title (e.g. `[yagni] …`); the synthesizer renders these under the always-on **Over-Engineering** section (the kit's SSOT review-notes contract).
    - Pass gathered context (recalled review lessons, architecture) so recurring patterns are recognized. Because separate-context subagents do not receive auto-recall, include the relevant recalled lessons verbatim in the subagent prompt.
 
-_(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 complete — see steps 3.11 and 3.12 below. This sequencing lets the synthesizer merge runtime findings, kit-distinctive findings, and any degraded-path findings in a single pass.)_
+_(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.13 complete — see steps 3.14 and 3.15 below. This sequencing lets the synthesizer merge runtime findings, kit-distinctive findings, and any degraded-path findings in a single pass.)_
 
 3.5) **Figma compliance check** (auto-skips if no Figma data) — **runs BEFORE UI review to ensure Figma fidelity first**:
 
@@ -145,7 +145,7 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 com
    - If diff > 5%: flag as a **warning** in review notes — reviewer should inspect the diff images
    - Do NOT block the review based on pixel diff alone. The **figma-compliance checkpoint** (step 3.5) is the authoritative Figma fidelity gate.
 
-3.8) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
+3.11) IF the issue involves UI/frontend work (check `UI: true` field first; fall back to Track/title keywords: "UI", "screen", "component", "prototype"):
    Ask ui-reviewer subagent to perform UI state review:
    - Pass the UI context files gathered in step 3 plus any recalled review lessons (inject them into the subagent prompt — subagents get no auto-recall).
    - Reviewer checks state coverage, copy compliance, token usage, accessibility, interaction fidelity.
@@ -156,25 +156,25 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 com
 > The script auto-detects UI issues via Track field/title keywords. Non-UI issues pass automatically.
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
-3.9) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
+3.12) IF UI issue AND design system docs exist (`docs/design_system.md`, `design_system_mobile.md`, or `design_system_desktop.md`):
    Ask design-auditor subagent to audit the design system:
    - Pass all design context files gathered in step 3.
    - **Also pass `figma-export/design_data.json`** (if exists) so auditor can verify design system covers all Figma tokens.
    - Auditor checks: token consistency, component completeness, cross-platform alignment, philosophy compliance, copy coverage, **Figma token coverage**.
    - Output: `docs/design_audit.md` with severity-classified findings.
 
-3.10) IF UI issue:
+3.13) IF UI issue:
    Ask a11y-auditor subagent to perform WCAG 2.1 AA accessibility audit:
    - Pass design context files + source code files from the PR diff.
    - Auditor checks all 4 WCAG principles: Perceivable, Operable, Understandable, Robust.
    - Output: `docs/a11y_audit.md` with findings and fix suggestions.
 
-3.11) **Synthesize** runtime code/security outputs (from step 3.1) + kit-distinctive findings (Figma 3.5–3.10, UI review, design audit, a11y audit) into `docs/review_notes/$ARGUMENTS.md`:
+3.14) **Synthesize** runtime code/security outputs (from step 3.1) + kit-distinctive findings (Figma 3.5–3.10, UI review 3.11, design audit 3.12, a11y audit 3.13) into `docs/review_notes/$ARGUMENTS.md`:
    - Build the structured intermediate `docs/.review/findings.json` with `code_findings` and `security_findings` (extracted verbatim from runtime outputs or the degraded reviewer agent), plus optional `ui_findings` / `design_findings` / `a11y_findings` / `figma_findings` arrays from whichever kit-distinctive checks ran.
    - Run: `python3 scripts/synthesize_review_notes.py --input docs/.review/findings.json --out docs/review_notes/$ARGUMENTS.md`
    - The synthesizer preserves severity verbatim from upstream, sorts findings within each section by severity (Critical → Low), and renders empty runtime sections with the `_No findings._` literal. Kit-distinctive sections appear only when they ran.
 
-3.12) **Audit the merge**: invoke Task with `subagent_type: review-merge-auditor`, inputs = (merged `docs/review_notes/$ARGUMENTS.md`, raw runtime outputs under `docs/.review/`, any kit-distinctive outputs that ran). The auditor returns structured findings of verdict `finding_dropped` / `severity_changed` / `evidence_distorted` / `scope_change` / `ok`. **Block save** on any non-`ok` verdict whose `severity_change.direction` is `down` or whose verdict is one of the first three. Severity UPGRADES (direction `up`) are surfaced for human review but do not block by default. Emit `review_merge_audit_finding` per finding and the aggregate via telemetry.
+3.15) **Audit the merge**: invoke Task with `subagent_type: review-merge-auditor`, inputs = (merged `docs/review_notes/$ARGUMENTS.md`, raw runtime outputs under `docs/.review/`, any kit-distinctive outputs that ran). The auditor returns structured findings of verdict `finding_dropped` / `severity_changed` / `evidence_distorted` / `scope_change` / `ok`. **Block save** on any non-`ok` verdict whose `severity_change.direction` is `down` or whose verdict is one of the first three. Severity UPGRADES (direction `up`) are surfaced for human review but do not block by default. Emit `review_merge_audit_finding` per finding and the aggregate via telemetry.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill review --phase synthesis-audit --issue $ARGUMENTS`
@@ -200,7 +200,7 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.10 com
 > Always exits 0. Lists every `KIT-DEBT(ceiling=…, trigger=…)` marker; flags markers missing a `trigger=` as **silent-rot risk**.
 > Record any `no-trigger` markers as Low-severity `code_findings` entries (title prefixed `[debt]`) in `docs/.review/findings.json` so deferrals don't become permanent. Does NOT block the review.
 
-5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.11** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json` and re-invoke `review-merge-auditor`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
+5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.14** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json` and re-invoke `review-merge-auditor`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
 
 5.5) **Learning Extraction → native memory** (kit-distinctive, not duplicated by runtime). Identify findings in `docs/review_notes/$ARGUMENTS.md` that could have been prevented earlier (at kickoff or implementation time), and record each preventable pattern as a **review lesson in Claude Code's native persistent memory** so it auto-recalls into future sessions — replacing the retired `docs/review_lessons.md` registry (ISSUE-033).
    - Persist to the project memory topic file `review-lessons.md` (in the native auto-memory directory — `${autoMemoryDirectory}` if set, else `~/.claude/projects/<project>/memory/`; use your memory capability rather than a hard-coded path). Add a one-line pointer under a `## Review Lessons` heading in `MEMORY.md` so the index surfaces it at session start.
