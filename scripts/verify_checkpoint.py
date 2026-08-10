@@ -62,6 +62,7 @@ def _test_timeout() -> int:
     overrides the default; unset, non-numeric, or non-positive values fall
     back to _DEFAULT_TEST_TIMEOUT.
     """
+    # keep in sync with verify_gates.py::_test_timeout
     raw = os.environ.get("KIT_CHECKPOINT_TEST_TIMEOUT", "")
     try:
         value = int(raw)

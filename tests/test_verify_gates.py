@@ -315,6 +315,100 @@ class TestRunGateUnit:
         assert result.status == "skip"
 
 
+# ── TestUnitGateTimeout (ISSUE-047: TC-047a..c) ──────────────────────
+
+
+class TestUnitGateTimeout:
+    """Unit gate must resolve its subprocess timeout via KIT_CHECKPOINT_TEST_TIMEOUT."""
+
+    # TC-047a: env override applies (both branches)
+
+    @patch.object(vg, "_run")
+    def test_env_override_applies_to_pytest_branch(self, mock_run, tmp_path, monkeypatch):
+        monkeypatch.setenv("KIT_CHECKPOINT_TEST_TIMEOUT", "900")
+        (tmp_path / "pyproject.toml").write_text("")
+        mock_run.return_value = _mock_run(0, "3 passed\n", "")
+        vg.run_gate_unit(tmp_path)
+        assert mock_run.call_args[1]["timeout"] == 900
+
+    @patch.object(vg, "_run")
+    def test_env_override_applies_to_npm_branch(self, mock_run, tmp_path, monkeypatch):
+        monkeypatch.setenv("KIT_CHECKPOINT_TEST_TIMEOUT", "900")
+        _write_package_json(tmp_path, {"jest": "^29.0.0"})
+        mock_run.return_value = _mock_run(0, "Tests: 5 passed\n", "")
+        vg.run_gate_unit(tmp_path)
+        assert mock_run.call_args[0][0] == ["npm", "test"]
+        assert mock_run.call_args[1]["timeout"] == 900
+
+    # TC-047b: env unset → 600s default (both branches)
+
+    @patch.object(vg, "_run")
+    def test_default_600s_when_env_unset_pytest_branch(self, mock_run, tmp_path, monkeypatch):
+        monkeypatch.delenv("KIT_CHECKPOINT_TEST_TIMEOUT", raising=False)
+        (tmp_path / "pyproject.toml").write_text("")
+        mock_run.return_value = _mock_run(0, "3 passed\n", "")
+        vg.run_gate_unit(tmp_path)
+        assert mock_run.call_args[1]["timeout"] == 600
+
+    @patch.object(vg, "_run")
+    def test_default_600s_when_env_unset_npm_branch(self, mock_run, tmp_path, monkeypatch):
+        monkeypatch.delenv("KIT_CHECKPOINT_TEST_TIMEOUT", raising=False)
+        _write_package_json(tmp_path, {"jest": "^29.0.0"})
+        mock_run.return_value = _mock_run(0, "Tests: 5 passed\n", "")
+        vg.run_gate_unit(tmp_path)
+        assert mock_run.call_args[0][0] == ["npm", "test"]
+        assert mock_run.call_args[1]["timeout"] == 600
+
+    # TC-047c: non-numeric / non-positive → 600s default, no crash
+
+    @pytest.mark.parametrize("bad_value", ["abc", "0", "-5"])
+    @patch.object(vg, "_run")
+    def test_invalid_env_falls_back_to_default_pytest_branch(
+        self, mock_run, bad_value, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("KIT_CHECKPOINT_TEST_TIMEOUT", bad_value)
+        (tmp_path / "pyproject.toml").write_text("")
+        mock_run.return_value = _mock_run(0, "3 passed\n", "")
+        vg.run_gate_unit(tmp_path)
+        assert mock_run.call_args[1]["timeout"] == 600
+
+    @pytest.mark.parametrize("bad_value", ["abc", "0", "-5"])
+    @patch.object(vg, "_run")
+    def test_invalid_env_falls_back_to_default_npm_branch(
+        self, mock_run, bad_value, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("KIT_CHECKPOINT_TEST_TIMEOUT", bad_value)
+        _write_package_json(tmp_path, {"jest": "^29.0.0"})
+        mock_run.return_value = _mock_run(0, "Tests: 5 passed\n", "")
+        vg.run_gate_unit(tmp_path)
+        assert mock_run.call_args[1]["timeout"] == 600
+
+
+# ── TestTimeoutContract (ISSUE-047: TC-047d) ─────────────────────────
+
+
+class TestTimeoutContract:
+    """Guard: _run()'s timeout-mock contract must stay intact."""
+
+    def test_run_returns_rc_124_and_timed_out_stderr_on_timeout(self):
+        cmd = ["python3", "-m", "pytest"]
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=cmd, timeout=600),
+        ):
+            result = vg._run(cmd, timeout=600)
+        assert result.returncode == 124
+        assert result.stderr == "python3: timed out after 600s"
+
+    @patch.object(vg, "_run")
+    def test_gate_fails_when_run_times_out(self, mock_run, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("")
+        mock_run.return_value = _mock_run(124, "", "python3: timed out after 600s")
+        result = vg.run_gate_unit(tmp_path)
+        assert result.status == "fail"
+        assert result.blocking is True
+
+
 # ── TestRunGateIntegration ───────────────────────────────────────────
 
 

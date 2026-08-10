@@ -458,7 +458,13 @@ class TestVerifyImplementTest:
             return _mock_run(0)
 
         with patch.object(vc, "_run", side_effect=side_effect):
-            assert vc.verify_implement_test("ISSUE-001") is True
+            # Guard (TC-047g): without this patch, the slug-less worktree mock
+            # makes _find_worktree_path return None -> wt = Path.cwd() (real
+            # repo root) -> _run_verify_gates spawns a real recursive
+            # full-suite pytest in-process.
+            with patch.object(vc, "_run_verify_gates", return_value=True) as mock_gates:
+                assert vc.verify_implement_test("ISSUE-001") is True
+            mock_gates.assert_called_once()
 
     def test_fail_when_pytest_fails(self, tmp_path):
         wt_path = str(tmp_path)
@@ -512,7 +518,13 @@ class TestVerifyImplementTest:
             return _mock_run(0)  # Fallback plain pytest passes
 
         with patch.object(vc, "_run", side_effect=side_effect):
-            assert vc.verify_implement_test("ISSUE-001") is True
+            # Guard (TC-047g): without this patch, the slug-less worktree mock
+            # makes _find_worktree_path return None -> wt = Path.cwd() (real
+            # repo root) -> _run_verify_gates spawns a real recursive
+            # full-suite pytest in-process.
+            with patch.object(vc, "_run_verify_gates", return_value=True) as mock_gates:
+                assert vc.verify_implement_test("ISSUE-001") is True
+            mock_gates.assert_called_once()
 
 
 class TestVerifyImplementPush:
