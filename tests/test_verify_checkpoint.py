@@ -1546,6 +1546,7 @@ class TestKitCheckpointTestTimeoutInvalidEnv:
         with patch.object(vc, "_run", side_effect=side_effect):
             # Must not raise despite the garbage env value
             assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+        assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
 
 
 class TestKitCheckpointTestTimeoutImplementTestFallback:
@@ -1615,4 +1616,3 @@ class TestKitCheckpointTestTimeoutShipSmoke:
         timeouts = self._run_smoke(tmp_path, monkeypatch)
         assert timeouts["pytest"] == 45
         assert timeouts["npm"] == 45
-        assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
