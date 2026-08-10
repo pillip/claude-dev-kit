@@ -52,6 +52,25 @@ def _run(cmd: list[str], timeout: int = 30, **kwargs) -> subprocess.CompletedPro
         return mock
 
 
+_DEFAULT_TEST_TIMEOUT = 600  # seconds — default for test-phase subprocess runs
+
+
+def _test_timeout() -> int:
+    """Resolve the test-phase timeout at call time.
+
+    Reads KIT_CHECKPOINT_TEST_TIMEOUT (seconds). A valid positive integer
+    overrides the default; unset, non-numeric, or non-positive values fall
+    back to _DEFAULT_TEST_TIMEOUT.
+    """
+    # keep in sync with verify_gates.py::_test_timeout
+    raw = os.environ.get("KIT_CHECKPOINT_TEST_TIMEOUT", "")
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_TEST_TIMEOUT
+    return value if value > 0 else _DEFAULT_TEST_TIMEOUT
+
+
 def _run_with_retry(cmd: list[str], max_retries: int = 2, delay: float = 1.0, **kwargs) -> subprocess.CompletedProcess:
     """Run a command with retry logic for transient network failures.
 
@@ -602,9 +621,14 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     # pass even when the real JS suite would have passed).
     has_python, has_js = _detect_test_runners(wt)
 
+    timeout = _test_timeout()
+
     # JS first: an explicit scripts.test is the strongest signal.
     if has_js:
-        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=wt_path, timeout=60)
+        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=wt_path, timeout=timeout)
+        if result.returncode == 124:
+            print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
+            return False
         if result.returncode == 0:
             print("FAIL: RED phase — tests passed but should fail before implementation.")
             print("  TDD requires: write failing tests first, then implement to make them pass.")
@@ -613,7 +637,10 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         return True
 
     if has_python:
-        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=60)
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=timeout)
+        if result.returncode == 124:
+            print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
+            return False
         if result.returncode == 0:
             print("FAIL: RED phase — tests passed but should fail before implementation.")
             print("  TDD requires: write failing tests first, then implement to make them pass.")
@@ -622,7 +649,10 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         return True
 
     # Fallback: try pytest
-    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=60)
+    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=timeout)
+    if result.returncode == 124:
+        print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
+        return False
     if result.returncode == 0:
         print("FAIL: RED phase — tests passed but should fail before implementation.")
         return False
@@ -720,6 +750,7 @@ _MIN_COVERAGE = 60  # Minimum line coverage percentage
 
 def _run_python_tests_with_coverage(cwd: str | None) -> bool:
     """Run pytest with coverage and enforce minimum threshold."""
+    timeout = _test_timeout()
     result = _run(
         [
             "python3", "-m", "pytest", "-q", "--tb=short",
@@ -727,7 +758,7 @@ def _run_python_tests_with_coverage(cwd: str | None) -> bool:
             f"--cov-fail-under={_MIN_COVERAGE}",
         ],
         cwd=cwd,
-        timeout=60,
+        timeout=timeout,
     )
 
     if result.returncode != 0:
@@ -735,7 +766,7 @@ def _run_python_tests_with_coverage(cwd: str | None) -> bool:
         # pytest-cov not installed — fall back to plain pytest
         if "no module named" in stderr_lower or "unrecognized arguments: --cov" in stderr_lower:
             print(f"WARN: pytest-cov not available, running without coverage enforcement")
-            result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd, timeout=60)
+            result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd, timeout=timeout)
             if result.returncode != 0:
                 print(f"FAIL: pytest failed (exit {result.returncode})")
                 if result.stdout:
@@ -765,7 +796,7 @@ def _run_js_tests_in_worktree(cwd: str | None) -> bool:
     except (OSError, json.JSONDecodeError):
         return True
 
-    result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=cwd, timeout=60)
+    result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=cwd, timeout=_test_timeout())
     if result.returncode != 0:
         print(f"FAIL: npm test failed (exit {result.returncode})")
         if result.stdout:
@@ -921,7 +952,7 @@ def verify_implement_test(issue_id: str, **_) -> bool:
 
     if not has_python and not has_js:
         # Fallback: try pytest anyway
-        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd, timeout=60)
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=cwd, timeout=_test_timeout())
         if result.returncode != 0:
             print(f"FAIL: pytest failed (exit {result.returncode})")
             if result.stdout:
@@ -1556,9 +1587,10 @@ def verify_ship_smoke(issue_id: str, **_) -> bool:
     has_js = (root / "package.json").exists()
 
     ok = True
+    timeout = _test_timeout()
 
     if has_python:
-        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=str(root), timeout=120)
+        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=str(root), timeout=timeout)
         if result.returncode != 0:
             print("FAIL: post-merge smoke test failed on main")
             if result.stdout:
@@ -1567,7 +1599,7 @@ def verify_ship_smoke(issue_id: str, **_) -> bool:
             ok = False
 
     if has_js:
-        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=str(root), timeout=120)
+        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=str(root), timeout=timeout)
         if result.returncode != 0:
             print("FAIL: npm test failed on main")
             if result.stdout:

@@ -349,7 +349,7 @@ def find_related_python_tests(filepath: str) -> list[str]:
         return list(cached)
 
     results = []
-    for root, _dirs, files in os.walk(tests_dir):
+    for root, _, files in os.walk(tests_dir):
         for f in files:
             if not _is_python_test_file(f):
                 continue
@@ -386,7 +386,7 @@ def find_related_js_tests(filepath: str) -> list[str]:
         return list(cached)
 
     results = []
-    for root, _dirs, files in os.walk(project_root):
+    for root, _, files in os.walk(project_root):
         # Unlike the fingerprint scan, this walk skips only node_modules —
         # test files are not expected in hidden dirs.
         if "node_modules" in root.split(os.sep):
@@ -583,7 +583,7 @@ def _run_source_branch(filepath: str, lang: str) -> dict | None:
                 break
 
     # Record the outcome BEFORE returning any block dict
-    if cache is not None:
+    if cache is not None and project_root is not None:
         cache["debounce"][key] = {
             "test_set": test_set,
             "last_run": time.time(),
