@@ -60,6 +60,25 @@ def _run(cmd: list[str], timeout: int = 120, **kwargs) -> subprocess.CompletedPr
         return mock
 
 
+_DEFAULT_TEST_TIMEOUT = 600  # seconds — default for test-phase subprocess runs
+
+
+def _test_timeout() -> int:
+    """Resolve the test-phase timeout at call time.
+
+    Reads KIT_CHECKPOINT_TEST_TIMEOUT (seconds). A valid positive integer
+    overrides the default; unset, non-numeric, or non-positive values fall
+    back to _DEFAULT_TEST_TIMEOUT.
+    """
+    # keep in sync with verify_checkpoint.py::_test_timeout
+    raw = os.environ.get("KIT_CHECKPOINT_TEST_TIMEOUT", "")
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_TEST_TIMEOUT
+    return value if value > 0 else _DEFAULT_TEST_TIMEOUT
+
+
 def _tail(text: str, max_chars: int = 2000) -> str:
     """Return the last max_chars characters of text."""
     return text[-max_chars:] if len(text) > max_chars else text
@@ -327,9 +346,13 @@ def run_gate_unit(project_path: Path, **_kwargs) -> GateResult:
     # Decide: pytest or npm test
     pkg_json = pp / "package.json"
     if (pp / "pyproject.toml").exists() or (pp / "tests").is_dir() or list(pp.glob("test_*.py")):
-        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], timeout=120, cwd=str(pp))
+        result = _run(
+            ["python3", "-m", "pytest", "-q", "--tb=short"],
+            timeout=_test_timeout(),
+            cwd=str(pp),
+        )
     elif pkg_json.exists():
-        result = _run(["npm", "test"], timeout=120, cwd=str(pp))
+        result = _run(["npm", "test"], timeout=_test_timeout(), cwd=str(pp))
     else:
         return GateResult(
             gate="unit",
