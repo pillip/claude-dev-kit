@@ -1305,3 +1305,314 @@ class TestVerifyGatesIntegration:
              patch.object(vg, "run_applicable_gates", return_value=[]):
             result = vc.verify_implement_test("ISSUE-001")
             assert result is True
+
+
+# ── ISSUE-046: test-phase timeout config & RED exit-124 handling ─────
+#
+# The test-run call sites (_run_python_tests_with_coverage cov + fallback,
+# verify_implement_red pytest/npm, _run_js_tests_in_worktree npm) must use a
+# configurable timeout: env var KIT_CHECKPOINT_TEST_TIMEOUT (seconds), read
+# at CALL time, defaulting to 600. verify_implement_red must treat _run's
+# exit-124 timeout sentinel as inconclusive (FAIL), not as a RED pass.
+
+_TIMEOUT_ENV = "KIT_CHECKPOINT_TEST_TIMEOUT"
+_DEFAULT_TEST_TIMEOUT = 600  # new default for test-phase subprocess runs
+
+
+def _make_red_worktree(tmp_path: Path) -> Path:
+    """Create a worktree dir that satisfies verify_implement_red's pre-checks.
+
+    Python project (pyproject.toml, no package.json) so the pytest branch is
+    reached, plus one real (non-hollow) test file.
+    """
+    wt_path = tmp_path / "wt" / "issue" / "issue-001-slug"
+    wt_path.mkdir(parents=True)
+    (wt_path / "pyproject.toml").write_text("[tool.pytest]\n")
+    tests_dir = wt_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_feature.py").write_text(
+        "def test_new_feature():\n    assert False  # not implemented yet\n"
+    )
+    return wt_path
+
+
+def _red_side_effect(wt_path: Path, pytest_result, timeouts: list):
+    """Build a _run side effect for verify_implement_red that records the
+    timeout kwarg of the pytest invocation and returns pytest_result for it."""
+
+    def side_effect(cmd, **kwargs):
+        if cmd[:2] == ["git", "worktree"]:
+            return _mock_run(0, stdout=f"worktree {wt_path}\n")
+        if cmd[:2] == ["git", "diff"] and "main" in cmd:
+            return _mock_run(0, stdout="tests/test_feature.py\n")
+        if "pytest" in cmd:
+            timeouts.append(kwargs.get("timeout"))
+            return pytest_result
+        return _mock_run(0, stdout="")
+
+    return side_effect
+
+
+class TestGreenGateResult:
+    """TC-046a — GREEN verifier pass/fail contract (mocked _run, no children)."""
+
+    def test_green_gate_passes_on_exit_zero(self):
+        """Cov run exits 0 → GREEN gate returns True."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append(cmd)
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+        assert len(calls) == 1  # no fallback triggered on success
+
+    def test_green_gate_fails_on_genuine_failure(self):
+        """Exit 1 with stderr NOT matching the pytest-cov-missing pattern →
+        genuine failure → returns False (and no fallback rerun)."""
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append(cmd)
+            return _mock_run(1, stdout="FAILED tests/test_x.py", stderr="assertion error")
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_python_tests_with_coverage("/tmp/wt") is False
+        assert len(calls) == 1  # stderr didn't match fallback pattern → no rerun
+
+
+class TestRedGateExitCodeMatrix:
+    """TC-046b — RED gate must distinguish timeout (124) from genuine failure."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+    def test_red_gate_timeout_124_fails_inconclusive(self, tmp_path, capsys):
+        """Exit 124 (timeout sentinel) is NOT evidence tests fail — RED must
+        FAIL and report the run as timed out / inconclusive."""
+        wt_path = _make_red_worktree(tmp_path)
+        timeouts: list = []
+        side_effect = _red_side_effect(
+            wt_path, _mock_run(124, stderr="python3: timed out after 60s"), timeouts
+        )
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            result = vc.verify_implement_red("ISSUE-001")
+
+        assert result is False
+        out_lower = capsys.readouterr().out.lower()
+        assert "inconclusive" in out_lower
+        assert "timed out" in out_lower or "timeout" in out_lower
+
+    def test_red_gate_genuine_failure_exit_1_passes(self, tmp_path):
+        """Exit 1 (real test failures) → RED PASS (inverted-logic contract)."""
+        wt_path = _make_red_worktree(tmp_path)
+        timeouts: list = []
+        side_effect = _red_side_effect(wt_path, _mock_run(1, stdout="FAILED"), timeouts)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+    def test_red_gate_exit_zero_fails(self, tmp_path):
+        """Exit 0 (tests already pass) → RED FAIL (inverted-logic contract)."""
+        wt_path = _make_red_worktree(tmp_path)
+        timeouts: list = []
+        side_effect = _red_side_effect(wt_path, _mock_run(0), timeouts)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+
+class TestKitCheckpointTestTimeoutEnvOverride:
+    """TC-046c — KIT_CHECKPOINT_TEST_TIMEOUT env var overrides the test-run
+    timeout at every fixed call site (read at CALL time)."""
+
+    def test_kit_checkpoint_test_timeout_env_override_cov_run(self, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+        assert timeouts == [45]
+
+    def test_kit_checkpoint_test_timeout_env_override_fallback_run(self, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            timeouts.append(kwargs.get("timeout"))
+            if len(timeouts) == 1:
+                # cov run fails with the pytest-cov-missing pattern → fallback
+                return _mock_run(1, stderr="unrecognized arguments: --cov")
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+        assert len(timeouts) == 2  # cov run + plain fallback run
+        assert timeouts[0] == 45
+        assert timeouts[1] == 45
+
+    def test_kit_checkpoint_test_timeout_env_override_red_python_run(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        wt_path = _make_red_worktree(tmp_path)
+        timeouts: list = []
+        side_effect = _red_side_effect(wt_path, _mock_run(1, stdout="FAILED"), timeouts)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            vc.verify_implement_red("ISSUE-001")
+        assert timeouts == [45]
+
+    def test_kit_checkpoint_test_timeout_env_override_npm_run(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        (tmp_path / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["npm", "test"]:
+                timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_js_tests_in_worktree(str(tmp_path)) is True
+        assert timeouts == [45]
+
+
+class TestKitCheckpointTestTimeoutDefault:
+    """TC-046d — env unset → default timeout is 600s (suite takes ~4.5 min)."""
+
+    def test_green_gate_timeout_default_600(self, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+        assert timeouts[0] >= 600
+        assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
+
+    def test_red_gate_timeout_default_600(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        wt_path = _make_red_worktree(tmp_path)
+        timeouts: list = []
+        side_effect = _red_side_effect(wt_path, _mock_run(1, stdout="FAILED"), timeouts)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            vc.verify_implement_red("ISSUE-001")
+        assert timeouts[0] >= 600
+        assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
+
+    def test_js_gate_timeout_default_600(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        (tmp_path / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["npm", "test"]:
+                timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            assert vc._run_js_tests_in_worktree(str(tmp_path)) is True
+        assert timeouts[0] >= 600
+        assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
+
+
+class TestKitCheckpointTestTimeoutInvalidEnv:
+    """TC-046e — non-numeric env value falls back to the default, no crash."""
+
+    def test_invalid_env_falls_back_to_default_without_raising(self, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "abc")
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect):
+            # Must not raise despite the garbage env value
+            assert vc._run_python_tests_with_coverage("/tmp/wt") is True
+        assert timeouts[0] == _DEFAULT_TEST_TIMEOUT
+
+
+class TestKitCheckpointTestTimeoutImplementTestFallback:
+    """TC-046f — verify_implement_test's no-runner fallback pytest run must
+    use the configurable test-phase timeout (same seam, scope addition)."""
+
+    def _run_fallback(self, tmp_path):
+        timeouts: list = []
+
+        def side_effect(cmd, **kwargs):
+            if "pytest" in cmd:
+                timeouts.append(kwargs.get("timeout"))
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect), \
+             patch.object(vc, "_find_worktree_path", return_value=str(tmp_path)), \
+             patch.object(vc, "_ensure_deps_installed", return_value=True), \
+             patch.object(vc, "_detect_test_runners", return_value=(False, False)), \
+             patch.object(vc, "_test_plan_has_high_risk", return_value=False), \
+             patch.object(vc, "_run_verify_gates", return_value=True):
+            assert vc.verify_implement_test("ISSUE-001") is True
+        return timeouts
+
+    def test_implement_test_fallback_timeout_default_600(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        assert self._run_fallback(tmp_path) == [_DEFAULT_TEST_TIMEOUT]
+
+    def test_implement_test_fallback_timeout_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        assert self._run_fallback(tmp_path) == [45]
+
+
+class TestKitCheckpointTestTimeoutShipSmoke:
+    """TC-046g — verify_ship_smoke's full-suite pytest and npm runs must use
+    the configurable test-phase timeout (scope addition). No special 124
+    handling there — a timeout simply remains a smoke-gate failure."""
+
+    def _run_smoke(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vc, "_repo_root", lambda: tmp_path)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
+        (tmp_path / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        timeouts: dict = {}
+
+        def side_effect(cmd, **kwargs):
+            if cmd == ["git", "branch", "--show-current"]:
+                return _mock_run(0, stdout="main\n")
+            if "pytest" in cmd:
+                timeouts["pytest"] = kwargs.get("timeout")
+            if cmd[:2] == ["npm", "test"]:
+                timeouts["npm"] = kwargs.get("timeout")
+            return _mock_run(0)
+
+        with patch.object(vc, "_run", side_effect=side_effect), \
+             patch.object(vc, "_run_verify_gates", return_value=True):
+            assert vc.verify_ship_smoke("ISSUE-001") is True
+        return timeouts
+
+    def test_ship_smoke_timeouts_default_600(self, tmp_path, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        timeouts = self._run_smoke(tmp_path, monkeypatch)
+        assert timeouts["pytest"] == _DEFAULT_TEST_TIMEOUT
+        assert timeouts["npm"] == _DEFAULT_TEST_TIMEOUT
+
+    def test_ship_smoke_timeouts_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, "45")
+        timeouts = self._run_smoke(tmp_path, monkeypatch)
+        assert timeouts["pytest"] == 45
+        assert timeouts["npm"] == 45
