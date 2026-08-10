@@ -8,6 +8,7 @@ native worktree creation for plugin users. Freeze markers are written by
 scripts/wt_setup.sh on the skill path instead."""
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -150,3 +151,60 @@ def test_session_start_wired_in_both_hook_configs():
     snippet = json.loads((root / "project" / ".claude" / "settings.snippet.json").read_text())
     assert "SessionStart" in snippet["hooks"]
     assert "session_start.py" in json.dumps(snippet["hooks"]["SessionStart"])
+
+
+# ── SessionStart contributor path must not be version-pinned (ISSUE-037) ─
+
+VERSION_PINNED_CACHE_RE = r"cache/.+/\d+\.\d+\.\d+/"
+
+
+def _make_kit_scripts(root: Path) -> None:
+    """Fake kit root: update check quiet, contributor mode ON, report stub."""
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "kit_update_check.py").write_text("import sys; sys.exit(0)\n")
+    (scripts / "kit_config.py").write_text("print('true')\n")
+    (scripts / "contributor_report.py").write_text("pass\n")
+
+
+def test_session_start_plugin_root_output_has_no_version_pinned_path():
+    """TC-037a: with CLAUDE_PLUGIN_ROOT at a version-pinned cache dir, the
+    contributor-mode instruction must not bake in the pinned absolute path
+    (it dies on plugin update / cache GC). It must instead direct the model
+    to resolve the CURRENT kit root via the "Kit Script Root" shown in the
+    preamble of any active kit skill."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        pinned_root = root / "cache" / "claude-dev-kit" / "claude-dev-kit" / "0.2.0"
+        _make_kit_scripts(pinned_root)
+        # HOOK_ROOT (= cwd = tmp root) has no scripts/, so the kit root can
+        # only come from CLAUDE_PLUGIN_ROOT — the plugin-install layout.
+        out = _run_session_start(root, extra_env={"CLAUDE_PLUGIN_ROOT": str(pinned_root)})
+
+        assert "CONTRIBUTOR MODE: ON" in out
+        assert "contributor_report.py" in out
+        # No version-pinned cache path segment anywhere in the instruction.
+        assert not re.search(VERSION_PINNED_CACHE_RE, out), (
+            f"contributor instruction leaks a version-pinned cache path:\n{out}")
+        assert str(pinned_root) not in out, (
+            f"contributor instruction bakes in the pinned plugin root:\n{out}")
+        # The instruction must name the durable resolution mechanism: the
+        # Kit Script Root printed in every active kit skill's preamble.
+        assert "Kit Script Root" in out
+
+
+def test_session_start_standalone_root_prints_resolvable_report_path():
+    """TC-037b: standalone kit checkout (no CLAUDE_PLUGIN_ROOT) — the hook
+    keeps printing a concrete absolute path, and that path must exist on
+    disk (repo paths are not version-pinned; regression guard)."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _make_kit_scripts(root)
+        out = _run_session_start(root)
+
+        assert "CONTRIBUTOR MODE: ON" in out
+        match = re.search(r"python3 (\S*contributor_report\.py)", out)
+        assert match, f"no contributor_report.py invocation found in:\n{out}"
+        assert Path(match.group(1)).is_file(), (
+            f"printed invocation path does not exist on disk: {match.group(1)}")
+        assert not re.search(VERSION_PINNED_CACHE_RE, out)
