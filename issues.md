@@ -23,6 +23,22 @@
 > Revision rationale: the 027 live parity check ran 2026-07-22 (scriptable via `claude plugin` CLI — no manual session needed after all). Items 1/3/4/5 pass (after two manifest fixes); **item 2 fails** — skills' `bash scripts/...` commands don't resolve in a plugin-only project — spawning ISSUE-035 as the new first step.
 
 ### Backlog
+- [x] ISSUE-036: Renumber duplicated /review steps 3.8–3.10 + name the brainstorm snapshot directory _(track: platform, P1, 0.5d — 2026-08-10 repo audit findings 1+12)_
+- [x] ISSUE-037: Stop injecting version-pinned plugin paths from the SessionStart hook _(track: platform, P1, 0.5d — audit finding 2)_
+- [x] ISSUE-038: Cache the autotest hook's test index + debounce repeat runs _(track: platform, P1, 1d — audit finding 3)_
+- [x] ISSUE-039: Harden security-guard hooks against malformed stdin _(track: platform, P1, 0.5d — audit finding 4)_
+- [x] ISSUE-040: Sweep README staleness — version, roster, retired install diagrams _(track: platform, P1, 1d — audit finding 5)_
+- [x] ISSUE-041: Extract shared UI/UX design-philosophy fragment — dedupe uiux/mobile/desktop boilerplate _(track: platform, P2, 1d — audit finding 6; depends on 036)_
+- [x] ISSUE-042: Set disable-model-invocation: true on the sprint skill _(track: platform, P1, 0.5d — audit finding 7)_
+- [x] ISSUE-043: Remove dead scripts, untrack committed __pycache__, gitignore .claude/run/ _(track: platform, P2, 0.5d — audit findings 8+11)_
+- [x] ISSUE-044: Fix CI environment mismatch + gate_server.sh process-group cleanup _(track: platform, P1, 1d — audit findings 9+13)_
+- [x] ISSUE-045: Add tests for the Figma visual-diff family + validate_frontmatter.py _(track: platform, P2, 1.5d — audit finding 10)_
+- [x] ISSUE-048: Scope implement checkpoints to the branch's own delta (merge-base diff) _(track: platform, P2, 0.5d — 2026-08-11 sprint discovered, iter8)_
+- [x] ISSUE-049: Gate the Figma visual-diff browser auto-install behind an explicit opt-in _(track: platform, P2, 0.5d — sprint discovered, iter8)_
+- [x] ISSUE-050: Lint the README agents-table Tools/Effort cells against agent frontmatter _(track: platform, P2, 0.5d — sprint discovered, iter6)_
+- [x] ISSUE-051: De-conflict the parallel-review docs/.review scratch path _(track: platform, P3, 0.5d — sprint discovered, iter5/6/7)_
+- [x] ISSUE-052: Make sprint_queue crash-recovery aware of already-merged PRs _(track: platform, P2, 1d — sprint discovered, iter7/8)_
+- [x] ISSUE-053: Document the KIT_ALLOW_BROWSER_INSTALL + KIT_SPRINT_QUEUE_GH_TIMEOUT env knobs _(track: platform, P3, 0.5d — sprint 2 discovered, iter1/2)_
 
 ### Doing
 
@@ -61,6 +77,8 @@
 - [x] ISSUE-033: Learning loop on Claude Code native memory — supersedes ISSUE-003 _(track: platform, P2, 1d — done 2026-07-24: /review Learning Extraction now records preventable patterns as **review lessons in Claude Code native memory** (topic file + MEMORY.md index, dedup-in-place, no RL-NNN/Frequency), replacing the never-used docs/review_lessons.md registry (retired; template + [RL-NNN] flow removed). Confirmed via claude-code-guide: memory dir `~/.claude/projects/<project>/memory/` (overridable `autoMemoryDirectory`), MEMORY.md auto-loads at session start, **but Task subagents get NO auto-recall** — so the 26 consuming agents + kickoff/sprint/implement/testgen skills were reworded to "apply recalled/injected review lessons", and /review injects relevant lessons into separate-context subagent prompts. README/docs/roadmap updated; test_integration flipped to assert the native convention + guard against re-wiring the legacy registry. **Live-verified 2026-07-26**: a headless session wrote a review lesson to the native memory dir + MEMORY.md index; a fresh session in the same project auto-recalled the index entry — write + main-session recall confirmed)_
 - [x] ISSUE-034: Agent roster diet — consolidate thin persona agents _(track: platform, P2, 1d — done 2026-07-24: full classification found the audit's "~16 thin" over-counted — most "thin personas" are inline skills or sprint routing labels, not live orchestration hops. Absorbed the **4 genuinely-dead persona files** (diagnostician/migrator/refactorer/prd-writer — never Task-invoked, their skills have no Task at all) into their skills as "Execution Principles" grafts (root-cause discipline, one-major-bump migrations, behavior-preserving refactor, PRD completeness); roster 36→32; team-lead test-failure path rerouted to /diagnose. **Kept with rationale**: 3 auditors + reviewer/developer/architect/planner/uiux-developers (differentiated methodology / separate-context self-grading guard — the predictability guard), scan-family (real 4-pass per-domain pipeline; merging loses separate context), brainstormer/business-analyst (029 degraded-path research agents, freshly guard-tested). test_agent_effort roster+HEAVY, test_integration param lists/self-review/sprint-table + README/issues-header updated)_
 - [x] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — done 2026-07-26: `scripts/eval_review.py` runs a fresh `claude -p` judge over review_notes + the PR diff, scoring coverage/false-positive/actionability/traceability (rubric in `templates/review_eval_rubric.md`), emitting `docs/review_eval_<pr>.md`. Wired as a **non-blocking** step 8 in /ship — always exits 0; missed Critical/High or a dimension ≤2 → `concerns`, else `pass`. **No separate billing** (session auth, not ANTHROPIC_API_KEY); degraded-mode skips silently if the CLI/notes are absent. Determinism via `--runs N` (Critical/High Jaccard overlap; ≥80% is the floor — CLI has no temperature control). 17 unit tests cover rubric contract, verdict derivation (judge "pass" + missed High → concerns), determinism math, degraded mode, never-blocks-on-error, and the /ship wiring. Judge grades the platform /code-review-fed notes post-029, sidestepping self-grading. **Live-verified 2026-07-26**: the judge round-trip produced valid JSON and correctly caught a deliberately-missed SQL-injection (coverage 0, verdict `concerns`, missed Critical flagged with diff_ref) — rubric → parseable verdict confirmed end-to-end)_
+- [x] ISSUE-046: Fix verify_checkpoint.py's 60s pytest timeout breaking the GREEN gate and hollowing the RED gate on 4-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: test-phase subprocess timeouts (implement red/test, ship smoke; were hard-coded 60s/120s) now env-configurable via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) through a _test_timeout() helper; RED-phase exit-124 reported as inconclusive FAIL instead of being mistaken for a failing suite; absorbed verify_ship_smoke full-suite + no-runner-fallback caps (reviewer-accepted scope). Squash-merged PR #54 @ c04b78b 2026-08-10; ship smoke initially blocked solely by the pre-filed ISSUE-047 verify_gates 120s unit-gate cap — retried post-ISSUE-047 on 2026-08-11: GATE PASS unit [blocking] 14.5s, smoke PASS; review 0 Critical/High, 6 Low; eval artifacts in docs/review_notes/ISSUE-046.md)_
+- [x] ISSUE-047: Fix verify_gates.py hard-coded 120s unit-gate timeout (and sibling short caps) breaking blocking ship-smoke gates on multi-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: env-configurable unit-gate timeout via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) mirroring verify_checkpoint.py::_test_timeout, _run() timeout-mock contract (rc 124) preserved; absorbed test-isolation fix for two verify_implement_test tests whose unmocked gate-runner seam recursively spawned the full suite — the source of the false "~5-min suite" premise (true base ~21s). Squash-merged PR #56 @ b0d8bb3; post-merge smoke: GATE PASS unit [blocking] 14.6s, suite 1145 passed / 2 skipped ~11s; review 0 Critical/High/Medium, 6 Low; eval: pass)_
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
 - [x] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store — **dropped 2026-07-16** (superseded by ISSUE-033: CC native persistent memory replaces the patterns.jsonl + preamble-injection design; review_lessons.md never accumulated an entry) _(track: platform, P1, 1.5d)_
@@ -2059,3 +2077,906 @@ The script invocations that generated skills instruct the model to run resolve t
 
 #### Rollback
 `git revert` the gen_skills change + regeneration commit; standalone layout keeps working throughout.
+
+---
+
+### ISSUE-036: Renumber duplicated /review steps 3.8–3.10 + name the brainstorm snapshot directory
+
+> 4-way repo audit 2026-08-10 (findings 1 + 12). `skills/review/SKILL.md.tmpl` reuses step numbers 3.8–3.10 twice: the Figma cluster (layout tmpl:75, visual-diff tmpl:82, debug-images tmpl:90) and the UI/design/a11y cluster (ui-review tmpl:100, design-audit tmpl:111, a11y tmpl:118). The synthesis step's "Figma 3.5–3.10" cross-reference is therefore ambiguous — a model following the skill can conflate the two clusters. Finding 12 is homed here as the same class of skill-text precision fix: brainstorm tmpl:23 passes the research-auditor a vague "snapshot directory" where bizanalysis names the canonical `docs/references/research/`.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-036-review-step-renumber
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/50
+- PR: https://github.com/pillip/claude-dev-kit/pull/57
+- Depends-On: none
+
+#### Goal
+The /review skill has a single strictly increasing step sequence with unambiguous cross-references, and the brainstorm degraded path names `docs/references/research/` explicitly.
+
+#### Scope (In/Out)
+- In:
+  - Renumber the second 3.8/3.9/3.10 cluster in `skills/review/SKILL.md.tmpl` (ui-review tmpl:100, design-audit tmpl:111, a11y tmpl:118) to 3.11–3.13; shift synthesize (tmpl:124) and merge-audit (tmpl:129) from 3.11/3.12 to 3.14/3.15.
+  - Verify the synthesis step's "Figma 3.5–3.10" cross-reference is exact after renumbering (it becomes unambiguous once the UI cluster moves); update any other in-file step references.
+  - Update the "Figma 3.5-3.10" mention in `tests/test_review_delegation_guard.py` docstring/comments to match.
+  - Finding 12 (homed here): `skills/brainstorm/SKILL.md.tmpl:23` — replace "snapshot directory" in the research-auditor inputs with the canonical `docs/references/research/` (matching bizanalysis tmpl:33).
+  - Regenerate via `python3 scripts/gen_skills.py`.
+- Out:
+  - Checkpoint phase names/plumbing — phases are name-based (`--phase ui-review` etc.), untouched.
+  - Any flow/ordering change to what the steps do.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the regenerated `skills/review/SKILL.md`, when all `3.N)` step numbers are extracted in document order, then the sequence is strictly increasing with no duplicates.
+- [ ] Given the synthesis step (now 3.14), when its cross-references are read, then "Figma 3.5–3.10" resolves to exactly the Figma cluster and the UI/design/a11y outputs are referenced by their new numbers.
+- [ ] Given the regenerated `skills/brainstorm/SKILL.md`, when the degraded-path research-auditor invocation is read, then its inputs name `docs/references/research/` and the phrase "snapshot directory" no longer appears.
+
+#### Implementation Notes
+- Edit the `.tmpl` files only; `SKILL.md` files are generated artifacts (regenerate, never hand-edit — CI's `gen_skills.py --dry-run` freshness gate catches divergence).
+- `capture_source.py` already writes to `docs/references/research/`, so the brainstorm wording change is documentation-of-truth, not behavior.
+- Grep the tmpl for every `3.8`/`3.9`/`3.10`/`3.11`/`3.12` occurrence before and after — cross-references may hide in checkpoint blockquotes and NEVER-lists.
+
+#### Tests
+- [ ] New assertion in `tests/test_review_delegation_guard.py` (or a small new test): parse generated `skills/review/SKILL.md` step numbers, assert strict monotonicity / no duplicates — a regression guard for future step insertions.
+- [ ] Text assertion: brainstorm SKILL.md degraded path contains `docs/references/research/`.
+
+#### Rollback
+`git revert` — text-only change to templates + regenerated skills.
+
+---
+
+### ISSUE-037: Stop injecting version-pinned plugin paths from the SessionStart hook
+
+> 4-way repo audit 2026-08-10 (finding 2). `project/.claude/hooks/session_start.py:62-71` resolves the kit root (which under plugin install is the version-pinned cache dir, e.g. `…/cache/claude-dev-kit/claude-dev-kit/0.2.0/`) and bakes that absolute path into the contributor-mode instruction it prints into session context. When the plugin updates and old cache dirs are GC'd, the injected command hits ENOENT; when the old dir survives, the model silently runs a stale copy of `contributor_report.py`.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-037-session-start-unpinned-path
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/51
+- PR: https://github.com/pillip/claude-dev-kit/pull/58
+- Depends-On: none
+
+#### Goal
+The SessionStart hook's injected contributor-mode instruction contains no version-pinned absolute path, so the invocation always resolves to the currently installed kit version under both plugin and standalone layouts.
+
+#### Scope (In/Out)
+- In:
+  - Rework the contributor-mode branch of `project/.claude/hooks/session_start.py` so the printed instruction is version-stable (see Implementation Notes for the resolution options).
+  - Keep standalone behavior working (repo-path kit roots are not version-pinned; today's output is fine there).
+  - Unit test guarding against version-pinned paths in hook output.
+- Out:
+  - The kit-update-check branch of the hook (prints informational text only, no command).
+  - Contributor-report mechanics (`scripts/contributor_report.py` itself unchanged).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `CLAUDE_PLUGIN_ROOT` pointing at a version-pinned cache dir (fake fixture), when the hook prints contributor-mode instructions, then the output contains no `/cache/…/<semver>/` absolute path segment.
+- [ ] Given the plugin was updated and the old cache dir removed, when the model follows the injected instruction later in the session, then it resolves the current version's `contributor_report.py` (no ENOENT, no stale copy).
+- [ ] Given a standalone kit checkout (no `CLAUDE_PLUGIN_ROOT`), when the hook runs with contributor mode ON, then the instruction still yields a working invocation — no regression.
+
+#### Implementation Notes
+- **Caveat from ISSUE-035 (verified)**: `${CLAUDE_PLUGIN_ROOT}` load-time text substitution applies to plugin *skill bodies* only, and the env var is NOT exported to the model's shell — so printing a literal `$CLAUDE_PLUGIN_ROOT` in hook stdout will NOT resolve in Bash. The naive fix is a non-fix; verify whatever you emit actually executes.
+- Candidate approaches: (a) reference the skill preamble's **Kit Script Root** section ("run `python3 <kit-root>/scripts/contributor_report.py` where <kit-root> is the Kit Script Root shown in your active skill preamble") — skills already carry the load-time-substituted absolute root; (b) print an instruction that re-resolves at command time through a stable, non-versioned location if the marketplace cache exposes one (verify before relying on it). Pick the option that survives cache GC and degrades gracefully standalone.
+- The hook must keep its "never fail, every path exits 0" contract.
+
+#### Tests
+- [ ] Subprocess test: run the hook with a fake version-pinned `CLAUDE_PLUGIN_ROOT` fixture (containing `scripts/kit_update_check.py` + contributor mode ON) and assert stdout matches no `cache/.+/\d+\.\d+\.\d+/` pattern.
+- [ ] Standalone-layout test: hook output still names a resolvable invocation for the repo layout.
+
+#### Rollback
+`git revert` the hook change; the old behavior is degraded but functional within a single un-GC'd version.
+
+---
+
+### ISSUE-038: Cache the autotest hook's test index + debounce repeat runs
+
+> 4-way repo audit 2026-08-10 (finding 3). `project/.claude/hooks/autotest.py` pays a heavy per-edit cost: on EVERY Write/Edit it re-walks the tests tree and reads every test file to find related tests (`find_related_python_tests` lines 195-233 — full `os.walk` + `open().read()` per test file; `find_related_js_tests` lines 236-271 walks the whole project minus node_modules), then synchronously runs up to 5 unit tests (30s timeout each) + 2 E2E (60s). A busy editing session pays this repeatedly for the same modules.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-038-autotest-index-cache
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/52
+- PR: https://github.com/pillip/claude-dev-kit/pull/59
+- Depends-On: none
+
+#### Goal
+Repeated Write/Edit events reuse a cached module-to-test-file index instead of re-walking and re-reading the test tree, and rapid successive edits to the same module do not re-run identical tests within a debounce window.
+
+#### Scope (In/Out)
+- In:
+  - Build a cached index (module name → related test files) for both the Python and JS paths, persisted per project (e.g. under `.claude/run/`, which ISSUE-043 gitignores) with invalidation by tests-dir mtime scan or a short TTL.
+  - Debounce: skip re-running the same (module → test set) pair when the previous run completed within the window and the test files are unchanged.
+  - Keep existing behavior knobs: `MAX_RELATED_TESTS = 5`, per-test timeouts, block-on-failure semantics.
+- Out:
+  - Changing WHICH tests are selected (matching semantics stay: module-name containment).
+  - Async/background execution — runs stay synchronous; this issue only removes redundant work.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a warm index, when a Write/Edit event fires for an already-indexed module, then the hook performs no full tests-tree walk (assert via monkeypatched `os.walk` call count in unit tests).
+- [ ] Given a test file added or modified after the index was built, when the next event fires past the invalidation boundary, then the index refreshes and the new/changed test is discoverable.
+- [ ] Given two edits to the same module within the debounce window with unchanged tests, when the second event fires, then the duplicate test execution is skipped.
+- [ ] Given a test failure on the first edit, when the module is edited again, then the tests DO re-run (failures must never be debounced into silence).
+
+#### Implementation Notes
+- Files: `project/.claude/hooks/autotest.py` (find_related_python_tests / find_related_js_tests + a new small cache module or inline helpers).
+- Cache keying: project root + tests-dir mtimes is cheap and correct enough; do not hash file contents on the hot path.
+- The hook runs as a fresh process per event, so the index must live on disk, not in memory; keep reads/writes best-effort (corrupt/missing cache → rebuild, never crash — same fail-soft contract as the other hooks).
+- Debounce state can live in the same run-dir file; store (module, test-set hash, last-run ts, last result).
+
+#### Tests
+- [ ] Unit tests with `tmp_path` project fixtures: warm-index walk-count assertion (monkeypatched os.walk), invalidation on new test file, debounce skip, failure-is-never-debounced.
+- [ ] Corrupt-cache test: garbage index file → rebuild, exit clean.
+
+#### Rollback
+`git revert`; delete stale `.claude/run/` index files (inert data).
+
+---
+
+### ISSUE-039: Harden security-guard hooks against malformed stdin
+
+> 4-way repo audit 2026-08-10 (finding 4). `secret_guard.py:45` and `dangerous_command_guard.py:35` call `json.loads(sys.stdin.read())` unguarded — a malformed payload raises an unhandled traceback and the guard is silently skipped (fail-open with no signal). `run_cleanup.py`/`session_start.py` already wrap their stdin parse. Latent footgun to document while in here: these guards block via **stdout JSON** (`{"decision": "block"}`), so a shell `|| true` wrapper around them is currently harmless — but if anyone converts them to exit-code-2 blocking, that wrapper would silently neutralize the guard.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-039-guard-stdin-hardening
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/60
+- PR: https://github.com/pillip/claude-dev-kit/pull/63
+- Depends-On: none
+
+#### Goal
+Both security guards survive malformed stdin without a traceback, emit a visible stderr diagnostic when they skip (so fail-open is loud, not silent), and carry an in-file comment documenting the stdout-JSON blocking mechanism and the `|| true` / exit-code-2 footgun.
+
+#### Scope (In/Out)
+- In:
+  - Wrap the stdin parse in `project/.claude/hooks/secret_guard.py` main() and `project/.claude/hooks/dangerous_command_guard.py` main(): on parse failure, print a one-line diagnostic to stderr (e.g. "secret_guard: malformed hook payload — guard skipped") and exit 0.
+  - Add a comment block in both files documenting: blocking happens via stdout JSON, exit code stays 0; therefore `|| true` wrappers are harmless today, and converting to exit-code-2 blocking requires removing any such wrappers first.
+- Out:
+  - Changing detection patterns or blocking semantics.
+  - Converting to exit-code-2 blocking (explicitly NOT doing that — just documenting the trap).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given malformed or empty stdin, when either guard runs, then it exits 0 with no traceback and prints a parse-failure diagnostic to stderr.
+- [ ] Given a valid Write payload containing a secret pattern, when secret_guard runs, then the stdout block JSON is emitted exactly as before — no regression.
+- [ ] Given a valid Bash payload with a dangerous command, when dangerous_command_guard runs, then blocking works exactly as before — no regression.
+
+#### Implementation Notes
+- Mirror the existing pattern in `run_cleanup.py`/`session_start.py` (try/except around the parse), but do NOT swallow silently — these are security guards; the skip must leave a trace on stderr.
+- Keep stderr (not stdout) for the diagnostic: stdout is the hook's decision channel and must stay clean JSON-or-nothing.
+
+#### Tests
+- [ ] Subprocess tests: pipe garbage (`not-json`, empty, truncated JSON) into each guard → assert rc 0, empty stdout, stderr contains the skip diagnostic.
+- [ ] Existing happy-path tests (secret detected / dangerous command blocked) still pass unchanged.
+
+#### Rollback
+`git revert` — two small hook files, no state.
+
+---
+
+### ISSUE-040: Sweep README staleness — version, roster, retired install diagrams
+
+> 4-way repo audit 2026-08-10 (finding 5). README.md drifted across several landed issues: title says "claude-kit (v0.1)" (lines 1, 732) while the plugin is at 0.3.0; claims 33 agents but 32 exist (ISSUE-034); the agents table omits research-auditor / review-merge-auditor / synthesizer-auditor (ISSUE-029); a stale model-mix line "opus (21 agents) … sonnet (12 agents)" survives at line 740 despite ISSUE-030 removing all model pins; team-layout diagrams still show the retired `.claude-kit/` submodule install (lines 273, 290; retired by ISSUE-027); the spec skill has no Usage section.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-040-readme-staleness-sweep
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/62
+- PR: https://github.com/pillip/claude-dev-kit/pull/65
+- Depends-On: none
+
+#### Goal
+README.md matches the shipped reality: current version, 32-agent roster including the three auditors, inherit-model + effort-tier description, plugin-first team layouts, and a Usage section for every skill including /spec.
+
+#### Scope (In/Out)
+- In:
+  - Title/version mentions (README.md:1, 732): reference the current version (0.3.0) or drop the hardcoded pin in favor of pointing at `VERSION` — pick one and apply consistently.
+  - Agent count 33 → 32 everywhere; add research-auditor, review-merge-auditor, synthesizer-auditor rows to the agents table.
+  - Replace the model-mix line (README.md:740) with the post-ISSUE-030 truth: all agents inherit the session model; effort tiers are the per-agent knob.
+  - Update the team-layout diagrams (README.md:273, 290) from `.claude-kit/` submodule to the plugin-first install.
+  - Add a Usage section for the spec skill, format-consistent with the other skills' entries.
+- Out:
+  - Repositioning/marketing rewrite; structural README reorganization.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the updated README, when grepped for "v0.1", "33 agents", "opus (21", and ".claude-kit/", then zero matches remain (or only mentions explicitly marked as historical context).
+- [ ] Given the agents table, when compared against `agents/*.md`, then every agent file has a row (including the 3 auditors) and the stated total matches the roster count asserted by `tests/test_agent_effort.py`.
+- [ ] Given the skills documentation section, when the spec skill entry is read, then it includes a Usage section consistent in format with the other skills.
+
+#### Implementation Notes
+- Cross-check counts against the generators, not by hand: roster = `ls agents/*.md | wc -l` and the count assertions in `tests/test_agent_effort.py`; skills = the gen_skills.py skill list.
+- The issues.md header (line 5) also states the counts — that header was updated by ISSUE-034 and should already say 32/28; do not touch existing issue blocks.
+- ISSUE-005 is the precedent for this sweep; reuse its verification approach.
+
+#### Tests
+- [ ] Lightweight consistency test (new or extended in test_integration): README's stated agent count equals `len(glob("agents/*.md"))`; README contains no ".claude-kit/" submodule reference outside explicitly-historical text.
+- [ ] Grep-assertions for the removed stale strings ("opus (21", "33 agents").
+
+#### Rollback
+`git revert` — docs-only.
+
+---
+
+### ISSUE-041: Extract shared UI/UX design-philosophy fragment — dedupe uiux/mobile/desktop boilerplate
+
+> 4-way repo audit 2026-08-10 (finding 6). The uiux / mobile-uiux / desktop-uiux skill templates and their three developer agents each carry 60–70 parallel lines of near-identical boilerplate (design-philosophy derivation, token compliance rules, self-review checklist). Six copies drift independently — the same class of duplication the `{{PREAMBLE}}` token in gen_skills.py/preambles.py already solved for skill preambles.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P2
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-041-uiux-philosophy-dedup
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/69
+- PR: https://github.com/pillip/claude-dev-kit/pull/72
+- Depends-On: ISSUE-036 (serialize gen_skills.py regeneration — both issues regenerate overlapping generated skill files)
+
+#### Goal
+The shared design-philosophy/token-compliance/self-review boilerplate exists exactly once as a canonical fragment; the three uiux skill templates consume it via a token, and the three agent copies are drift-guarded against it.
+
+#### Scope (In/Out)
+- In:
+  - Extract the shared lines from `skills/{uiux,mobile-uiux,desktop-uiux}/SKILL.md.tmpl` into a canonical fragment resolved by gen_skills.py (e.g. a `{{DESIGN_PHILOSOPHY}}` token alongside `{{PREAMBLE}}`, sourced from preambles.py or a sibling fragments module). Platform-specific deltas stay inline in each tmpl.
+  - Reconcile `agents/{uiux-developer,mobile-uiux-developer,desktop-uiux-developer}.md`: agents are static (not generated), so align their copies verbatim with the canonical fragment and add a drift-guard test comparing agent text against the canonical constant.
+  - Regenerate all skills via `python3 scripts/gen_skills.py`.
+- Out:
+  - Changing the philosophy/token-rule CONTENT itself (wording unification of accidental divergence is allowed; note each unification in the PR).
+  - figma-converter, design-auditor, ui-reviewer texts.
+  - Introducing agent-file generation infrastructure (drift-guard test is the cheap sufficient mechanism).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the three uiux tmpls, when diffed after extraction, then the shared boilerplate appears only as the fragment token — no inline copy survives in any tmpl.
+- [ ] Given the regenerated SKILL.md files, when compared against pre-change output, then every rule/checklist item present before is still present (semantic equivalence; deliberate wording unifications listed in the PR description).
+- [ ] Given a future edit to the canonical fragment without syncing agent files, when the test suite runs, then the drift-guard test fails and names the out-of-sync agent file.
+
+#### Implementation Notes
+- Follow the existing token mechanism: `scripts/gen_skills.py` maps `"PREAMBLE": _resolve_preamble` — add the fragment resolver next to it; keep the fragment text in `scripts/preambles.py` or a new `scripts/fragments.py` importable by both gen_skills.py and the drift-guard test.
+- Before extracting, three-way-diff the six copies to catalog existing divergence — some deltas are intentional platform specifics (keep inline), some are drift (unify into the fragment).
+- CI's `gen_skills.py --dry-run` freshness gate protects the skill side; the drift-guard test protects the agent side.
+
+#### Tests
+- [ ] Drift-guard test: each of the three agent files contains the canonical fragment text verbatim (normalized whitespace).
+- [ ] Generated-output test: each of the three generated SKILL.md files contains the fragment content exactly once; no duplicated section headers.
+
+#### Rollback
+`git revert` the extraction + regeneration commit; the inline copies return.
+
+---
+
+### ISSUE-042: Set disable-model-invocation: true on the sprint skill
+
+> 4-way repo audit 2026-08-10 (finding 7). Every other repo-mutating orchestrator (implement/review/ship/kickoff/scan) sets `disable-model-invocation: true`; `skills/sprint/SKILL.md.tmpl` has no such line at all — leaving the HEAVIEST autonomous orchestrator (implements, reviews, and ships every backlog issue) model-invocable without an explicit user command.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-042-sprint-disable-model-invocation
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/61
+- PR: https://github.com/pillip/claude-dev-kit/pull/64
+- Depends-On: none
+
+#### Goal
+The sprint skill can only be triggered by an explicit user invocation, and a lint test guarantees every repo-mutating orchestrator keeps `disable-model-invocation: true`.
+
+#### Scope (In/Out)
+- In:
+  - Add `disable-model-invocation: true` to `skills/sprint/SKILL.md.tmpl` frontmatter; regenerate via gen_skills.py.
+  - New lint test enumerating the repo-mutating orchestrator set {implement, review, ship, kickoff, scan, sprint} and asserting each generated SKILL.md frontmatter sets the flag true — so a future orchestrator can't silently omit it.
+- Out:
+  - Any change to sprint's workflow body or allowed-tools.
+  - Flipping the flag on non-orchestrator skills (migrate/devops/etc. stay `false` deliberately).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the regenerated `skills/sprint/SKILL.md`, when its frontmatter is parsed, then `disable-model-invocation` is `true`.
+- [ ] Given the new lint test, when any of the six orchestrators' frontmatter lacks the flag or sets it false, then the test fails naming the offending skill.
+
+#### Implementation Notes
+- Frontmatter lives at tmpl lines 1-6 (name/description/argument-hint/allowed-tools — the flag line is currently absent entirely, unlike skills that set it `false`).
+- Reuse the frontmatter parsing already available to tests (same approach as `scripts/validate_frontmatter.py`); keep the orchestrator set as an explicit constant in the test so additions are a conscious decision.
+
+#### Tests
+- [ ] Lint test as above (six orchestrators, flag true).
+- [ ] `python3 scripts/gen_skills.py --dry-run` clean (CI freshness gate).
+
+#### Rollback
+`git revert` — one frontmatter line + regeneration + test.
+
+---
+
+### ISSUE-043: Remove dead scripts, untrack committed __pycache__, gitignore .claude/run/
+
+> 4-way repo audit 2026-08-10 (findings 8 + 11). Dead code: `scripts/ensure_permissions.py` and `scripts/ensure_gh.sh` have zero callers; `scripts/kit_root.sh` is referenced only by its own test (all wrappers inline their own root resolution); `scripts/lint_skill_cache_order.py` is wired to neither CI nor any skill. Build artifacts: `scripts/__pycache__/` is tracked with 46 .pyc files — including compiled remains of DELETED modules (install_packs, validate_pack_manifest install-path variant) — despite `.gitignore` line 1 already listing `__pycache__/` (committed before the ignore). Finding 11: `.claude/run/` telemetry files show up as untracked noise in every `git status`.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-043-dead-code-gitignore-hygiene
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/66
+- PR: https://github.com/pillip/claude-dev-kit/pull/68
+- Depends-On: none
+
+#### Goal
+No dead scripts, no tracked build artifacts, and no `.claude/run/` noise in `git status`.
+
+#### Scope (In/Out)
+- In:
+  - Delete `scripts/ensure_permissions.py` and `scripts/ensure_gh.sh` (re-verify zero callers by grepping scripts/skills/agents/tests/docs/hooks first).
+  - Delete `scripts/kit_root.sh` plus its test (test-only surface; wrappers inline their own resolution per ISSUE-023).
+  - `scripts/lint_skill_cache_order.py`: default is delete per the audit; the alternative is wiring it into ci.yml as a step — pick ONE in the PR and state why. Do not leave it orphaned.
+  - `git rm -r --cached scripts/__pycache__/` (ignore rule already exists — this only untracks).
+  - Add `.claude/run/` to `.gitignore`.
+- Out:
+  - Any behavior change to live scripts; `validate_pack_manifest.py` (the live pack-authoring lint kept by ISSUE-027) stays.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the repo after cleanup, when grepping for `ensure_permissions|ensure_gh|kit_root.sh|lint_skill_cache_order` across the tree, then zero live references remain (or, if the wiring alternative was chosen for lint_skill_cache_order, it appears exactly once as a ci.yml step).
+- [ ] Given `git ls-files`, when filtered for `__pycache__` or `.pyc`, then zero tracked paths remain.
+- [ ] Given a session that writes `.claude/run/` telemetry, when `git status` runs afterward, then those files do not appear as untracked.
+
+#### Implementation Notes
+- Deleting kit_root.sh requires removing/adjusting its test file — run the full suite after; nothing else imports it.
+- `git rm --cached` (not plain `rm`) for the pycache so local interpreter caches keep working; the directory regenerates ignored.
+- Note the house pre-commit WATCH_PATTERNS convention: if this repo's rule-sync hook is active, a `.gitignore`-class change may want a docs sync commit — check before pushing.
+
+#### Tests
+- [ ] Existing suite green after deletions (kit_root.sh test removed with its subject).
+- [ ] Grep-guard assertion (extend the ISSUE-027-style guard test) blocking re-references to the removed script names.
+
+#### Rollback
+`git revert` restores the files; untracked-cache state is harmless either way.
+
+---
+
+### ISSUE-044: Fix CI environment mismatch + gate_server.sh process-group cleanup
+
+> 4-way repo audit 2026-08-10 (findings 9 + 13, folded — two small infra-hygiene fixes, one PR). CI: `ci.yml` installs via pip while the house standard is uv; `pip install -e ".[dev]" 2>/dev/null || true` (ci.yml:28) swallows dev-extras failure entirely; pyproject's `asyncio_mode = "strict"` is dead config (pytest-asyncio absent → PytestConfigWarning on every run); `python` vs `python3` mixed across ci.yml:35-49. gate_server: `cleanup()` (gate_server.sh:52-61) kills only `$SERVER_PID` despite its comment claiming "kill process group to catch child processes" — servers that fork (npm dev servers, uvicorn --reload) leak orphans.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P1
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-044-ci-env-gate-server-cleanup
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/67
+- PR: https://github.com/pillip/claude-dev-kit/pull/70
+- Depends-On: none
+
+#### Goal
+CI fails loudly on install problems, runs warning-clean under a consistent interpreter/tooling setup, and gate_server.sh actually terminates the server's whole process group on exit.
+
+#### Scope (In/Out)
+- In:
+  - ci.yml: migrate dependency install to uv (house standard) OR minimally keep pip but remove the `2>/dev/null || true` swallow — either way, a failed dev-extras install must fail the job.
+  - Resolve the asyncio config mismatch: add pytest-asyncio to dev deps OR delete `asyncio_mode = "strict"` from pyproject — whichever matches actual usage (no async tests today → delete is likely right).
+  - Unify interpreter invocation style (`python` vs `python3`) across ci.yml:35-49.
+  - gate_server.sh: start the server in its own process group (e.g. `setsid` / `set -m`) and make `cleanup()` signal the group (`kill -- -"$SERVER_PID"`), preserving the existing graceful-then-`kill -9` escalation and the exit-code contract (125 on immediate exit, health-check timeout behavior).
+- Out:
+  - Raising `--cov-fail-under`; adding new CI jobs; changing gate semantics or health-check polling.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a broken dev-extras spec, when the CI install step runs, then the job fails instead of continuing silently.
+- [ ] Given the CI pytest run, when its warnings are inspected, then no PytestConfigWarning about asyncio_mode appears.
+- [ ] Given ci.yml, when interpreter invocations are grepped, then a single consistent form is used throughout.
+- [ ] Given a START_CMD that spawns a child process (e.g. a shell wrapper forking a worker), when gate_server.sh exits via its cleanup trap, then both the server and its children are terminated — no orphan survives.
+- [ ] Given a normal single-process server, when gate_server.sh runs its happy path, then behavior and exit codes are unchanged.
+
+#### Implementation Notes
+- uv migration keeps the local/CI environments aligned with the ground rules (`uv sync` / `uv run pytest`); if staying on pip for runner-speed reasons, say so in the PR — but the failure-swallowing goes regardless.
+- Per the house pre-commit convention, ci.yml/pyproject changes are WATCH_PATTERNS files — include the rules-doc sync commit if that hook is active in your checkout.
+- gate_server portability: macOS ships no `setsid` by default — `set -m` + `kill -- -$!`, or a `perl -e 'setpgrp...'`/python wrapper, are the portable options; the kit runs on darwin (dev) and linux (CI), so test both signal paths.
+- Careful with `eval "$START_CMD" &`: the process group leader must be the eval'd shell, and `kill -0` liveness checks in the retry loop need updating to probe the group.
+
+#### Tests
+- [ ] Bash-level test: launch gate_server.sh with a fixture command that forks a child (`bash -c 'sleep 60 & sleep 60'` style), terminate, assert neither PID survives.
+- [ ] Existing gate_server tests (health-check success/timeout/immediate-exit) still pass.
+- [ ] CI changes are self-validating on the PR run: green job + zero PytestConfigWarning in the log.
+
+#### Rollback
+`git revert`; both files are self-contained (workflow + one script).
+
+---
+
+### ISSUE-045: Add tests for the Figma visual-diff family + validate_frontmatter.py
+
+> 4-way repo audit 2026-08-10 (finding 10). The Figma visual-diff family — `verify_visual_diff.py`, `verify_computed_styles.py`, `verify_structural_match.py`, `verify_layout.py`, `generate_figma_css.py` (~100KB combined, several wired as BLOCKING review checkpoints) — has zero tests. `validate_frontmatter.py` is a CI gate with no unit coverage: a regression there silently weakens the gate for every PR.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-10 repo audit)
+- Priority: P2
+- Estimate: 1.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-045-figma-verify-frontmatter-tests
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/71
+- PR: https://github.com/pillip/claude-dev-kit/pull/73
+- Depends-On: none
+
+#### Goal
+The six untested scripts have unit coverage of their core comparison/generation/validation logic, runnable without Chromium or network, so checkpoint-gate regressions fail the build instead of silently passing reviews.
+
+#### Scope (In/Out)
+- In:
+  - `validate_frontmatter.py`: fixture-driven unit tests — valid frontmatter, malformed YAML, missing required keys, frontmatter-not-at-byte-0 (the ISSUE-035 failure mode), and the exit-code contract CI relies on.
+  - Visual-diff family: unit/characterization tests for the pure logic — diff-threshold math and image comparison on tiny synthetic PNGs (verify_visual_diff), token-vs-computed-style comparison on fixture dicts (verify_computed_styles), element-presence matching against fixture design_data.json (verify_structural_match), spatial-relationship assertions on synthetic layouts (verify_layout), CSS output from fixture design data (generate_figma_css).
+  - Chromium/rendering/network paths stay behind mocks or `-m integration` marks per the pytest ground rules — the default suite must not launch a browser.
+  - Minimal behavior-preserving seams only where a script is untestable as-is (e.g. extracting a compare function from an inline `main`); no logic changes.
+- Out:
+  - Raising the global `--cov-fail-under`; refactoring the family's architecture; testing actual Figma API fetch (figma_fetch.py is out of scope).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the frontmatter fixture set (valid / malformed YAML / missing keys / frontmatter below byte 0), when the validate_frontmatter tests run, then each case asserts the intended pass/fail and exit code.
+- [ ] Given synthetic fixtures (tiny PNGs, design_data.json, computed-style dicts), when the visual-diff family tests run, then each of the five scripts' core comparison/generation functions is exercised and the default suite completes without launching Chromium or touching the network.
+- [ ] Given the coverage report scoped to the six scripts, when the suite runs, then every script reports non-zero coverage and the combined statement coverage of the six is at least 40%.
+
+#### Implementation Notes
+- Threshold semantics are load-bearing: visual-diff blocks at 1% (same-renderer) with a 5% Figma-PNG fallback — encode both numbers in tests so silent threshold drift becomes a failure (same predictability-guard spirit as test_verify_checkpoint_contract.py).
+- Reuse fixture style from existing tests; a shared `tests/fixtures/figma/` design_data.json fixture serves structural-match, layout, and CSS-generation tests.
+- Image fixtures: generate 4x4-pixel PNGs in-test (stdlib or whatever imaging lib the scripts already use) rather than committing binaries where possible.
+- Mind the ISSUE-021 lesson: if any test needs an optional dep (Pillow etc.), skip cleanly when absent rather than erroring.
+
+#### Tests
+- [ ] tests/test_validate_frontmatter.py — fixture matrix + exit codes.
+- [ ] tests/test_figma_verify_family.py (or per-script files) — comparison math, matching, CSS generation, threshold constants, no-browser guarantee (assert no playwright/chromium import at collection on the default path).
+
+#### Rollback
+Tests-only PR — revert freely; no runtime surface touched.
+
+---
+
+### ISSUE-046: Fix verify_checkpoint.py's 60s pytest timeout breaking the GREEN gate and hollowing the RED gate on 4-minute suites
+
+> Critical infrastructure finding, verified live during ISSUE-036's IMPLEMENT phase (2026-08-10). `scripts/verify_checkpoint.py` hard-codes `timeout=60` on its full-suite pytest subprocess runs, but this repo's suite now takes ~4.5 minutes (1122 passed, 2 skipped). Consequence 1 — **blocking GREEN gate can never pass**: `verify_implement_test` → `_run_python_tests_with_coverage(cwd)` runs `python3 -m pytest -q --tb=short --cov=. ...` with `timeout=60`; on timeout `_run()` returns the sentinel exit 124, which is treated as "pytest failed" → `bash scripts/checkpoint.sh --skill implement --phase test --issue <ID>` exits 1 deterministically, regardless of code state. This blocks EVERY implement pipeline in this repo (ISSUE-036 hit it; ISSUE-037/038 will hit it identically). The fallback plain-pytest run carries the same `timeout=60`. Consequence 2 — **RED gate passes spuriously**: `verify_implement_red` has inverted logic (non-zero pytest exit = "tests fail as expected" = PASS); the same 60s timeout → exit 124 → RED "passes" even if the new tests would actually pass, so the gate no longer verifies genuine RED for suites >60s. Related weaknesses: the verifier invokes bare `python3 -m pytest` (whatever interpreter is on PATH — here anaconda) instead of the repo's declared runner (`uv run pytest`, per CLAUDE.md/pyproject), and there is no CLI flag or env var to override the timeout (`checkpoint.sh` passes args straight through; argparse only has --skill/--phase/--issue).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; discovered during ISSUE-036 implement, 2026-08-10)
+- Priority: P0
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-046-checkpoint-test-timeout
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/53
+- PR: https://github.com/pillip/claude-dev-kit/pull/54
+- Depends-On: none
+
+#### Goal
+Test-related checkpoint timeouts fit the repo's real suite duration — env-configurable (e.g. `KIT_CHECKPOINT_TEST_TIMEOUT`) with a raised sensible default (≥ 600s) for full-suite runs — and the RED gate distinguishes "timed out" (exit 124 → inconclusive → FAIL with a clear message) from a genuine failing-test exit, while `_run()`'s 124 sentinel contract stays intact.
+
+#### Scope (In/Out)
+- In:
+  - Raise the full-suite test timeout default to ≥ 600s and make it overridable via an env var (e.g. `KIT_CHECKPOINT_TEST_TIMEOUT`, seconds) in `scripts/verify_checkpoint.py`: `_run_python_tests_with_coverage()` (both the `--cov` run and the plain fallback), `verify_implement_red()`, and `_run_js_tests_in_worktree()` (same 60s cap on npm test).
+  - RED-gate timeout handling in `verify_implement_red()`: branch on exit 124 explicitly BEFORE the generic non-zero → PASS branch; report "timed out — inconclusive" and FAIL the phase.
+  - Keep `_run()`'s exit-124-on-`TimeoutExpired` sentinel contract unchanged (`tests/test_verify_checkpoint.py::test_timeout_returns_124` must keep passing).
+  - Unit tests mocking slow subprocesses (no real multi-minute runs in the test suite).
+- Out:
+  - Mandating the runner switch to `uv run pytest` — consider it (repo's declared runner per CLAUDE.md/pyproject; bare `python3 -m pytest` picks up whatever interpreter is on PATH), but if not verified live in this pass, note it as a follow-up instead.
+  - Changing any non-test checkpoint phase, the advisory/blocking tier partition (`test_verify_checkpoint_contract.py`), or checkpoint.sh plumbing.
+  - Speeding up the test suite itself.
+
+#### Acceptance Criteria (DoD)
+- [x] Given the repo's real, healthy ~4.5-minute suite, when `bash scripts/checkpoint.sh --skill implement --phase test --issue <ID>` runs with the new default timeout, then the pytest subprocess completes (no exit-124 sentinel) and the GREEN gate passes — verified live once on the actual repo.
+- [x] Given a full-suite pytest run that exceeds the configured timeout (mocked in tests), when `verify_implement_red` evaluates the result, then exit 124 is reported as timed-out/inconclusive and the RED phase FAILS instead of passing spuriously.
+- [x] Given a genuinely failing test run (non-zero, non-124 exit, mocked), when `verify_implement_red` runs, then it still PASSes — the inverted-logic contract for real failures is preserved.
+- [x] Given `KIT_CHECKPOINT_TEST_TIMEOUT` set to a custom value, when a test-phase verifier invokes its subprocess (mocked), then the timeout passed to the subprocess call equals the override; when unset, it equals the new default (≥ 600s) — covered by unit tests mocking slow subprocesses, with no real 4-minute runs in the tests.
+- [x] Given the existing sentinel test `tests/test_verify_checkpoint.py::test_timeout_returns_124`, when the suite runs, then it passes unchanged — `_run()` still returns 124 on `subprocess.TimeoutExpired`.
+
+#### Implementation Notes
+- Affected locations, all in `scripts/verify_checkpoint.py`: `_run()` (timeout sentinel 124 — do not change the contract), `_run_python_tests_with_coverage()` (timeout=60 on both the cov and fallback runs), `verify_implement_red()` (timeout=60 + inverted pass logic), `verify_implement_test()` (consumer of the cov helper), `_run_js_tests_in_worktree()` (same 60s cap for npm test).
+- `checkpoint.sh` passes argv straight through and the verifier's argparse only knows --skill/--phase/--issue — an env-var override read inside the verifier needs **no shell changes** and no argparse addition; a single module-level helper (env value → int, fallback default) keeps it one seam.
+- RED-gate fix ordering matters: check `rc == 124` before the generic `rc != 0 → PASS` branch; emit a distinct message so a timed-out RED is never mistaken for genuine RED.
+- Runner consideration (not mandated): `uv run pytest` matches the house standard and pins the interpreter; if adopted, live-verify under both standalone and plugin layouts before relying on it.
+- Verified evidence 2026-08-10: 60s cap → deterministic exit 1 from the implement test phase on a 1122-test/4.5-min suite, independent of code state — this deterministically blocks the active sprint's implement pipeline for ALL issues, hence P0 and no dependency on ISSUE-036 (fix is in scripts/, independent of the in-flight batch).
+
+#### Tests
+- [x] `tests/test_verify_checkpoint.py` additions with `_run`/subprocess mocked (fast — no real pytest child runs): GREEN verifier passes on a mocked successful full-suite run and fails on a mocked genuine-failure exit.
+- [x] RED verifier distinction matrix (mocked): exit 124 → FAIL with the timed-out/inconclusive message; exit 1 (genuine failing tests) → PASS; exit 0 (tests unexpectedly green) → FAIL.
+- [x] Env override: `KIT_CHECKPOINT_TEST_TIMEOUT` set → subprocess receives the override value; unset → the ≥600s default; non-numeric value → falls back to default without crashing.
+- [x] Sentinel guard: existing `test_timeout_returns_124` passes unchanged.
+
+#### Rollback
+`git revert` — isolated to `scripts/verify_checkpoint.py` + its tests; no state, no generated artifacts, no shell changes.
+
+---
+
+### ISSUE-047: Fix verify_gates.py hard-coded 120s unit-gate timeout (and sibling short caps) breaking blocking ship-smoke gates on multi-minute suites
+
+> High-severity infrastructure finding, verified live during ISSUE-046's IMPLEMENT phase (PR #54, 2026-08-10). `scripts/verify_gates.py` hard-codes short subprocess timeouts that cannot fit this repo's real ~5-minute suite (1133 passed, 2 skipped, ~290s): `run_gate_unit` runs `python3 -m pytest -q --tb=short` with `timeout=120` (line ~330; the npm-test branch at line ~332 carries the same cap), and `_run()` (line 44, default timeout=120) returns a mock CompletedProcess on `TimeoutExpired` (rc 124, stderr `timed out after {timeout}s`) → the unit gate deterministically FAILs on this suite. Live evidence from ISSUE-046's GREEN checkpoint run: `GATE FAIL: unit [blocking] (120.1s) python3: timed out after 120s` (gates were non-blocking in the implement context, so that phase still passed). Ship impact — why P0: post-ISSUE-046, `verify_checkpoint.py::verify_ship_smoke` calls `_run_verify_gates(root, blocking=True)` (line ~1610) and gate failures BLOCK ship, so every SHIP smoke checkpoint on this repo deterministically fails on the unit-gate timeout even after PR #54 merges — verify_gates.py is a separate file, explicitly out of ISSUE-046's scope. This blocks ISSUE-046's own ship-smoke retry AND the parked ISSUE-036/037/038 ships. Like ISSUE-046, the fix self-heals its own ship: post-merge smoke runs the merged (fixed) verify_gates.py.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; discovered during ISSUE-046 implement, 2026-08-10)
+- Priority: P0
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-047-verify-gates-unit-timeout
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/55
+- PR: https://github.com/pillip/claude-dev-kit/pull/56
+- Depends-On: ISSUE-046
+
+#### Goal
+The unit gate's subprocess timeouts in `scripts/verify_gates.py` fit the repo's real suite duration — overridable via the SAME `KIT_CHECKPOINT_TEST_TIMEOUT` env var and same ≥600s default that ISSUE-046 introduces in `verify_checkpoint.py` — so blocking ship-smoke gate runs no longer fail deterministically on multi-minute suites, while `_run()`'s timeout-mock contract stays intact.
+
+#### Scope (In/Out)
+- In:
+  - Raise/env-override the two 120s caps in `run_gate_unit` (`scripts/verify_gates.py` lines ~330-332: the `python3 -m pytest -q --tb=short` run and the `npm test` run) via the SAME seam as ISSUE-046: `KIT_CHECKPOINT_TEST_TIMEOUT` (seconds) with a ≥600s default, so both harness files stay consistent.
+  - Keep `_run()`'s timeout-mock contract intact: `TimeoutExpired` → mock CompletedProcess with rc 124 and stderr `timed out after {N}s` (and the rc-127 `command not found` path untouched).
+  - Unit tests with mocked subprocesses — no real multi-minute runs in the test suite.
+- Out:
+  - Other gates' timeouts (lint 15s, e2e 300s, docker 60s, `server_timeout` config) unless trivially unified via the same helper.
+  - Speeding up the test suite itself (the ~244s `test_verify_checkpoint.py` slow-test optimization is a separately logged candidate).
+  - Changing the blocking/advisory partition of gates.
+
+#### Acceptance Criteria (DoD)
+- [x] Given the repo's real, healthy ~5-minute suite (1133 passed, 2 skipped, ~290s), when a blocking ship-smoke gate run executes (`verify_ship_smoke` → `_run_verify_gates(root, blocking=True)` → unit gate) with the new default timeout, then the pytest subprocess completes (no `timed out after Ns` mock result) and the unit gate passes — verified live once on the actual repo.
+- [x] Given `KIT_CHECKPOINT_TEST_TIMEOUT` set to a custom value (subprocess mocked), when `run_gate_unit` invokes pytest or npm test, then the timeout passed to the subprocess call equals the override; when unset, it equals the new default (≥ 600s); a non-numeric value falls back to the default without crashing — matching ISSUE-046's semantics exactly.
+- [x] Given a gate subprocess that exceeds its configured timeout (mocked `TimeoutExpired`), when `_run()` handles it, then the timeout-mock contract is preserved — rc 124 with stderr `timed out after {N}s` → gate status `fail` — and the existing `tests/test_verify_gates.py` suite passes unchanged.
+
+#### Implementation Notes
+- Affected locations, all in `scripts/verify_gates.py`: `run_gate_unit()` (line ~330 pytest `timeout=120`, line ~332 npm-test `timeout=120` — these two call sites are the fix); `_run()` (line 44, default `timeout=120`, `TimeoutExpired` → mock rc 124 + `timed out after {timeout}s` stderr — do NOT change this contract; leave the module default alone and change only the unit-gate call sites, so other gates keep their current behavior).
+- Consistency seam (Depends-On rationale): ISSUE-046 (PR #54) introduces the `_test_timeout()` helper reading `KIT_CHECKPOINT_TEST_TIMEOUT` with a ≥600s default in `verify_checkpoint.py`. Reuse the SAME env var name and the SAME default here. verify_gates.py is standalone (invoked as a subprocess by verify_checkpoint's ship-smoke), so **replicate the small helper locally** rather than importing across scripts — the ~5-line duplication is cheaper than cross-script coupling; add a cross-reference comment in both files (`# keep in sync with verify_checkpoint.py::_test_timeout / verify_gates.py`) so drift is visible. Merge PR #54 first (or rebase on it) to confirm the exact helper name/default before mirroring.
+- Verified evidence 2026-08-10 (live, during ISSUE-046's GREEN checkpoint run): `GATE FAIL: unit [blocking] (120.1s) python3: timed out after 120s` — the full suite under a 120s cap is a deterministic timeout, independent of code state.
+- Ship-blocking chain: `verify_checkpoint.py::verify_ship_smoke` → `_run_verify_gates(root, blocking=True)` (line ~1610 post-ISSUE-046) → unit `GateResult(blocking=True)` fails → SHIP smoke fails for every issue on this repo. Self-healing property: this issue's own post-merge ship-smoke runs the fixed verify_gates.py, same as ISSUE-046.
+- Env-var read inside the verifier needs no shell/CLI changes (same finding as ISSUE-046: no argparse addition required).
+
+#### Tests
+- [x] Extend `tests/test_verify_gates.py` (already covers `run_gate_unit` with mocked `_run`): assert the `timeout` kwarg passed to `_run` for BOTH the pytest branch and the npm-test branch — override set → override value; unset → ≥600s default; non-numeric → default without crashing.
+- [x] Timeout-contract guard (mocked): a `TimeoutExpired` subprocess yields rc 124 + `timed out after Ns` stderr and the unit gate reports status `fail` — locks the mock contract against regression.
+- [x] Existing `tests/test_verify_gates.py` cases pass unchanged (no real multi-minute pytest child runs anywhere in the suite).
+
+#### Rollback
+`git revert` — isolated to `scripts/verify_gates.py` + `tests/test_verify_gates.py`; no state, no generated artifacts, no shell changes.
+
+---
+
+### ISSUE-048: Scope implement checkpoints to the branch's own delta (merge-base diff)
+
+> Sprint 2026-08-11 discovered (iteration 8, from ISSUE-044/041 recovery implements). `verify_checkpoint.py`'s `verify_implement_tests_written` computes changed files via `git diff --name-only main`. A recovery worktree based on an OLD main (e.g. 5990c93) lists files that a newer main has since deleted (e.g. `tests/test_dead_script_removal.py` from the ISSUE-043 ship) — they appear in `git diff --name-only main` yet are absent from the worktree tree, so `_has_real_tests` returns False and the implement `tests-written`/hollow-test gate produces a phantom FAIL. Both ISSUE-041 and ISSUE-044 hit this and worked around it by fast-forwarding the worktree to current main before the checkpoints.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-11 sprint discovered)
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-048-checkpoint-merge-base-diff
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/74
+- PR: https://github.com/pillip/claude-dev-kit/pull/77
+- Depends-On: none
+
+#### Goal
+Implement-phase checkpoints judge only the branch's own delta, so a worktree based on a stale main cannot manufacture false hollow-test failures from files the newer main deleted.
+
+#### Scope (In/Out)
+- In:
+  - Change the changed-file computation in `verify_checkpoint.py` (`verify_implement_tests_written` and any sibling that diffs against `main`) from `git diff --name-only main` to `git diff --name-only $(git merge-base HEAD main)` — the merge-base diff scopes the set to the branch's own commits.
+  - Belt-and-suspenders: intersect the diffed-file set with files that actually exist in the worktree before classifying them, so a stale base can never inject a phantom path.
+- Out:
+  - Changing what counts as a "real test" (the `_has_real_tests` heuristic itself is unchanged).
+  - Any other checkpoint's diff semantics beyond the tests-written/hollow-test gate unless it shares the same base bug.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a branch whose merge-base with main predates a main-side file deletion, when the implement tests-written checkpoint runs, then the deleted file does not appear in the changed set and no phantom hollow-test FAIL occurs.
+- [ ] Given a normal branch that adds a source file plus its test, when the checkpoint runs, then the test is still detected exactly as before (no regression).
+
+#### Implementation Notes
+- `git merge-base HEAD main` is the standard "fork point"; guard for the detached/edge case where merge-base is empty and fall back to the current behavior rather than crashing.
+- The worktree-existence intersection also protects the non-recovery path cheaply (a rename showing as delete+add cannot phantom-fail).
+
+#### Tests
+- [ ] Fixture-repo test: base commit deletes a test file, branch commits an unrelated source+test; assert the checkpoint passes and the deleted file is absent from the classified set.
+- [ ] Existing verify_checkpoint tests pass unchanged.
+
+#### Rollback
+`git revert` — isolated to `scripts/verify_checkpoint.py` + its tests.
+
+---
+
+### ISSUE-049: Gate the Figma visual-diff browser auto-install behind an explicit opt-in
+
+> Sprint 2026-08-11 discovered (iteration 8, from ISSUE-045 implement). `_check_playwright()` in `scripts/verify_visual_diff.py` (~47-63) and the equivalent in `scripts/verify_computed_styles.py` (~29-41) shell out to `pip install playwright` + `playwright install chromium` (up to ~180s, network) as an implicit side effect on any import-failure path. A review/CI gate that silently mutates its environment and reaches the network is the same "gate with an unexpected heavy side effect" class as the k6/brew-install and cold-install-timeout findings from earlier iterations.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-11 sprint discovered)
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-049-figma-browser-install-optin
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/75
+- PR: https://github.com/pillip/claude-dev-kit/pull/78
+- Depends-On: none
+
+#### Goal
+The visual-diff family never installs a browser or touches the network as a side effect of being imported/run; heavy auto-provisioning happens only when an operator explicitly opts in, and otherwise the gate skips cleanly with a clear diagnostic.
+
+#### Scope (In/Out)
+- In:
+  - Put the auto-install path in both scripts behind an explicit opt-in (e.g. `KIT_ALLOW_BROWSER_INSTALL=1`); with the flag unset, `_check_playwright()` reports "browser unavailable — skipping visual diff" and exits via the existing skip/degrade path instead of installing.
+  - Keep the network/install code reachable when the flag is set, so opted-in environments behave exactly as today.
+- Out:
+  - Changing the diff/threshold logic or the skip semantics when the browser genuinely is present.
+  - figma_fetch.py / real Figma API paths.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the opt-in flag unset and Playwright missing, when either script runs, then no `pip install` / `playwright install` subprocess is spawned and no network call is made — the gate skips with a diagnostic.
+- [ ] Given the opt-in flag set and Playwright missing, when either script runs, then the auto-install path runs exactly as it does today.
+- [ ] Given Playwright already present, when either script runs, then behavior is unchanged regardless of the flag.
+
+#### Implementation Notes
+- Mock the subprocess boundary in tests — never actually install in the suite (ISSUE-045's tests already mock this boundary; extend them).
+- Emit the diagnostic to stderr; keep stdout clean for the gate's machine-readable output.
+
+#### Tests
+- [ ] Mocked-subprocess tests: flag off + missing import → install NOT called, skip path taken; flag on + missing import → install called once.
+- [ ] Present-Playwright path unchanged.
+
+#### Rollback
+`git revert` — two scripts + their tests; no state.
+
+---
+
+### ISSUE-050: Lint the README agents-table Tools/Effort cells against agent frontmatter
+
+> Sprint 2026-08-11 discovered (iteration 6, from ISSUE-040 review). The README staleness sweep (ISSUE-040) fixed the roster count and added the three missing auditor rows, but pre-existing drift remains in rows the sweep did not touch: a11y-auditor and ui-reviewer omit `Bash`; design-auditor lists `Edit, Write` that its frontmatter lacks. The newly added auditor rows were verified correct; the drift is in the older rows and is currently unguarded, so it will silently re-accumulate.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-11 sprint discovered)
+- Priority: P2
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-050-readme-agents-tools-lint
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/76
+- PR: https://github.com/pillip/claude-dev-kit/pull/79
+- Depends-On: none
+
+#### Goal
+The README agents table's Tools (and Effort) cells provably match each agent file's frontmatter, enforced by a test so future drift fails the build.
+
+#### Scope (In/Out)
+- In:
+  - Extend `tests/test_readme_consistency.py` to parse each agents-table row's Tools/Effort cell and compare it against the corresponding `agents/*.md` frontmatter (`allowed-tools` / effort), naming any mismatching row.
+  - Fix the current drift the test surfaces (a11y-auditor / ui-reviewer missing `Bash`; design-auditor's spurious `Edit, Write`) so the new test passes.
+- Out:
+  - Changing any agent's actual frontmatter/toolset — this is a docs-vs-source reconciliation, source wins.
+  - Reformatting the table beyond the cells under test.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the agents table, when each row's Tools cell is compared to that agent's frontmatter `allowed-tools`, then they match exactly (set-equal), and the same for the Effort cell where present.
+- [ ] Given a future edit that desyncs a Tools cell from frontmatter, when the suite runs, then the consistency test fails naming the offending row.
+
+#### Implementation Notes
+- Reuse the frontmatter parsing already available to tests (`scripts/validate_frontmatter.py` approach); normalize tool-list ordering/whitespace before comparison.
+- Treat the agent frontmatter as the oracle; only the README is edited to reconcile.
+
+#### Tests
+- [ ] Row-by-row Tools/Effort equality assertion (new in test_readme_consistency.py).
+- [ ] The three current drift rows corrected and asserted.
+
+#### Rollback
+`git revert` — README rows + one test; docs-only.
+
+---
+
+### ISSUE-051: De-conflict the parallel-review docs/.review scratch path
+
+> Sprint 2026-08-11 discovered (iterations 5/6/7, process friction). The kit's review layer writes scratch artifacts to a FIXED path `docs/.review/{code-review,findings.json,minimality,security-review}.md`. When two or more review branches run in parallel and merge in sequence, every later PR goes CONFLICTING on exactly these files (observed three sprints running: PRs #58, #64, #65, #72, and others — each resolved by `merge origin/main` + `checkout --ours`, ~2 min + a merge commit apiece). The canonical review record already lives per-issue at `docs/review_notes/ISSUE-XXX.md`; only the scratch path collides.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-11 sprint discovered)
+- Priority: P3
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-051-review-scratch-path-deconflict
+- PR: https://github.com/pillip/claude-dev-kit/pull/81
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/80
+- Depends-On: none
+
+#### Goal
+Parallel review branches no longer collide on review scratch artifacts — either the scratch path is per-issue, or it is untracked entirely, while the canonical `docs/review_notes/ISSUE-XXX.md` record is preserved.
+
+#### Scope (In/Out)
+- In:
+  - Pick ONE and state why in the PR: (a) move the scratch artifacts to a per-issue path (e.g. `docs/.review/ISSUE-XXX/…`), or (b) gitignore `docs/.review/` so the scratch files never enter a commit.
+  - Update every producer/consumer of the scratch path (reviewer agent, team-lead, review skill, review-merge-auditor, and any checkpoint that reads it) to the chosen scheme.
+- Out:
+  - Changing the canonical per-issue `docs/review_notes/ISSUE-XXX.md` location or the review findings themselves.
+  - Altering review gate semantics.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given two review branches created from the same main that both produce scratch artifacts, when the second merges after the first, then there is no conflict on the review scratch path.
+- [ ] Given the review flow end-to-end, when a review runs, then the merge-audit / synthesis steps still find their inputs (no broken producer/consumer wiring).
+
+#### Implementation Notes
+- Grep the whole tree for `docs/.review` before changing the scheme — the path is referenced across skills, agents, and checkpoints.
+- If gitignoring, confirm no checkpoint depends on the file being committed (they are read within a single review invocation, so working-tree presence should suffice).
+
+#### Tests
+- [ ] Guard/integration assertion that the review flow writes to the chosen (per-issue or ignored) location; if gitignored, a `git status` after a review shows no scratch artifacts as tracked/untracked-noise.
+- [ ] Existing review-layer tests pass unchanged.
+
+#### Rollback
+`git revert`; scratch-path scheme reverts, canonical records unaffected.
+
+---
+
+### ISSUE-052: Make sprint_queue crash-recovery aware of already-merged PRs
+
+> Sprint 2026-08-11 discovered (iterations 7/8). Twice this session a ship-phase team-lead died on an API limit BETWEEN the squash-merge and the post-merge smoke checkpoint (ISSUE-043 on spend-limit, ISSUE-045 on session-limit). The issue's `sprint_state.md` phase was still `reviewed`/`shipping` while its PR was already merged and its GH issue CLOSED. `sprint_queue.py next-action` reads only the sprint_state phase cells, so it re-proposed SHIP and the orchestrator had to manually detect "already merged — only smoke + registry finalization remain". Crash recovery in the ship window is currently hand-driven and error-prone (risk of a double-merge attempt).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-11 sprint discovered)
+- Priority: P2
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-052-sprint-queue-recovery-aware
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/82
+- PR: https://github.com/pillip/claude-dev-kit/pull/83
+- Depends-On: none
+
+#### Goal
+When a ship-phase interruption leaves an issue's PR already merged, the queue recognizes it and proposes a finalize-only action (smoke + registry) instead of a full SHIP, so recovery is deterministic and no re-merge is attempted.
+
+#### Scope (In/Out)
+- In:
+  - In `sprint_queue.py` (and/or a thin recovery helper), for issues at `reviewed`/`shipping`, check the PR's merge state (`gh pr view --json state,mergedAt` / GH issue CLOSED) before emitting a SHIP action; if already merged, emit a `FINALIZE` (smoke + registry) action instead.
+  - Make the ship-phase executor idempotent at the merge step: if the PR is already merged, skip merge and proceed to smoke + registry rather than failing.
+- Out:
+  - Changing the normal (non-crash) SHIP flow.
+  - Recovering interruptions outside the ship window (implement/review recovery already works via phase reset).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given an issue at phase=reviewed whose PR is already merged (GH state MERGED / issue CLOSED), when `next-action` runs, then it proposes finalize-only (smoke + registry), not SHIP, and never a re-merge.
+- [ ] Given a genuinely un-merged reviewed issue, when `next-action` runs, then it still proposes SHIP exactly as today.
+- [ ] Given `gh` unavailable or unauthenticated, when the recovery check runs, then it degrades gracefully (falls back to the phase-only decision with a logged warning), never crashing the queue.
+
+#### Implementation Notes
+- Keep the GH call optional and cached — the queue runs frequently; one `gh pr view` per reviewed/shipping issue is acceptable, but guard latency and offline use.
+- The idempotent merge step is the safety net even if the queue's classification is stale.
+
+#### Tests
+- [ ] Unit test with a mocked GH response: reviewed issue + merged PR → FINALIZE; reviewed issue + open PR → SHIP; gh error → graceful phase-only fallback.
+- [ ] Ship-executor idempotency test: already-merged PR → merge step is a no-op, smoke+registry still run.
+
+#### Rollback
+`git revert` — `scripts/sprint_queue.py` + ship-executor guard + tests; queue reverts to phase-only decisions.
+
+---
+
+### ISSUE-053: Document the KIT_ALLOW_BROWSER_INSTALL + KIT_SPRINT_QUEUE_GH_TIMEOUT env knobs
+
+> Sprint 2 discovered (iterations 1 & 2, from ISSUE-049 and ISSUE-052 reviews). Two behaviour-control env knobs shipped this sprint are documented only in code (module docstrings / a runtime stderr hint): `KIT_ALLOW_BROWSER_INSTALL` (ISSUE-049 — unset by default; set to `1` to let the Figma visual-diff family auto-install Playwright + Chromium instead of skipping) and `KIT_SPRINT_QUEUE_GH_TIMEOUT` (ISSUE-052 — seconds for the sprint_queue merge-state probe, default 10). Neither appears in a user-facing doc. The repo already documents `KIT_CHECKPOINT_TEST_TIMEOUT` (ISSUE-046/047) in both README.md and docs/troubleshooting.md — the same section is the natural home for these two. This is the recurring env-knob-documentation review-lesson pattern (~4 occurrences, all Low), gathered here so the fix is one small docs pass rather than repeated per-knob follow-ups.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- PRD-Ref: none (kit self-development; 2026-08-11 sprint 2 discovered)
+- Priority: P3
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-053-env-knob-docs
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/84
+- PR: https://github.com/pillip/claude-dev-kit/pull/85
+- Depends-On: none
+
+#### Goal
+All kit behaviour-control env knobs are documented consistently in the user-facing docs, so an operator can discover `KIT_ALLOW_BROWSER_INSTALL` and `KIT_SPRINT_QUEUE_GH_TIMEOUT` the same way they already find `KIT_CHECKPOINT_TEST_TIMEOUT`.
+
+#### Scope (In/Out)
+- In:
+  - Add `KIT_ALLOW_BROWSER_INSTALL` and `KIT_SPRINT_QUEUE_GH_TIMEOUT` to the existing env-knob documentation location(s) that already cover `KIT_CHECKPOINT_TEST_TIMEOUT` (README.md and docs/troubleshooting.md), in the same format: name, default, effect, and (for the browser knob) the opt-in-to-install semantics.
+  - Source the default values from the code so the docs match the canonical constants (`KIT_SPRINT_QUEUE_GH_TIMEOUT` default 10s; `KIT_ALLOW_BROWSER_INSTALL` unset = skip, `=1` = auto-install).
+- Out:
+  - Changing any knob's behaviour or default; introducing new knobs.
+  - Restructuring the docs beyond adding the two entries (and, if trivial, aligning the three into one consistent list).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the user-facing docs, when `KIT_ALLOW_BROWSER_INSTALL` is searched, then its name, default (unset = visual-diff skips), and the `=1` auto-install opt-in are documented.
+- [ ] Given the user-facing docs, when `KIT_SPRINT_QUEUE_GH_TIMEOUT` is searched, then its name, default (10s), and effect (sprint_queue merge-state probe timeout) are documented.
+- [ ] Given the documented default values, when they are compared against the code constants, then each matches the canonical source (no drift).
+
+#### Implementation Notes
+- Use the current `KIT_CHECKPOINT_TEST_TIMEOUT` entry as the format oracle; place the two new knobs alongside it.
+- Canonical values live at `scripts/sprint_queue.py` (`KIT_SPRINT_QUEUE_GH_TIMEOUT`, default "10") and `scripts/verify_visual_diff.py` / `scripts/verify_computed_styles.py` (`KIT_ALLOW_BROWSER_INSTALL != "1"` gate) — read them, do not hand-copy from memory (canonical-env-numbers lesson).
+
+#### Tests
+- [ ] Lightweight docs-consistency assertion (extend an existing docs test or add a small one): the user-facing docs mention both new knob names; optionally assert the documented default `10` for the queue timeout matches the code constant so future drift fails.
+
+#### Rollback
+`git revert` — docs-only (README.md + docs/troubleshooting.md) plus a small consistency test; no runtime surface touched.

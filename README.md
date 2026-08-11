@@ -638,6 +638,11 @@ Gate behavior by phase:
 - **`/ship` → blocking**: failing a real gate must stop ship. `load` stays
   non-blocking even here, since perf work is typically out-of-band.
 
+The `unit` gate's test commands (pytest / npm test) use the same timeout
+as test-phase checkpoints: 600 seconds by default, overridable via the
+`KIT_CHECKPOINT_TEST_TIMEOUT` env var (seconds). See
+`docs/troubleshooting.md` ("Checkpoint times out") for details.
+
 Missing tools (Playwright browsers, Maestro, Detox) are auto-installed
 before the gate runs. Server-based gates (e2e-web, api) use
 `scripts/gate_server.sh` to start the app, poll a health endpoint, run

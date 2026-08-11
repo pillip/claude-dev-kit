@@ -11,8 +11,8 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 
 ### Problem: Checkpoint times out
 - **Symptom**: Exit code 124, error message mentions "timed out"
-- **Cause**: Network issues or GitHub API rate limiting
-- **Solution**: Check your internet connection. If rate-limited, wait a few minutes and retry. The script retries automatically up to 2 times for network commands.
+- **Cause**: Network issues or GitHub API rate limiting; or, for test-phase checkpoints (implement `red`/`test`, ship `smoke`), a test suite that runs longer than the test timeout (default 600 seconds). The same timeout applies to the platform `unit` gate run by `scripts/verify_gates.py` (e.g. during ship's blocking gates)
+- **Solution**: For network commands, check your internet connection; if rate-limited, wait a few minutes and retry (the script retries automatically up to 2 times). For slow test suites, raise the timeout via the `KIT_CHECKPOINT_TEST_TIMEOUT` env var (seconds), e.g. `KIT_CHECKPOINT_TEST_TIMEOUT=1200`. Invalid or non-positive values fall back to the default. Note: a RED-phase run that times out is reported as inconclusive and FAILS — a timeout is not accepted as proof of a failing suite.
 
 ### Problem: Checkpoint fails with "issues.md not found"
 - **Symptom**: FAIL message mentioning issues.md path
@@ -57,6 +57,18 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 - **Symptom**: FAIL message "no worktree found matching 'issue-NNN'"
 - **Cause**: Worktree was never created, or the branch slug doesn't match the expected pattern
 - **Solution**: Create the worktree with the correct slug: `bash scripts/worktree.sh create <type>/<issue-slug>`.
+
+## Autotest Hook
+
+### Problem: autotest runs stale or unexpected tests after files were moved/renamed
+- **Symptom**: The PostToolUse autotest hook runs tests unrelated to your edit, or you suspect its module→test mapping is stale
+- **Cause**: The hook caches a module-to-test-file index at `.claude/run/autotest_cache.json` (project root). It auto-invalidates when the tests directory changes, but if you suspect a bad index you can force a rebuild
+- **Solution**: Delete `.claude/run/autotest_cache.json` from the project root. The hook rebuilds it automatically on the next edit; a corrupt or missing cache is always fail-soft.
+
+### Problem: autotest didn't re-run tests after an edit
+- **Symptom**: You edit a source file and no test run happens
+- **Cause**: Repeat runs are debounced — editing the same module within 30 seconds with unchanged test files skips a duplicate *passing* run. Failures are never debounced.
+- **Solution**: This is expected. Wait for the debounce window to expire, edit the test file, or delete `.claude/run/autotest_cache.json` to force a run.
 
 ## validate_issues.py Warnings
 
