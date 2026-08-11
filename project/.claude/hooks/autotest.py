@@ -238,6 +238,31 @@ def _skip_js_scan_dir(name: str) -> bool:
     return name == "node_modules" or name.startswith(".")
 
 
+def _valid_cached_tests(cached, containment_root: str, is_test_file) -> bool:
+    """Validate a cache-derived test-file list before trusting a warm hit.
+
+    The cache lives in the workspace and is writable by anything that can
+    write the project, so cached paths are untrusted input (ISSUE-038
+    review, security finding): every entry must be a non-option-shaped
+    string naming an existing regular test file inside containment_root.
+    Any violation rejects the warm hit — the caller falls through to a
+    full rebuild, which overwrites the bad entry (fail-soft, self-healing).
+    """
+    if not isinstance(cached, list):
+        return False
+    root = os.path.realpath(containment_root)
+    prefix = root + os.sep
+    for p in cached:
+        if not isinstance(p, str) or not p or p.startswith("-"):
+            return False
+        real = os.path.realpath(p)
+        if not real.startswith(prefix):
+            return False
+        if not os.path.isfile(real) or not is_test_file(os.path.basename(real)):
+            return False
+    return True
+
+
 def _empty_cache() -> dict:
     return {
         "version": CACHE_VERSION,
@@ -345,7 +370,7 @@ def find_related_python_tests(filepath: str) -> list[str]:
         index = {"fingerprint": fingerprint, "modules": {}}
         cache["python_index"] = index
     cached = index["modules"].get(module_name)
-    if isinstance(cached, list):
+    if _valid_cached_tests(cached, tests_dir, _is_python_test_file):
         return list(cached)
 
     results = []
@@ -382,7 +407,7 @@ def find_related_js_tests(filepath: str) -> list[str]:
         index = {"fingerprint": fingerprint, "modules": {}}
         cache["js_index"] = index
     cached = index["modules"].get(name)
-    if isinstance(cached, list):
+    if _valid_cached_tests(cached, project_root, _is_js_test_file):
         return list(cached)
 
     results = []

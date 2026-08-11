@@ -540,6 +540,65 @@ class TestIndexCache:
         module_entries = data["python_index"]["modules"]["user"]
         assert any(os.path.basename(p) == "test_user_extra.py" for p in module_entries)
 
+    def test_poisoned_cache_entries_rejected_and_rebuilt(self, tmp_path):
+        """Review fix (ISSUE-038, security Medium): cache-derived test paths
+        are untrusted input — out-of-tree, option-shaped, missing, non-test,
+        or non-string entries must never reach the runner; any invalid entry
+        rejects the warm hit and falls through to a full rebuild."""
+        src_file = self._make_python_project(tmp_path)
+        autotest = self._load()
+
+        first = autotest.find_related_python_tests(str(src_file))
+        assert len(first) == 1
+        assert "test_user_service.py" in first[0]
+
+        outside = tmp_path / "evil.py"
+        outside.write_text("# exists, but outside tests/\n")
+        # conftest.py fails _is_python_test_file, and (deliberately) does not
+        # perturb the tests-dir fingerprint, so the warm path stays active.
+        conftest = tmp_path / "tests" / "conftest.py"
+        conftest.write_text("# exists under tests/, not a test file\n")
+        cache_file = tmp_path / ".claude" / "run" / "autotest_cache.json"
+
+        poisons = [
+            [str(outside)],                              # containment breach
+            ["--pdb"],                                   # option-shaped argv
+            [str(tmp_path / "tests" / "test_gone.py")],  # nonexistent file
+            [str(conftest)],                             # fails test predicate
+            [42],                                        # non-string garbage
+        ]
+        for poison in poisons:
+            data = json.loads(cache_file.read_text())
+            data["python_index"]["modules"]["user"] = poison
+            cache_file.write_text(json.dumps(data))
+            got = autotest.find_related_python_tests(str(src_file))
+            assert got == first, f"poison {poison!r} leaked or broke the rebuild"
+
+    def test_js_poisoned_cache_out_of_tree_entry_rejected(self, tmp_path):
+        """Review fix (ISSUE-038): the JS warm path applies the same
+        untrusted-cache validation as the Python path."""
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "package.json").write_text('{"name": "test"}\n')
+        src_file = proj / "utils.ts"
+        src_file.write_text("export const helper = () => {};\n")
+        (proj / "utils.test.ts").write_text("import { helper } from './utils';\n")
+        autotest = self._load()
+
+        first = autotest.find_related_js_tests(str(src_file))
+        assert len(first) == 1
+        assert "utils.test.ts" in first[0]
+
+        outside = tmp_path / "outside.test.ts"
+        outside.write_text("// exists, named like a test, outside the project\n")
+        cache_file = proj / ".claude" / "run" / "autotest_cache.json"
+        data = json.loads(cache_file.read_text())
+        data["js_index"]["modules"]["utils"] = [str(outside)]
+        cache_file.write_text(json.dumps(data))
+
+        got = autotest.find_related_js_tests(str(src_file))
+        assert got == first, "out-of-project cached path leaked into the warm hit"
+
     def test_corrupt_cache_rebuilds_and_exits_clean(self, tmp_path):
         """TC-038e: garbage cache file never crashes the hook and gets rebuilt as valid JSON."""
         (tmp_path / "pyproject.toml").write_text("[tool.pytest]\n")
