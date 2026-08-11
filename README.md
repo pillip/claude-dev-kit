@@ -595,8 +595,6 @@ claude-dev-kit/
 │       └── settings.snippet.json
 ├── scripts/                 # Utility scripts
 │   ├── install_user.sh      # Status line install (user scope; project install is /plugin)
-│   ├── ensure_gh.sh
-│   ├── ensure_permissions.py
 │   ├── gen_skills.py        # Template → SKILL.md generator
 │   ├── preambles.py         # Tiered preamble injection
 │   ├── validate_issues.py   # issues.md format validator
