@@ -1,38 +1,160 @@
-# Security Review — ISSUE-047 (PR #56, commit 8b7bbaa)
+# Security Review (degraded) — ISSUE-038 / PR #59
 
-Dimension: security (degraded path — runtime /security-review not invocable)
+Runtime `/security-review` is not exposed; this is the degraded-path security pass.
+Scope: the security checklist only (injection, authn/z, secrets, input validation,
+deserialization, dependencies, XSS, misconfiguration). Code-quality and the
+minimality axis are covered by separate invocations.
 
-Scope: `git diff c04b78b..HEAD` — scripts/verify_gates.py (+25/-2: `_DEFAULT_TEST_TIMEOUT`, `_test_timeout()`, two `run_gate_unit` call sites), scripts/verify_checkpoint.py (+1 comment), tests/test_verify_gates.py (+94), tests/test_verify_checkpoint.py (+14/-2). Local/CI developer tooling, not user-facing.
+Files reviewed:
+- `project/.claude/hooks/autotest.py` (+256/-81) — the PostToolUse hook now
+  persists a module→test-file index and a debounce state under
+  `.claude/run/autotest_cache.json`.
+- `tests/test_autotest.py` (+206).
 
-## Verdict
+Threat-model baseline (from the task): the hook *already* discovers and executes
+test files from the workspace by design, and can BLOCK the model's action on
+failure. Findings below are scoped to NEW attack surface introduced by the cache.
 
-Clean on every high-impact axis. One Low-severity finding — the same no-upper-bound gap ISSUE-046's review found in the identical `verify_checkpoint.py` pattern, re-verified here against verify_gates.py's own exception handling and both invocation paths. Nothing blocking.
+## Surfaces explicitly checked and cleared
 
-Verified in the worktree code, not just the diff description:
+- **Deserialization (pickle vs json).** Cache is read with `json.load` only
+  (`_load_cache`, line 255). No `pickle`/`eval`/`exec`/`yaml.load` anywhere in
+  the diff. `_load_cache` is strictly typed/validated and fail-soft
+  (`{{{ not json` → empty cache; test `test_corrupt_cache_rebuilds_and_exits_clean`).
+  Not a finding.
+- **Shell / command injection into argv.** All `subprocess.run` calls use list
+  form; no `shell=True`. Test file paths become discrete argv elements, so a
+  malicious *filename* cannot break out into a shell. (The one residual argv
+  concern — leading-dash option injection via a *poisoned* cache entry — is
+  folded into Finding 1.)
+- **Secrets / file contents.** The cache stores only file *paths*, `mtime_ns`,
+  `size`, and SHA-1 fingerprints. No file contents, tokens, or env values are
+  persisted. (Absolute-path/username leakage is Finding 4.)
+- **New env-var knobs / new subprocess-timeout instances.** None added.
+  `DEBOUNCE_SECONDS`/`CACHE_VERSION` are module constants, not env knobs; no new
+  `subprocess.run(timeout=...)` seam was introduced (the pre-existing 30s
+  `TIMEOUT` is out of scope per the task).
+- **Test code isolation.** Debounce tests monkeypatch at the correct seam
+  (`autotest.run_python_test`), so no recursive real-pytest spawn; other tests
+  run only trivial tempdir fixtures with test-controlled content. No unsafe
+  execution of untrusted input in the tests.
 
-- **Injection**: `KIT_CHECKPOINT_TEST_TIMEOUT` flows through `int()` (scripts/verify_gates.py:74-79) and only into the `timeout=` kwarg of `_run` → `subprocess.run` (scripts/verify_gates.py:349-355, 44-48). It never reaches argv or a shell string. `grep 'shell=True|os.system|eval(|exec('` over both changed scripts returns nothing. The only place the value is stringified is the `f"{prog}: timed out after {timeout}s"` stderr message — plain output, and by that point it is a plain int. No new subprocess call sites introduced.
-- **Input validation**: probed empirically by executing `_test_timeout()` in the worktree — `""`, `"abc"`, `"0"`, `"-5"`, `"600.5"` all fall back to 600; `" 900 "`, `"+900"`, `"1_000"` parse as plain ints. Fail direction on bad input is fail-safe (default), never crash, never 0. The `timeout=0` → `None` ("no timeout") branch in `_run` (scripts/verify_gates.py:47) is unreachable via the env var since non-positive maps to the default — confirmed by TC-047c tests and by direct execution.
-- **Denial / gate bypass**: no fail-open path. A tiny valid value (e.g. `1`) makes the unit gate time out → rc 124 → `status="fail"`, `blocking=True` (scripts/verify_gates.py:366) — fails closed. A huge value crashes or removes the hang bound (finding below) but can never convert a failing test run into a pass. Crash containment verified on both invocation paths: (a) CLI `main()` — unhandled exception → interpreter exit 1, which callers interpret as "blocking gate failed"; (b) in-process via `verify_checkpoint._run_verify_gates` (scripts/verify_checkpoint.py:868-872) — `except Exception` catches OverflowError and returns `not blocking`, i.e. FAIL when blocking=True. The blocking=False implement-phase path warns and continues, but in that mode gate failures are warnings by design, so nothing is bypassed that would otherwise block.
-- **Secrets / dependencies / deserialization / XSS / misconfig**: nothing added or touched by this diff. No new dependencies.
-- **Tests execute nothing real**: confirmed. `TestUnitGateTimeout` and `TestTimeoutContract.test_gate_fails_when_run_times_out` patch `vg._run`; `test_run_returns_rc_124_and_timed_out_stderr_on_timeout` patches global `subprocess.run` before calling the real `_run`, so no process spawns. Env mutation uses `monkeypatch` (auto-restored). The `test_verify_checkpoint.py` changes patch `_run_verify_gates`, which *removes* a pre-existing real-execution hazard (accidental recursive full-suite pytest spawn from the repo root) — a test-safety improvement, not a finding.
+---
 
-## Findings
+### [Medium] Cache-derived related-test paths are executed unvalidated on warm hits (cache poisoning → out-of-tree file execution + pytest/vitest option injection)
 
-```json
-[
-  {
-    "severity": "Low",
-    "title": "No upper bound on KIT_CHECKPOINT_TEST_TIMEOUT in verify_gates.py: values >= ~1e9 raise unhandled OverflowError inside subprocess.run (fails closed); large-but-valid values silently remove the unit gate's hang bound",
-    "evidence": "scripts/verify_gates.py:79 `return value if value > 0 else _DEFAULT_TEST_TIMEOUT` — no upper clamp; scripts/verify_gates.py:49-60 — `_run` catches only TimeoutExpired and FileNotFoundError, so OverflowError propagates. Reproduced in the worktree: `vg._run([\"true\"], timeout=10**9)` -> `OverflowError: timeout is too large`; `10**12` -> `timestamp too large to convert to C _PyTime_t`. Containment verified fail-closed on both paths: CLI -> unhandled traceback -> exit 1 (blocking-failure semantics); in-process -> caught by `except Exception` at scripts/verify_checkpoint.py:870-872 -> checkpoint FAIL when blocking=True. Values just under the threshold (e.g. 1e8 s ~ 3 years) effectively disable the hang bound for the blocking unit gate. Requires local env control, no gate bypass, crash fails closed — hence Low.",
-    "fix": "Clamp in _test_timeout(), e.g. `return min(value, 86400) if value > 0 else _DEFAULT_TEST_TIMEOUT` (optionally WARN when clamping), and apply the same clamp to the mirrored helper in verify_checkpoint.py (the '# keep in sync' comment makes this a single change done twice). Alternatively catch OverflowError alongside TimeoutExpired in _run, but the clamp is simpler and also restores a meaningful hang bound."
-  }
-]
+**Evidence.** On a warm index hit, `find_related_python_tests` /
+`find_related_js_tests` return `list(cached)` verbatim with no re-validation
+(autotest.py:347-349, 384-386). `_run_source_branch` then appends every cached
+`rf` to `selected` **without** the `os.path.isfile` guard that `primary` gets:
+
+```python
+if primary and os.path.isfile(primary):     # primary IS checked
+    test_files.append(primary)
+for rf in related:                            # rf (from cache) is NOT checked
+    if rf not in test_files:
+        test_files.append(rf)
+...
+for tf in selected:
+    blocked = run_python_test(tf) if lang == "py" else run_js_test(tf)
 ```
+`run_python_test` passes `tf` straight into `subprocess.run([pytest, tf, "-x", ...])`
+(autotest.py:147-152). Pytest *imports* the file it is pointed at, so an arbitrary
+path executes module-level code.
 
-## Self-review
+The warm-hit path is fully attacker-steerable because the stored `fingerprint`
+is itself in the attacker-writable cache: the fingerprint is a SHA-1 of
+`(relpath, mtime_ns, size)` (`_stat_fingerprint`), all computable, so a poisoned
+cache can set `index["fingerprint"]` to match the *current* tree and thereby
+skip the scan entirely while returning arbitrary `modules` entries. Those entries
+can (a) point **outside** `tests/` and outside the project root (path traversal
+past what the scan would ever select), (b) skip the `test_`/`.test.` name
+predicate, and (c) begin with `-` (e.g. `"-pattacker_plugin"`, `"-c/tmp/evil.ini"`,
+`"--pdb"`), which pytest/vitest interpret as **options/plugins**, not paths.
 
-- Severity re-checked: exploitation requires setting an env var on the developer's own machine/runner — anyone with that access can already run arbitrary code or skip the gate entirely; the crash fails closed and no input value can flip a failing gate to pass. Low is impact-honest; matches the ISSUE-046 precedent rating for the identical pattern.
-- False-positive check: every claim was executed against the worktree code (parsing table, OverflowError at 1e9/1e12/1e20, harmless `true` command), and both crash-containment paths were read in source, not assumed from the ISSUE-046 report.
-- Blind-spot re-scan (security dimension only): re-read the diff for shell usage, string-built commands, secrets, deserialization of the env value, new dependencies, and log injection via the rc-124 f-string (int by print time) — nothing found. Considered TOCTOU (env read once per gate at call time — fine) and tiny-timeout DoS (fails closed).
-- AC check: env override, 600 default, invalid-value fallback, and fully mocked tests are all present in the diff; no acceptance criterion introduces a security regression.
-- Confidence: High — small diff, the env value's full data flow was traced end to end and behavior verified empirically.
+Precondition is local write to `.claude/run/autotest_cache.json`, which is
+roughly baseline-equivalent to dropping a `tests/test_x.py` — hence **Medium**,
+not High. The genuine escalation over baseline is: reaching files *outside* the
+workspace, bypassing the name filter, and injecting collector options/plugins.
+
+**Fix.** Treat cached paths as untrusted on read. In `_run_source_branch` (and/or
+at the point `list(cached)` is returned), drop any entry that is not an existing
+regular file, not under `project_root` (py: under `project_root/tests`), does not
+match the test-name predicate (`_is_python_test_file` / `_is_js_test_file`), or
+starts with `-`. Apply the same `os.path.isfile` guard to `rf` that `primary`
+already gets. This keeps warm-hit performance while making a poisoned cache no
+more powerful than the baseline scan.
+
+### [Low] Debounce trusts an attacker-writable "pass" entry to suppress the block-on-failure safety signal
+
+**Evidence.** `_run_source_branch` returns `None` (no block, tests skipped) when a
+cached debounce entry has `result == "pass"`, a matching `test_set`, and
+`last_run` within `DEBOUNCE_SECONDS` (autotest.py:562-571). The cache is
+fail-soft and writable anywhere in the workspace, so a pre-seeded `"pass"` entry
+— keyed on `lang:abspath(source)` with a forged matching `test_set` (again just
+`(path, mtime_ns, size)` SHA-1 over the unchanged test files) and a recent
+`last_run` — silences a genuine failing run for up to 30s after a source edit
+that breaks tests but doesn't touch the test files. Impact is bounded: this is
+the advisory autotest convenience hook, not an authoritative gate
+(`verify_gates.py`/CI are elsewhere), the window is 30s, and it needs local
+cache write.
+
+**Fix.** Acceptable within the stated threat model, but treat the debounce record
+as advisory-only: document that the autotest hook is not a security control, and
+consider not letting a *stored* `pass` suppress a run across separate hook
+invocations (e.g. keep debounce in memory for a single event, or namespace/sign
+the cache) so on-disk tampering cannot mute a real failure.
+
+### [Low] Non-atomic, symlink-following cache write can clobber a pre-planted symlink target
+
+**Evidence.** `_save_cache` does `os.makedirs(dirname, exist_ok=True)` then
+`open(path, "w")` with no `O_NOFOLLOW` and no atomic temp-then-rename
+(autotest.py:277-279). If `.claude/run/autotest_cache.json` (or `.claude/run/`)
+is a symlink an attacker planted in the workspace, the hook overwrites the link
+target with cache JSON. Content is attacker-uncontrolled JSON, so this is
+destructive (file clobber) rather than an injection vector, and requires the
+attacker to plant the link first. The non-atomic write can also corrupt the
+cache under concurrent hook invocations, though `_load_cache` fails soft on that.
+
+**Fix.** Write to a temp file in the same directory and `os.replace()` into place
+(atomic), and refuse to follow a symlink at the final path (e.g. `os.open` with
+`O_NOFOLLOW`, or reject if `os.path.islink(path)`).
+
+### [Low] Cache persists absolute paths (OS username / project layout) and is not covered by .gitignore
+
+**Evidence.** `python_index`/`js_index` module lists and every `debounce` key
+store `os.path.abspath(...)` values such as `/Users/<user>/...`
+(autotest.py:561, 356, 397). `git check-ignore .claude/run/autotest_cache.json`
+returns "not ignored" (exit 1), and the repo `.gitignore` has no `.claude/run/`
+entry — even though `docs/telemetry_schema.md` asserts `.claude/run/` is
+gitignored. If a consumer commits the cache it leaks local usernames and internal
+test structure. No secrets or file contents are exposed, so severity is Low.
+
+**Fix.** Add `.claude/run/` to the kit's shipped/template `.gitignore` (and this
+repo's), and/or store project-relative paths in the cache instead of absolute
+ones.
+
+---
+
+## Self-Review
+
+1. **Severity re-assessment.** Finding 1 yields code execution but its precondition
+   (local write to the cache) is ~equivalent to the hook's existing baseline
+   capability, so it is capped at Medium; the delta over baseline (out-of-tree
+   files, name-filter bypass, option injection, scan bypass via forged fingerprint)
+   is real and justifies Medium over Low. Findings 2–4 are bounded, local-precondition,
+   non-injection issues → Low.
+2. **False-positive check.** Finding 1: code-traced — `rf` is appended without the
+   `os.path.isfile` guard `primary` gets, and reaches `subprocess` argv (confirmed
+   autotest.py:549-551, 575-576, 147-152). Finding 4: confirmed via `git check-ignore`
+   exit 1. Finding 3: confirmed `open(path,"w")` with no atomic/no-follow. Finding 2:
+   confirmed `result == "pass"` gate. No FPs identified.
+3. **Blind-spot scan.** Injection (argv list-form — safe; option-injection folded
+   into F1), deserialization (json only — cleared), secrets (no contents stored —
+   cleared), dependencies (none added), authn/z & XSS (n/a for a local FS hook) all
+   re-examined; nothing further surfaced.
+4. **AC note.** Security dimension only; the cache/debounce behave as designed
+   (fail-soft, failures never debounced), which the tests demonstrate.
+5. **Confidence: Medium-High.** The hook is small and fully read; the only real
+   judgment call is the Medium-vs-Low calibration on Finding 1, which I anchored to
+   the local-write precondition and the "new surface beyond baseline" rule.

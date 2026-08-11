@@ -1,135 +1,86 @@
-# Code Review — ISSUE-047 (PR #56, commit 8b7bbaa)
+# Code Review (degraded) — ISSUE-038 / PR #59
 
-Dimension: code (degraded path — runtime /code-review not invocable) + minimality (folded in).
-Reviewer confidence: High. Every finding below was empirically verified in the worktree; both
-touched suites and the full suite are green (81 / 137 / 1154 passed).
+Scope: `git diff origin/main...HEAD` @ 1401f58 — `project/.claude/hooks/autotest.py` (+256/−81), `tests/test_autotest.py` (+206). Suite run in worktree: **31 passed in 2.69s** (no spawn-leak signal). Reviewed dimension: code (+ minimality folded in). Security reviewed separately.
 
-## Verdict
+### [Medium] Non-atomic, lock-free cache writes: a stale "pass" can overwrite a fresh "fail" debounce entry under concurrent hook processes
 
-**No blocking findings. Approve.** Three Low code findings and one Low minimality finding below —
-all non-blocking suggestions.
+**Evidence:** `project/.claude/hooks/autotest.py:273-281` — `_save_cache` truncate-writes the whole file (`open(path, "w")` + `json.dump`), no temp-file/`os.replace`, no locking. `project/.claude/hooks/autotest.py:585-592` — the outcome is recorded with `"last_run": time.time()` taken *after* the runs complete (runs can take minutes: up to 5×30s unit + 2×60s E2E).
 
-**Scope absorption: ACCEPT.** The fedf95c isolation fix is (a) genuinely necessary and (b) minimal.
+**Impact:** Most race outcomes are fail-safe: a torn/interleaved write produces invalid JSON, which `_load_cache` rebuilds (re-run, never skip); a lost index entry just re-walks. But one interleaving is not: process A starts on source state S0 (tests pass), process B starts after an edit introduces a bug and records `"fail"`, then slow A finishes and overwrites the entry with `"pass"` and a fresh `last_run`. The next edit within 30s with unchanged test files is skipped — a failure debounced into silence, the exact AC-4 hazard. Requires two concurrent hook processes on the same file in the same project root (PostToolUse hooks serialize per agent, and kit worktrees have separate cache files, so this is narrow — hence Medium, not High).
 
-- (a) Necessary — recursion diagnosis independently confirmed by code trace + probes. At base
-  c04b78b, `test_pass_when_pytest_succeeds` / `test_fallback_when_pytest_cov_missing` use
-  `wt_path = str(tmp_path)`, which contains no `issue-001` slug. `_find_worktree_path`
-  (scripts/verify_checkpoint.py:163-181) matches the slug regex against the *path string* from the
-  mocked `git worktree list` output — probe confirmed `pat.search(tmp_style) → False` — so it
-  returns None despite the mock, and `verify_implement_test` (scripts/verify_checkpoint.py:936-938)
-  sets `wt = Path.cwd()` (real repo root). Both tests reach the `if ok:` gate block (mocked pytest
-  returns rc 0), so `_run_verify_gates` (scripts/verify_checkpoint.py:855) imports verify_gates
-  **in-process** and calls `run_applicable_gates` with the real `vg._run` (only `vc._run` was
-  patched). `detect_platforms(repo root)` adds "unit" (tests/ dir exists — probe confirmed), so
-  `run_gate_unit` spawns a real `python3 -m pytest -q --tb=short` over the full suite → recursion;
-  `subprocess.run`'s timeout kill only reaches the direct child, orphaning grandchildren (the
-  observed orphan storm). Consequence for THIS PR: raising the unit-gate default 120→600s makes the
-  un-fixed suite cost ≥ 2×600s in these two tests alone (or fail outright for any timeout value on
-  the blocking path, since the inner recursive suite necessarily exceeds any finite T). The
-  mandatory full-suite test checkpoint could not reasonably pass without this fix.
-- (b) Minimal — exactly the two recursing tests are touched; one `patch.object(vc,
-  "_run_verify_gates", return_value=True)` context each, with `assert_called_once()` preserving the
-  integration point (not a hollow bypass). The other two class tests were checked and do NOT need
-  it: `test_fail_when_pytest_fails` short-circuits before the gate block (ok=False), and
-  `test_runs_in_worktree_cwd`'s slugged tmp worktree has no test files, so `detect_platforms` never
-  adds "unit" and only the cheap load-gate path runs (measured: all 4 class tests < 0.005s).
-- Premise correction confirmed: full suite is 1154 passed in ~13s on this machine (claimed ~21s
-  base — same order of magnitude, machine-dependent). The "~5-minute suite" premise was indeed an
-  artifact of the recursion, not real suite cost.
+**Fix:** (1) Write atomically: dump to `path + ".tmp"` then `os.replace` (also eliminates the torn-write/rebuild churn). (2) Record `last_run` as the run *start* time, so the skip window is measured from when the tested state was captured. (3) When writing a `"pass"`, don't clobber an existing entry whose `last_run` is newer and whose result is `"fail"`.
 
-## Verified with evidence
+### [Medium] Index caches absolute test paths but the fingerprint is relpath-based — `mv`/clone of the project keeps a "valid" fingerprint pointing at the old tree
 
-- **Exact semantic parity of the replicated `_test_timeout()`**: scripts/verify_gates.py:63-79 vs
-  scripts/verify_checkpoint.py:58-73 — logic is byte-identical (only the cross-ref comment target
-  differs). Runtime probe over 12 edge inputs (`""`, `"abc"`, `"0"`, `"-5"`, `"600"`, `"900"`,
-  `" 900 "`, `"+900"`, `"9_00"`, `"12.5"`, `"1e3"`, Arabic-Indic `"٦٠٠"`): 12/12 PARITY. Notable
-  shared int() semantics: whitespace/`+` sign/underscores/non-ASCII digits are accepted — identical
-  in both, so "matching ISSUE-046 semantics exactly" (AC-2) holds by construction.
-- **Both call sites converted, nothing else changed**: pytest branch (scripts/verify_gates.py:349-353)
-  and npm branch (:355) both use `timeout=_test_timeout()`. `_run`'s module default `timeout: int = 120`
-  (scripts/verify_gates.py:44) untouched; lint 15s / install 300s / docker 60s / e2e 300s /
-  integration-collect 30s all untouched (diff contains no other timeout edits). rc-127
-  FileNotFoundError path untouched.
-- **verify_checkpoint.py delta is comment-only**: one `# keep in sync with
-  verify_gates.py::_test_timeout` line (scripts/verify_checkpoint.py:65); the mirror comment exists
-  in verify_gates.py:71 — the spec's keep-in-sync cross-references are present in both files.
-- **Test coverage (12 new tests, TC-047a..d)**: TestUnitGateTimeout = 10 (override ×2 branches,
-  unset-default ×2 branches, invalid `"abc"/"0"/"-5"` ×2 branches parametrized);
-  TestTimeoutContract = 2. Assertions are non-hollow: `run_gate_unit` makes exactly one `_run` call
-  per invocation (verified by reading :340-372 — no `_ensure_tool` in the unit gate), so
-  `mock_run.call_args[1]["timeout"]` indexes the pytest/npm call and `timeout` is genuinely passed
-  as a kwarg; npm tests additionally pin `call_args[0][0] == ["npm", "test"]`. Call-time (not
-  import-time) env resolution is covered implicitly and correctly: `vg` is imported at collection,
-  before `monkeypatch.setenv`, so a regression to module-level resolution would fail these tests.
-  Unset tests use `delenv(raising=False)` — robust against a polluted dev environment.
-- **_run timeout-mock contract (AC-3)**: TC-047d patches the real `subprocess.run` with
-  `TimeoutExpired` and asserts rc 124 + exact stderr `"python3: timed out after 600s"`; a second
-  test pins that rc 124 propagates to `status="fail", blocking=True`. Contract intact.
-- **Suites**: `tests/test_verify_gates.py` 81 passed (2.0s); `tests/test_verify_checkpoint.py`
-  137 passed (2.3s); full `tests/` 1154 passed (13.1s). Existing tests pass unchanged (AC-3).
-- **AC-1** (blocking ship-smoke unit gate completes with new default): default is now 600s and the
-  real root cause (recursion) is fixed; full suite at ~13s clears 600s with wide margin. Ship-smoke
-  itself not runnable from this review context, but the mechanics are verified.
+**Evidence:** `project/.claude/hooks/autotest.py:304` — fingerprint entries use `os.path.relpath(entry.path, scan_root)`; `project/.claude/hooks/autotest.py:356-364` and `397-405` — the module index stores absolute `test_path` values; `project/.claude/hooks/autotest.py:575-576` — selected files are executed with no existence check.
 
-## Findings (code)
+**Impact:** `mv project/ project2/` (or an APFS clonefile / `cp -c` / ns-preserving rsync copy) preserves mtimes exactly. The relocated cache's relpath fingerprint still matches, so the warm path returns the *old* absolute paths. If the old tree is gone: pytest runs a nonexistent path → nonzero exit → false `"Test failed"` block on every edit until a test file's mtime changes. If the old tree still exists (copy case): the hook silently runs the *original* tree's tests against stale code — a wrong-tree pass/fail with no signal. Workaround exists (delete `.claude/run/autotest_cache.json`), so Medium.
 
-1. **[Low] KIT_CHECKPOINT_TEST_TIMEOUT now governs a second script but remains undocumented in any
-   user-facing doc — and the "documented in docs/troubleshooting.md" premise is false.**
-   Evidence: `git grep KIT_CHECKPOINT_TEST_TIMEOUT c04b78b -- '*.md'` and a worktree-wide grep
-   both return only review-artifact files (docs/.review/, docs/review_notes/ISSUE-046.md);
-   docs/troubleshooting.md contains zero mentions at base and at HEAD. ISSUE-046's review already
-   carries an open Low for this; this PR broadens the knob's surface (verify_gates.py unit gate,
-   incl. standalone CLI use) without a doc touch. Recalled lesson 2 applies.
-   Fix: one line in each module docstring ("KIT_CHECKPOINT_TEST_TIMEOUT — test-phase subprocess
-   timeout in seconds, default 600; shared by verify_checkpoint.py and verify_gates.py") plus a
-   short docs/troubleshooting.md entry. Also worth noting there that the "CHECKPOINT" name now
-   also covers the gates script (name reuse is per spec, so doc-only).
+**Fix:** Store module index entries as paths relative to `project_root` and join on read; or on a warm hit, verify each cached path with `os.path.isfile` and fall through to a rebuild if any is missing.
 
-2. **[Low] Known unclamped upper bound is now replicated: huge values crash verify_gates and, in
-   the checkpoint's non-blocking path, silently skip gates.**
-   Evidence: probe in the worktree — `KIT_CHECKPOINT_TEST_TIMEOUT=1000000000` →
-   `vg._test_timeout()` returns 1000000000 and `vg._run(["true"], timeout=...)` raises uncaught
-   `OverflowError: timeout is too large` (vg._run at scripts/verify_gates.py:44-59 catches only
-   TimeoutExpired/FileNotFoundError). Standalone `verify_gates.py` would crash (fail closed); via
-   `_run_verify_gates`'s `except Exception` (scripts/verify_checkpoint.py:869-872) it degrades to
-   WARN and returns True when blocking=False. Exact parity with ISSUE-046 semantics is mandated by
-   AC-2, so inheriting this is by-design — filed as a tracking Low so the eventual clamp (already
-   flagged in docs/review_notes/ISSUE-046.md) is applied to BOTH helpers; the keep-in-sync
-   comments make that cheap. Local-env-only, no attack vector → Low.
+### [Low] Fingerprint and discovery use mismatched predicates: hidden-dir JS tests and symlinked test files are discoverable but never invalidate the index
 
-3. **[Low] Comment-only sync guarantee: no test enforces parity between the two `_test_timeout`
-   helpers.**
-   Evidence: sync is guaranteed only by the cross-ref comments (scripts/verify_gates.py:71,
-   scripts/verify_checkpoint.py:65); my 12-input parity probe passes today, but silent drift in
-   either file would not fail any test. The spec chose comment-based sync, so this is a
-   nice-to-have hardening, not a gap in the mandated work.
-   Fix: a ~6-line parametrized test importing both modules and asserting
-   `vg._test_timeout() == vc._test_timeout()` across the edge inputs ("", "abc", "0", "-5", "900").
+**Evidence:** `project/.claude/hooks/autotest.py:234-238` — `_skip_js_scan_dir` excludes `node_modules` *and all hidden dirs* from the JS fingerprint; `project/.claude/hooks/autotest.py:389-393` — the discovery `os.walk` skips only `node_modules` (and doesn't prune `dirs`, so it still descends the node_modules tree — pre-existing). Also `project/.claude/hooks/autotest.py:301` — `entry.is_file(follow_symlinks=False)` excludes symlinked test files from the fingerprint, while `os.walk` + `open()` includes them in discovery (both Python and JS paths).
 
-## Findings (minimality)
+**Impact:** A test file added/changed in a hidden dir (JS) or reached via symlink is invisible to the fingerprint: adding one never refreshes the index (AC-2 corner), and removing one leaves it cached. Rare layouts; degraded discovery only, debounce is unaffected (`_test_set_hash` stats the selected files directly). Low.
 
-- tests/test_verify_gates.py:322-380: shrink — 6 TestUnitGateTimeout methods are 3 near-identical
-  pytest/npm pairs differing only in project setup → parametrize over branch (fixture writing
-  pyproject.toml vs package.json) × env value; same 10 cases, ~35 fewer lines, per-case pytest ids
-  preserved. Both branches stay covered, so AC-2 is unaffected.
+**Fix:** Use the same predicate on both sides: prune the discovery walk with `_skip_js_scan_dir` (via `dirs[:] = [...]`, which also stops descending node_modules) and either include symlinked files in the fingerprint or exclude them from discovery.
 
-Everything else is lean: the helper replication, constant, docstring, and cross-ref comments are
-spec-mandated; the TC-047d pair guards AC-3 end-to-end and does not duplicate the existing rc-1
-fail-path test.
+### [Low] Warm-path cache entries not validated to string paths — valid-JSON garbage can crash the hook, denting the fail-soft contract
 
-Net removable lines: ~35 (report-only; do not apply during review).
+**Evidence:** `project/.claude/hooks/autotest.py:347-349` / `384-386` — `if isinstance(cached, list): return list(cached)` trusts element types. `_load_cache` (`:258-269`) validates the outer shape only. A hand-edited cache like `{"modules": {"user": [1]}}` passes validation; the int then reaches `subprocess.run([pytest_cmd, 1, ...])` → uncaught `TypeError` → traceback, exit 1.
 
-## Self-Review
+**Impact:** The stated contract is "corrupt cache → rebuild, never crash". Exit 1 is non-blocking in Claude Code (stderr noise, edit proceeds), and the trigger requires a hand-corrupted-but-valid-JSON cache, so no real exploit path — Low.
 
-- Severity re-assessment: all four findings re-checked against impact — none blocks; the overflow
-  finding stays Low per the same rationale ISSUE-046's audit used (local env control required,
-  blocking path fails closed).
-- False-positive check: one candidate finding was dropped after empirical disproof —
-  `test_runs_in_worktree_cwd` does NOT spawn a real pytest (tmp worktree has no test files, so
-  "unit" is never detected; class runtime < 5ms). Doc-gap and overflow findings were verified by
-  grep and runtime probe rather than assumed.
-- Blind-spot scan: re-checked error handling (127 path untouched), hollow-assertion risk
-  (call_args indexing valid — single `_run` call in unit gate), import-time vs call-time env
-  resolution (covered), and other-gate timeout drift (none in diff).
-- AC verification: AC-1/2/3 each verified above with evidence.
-- Confidence: High.
+**Fix:** Treat a cached value as a hit only if `all(isinstance(x, str) for x in cached)` (adding an `os.path.isfile` check here also mitigates the stale-abs-path finding above); otherwise fall through to rebuild.
+
+### [Low] `DEBOUNCE_SECONDS` is a new hard-coded time knob: no env override, no doc line
+
+**Evidence:** `project/.claude/hooks/autotest.py:20` — `DEBOUNCE_SECONDS = 30.0`. No mention in the module docstring, README, or `docs/troubleshooting.md` (grep confirms zero user-facing doc hits).
+
+**Impact:** Kit lesson (ISSUE-046/047): hard-coded timing constants introduced without env-configurability + docs recur as breakage. This one cannot break gates (it is not a subprocess timeout, and mis-sizing only delays or repeats *passing* runs — failures are exempt), so Low. Note: the diff introduces **no new subprocess `timeout=` literals**; the pre-existing 30s/60s caps remain the known logged planner candidate, out of this issue's scope.
+
+**Fix:** `DEBOUNCE_SECONDS = float(os.environ.get("AUTOTEST_DEBOUNCE_SECONDS", "30"))`, one line in the module docstring, one line in `docs/troubleshooting.md` (0 = disable).
+
+### [Low] Debounce map grows without pruning; full cache is rewritten on every event
+
+**Evidence:** `project/.claude/hooks/autotest.py:587-592` — `cache["debounce"][key] = {...}` keyed by absolute source path; entries for deleted/renamed files persist forever, and every event round-trips the entire JSON (both indexes + all debounce entries).
+
+**Impact:** Bounded by source-file count, so perf/bloat only. Low.
+
+**Fix:** On save, drop debounce entries with `last_run` older than a few windows (one-line dict comprehension).
+
+### [Low] Coverage gap: debounce window *expiry* is untested
+
+**Evidence:** `tests/test_autotest.py:571-595` asserts the within-window skip; no test asserts that an identical passing pair re-runs once `DEBOUNCE_SECONDS` elapses.
+
+**Impact:** A regression to an unbounded window (flipped comparison, wrong `last_run` type) would make the hook silently stop re-testing a passing module on later source edits — and no current test would fail. The main safety property (failures re-run) *is* tested, so Low.
+
+**Fix:** Monkeypatch `autotest.time.time` (or set `autotest.DEBOUNCE_SECONDS = 0.0`) and assert the second `handle_event` re-runs.
+
+### [Low] Corrupt-cache test cannot detect a late hook crash — `run_hook` discards returncode/stderr
+
+**Evidence:** `tests/test_autotest.py:11-21` — `run_hook` returns parsed stdout or `None`; `tests/test_autotest.py:542-547` (`test_corrupt_cache_rebuilds_and_exits_clean`) asserts `out is None` and that the cache file is valid JSON. A crash *after* `find_related_python_tests` saves the rebuilt cache (e.g. in the debounce block) produces empty stdout + traceback on stderr + exit 1 — and the test still passes. The "exits clean" claim in the name is not asserted.
+
+**Impact:** Hollow-assertion risk for exactly the fail-soft contract this test exists to pin. Low (the crash-on-load case *is* caught via the still-corrupt cache file).
+
+**Fix:** Have `run_hook` (or this test locally) surface `result.returncode`/`stderr` and assert `returncode == 0` and no traceback.
+
+## Over-Engineering (minimality axis)
+
+- tests/test_autotest.py:545-560: shrink — `_load` and `_make_python_project` duplicated verbatim between `TestIndexCache` and `TestDebounce` → hoist both to module-level helpers (or a fixture) shared by the two classes (~22 lines).
+- tests/test_autotest.py:449-452: delete — per-call `sys.path.insert` + `importlib.reload`; the module holds no mutable global state the tests reset, and repeated inserts accumulate in `sys.path` → single module-level import (folds into the shared helper above) (~4 lines).
+- Considered, rejected: the hand-rolled recursive `os.scandir` in `_stat_fingerprint` looks like an `os.walk` reinvention, but AC-1's letter (zero `os.walk` calls on the warm path, asserted by monkeypatch) mandates it — not a cut. `CACHE_VERSION` is cheap forward-compat for an on-disk format — not yagni.
+
+Net removable lines: ~25 (all test-side).
+
+## AC verification
+
+- **AC-1 (warm index, no walk): PASS.** Warm hit is `_load_cache` + stat-only scandir fingerprint + cached list; zero `os.walk` calls asserted for both Python and JS paths (TC-038a). Stat scan on the hot path is explicitly allowed by the spec's "tests-dir mtime scan" note.
+- **AC-2 (invalidation): PASS** (with the hidden-dir/symlink corner, Low). Any add/modify/delete of a fingerprint-visible test file changes `(relpath, mtime_ns, size)` → immediate reindex; TC-038b asserts discovery and on-disk persistence.
+- **AC-3 (debounce skip): PASS.** Same `(lang:abspath, test-set hash)` with `result == "pass"` inside 30s skips; TC-038c mocks the module-global runner seam with a call-count guard (correct seam per kit lesson).
+- **AC-4 (failure never debounced): PASS.** The skip path requires `result == "pass"`; TC-038d asserts a second block and an increased run count. Residual: the narrow cross-process pass-over-fail overwrite (Medium finding above).
+
+Behavior knobs preserved: `MAX_RELATED_TESTS = 5` (autotest.py:197,555), `TIMEOUT = 30` / `E2E_TIMEOUT = 60` untouched, block-dict shape and unit-then-E2E ordering unchanged; caps are applied *before* the debounce hash so the debounce covers exactly what runs.
+
+Confidence: **High** — full diff + full file read, suite run green (2.69s), mock seams and tmp_path containment verified against recalled lessons, each finding actively falsification-checked (e.g. `mv` preserves mtime_ns, making the stale-abs-path fingerprint match real; all other write races degrade to safe re-runs).
