@@ -31,8 +31,23 @@ def check_command(command: str) -> tuple[bool, str]:
     return False, ""
 
 
+# Blocking mechanism (footgun warning):
+# - This guard blocks via stdout JSON {"decision": "block"} with exit code 0 —
+#   NOT via exit code. stdout is the decision channel: JSON-or-nothing.
+# - Therefore a shell `|| true` wrapper around this hook is harmless today.
+# - BUT: if anyone converts this guard to exit-code-2 blocking, any `|| true`
+#   wrapper would silently neutralize the guard — remove such wrappers first.
+# - Parse failures fail OPEN (guard skipped) with a loud stderr diagnostic and
+#   exit 0, honoring the hooks-never-crash-a-session contract.
 def main():
-    hook_input = json.loads(sys.stdin.read())
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, ValueError):
+        hook_input = None
+    if not isinstance(hook_input, dict):
+        print("dangerous_command_guard: malformed hook payload — guard skipped", file=sys.stderr)
+        return
+
     tool_name = hook_input.get("tool_name", "")
 
     if tool_name != "Bash":
