@@ -516,8 +516,8 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 | Agent | Effort | Role | Tools |
 |-------|-------|------|-------|
-| `brainstormer` | high | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
-| `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit, WebSearch, WebFetch |
+| `brainstormer` | high | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit |
+| `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | medium | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
@@ -534,9 +534,9 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `developer` | xhigh | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
 | `test-generator` | high | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
 | `reviewer` | xhigh | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
-| `ui-reviewer` | high | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
-| `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
-| `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
+| `ui-reviewer` | high | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Bash, Write |
+| `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep |
+| `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Write, Edit, Bash |
 | `research-auditor` | medium | Separate-context refute-first audit of degraded-path research claims against captured source snapshots | Read, Grep |
 | `review-merge-auditor` | medium | Separate-context refute-first audit that runtime review findings survive into merged review notes unaltered | Read, Grep |
 | `synthesizer-auditor` | medium | Separate-context refute-first audit that /deep-research claims survive into rendered kit output unaltered | Read, Grep |
