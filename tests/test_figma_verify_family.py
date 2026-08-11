@@ -604,3 +604,61 @@ class TestGenerateCssMain:
 
     def test_main_missing_design_data_returns_one(self, tmp_path):
         assert gfc.main(["--project-path", str(tmp_path)]) == 1
+
+
+# ════════════════════════════════════════════════════════════════════
+# Browser auto-install is gated behind an explicit opt-in (ISSUE-049)
+# ════════════════════════════════════════════════════════════════════
+#
+# The visual-diff family must NEVER `pip install playwright` /
+# `playwright install chromium` (network + env mutation) as a silent side
+# effect. The heavy provisioning path runs only when KIT_ALLOW_BROWSER_INSTALL=1
+# is set; otherwise the gate reports "browser unavailable" to stderr and returns
+# False so the caller takes its existing skip/degrade path. The subprocess
+# boundary is mocked here — the suite never actually installs anything.
+
+
+@pytest.mark.parametrize("mod", [vvd, vcs], ids=["visual_diff", "computed_styles"])
+class TestBrowserInstallOptIn:
+    def test_flag_unset_and_missing_does_not_install(self, mod, monkeypatch, capsys):
+        # Opt-in flag unset + Playwright missing → NO install subprocess, no
+        # network; report unavailable and return False (skip/degrade path).
+        monkeypatch.delenv("KIT_ALLOW_BROWSER_INSTALL", raising=False)
+        monkeypatch.setattr(mod, "_playwright_importable", lambda: False)
+        calls = []
+        monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: calls.append(a))
+
+        assert mod._check_playwright() is False
+        assert calls == [], "install subprocess must NOT be spawned when opt-in is unset"
+        err = capsys.readouterr().err
+        assert "browser unavailable" in err.lower()
+
+    def test_flag_set_and_missing_runs_install_once(self, mod, monkeypatch):
+        # Opt-in flag set + Playwright missing → auto-install path runs as today
+        # (pip install playwright + playwright install chromium), each once.
+        monkeypatch.setenv("KIT_ALLOW_BROWSER_INSTALL", "1")
+        monkeypatch.setattr(mod, "_playwright_importable", lambda: False)
+        commands = []
+
+        def _spy(cmd, *a, **k):
+            commands.append(cmd)
+            return None
+
+        monkeypatch.setattr(mod.subprocess, "run", _spy)
+
+        mod._check_playwright()  # return value depends on post-install import
+        assert ["pip", "install", "playwright"] in commands
+        assert ["playwright", "install", "chromium"] in commands
+        assert len(commands) == 2, "install path should issue exactly the two install commands"
+
+    def test_present_playwright_never_installs_regardless_of_flag(self, mod, monkeypatch):
+        # Playwright present → True and no install, whether the flag is set or not.
+        monkeypatch.setattr(mod, "_playwright_importable", lambda: True)
+        calls = []
+        monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: calls.append(a))
+
+        monkeypatch.delenv("KIT_ALLOW_BROWSER_INSTALL", raising=False)
+        assert mod._check_playwright() is True
+        monkeypatch.setenv("KIT_ALLOW_BROWSER_INSTALL", "1")
+        assert mod._check_playwright() is True
+        assert calls == [], "present Playwright must never trigger an install"
