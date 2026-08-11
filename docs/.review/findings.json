@@ -1,47 +1,28 @@
 {
-  "pr_number": 56,
+  "pr_number": "57",
   "code_source": "reviewer-degraded",
   "security_source": "reviewer-degraded",
   "code_findings": [
     {
       "severity": "Low",
-      "title": "KIT_CHECKPOINT_TEST_TIMEOUT now governs a second script but remains undocumented in any user-facing doc — and the \"documented in docs/troubleshooting.md\" premise is false",
-      "evidence": "`git grep KIT_CHECKPOINT_TEST_TIMEOUT c04b78b -- '*.md'` and a worktree-wide grep both return only review-artifact files (docs/.review/, docs/review_notes/ISSUE-046.md); docs/troubleshooting.md contains zero mentions at base and at HEAD. ISSUE-046's review already carries an open Low for this; this PR broadens the knob's surface (verify_gates.py unit gate, incl. standalone CLI use) without a doc touch. Recalled lesson 2 applies.",
-      "fix": "One line in each module docstring (\"KIT_CHECKPOINT_TEST_TIMEOUT — test-phase subprocess timeout in seconds, default 600; shared by verify_checkpoint.py and verify_gates.py\") plus a short docs/troubleshooting.md entry. Also worth noting there that the \"CHECKPOINT\" name now also covers the gates script (name reuse is per spec, so doc-only)."
-    },
-    {
-      "severity": "Low",
-      "title": "Known unclamped upper bound is now replicated: huge values crash verify_gates and, in the checkpoint's non-blocking path, silently skip gates",
-      "evidence": "Probe in the worktree — KIT_CHECKPOINT_TEST_TIMEOUT=1000000000 → vg._test_timeout() returns 1000000000 and vg._run([\"true\"], timeout=...) raises uncaught OverflowError: timeout is too large (vg._run at scripts/verify_gates.py:44-59 catches only TimeoutExpired/FileNotFoundError). Standalone verify_gates.py would crash (fail closed); via _run_verify_gates's except Exception (scripts/verify_checkpoint.py:869-872) it degrades to WARN and returns True when blocking=False. Exact parity with ISSUE-046 semantics is mandated by AC-2, so inheriting this is by-design — filed as a tracking Low so the eventual clamp (already flagged in docs/review_notes/ISSUE-046.md) is applied to BOTH helpers; the keep-in-sync comments make that cheap. Local-env-only, no attack vector → Low.",
-      "fix": "Tracking note: when ISSUE-046's open Low (upper clamp) is addressed, apply it to BOTH _test_timeout helpers — the keep-in-sync comments make this a paired one-line change."
-    },
-    {
-      "severity": "Low",
-      "title": "Comment-only sync guarantee: no test enforces parity between the two _test_timeout helpers",
-      "evidence": "Sync is guaranteed only by the cross-ref comments (scripts/verify_gates.py:71, scripts/verify_checkpoint.py:65); my 12-input parity probe passes today, but silent drift in either file would not fail any test. The spec chose comment-based sync, so this is a nice-to-have hardening, not a gap in the mandated work.",
-      "fix": "A ~6-line parametrized test importing both modules and asserting vg._test_timeout() == vc._test_timeout() across the edge inputs (\"\", \"abc\", \"0\", \"-5\", \"900\")."
+      "title": "Stale docstring in TestReviewStepHeadersAreMonotonic describes the pre-fix state and cites retired step numbers",
+      "evidence": "tests/test_review_delegation_guard.py:118-121 — \"step numbers 3.8/3.9/3.10 are currently reused twice … so cross-references like \\\"steps 3.11 and 3.12\\\" are unambiguous\" — present-tense RED-phase wording becomes false once this PR merges, and 3.11/3.12 are the OLD synthesize/merge-audit numbers (now 3.14/3.15; 3.11/3.12 now denote ui-review/design-audit). Internally inconsistent with the module-level comment at lines 24-26, which correctly uses \"steps 3.14 and 3.15\".",
+      "fix": "Reword to past tense with current numbers: \"step numbers 3.8/3.9/3.10 were once reused twice … so cross-references like 'steps 3.14 and 3.15' are unambiguous.\""
     },
     {
       "severity": "Low",
       "title": "[debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR",
-      "evidence": "checkpoint.sh --skill review --phase debt --issue ISSUE-047: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-046 review's ledger — pre-existing, not from this diff.",
-      "fix": "No action in this PR. If the harvester grows an ignore-mechanism for its own fixtures/docstring examples, these false positives disappear from the ledger."
+      "evidence": "checkpoint.sh --skill review --phase debt --issue ISSUE-036: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-046/047 reviews' ledgers — pre-existing, not from PR #57's diff.",
+      "fix": "Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out."
     }
   ],
-  "security_findings": [
-    {
-      "severity": "Low",
-      "title": "No upper bound on KIT_CHECKPOINT_TEST_TIMEOUT in verify_gates.py: values >= ~1e9 raise unhandled OverflowError inside subprocess.run (fails closed); large-but-valid values silently remove the unit gate's hang bound",
-      "evidence": "scripts/verify_gates.py:79 `return value if value > 0 else _DEFAULT_TEST_TIMEOUT` — no upper clamp; scripts/verify_gates.py:49-60 — `_run` catches only TimeoutExpired and FileNotFoundError, so OverflowError propagates. Reproduced in the worktree: `vg._run([\"true\"], timeout=10**9)` -> `OverflowError: timeout is too large`; `10**12` -> `timestamp too large to convert to C _PyTime_t`. Containment verified fail-closed on both paths: CLI -> unhandled traceback -> exit 1 (blocking-failure semantics); in-process -> caught by `except Exception` at scripts/verify_checkpoint.py:870-872 -> checkpoint FAIL when blocking=True. Values just under the threshold (e.g. 1e8 s ~ 3 years) effectively disable the hang bound for the blocking unit gate. Requires local env control, no gate bypass, crash fails closed — hence Low.",
-      "fix": "Clamp in _test_timeout(), e.g. `return min(value, 86400) if value > 0 else _DEFAULT_TEST_TIMEOUT` (optionally WARN when clamping), and apply the same clamp to the mirrored helper in verify_checkpoint.py (the '# keep in sync' comment makes this a single change done twice). Alternatively catch OverflowError alongside TimeoutExpired in _run, but the clamp is simpler and also restores a meaningful hang bound."
-    }
-  ],
+  "security_findings": [],
   "minimality_findings": [
     {
       "severity": "Low",
-      "title": "[shrink] TestUnitGateTimeout's 6 methods are 3 near-identical pytest/npm pairs — parametrize over branch",
-      "evidence": "tests/test_verify_gates.py:322-380: shrink — 6 TestUnitGateTimeout methods are 3 near-identical pytest/npm pairs differing only in project setup → parametrize over branch (fixture writing pyproject.toml vs package.json) × env value",
-      "fix": "Parametrize; same 10 cases, ~35 fewer lines, per-case pytest ids preserved. Both branches stay covered, so AC-2 is unaffected. Net removable lines: ~35 (report-only)."
+      "title": "[shrink] Parametrize duplicated generated/template assertions in test_brainstorm_research_path_guard.py",
+      "evidence": "tests/test_brainstorm_research_path_guard.py:41-79 — both test classes copy-paste identical assertion bodies (including multi-line failure messages) twice, once per file (SKILL.md vs SKILL.md.tmpl); 2 checks x 2 files = 4 near-identical bodies.",
+      "fix": "Use @pytest.mark.parametrize(\"path\", [SKILL, TMPL], ids=[\"generated\", \"template\"]) or extract the assertion loop into a shared helper alongside _auditor_lines; ~79 lines -> ~55 with identical coverage. Net removable: ~24 lines."
     }
   ],
   "ui_findings": null,
