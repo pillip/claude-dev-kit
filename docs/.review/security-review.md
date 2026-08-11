@@ -1,40 +1,24 @@
-# Security Review — PR #70 / ISSUE-044 (degraded-path, dimension: security)
+# Security Review — ISSUE-041 (degraded-path, security dimension)
 
-Checklist run: injection, authz, secrets, input validation, deserialization,
-dependency CVEs, XSS (n/a — no user-facing output), misconfiguration.
+Surface: build-time codegen (`scripts/fragments.py`, `scripts/gen_skills.py`) plus
+prompt/instruction text files. No network, no user-facing runtime, no data store.
+
+Checks performed:
+- `grep -nE 'eval\(|exec\(|os\.system|subprocess|shell=True|__import__|pickle'`
+  over `scripts/fragments.py` and `scripts/gen_skills.py` → **none found**.
+- Token resolution: `design_philosophy_fragment` / `design_philosophy_checkpoint`
+  call `str.format()` on **constant** templates, filling only constant values
+  (`_DESKTOP_EXTRA_QUESTION`, `_DESKTOP_EXTRA_DERIVE`, `_RESPONSE_STEP[...]`,
+  `/shortcut`). No untrusted/user input flows into the format string or its args,
+  so there is no format-string / injection vector.
+- `skill_name` is validated by `_require_uiux_skill` (raises `ValueError` for any
+  value outside the fixed `UIUX_SKILLS` tuple); `_RESPONSE_STEP[skill_name]` is
+  therefore always a known key (no `KeyError`/lookup-of-attacker-string path).
+- No file paths are constructed from input in `fragments.py` (no path traversal).
+  `gen_skills.py` globs `skills/*/SKILL.md.tmpl` from a fixed `KIT_ROOT` and writes
+  siblings — unchanged by this PR.
+- No secrets, keys, or credentials introduced.
 
 ## Findings
 
-### Low — `eval` of operator-supplied start/test commands (pre-existing trust boundary, not widened)
-- **file:line**: `scripts/gate_server.sh:52` (`eval "$START_CMD" ...`),
-  `scripts/gate_server.sh:102` (`eval "$TEST_CMD"`)
-- **what**: Both `--start-cmd` and `--test-cmd` are executed via `eval`, i.e.
-  arbitrary shell execution. This is pre-existing and by design: `gate_server.sh`
-  is a gate harness whose commands come from trusted kit config
-  (`verify_gates.py:325,328` passes `config["server_start_cmd"]` and the gate's
-  own `test_cmd`), not from external/untrusted request data.
-- **why**: No exploit path within the kit's trust model (an attacker who can set
-  `server_start_cmd` already controls the CI config / repo). This PR does **not**
-  widen the surface: the new cleanup logic only interpolates the numeric
-  `$SERVER_PID` into `kill -TERM "-$SERVER_PID"` etc. `$SERVER_PID` is
-  `set -u`-guarded and can never be empty at trap time (trap registered at
-  line 73, after the assignment at line 53), so the "empty var → `kill -TERM -`
-  wipes the caller's own process group" failure mode is unreachable.
-- **fix**: No change required for this PR. Keep `--start-cmd`/`--test-cmd`
-  sourced only from trusted config; if the harness is ever exposed to
-  externally-influenced input, replace `eval` with an argv array
-  (`bash -c "$CMD"` is no safer; prefer structured `exec "$@"`).
-
-## Assessment summary (no other findings)
-
-- ci.yml migration to `astral-sh/setup-uv@v5` + `uv sync --locked` removes the
-  `pip install -e ".[dev]" 2>/dev/null || true` failure-swallow — a security/
-  supply-chain improvement (installs now fail loudly and are pinned by
-  `--locked`). `enable-cache: true` caches the uv package cache, not secrets.
-- No hardcoded secrets, credentials, or tokens introduced.
-- No new deserialization; `tomllib.load` (stdlib) and text reads only. The two
-  yaml-importing tests use `yaml.safe_load` (safe loader), unchanged by this PR.
-- No new/changed dependencies with known CVEs introduced; net change is the
-  REMOVAL of `pytest-asyncio` (fewer deps).
-- Negative-PID `kill` reviewed for injection/priv escalation: numeric-only
-  interpolation, `set -u`-guarded, no shell metacharacters — no injection.
+_No findings._

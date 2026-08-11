@@ -1,80 +1,64 @@
-# Code Review — PR #70 / ISSUE-044 (degraded-path, dimension: code)
+# Code Review — ISSUE-041 (degraded-path, code dimension)
 
-Scope: `scripts/gate_server.sh`, `.github/workflows/ci.yml`, `pyproject.toml`,
-`tests/test_gate_server.py`, `tests/test_ci_workflow.py`.
+Scope: dedup/net-removal refactor of UI/UX design-philosophy boilerplate into a
+canonical fragment (`scripts/fragments.py`) consumed by 3 skill tmpls via tokens
+and mirrored by 3 static agents behind a drift guard. No runtime behavior change
+(prompt/instruction text + a build-time codegen module).
 
-## Verification performed (positive results — not findings)
-
-- `set -m` process-group isolation confirmed empirically on this host (bash
-  3.2.57, macOS 26.2, no tty): a backgrounded job gets `PGID == PID` distinct
-  from the script's own PGID (observed `40481==40481` vs script pgid `40478`).
-  So `kill -TERM "-$SERVER_PID"` targets ONLY the server group, never the
-  script's or pytest's group — no wrong-kill risk.
-- Fallback safety: if `set -m` ever failed to make the child a group leader,
-  `$SERVER_PID` (a freshly-allocated child PID) is not the PGID of any existing
-  group, so `kill -- -$SERVER_PID` returns ESRCH and is swallowed by `|| true`.
-  Failure mode is **leak, not wrong-kill** — the safe direction.
-- 125 immediate-exit probe confirmed: with `bash -c 'exit 1'` as start-cmd the
-  group is gone by the 0.5s probe (`kill -0 -PGID` → ESRCH → `exit 125`). No
-  zombie-leader false-positive on this host; matches the 12-passed suite + both
-  green CI matrix jobs (Linux 3.11/3.12).
-- `local rc=$?` correctly captures the pending exit status (no command-
-  substitution masking gotcha), and `exit "$rc"` inside the EXIT trap does not
-  re-enter the trap — 124/125/passthrough(0,7) contract is preserved.
-- `SERVER_PID` can never be empty when `cleanup` runs: it is assigned from `$!`
-  at line 53 and the `trap cleanup EXIT` is registered later at line 73, so an
-  early usage-error `exit 2` (line 38) fires before any trap exists. Combined
-  with `set -u`, no `kill -TERM -` group-wipe is reachable.
-- Removing `asyncio_mode`/`pytest-asyncio` is safe: repo-wide grep finds no
-  `async def` / `await` / `@pytest.mark.asyncio`; lock has no asyncio residue;
-  `uv.lock` carries `pytest-cov` and `pyyaml` under `extra == 'dev'`, so
-  `uv sync --locked --extra dev` + `uv run pytest --cov` resolves cleanly and
-  `--locked` fails loudly on a stale lock.
+Empirical verification performed (worktree):
+- `python3 -m pytest tests/test_design_fragments.py tests/test_reference_anchor_tuning.py` → **40 passed**.
+- `python3 scripts/gen_skills.py --dry-run` → **All 20 SKILL.md files are fresh**.
+- Resolver output for all 3 skills inspected and matches the blocks removed from
+  each tmpl (see AC-2 below).
+- `git diff --name-only af832cb..HEAD -- 'skills/*/SKILL.md'` → **only `skills/uiux/SKILL.md`**
+  changed among generated files. Mobile/desktop generated SKILL.md are byte-identical
+  to pre-extraction — the resolver reproduces the previous inline content exactly.
+- Freshness gate exists and asserts: `tests/test_gen_skills.py::test_dry_run_passes_when_fresh`
+  (returncode 0) + `test_dry_run_detects_stale`. The "forgot to regenerate" direction is covered.
 
 ## Findings
 
-### Low — Misleading rationale comment in `test_ci_workflow.py`
-- **file:line**: `tests/test_ci_workflow.py:2-4` (module docstring)
-- **what**: The docstring states "Reads ci.yml as plain text (no yaml import —
-  the uv venv has no pyyaml)". This is factually wrong: `pyyaml>=6.0` is in the
-  `dev` extra (`pyproject.toml:15`, `uv.lock:277`), so the dev venv used by
-  `uv run pytest` DOES have pyyaml — indeed the full CI suite runs
-  `tests/test_skill_frontmatter_yaml.py` and `tests/test_plugin_manifest.py`,
-  which both `import yaml`, and CI is green.
-- **why**: A false statement about the environment can mislead a future
-  maintainer into thinking pyyaml is unavailable (e.g. into refactoring other
-  tests around a non-existent constraint). The choice to read ci.yml as text is
-  itself fine and robust; only the stated reason is wrong.
-- **fix**: Reword to the real rationale, e.g. "Reads ci.yml as plain text to
-  avoid a yaml dependency for a trivial substring assertion" — drop the false
-  "the uv venv has no pyyaml" clause.
+### Low — Drift guard is a presence-of-new whitelist, not an absence-of-old check
+`scripts/fragments.py:210` (`find_out_of_sync_fragments`)
+The guard asserts each canonical chunk is *contained* in the agent text. It does
+NOT assert that superseded/old wording is *absent*. If a future edit left stale
+boilerplate in an agent file *alongside* the new canonical chunk, the guard would
+still pass. This is the known trade-off called out in the task (LESSON A(d)).
+Impact in THIS diff: none — the 4 wording unifications cleanly replaced old with
+new (verified: all 3 agents report `[]` from the guard; no duplicated sentinels).
+Severity is Low because triggering a real regression requires an agent to carry
+duplicate/contradictory copies, which is not the normal editing pattern, and the
+skill-side `test_fragment_appears_exactly_once` provides a partial backstop.
+Recommended action: accept as documented trade-off. Optionally, if cheap, add a
+per-agent "no orphaned old sentinel" assertion for any wording that was
+intentionally unified (e.g. assert `"Spot-check 3 random components"` and
+`"re-check prototype setup"` no longer appear in any agent). Not blocking.
 
-### Low — Cleanup trap covers only EXIT, not INT/TERM (partial orphan gap vs AC)
-- **file:line**: `scripts/gate_server.sh:73` (`trap cleanup EXIT`)
-- **what**: Only the EXIT pseudo-signal is trapped. If the wrapper process is
-  cancelled by SIGINT/SIGTERM (operator Ctrl-C, or a CI job cancel), bash does
-  not run the EXIT trap, so `cleanup` never fires and the entire server process
-  group is left orphaned — the precise "no orphaned forked children" outcome
-  ISSUE-044 targets, for the signal-termination path. Note the caller
-  `verify_gates.py:335` wraps this in `subprocess.run(..., timeout=120)`, whose
-  timeout sends SIGKILL to the bash child; SIGKILL is untrappable, so that
-  specific path would also leak the group regardless.
-- **why**: Real (if narrow) leak path against the issue's stated guarantee.
-  It is pre-existing (the old code also trapped only EXIT), so it is not a
-  regression and stays Low, but it is in-scope for the AC.
-- **fix**: `trap cleanup INT TERM EXIT` — `cleanup` already re-`exit "$rc"`s
-  idempotently and is safe to run once on the signal path. The SIGKILL-on-
-  timeout case is unfixable in-script; if that leak matters, have
-  `verify_gates._run_with_server` launch bash in its own group and kill the
-  group on `TimeoutExpired`. (Optional; do not block merge on it.)
+### Info — Platform-specific tails on prefix chunks are intentionally unguarded
+`scripts/fragments.py:170` (`interview_skip`), `:191` (`self_review_token_rule`)
+These chunks end mid-sentence (e.g. `...from competitor analysis`,
+`...outside of`) so each agent's platform tail (`, Desktop Identity...`,
+`` `src/theme/`? ``) stays inline and is NOT covered by the guard. This is correct
+and documented, but means deletion/corruption of a platform tail would not be
+detected by the drift guard. Verified the prefix-containment still holds for all
+3 agents (desktop's appended `, Desktop Identity from product type.` does not
+break containment). No action required.
 
-## Test-quality assessment (per recalled Lesson 3 — not findings)
+### Info — Web SKILL.md gains a cosmetic 5→3 space continuation-indent change
+`skills/uiux/SKILL.md` (diff lines 432-438)
+Because the canonical `_INTERVIEW_TEMPLATE` uses 3-space continuation indent while
+the old inline web block used 5-space, regeneration reflows 3 lines of the web
+skill. Whitespace-only, does not affect how Claude reads the prompt (these files
+are prompt text, not strictly-rendered markdown). Benign; noted for completeness.
 
-- Tests are genuine, not hollow: TC-044a/e/f/g fork REAL children, record their
-  PIDs to files, and assert `wait_dead(pid)` on both the leader and the
-  forked child/worker after gate exit. Exit-code contract is asserted directly
-  (0, 7, 124, 125, 2).
-- TC-044l is a BOUNDED `pytest --collect-only -q -p no:cacheprovider` of a
-  SINGLE file — not the recursive full-suite anti-pattern. `timeout=60/120`
-  harness caps are generous relative to the ~1-6s operations they guard →
-  out-of-class per Lesson 1, no finding.
+## Notes on quality (no findings)
+- Correctness: `.format()` fill logic for the desktop question/derive inserts and
+  the response-step number is correct; blank-line handling reproduces the original
+  layout exactly (proven by mobile/desktop generated files being byte-unchanged).
+- Error handling: unknown `skill_name` raises `ValueError` via `_require_uiux_skill`
+  (tested with `implement`, `figma2proto`, `""`).
+- Test coverage: comprehensive — resolvers, per-skill deltas, no-inline (AC-1),
+  exactly-once (TC-041d), drift guard in BOTH directions (canonical-edit mutation
+  self-test + agent-edit containment), whitespace-insensitivity, unknown-skill.
+  The `fragments=` parameter on the guard is a legitimate test-injection seam, not
+  dead config.
