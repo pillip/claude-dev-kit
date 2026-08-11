@@ -1,160 +1,78 @@
-# Security Review (degraded) — ISSUE-038 / PR #59
+# Security Review — ISSUE-039 guard stdin hardening (PR #63)
 
-Runtime `/security-review` is not exposed; this is the degraded-path security pass.
-Scope: the security checklist only (injection, authn/z, secrets, input validation,
-deserialization, dependencies, XSS, misconfiguration). Code-quality and the
-minimality axis are covered by separate invocations.
+Reviewer: degraded-path security reviewer (runtime `/security-review` not exposed).
+Diff range: `e87bc38..cde204d`.
 
-Files reviewed:
-- `project/.claude/hooks/autotest.py` (+256/-81) — the PostToolUse hook now
-  persists a module→test-file index and a debounce state under
-  `.claude/run/autotest_cache.json`.
-- `tests/test_autotest.py` (+206).
+## No findings.
 
-Threat-model baseline (from the task): the hook *already* discovers and executes
-test files from the workspace by design, and can BLOCK the model's action on
-failure. Findings below are scoped to NEW attack surface introduced by the cache.
+No Critical/High/Medium/Low security findings in this diff. The fail-open change
+was audited against the checklist below; conclusions with evidence:
 
-## Surfaces explicitly checked and cleared
+### Fail-open decision and bypass analysis (the central question)
 
-- **Deserialization (pickle vs json).** Cache is read with `json.load` only
-  (`_load_cache`, line 255). No `pickle`/`eval`/`exec`/`yaml.load` anywhere in
-  the diff. `_load_cache` is strictly typed/validated and fail-soft
-  (`{{{ not json` → empty cache; test `test_corrupt_cache_rebuilds_and_exits_clean`).
-  Not a finding.
-- **Shell / command injection into argv.** All `subprocess.run` calls use list
-  form; no `shell=True`. Test file paths become discrete argv elements, so a
-  malicious *filename* cannot break out into a shell. (The one residual argv
-  concern — leading-dash option injection via a *poisoned* cache entry — is
-  folded into Finding 1.)
-- **Secrets / file contents.** The cache stores only file *paths*, `mtime_ns`,
-  `size`, and SHA-1 fingerprints. No file contents, tokens, or env values are
-  persisted. (Absolute-path/username leakage is Finding 4.)
-- **New env-var knobs / new subprocess-timeout instances.** None added.
-  `DEBOUNCE_SECONDS`/`CACHE_VERSION` are module constants, not env knobs; no new
-  `subprocess.run(timeout=...)` seam was introduced (the pre-existing 30s
-  `TIMEOUT` is out of scope per the task).
-- **Test code isolation.** Debounce tests monkeypatch at the correct seam
-  (`autotest.run_python_test`), so no recursive real-pytest spawn; other tests
-  run only trivial tempdir fixtures with test-controlled content. No unsafe
-  execution of untrusted input in the tests.
+**Threat model:** stdin to a PreToolUse hook is written exclusively by the Claude
+Code runtime, which serializes the hook payload itself. The adversarial party
+these guards defend against — a model turn attempting to write a secret or run a
+dangerous command (e.g. under prompt injection) — controls only the *values*
+inside `tool_input`, and the runtime JSON-escapes those values during
+serialization. There is no path by which attacker-influenced tool content can
+make the top-level payload undecodable or non-JSON, so **malformed stdin is not
+an attacker-reachable bypass**; it only occurs on runtime bugs or manual
+invocation. Given that, fail-open with a loud diagnostic is the correct posture:
+fail-closed would let a runtime serialization bug deny all Write/Edit/Bash use,
+and these guards are defense-in-depth behind the Claude Code permission system,
+not the primary boundary. This matches the issue spec's explicit design choice.
 
----
+### Checklist results
 
-### [Medium] Cache-derived related-test paths are executed unvalidated on warm hits (cache poisoning → out-of-tree file execution + pytest/vitest option injection)
+- **Injection/spoofing via diagnostics:** none. Both diagnostic strings
+  (`secret_guard.py:58`, `dangerous_command_guard.py:48`) are compile-time
+  constants with zero interpolation of payload data — no log-injection surface.
+- **Decision-channel integrity:** the diagnostic goes to stderr; stdout stays
+  JSON-or-nothing. Verified by tests asserting `stdout.strip() == ""` on the skip
+  path and `stderr == ""` on the block path, and empirically (rc 0, clean stdout)
+  for garbage / empty / non-dict / undecodable-bytes stdin.
+- **Guard regression on the block path:** none — valid secret and dangerous-command
+  payloads still emit the identical `{"decision": "block"}` stdout JSON (AC2/AC3
+  tests plus 20 pre-existing detection tests, all passing).
+- **Footgun comment accuracy:** verified against the real wrappers. Both
+  `hooks/hooks.json:62,71` and `project/.claude/settings.snippet.json:71,80` wrap
+  the guards in `bash -c '[ -f ... ] && python3 ... || true'`. The comment's
+  claims are correct: `|| true` is harmless while blocking is stdout-JSON with
+  exit 0, and would silently neutralize any future exit-code-2 conversion.
+- **Secrets in code/tests:** no new credentials. Test fixtures use the canonical
+  AWS documentation key (`AKIAIOSFODNN7EXAMPLE`) and synthetic tokens, in files
+  the secret guard's own SKIP_PATTERNS exempt — pre-existing pattern, unchanged.
+- **Dependencies / misconfiguration / XSS / authz:** no dependency, configuration,
+  or user-facing-output changes in the diff — n/a.
 
-**Evidence.** On a warm index hit, `find_related_python_tests` /
-`find_related_js_tests` return `list(cached)` verbatim with no re-validation
-(autotest.py:347-349, 384-386). `_run_source_branch` then appends every cached
-`rf` to `selected` **without** the `os.path.isfile` guard that `primary` gets:
+### Informational notes (not findings, no action required for merge)
 
-```python
-if primary and os.path.isfile(primary):     # primary IS checked
-    test_files.append(primary)
-for rf in related:                            # rf (from cache) is NOT checked
-    if rf not in test_files:
-        test_files.append(rf)
-...
-for tf in selected:
-    blocked = run_python_test(tf) if lang == "py" else run_js_test(tf)
-```
-`run_python_test` passes `tf` straight into `subprocess.run([pytest, tf, "-x", ...])`
-(autotest.py:147-152). Pytest *imports* the file it is pointed at, so an arbitrary
-path executes module-level code.
-
-The warm-hit path is fully attacker-steerable because the stored `fingerprint`
-is itself in the attacker-writable cache: the fingerprint is a SHA-1 of
-`(relpath, mtime_ns, size)` (`_stat_fingerprint`), all computable, so a poisoned
-cache can set `index["fingerprint"]` to match the *current* tree and thereby
-skip the scan entirely while returning arbitrary `modules` entries. Those entries
-can (a) point **outside** `tests/` and outside the project root (path traversal
-past what the scan would ever select), (b) skip the `test_`/`.test.` name
-predicate, and (c) begin with `-` (e.g. `"-pattacker_plugin"`, `"-c/tmp/evil.ini"`,
-`"--pdb"`), which pytest/vitest interpret as **options/plugins**, not paths.
-
-Precondition is local write to `.claude/run/autotest_cache.json`, which is
-roughly baseline-equivalent to dropping a `tests/test_x.py` — hence **Medium**,
-not High. The genuine escalation over baseline is: reaching files *outside* the
-workspace, bypassing the name filter, and injecting collector options/plugins.
-
-**Fix.** Treat cached paths as untrusted on read. In `_run_source_branch` (and/or
-at the point `list(cached)` is returned), drop any entry that is not an existing
-regular file, not under `project_root` (py: under `project_root/tests`), does not
-match the test-name predicate (`_is_python_test_file` / `_is_js_test_file`), or
-starts with `-`. Apply the same `os.path.isfile` guard to `rf` that `primary`
-already gets. This keeps warm-hit performance while making a poisoned cache no
-more powerful than the baseline scan.
-
-### [Low] Debounce trusts an attacker-writable "pass" entry to suppress the block-on-failure safety signal
-
-**Evidence.** `_run_source_branch` returns `None` (no block, tests skipped) when a
-cached debounce entry has `result == "pass"`, a matching `test_set`, and
-`last_run` within `DEBOUNCE_SECONDS` (autotest.py:562-571). The cache is
-fail-soft and writable anywhere in the workspace, so a pre-seeded `"pass"` entry
-— keyed on `lang:abspath(source)` with a forged matching `test_set` (again just
-`(path, mtime_ns, size)` SHA-1 over the unchanged test files) and a recent
-`last_run` — silences a genuine failing run for up to 30s after a source edit
-that breaks tests but doesn't touch the test files. Impact is bounded: this is
-the advisory autotest convenience hook, not an authoritative gate
-(`verify_gates.py`/CI are elsewhere), the window is 30s, and it needs local
-cache write.
-
-**Fix.** Acceptable within the stated threat model, but treat the debounce record
-as advisory-only: document that the autotest hook is not a security control, and
-consider not letting a *stored* `pass` suppress a run across separate hook
-invocations (e.g. keep debounce in memory for a single event, or namespace/sign
-the cache) so on-disk tampering cannot mute a real failure.
-
-### [Low] Non-atomic, symlink-following cache write can clobber a pre-planted symlink target
-
-**Evidence.** `_save_cache` does `os.makedirs(dirname, exist_ok=True)` then
-`open(path, "w")` with no `O_NOFOLLOW` and no atomic temp-then-rename
-(autotest.py:277-279). If `.claude/run/autotest_cache.json` (or `.claude/run/`)
-is a symlink an attacker planted in the workspace, the hook overwrites the link
-target with cache JSON. Content is attacker-uncontrolled JSON, so this is
-destructive (file clobber) rather than an injection vector, and requires the
-attacker to plant the link first. The non-atomic write can also corrupt the
-cache under concurrent hook invocations, though `_load_cache` fails soft on that.
-
-**Fix.** Write to a temp file in the same directory and `os.replace()` into place
-(atomic), and refuse to follow a symlink at the final path (e.g. `os.open` with
-`O_NOFOLLOW`, or reject if `os.path.islink(path)`).
-
-### [Low] Cache persists absolute paths (OS username / project layout) and is not covered by .gitignore
-
-**Evidence.** `python_index`/`js_index` module lists and every `debounce` key
-store `os.path.abspath(...)` values such as `/Users/<user>/...`
-(autotest.py:561, 356, 397). `git check-ignore .claude/run/autotest_cache.json`
-returns "not ignored" (exit 1), and the repo `.gitignore` has no `.claude/run/`
-entry — even though `docs/telemetry_schema.md` asserts `.claude/run/` is
-gitignored. If a consumer commits the cache it leaks local usernames and internal
-test structure. No secrets or file contents are exposed, so severity is Low.
-
-**Fix.** Add `.claude/run/` to the kit's shipped/template `.gitignore` (and this
-repo's), and/or store project-relative paths in the cache instead of absolute
-ones.
-
----
+1. **Diagnostic visibility is bounded by the runtime:** stderr from an exit-0
+   PreToolUse hook surfaces in transcript/verbose output, not as a prominent
+   warning. "Loud" is as loud as the runtime allows for exit 0; this is the
+   documented tradeoff the issue chose over exit-code-2, and the alternative is
+   explicitly out of scope.
+2. **Known residual crash surfaces, both fail-open with visible tracebacks and
+   masked exit codes by `|| true`:** closed stdin fd (code-review finding 1) and
+   wrong-typed dict fields (GAP-039a, out of scope, boundary re-confirmed:
+   `tool_input: null` still tracebacks). Neither is attacker-reachable for the
+   same threat-model reason as above.
+3. **Pre-existing, not in diff:** the `[ -f ... ] &&` wrapper means a
+   missing/renamed guard file silently disables the guard with no diagnostic at
+   all — a quieter fail-open than anything this PR touches. Worth a future issue
+   if guard-presence assurance ever matters.
 
 ## Self-Review
 
-1. **Severity re-assessment.** Finding 1 yields code execution but its precondition
-   (local write to the cache) is ~equivalent to the hook's existing baseline
-   capability, so it is capped at Medium; the delta over baseline (out-of-tree
-   files, name-filter bypass, option injection, scan bypass via forged fingerprint)
-   is real and justifies Medium over Low. Findings 2–4 are bounded, local-precondition,
-   non-injection issues → Low.
-2. **False-positive check.** Finding 1: code-traced — `rf` is appended without the
-   `os.path.isfile` guard `primary` gets, and reaches `subprocess` argv (confirmed
-   autotest.py:549-551, 575-576, 147-152). Finding 4: confirmed via `git check-ignore`
-   exit 1. Finding 3: confirmed `open(path,"w")` with no atomic/no-follow. Finding 2:
-   confirmed `result == "pass"` gate. No FPs identified.
-3. **Blind-spot scan.** Injection (argv list-form — safe; option-injection folded
-   into F1), deserialization (json only — cleared), secrets (no contents stored —
-   cleared), dependencies (none added), authn/z & XSS (n/a for a local FS hook) all
-   re-examined; nothing further surfaced.
-4. **AC note.** Security dimension only; the cache/debounce behave as designed
-   (fail-soft, failures never debounced), which the tests demonstrate.
-5. **Confidence: Medium-High.** The hook is small and fully read; the only real
-   judgment call is the Medium-vs-Low calibration on Finding 1, which I anchored to
-   the local-write precondition and the "new surface beyond baseline" rule.
+- Severity re-assessment: zero findings is the honest result — every candidate
+  either lacks an exploit path under the actual threat model (stdin author is the
+  trusted runtime) or re-litigates an explicit, documented spec decision.
+- False-positive/false-negative check: actively searched for a bypass (can guarded
+  content break the payload parse? No — runtime escapes it) and for diagnostic
+  injection (constant strings — none).
+- Blind spot scan: re-checked all seven checklist categories; only injection,
+  input-validation, and misconfiguration are touched by this diff, and each was
+  probed empirically.
+- Confidence: **High** — wrapper wiring, escape behavior, and all skip/block paths
+  verified by direct execution against both the head and base commits.

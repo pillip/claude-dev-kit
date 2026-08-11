@@ -1,101 +1,46 @@
 {
-  "pr_number": "59",
+  "pr_number": "63",
   "code_source": "reviewer-degraded",
   "security_source": "reviewer-degraded",
   "code_findings": [
     {
-      "severity": "Medium",
-      "title": "Non-atomic, lock-free cache writes: a stale \"pass\" can overwrite a fresh \"fail\" debounce entry under concurrent hook processes",
-      "evidence": "project/.claude/hooks/autotest.py:273-281 _save_cache truncate-writes with open(path,'w')+json.dump (no temp+os.replace, no lock); :585-592 records last_run=time.time() AFTER runs complete (runs can take minutes). Interleaving: slow pass-run finishing after a newer fail-run overwrites result='fail' with 'pass' + fresh last_run; next edit within 30s with unchanged tests is skipped — AC-4 hazard. All other race outcomes (torn write, lost index entry) degrade safely to rebuild/re-run.",
-      "fix": "Write atomically (dump to path+'.tmp', os.replace); record last_run as run START time; when writing 'pass', do not clobber a newer entry whose result is 'fail'."
-    },
-    {
-      "severity": "Medium",
-      "title": "Index caches absolute test paths but fingerprint is relpath-based — mv/clone of the project keeps a matching fingerprint pointing at the old tree",
-      "evidence": "project/.claude/hooks/autotest.py:304 fingerprint uses os.path.relpath(entry.path, scan_root); :356-364 and :397-405 store absolute test_path in the module index; :575-576 run selected files with no existence check. mv (or mtime-preserving copy) keeps mtime_ns -> fingerprint matches -> warm path returns old absolute paths: false 'Test failed' block on missing files, or silently running the ORIGINAL tree's tests (copy case).",
-      "fix": "Store module index entries relative to project_root and join on read; or verify each cached path with os.path.isfile on a warm hit and fall through to rebuild if any is missing."
+      "severity": "Low",
+      "title": "Closed stdin fd still tracebacks (sys.stdin is None)",
+      "evidence": "project/.claude/hooks/secret_guard.py:54, project/.claude/hooks/dangerous_command_guard.py:44 — `python3 secret_guard.py 0<&-` raises `AttributeError: 'NoneType' object has no attribute 'read'`, rc=1. When fd 0 is closed at exec (not merely empty), CPython sets sys.stdin = None, so .read() raises before json.loads and outside the caught exception types. Not reachable under Claude Code's hook invocation (runtime always provides a stdin pipe; the `|| true` wrappers in hooks/hooks.json:62,71 mask the nonzero exit). AC1's empty-stdin case is handled; this is the adjacent absent-stdin case.",
+      "fix": "`raw = sys.stdin.read() if sys.stdin is not None else \"\"` inside the try, or add AttributeError / OSError to the except tuple. One line per guard."
     },
     {
       "severity": "Low",
-      "title": "Fingerprint vs discovery predicate mismatch: hidden-dir JS tests and symlinked test files are discoverable but never invalidate the index",
-      "evidence": "project/.claude/hooks/autotest.py:234-238 _skip_js_scan_dir excludes node_modules AND all hidden dirs from the JS fingerprint; :389-393 the discovery os.walk skips only node_modules (and never prunes dirs, still descending node_modules — pre-existing); :301 is_file(follow_symlinks=False) excludes symlinked test files from the fingerprint while os.walk+open includes them. Adding/changing such a test never refreshes the index (AC-2 corner).",
-      "fix": "Use one predicate on both sides: prune the discovery walk via dirs[:] filtering with _skip_js_scan_dir, and align symlink handling between fingerprint and discovery."
+      "title": "UnicodeDecodeError coverage is load-bearing but implicit and untested",
+      "evidence": "project/.claude/hooks/secret_guard.py:55, project/.claude/hooks/dangerous_command_guard.py:45 — `printf '\\xff\\xfe{\"a\":1}' | python3 secret_guard.py` yields the diagnostic with rc 0 only because UnicodeDecodeError subclasses ValueError. Nothing in the code says so, and no test exercises it: run_hook_raw uses text=True so it physically cannot send undecodable bytes. A future cleanup narrowing the except to json.JSONDecodeError alone would reintroduce a traceback on undecodable stdin and the suite would stay green.",
+      "fix": "Append `# ValueError also covers UnicodeDecodeError (undecodable stdin)` to the except line, and optionally add one bytes-mode test per file (subprocess.run without text=True, input=b\"\\xff\\xfe\") asserting rc 0 + diagnostic."
     },
     {
       "severity": "Low",
-      "title": "Warm-path cache entries not validated to string paths — valid-JSON garbage reaches subprocess.run and crashes the hook (fail-soft contract dent)",
-      "evidence": "project/.claude/hooks/autotest.py:347-349 and :384-386 'if isinstance(cached, list): return list(cached)' trusts element types; _load_cache (:258-269) validates outer shape only. A hand-edited cache with e.g. [1] passes validation, then subprocess.run([pytest_cmd, 1, ...]) raises uncaught TypeError -> traceback, exit 1 (non-blocking noise, no exploit path).",
-      "fix": "Accept a cached hit only if all(isinstance(x, str) for x in cached) (optionally + os.path.isfile, which also mitigates the stale-abs-path finding); otherwise rebuild."
+      "title": "run_hook_raw / run_hook subprocess calls have no timeout (assessed per recalled hard-coded-timeout lesson)",
+      "evidence": "tests/test_secret_guard.py:22-28, tests/test_dangerous_command_guard.py:22-28 (pre-existing run_hook:9-19 likewise) — subprocess.run([sys.executable, str(SCRIPT)], input=raw_stdin, capture_output=True, text=True) with no timeout=. Assessed against the ISSUE-046/047 timeout lesson: this seam is NOT the test-runner-spawning class that bit us. The child is a ~90-line script with no network, no recursion, and stdin fully delivered and closed by subprocess.run(input=); hang risk is negligible and the 39-test targeted run completes in 0.69s. Flagged only for completeness; the timeout-sentinel concern does not apply.",
+      "fix": "Optional: timeout=10 on both helpers as cheap insurance against a future hook edit that blocks on input."
     },
     {
       "severity": "Low",
-      "title": "DEBOUNCE_SECONDS is a new hard-coded time knob with no env override and no doc line",
-      "evidence": "project/.claude/hooks/autotest.py:20 'DEBOUNCE_SECONDS = 30.0'; zero mentions in module docstring, README, or docs/troubleshooting.md (grep-verified). Kit lesson ISSUE-046/047: undocumented, non-configurable timing constants recur as breakage. Cannot break gates (not a subprocess timeout; failures are exempt from debounce). Diff introduces no new subprocess timeout= literals.",
-      "fix": "DEBOUNCE_SECONDS = float(os.environ.get('AUTOTEST_DEBOUNCE_SECONDS', '30')) + one docstring line + one docs/troubleshooting.md line (0 = disable)."
-    },
-    {
-      "severity": "Low",
-      "title": "Debounce map grows without pruning; entire cache JSON rewritten every event",
-      "evidence": "project/.claude/hooks/autotest.py:587-592 cache['debounce'][key] keyed by absolute source path; entries for deleted/renamed files persist forever and every event round-trips the full JSON. Bounded by source-file count — perf/bloat only.",
-      "fix": "On save, drop debounce entries with last_run older than a few debounce windows (one-line dict comprehension)."
-    },
-    {
-      "severity": "Low",
-      "title": "Coverage gap: debounce window expiry is untested — an unbounded-window regression would silently stop re-testing passing modules",
-      "evidence": "tests/test_autotest.py:571-595 asserts the within-window skip only; no test asserts a re-run once DEBOUNCE_SECONDS elapses. A flipped comparison or wrong last_run type would pass every current test.",
-      "fix": "Monkeypatch autotest.time.time (or set autotest.DEBOUNCE_SECONDS = 0.0) and assert the second handle_event re-runs the tests."
-    },
-    {
-      "severity": "Low",
-      "title": "Corrupt-cache test cannot detect a late hook crash — run_hook discards returncode/stderr, making 'exits clean' unasserted",
-      "evidence": "tests/test_autotest.py:11-21 run_hook returns parsed stdout or None; tests/test_autotest.py:542-547 asserts out is None + rebuilt cache is valid JSON. A crash AFTER find_related_python_tests saves the rebuilt cache (e.g. in the debounce block) yields empty stdout + exit 1 and the test still passes. Crash-on-load IS caught (cache stays corrupt).",
-      "fix": "Surface result.returncode/stderr from run_hook (or locally in this test) and assert returncode == 0 with no traceback in stderr."
-    },
-    {
-      "severity": "Low",
-      "title": "[debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR",
-      "evidence": "checkpoint.sh --skill review --phase debt --issue ISSUE-038: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-046/047 reviews' ledgers — pre-existing, not from PR #59's diff.",
-      "fix": "Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out."
+      "title": "[debt] Debt-ledger no-trigger markers are pre-existing harvester self-matches, none from this PR",
+      "evidence": "Advisory debt checkpoint: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring example line; tests/test_debt_harvest.py:27,59 test-fixture strings), 1 malformed (tests/test_debt_harvest.py:35 fixture). All are the harvester's own documentation/fixture text matching its own pattern — known false-positive class already recorded in the ISSUE-047 review. This diff introduces zero KIT-DEBT markers.",
+      "fix": "No action for this PR. Follow-up candidate: teach debt_harvest.py to skip its own source/tests or require the marker at comment position."
     }
   ],
-  "security_findings": [
-    {
-      "severity": "Medium",
-      "title": "Cache-derived related-test paths executed unvalidated on warm hits (cache poisoning -> out-of-tree file execution + pytest/vitest option injection)",
-      "evidence": "find_related_python_tests/find_related_js_tests return list(cached) with no re-validation (autotest.py:347-349, 384-386); _run_source_branch appends cached rf without the os.path.isfile guard primary gets (autotest.py:549-551) and passes it to subprocess argv in run_python_test ([pytest, tf, -x, ...], autotest.py:147-152). The stored fingerprint is itself in the writable cache, so a poisoned cache can match the current tree, skip the scan, and return arbitrary modules entries pointing outside tests/ or the project root, bypassing the test-name predicate, or starting with '-' (interpreted by pytest/vitest as options/plugins like -p/-c/--pdb).",
-      "fix": "Treat cached paths as untrusted on read: drop any entry that is not an existing regular file, not under project_root (py: project_root/tests), fails the _is_*_test_file predicate, or starts with '-'. Apply the os.path.isfile guard to rf that primary already gets."
-    },
-    {
-      "severity": "Low",
-      "title": "Debounce trusts an attacker-writable 'pass' entry to suppress the block-on-failure safety signal",
-      "evidence": "_run_source_branch returns None (tests skipped, no block) when a cached debounce entry has result=='pass', matching test_set, and last_run within DEBOUNCE_SECONDS (autotest.py:562-571). The fail-soft, workspace-writable cache lets a pre-seeded 'pass' entry (forged test_set is just a SHA-1 over unchanged test files' path/mtime/size) mute a genuine failing run for up to 30s after a source edit that breaks tests without touching test files. Bounded: advisory hook, 30s window, local-write precondition.",
-      "fix": "Document that autotest is not a security control; consider not letting a stored 'pass' suppress a run across separate hook invocations (in-memory debounce, or namespace/sign the cache) so on-disk tampering cannot mute a real failure."
-    },
-    {
-      "severity": "Low",
-      "title": "Non-atomic, symlink-following cache write can clobber a pre-planted symlink target",
-      "evidence": "_save_cache does os.makedirs(exist_ok=True) then open(path, 'w') with no O_NOFOLLOW and no atomic temp-then-rename (autotest.py:277-279). If .claude/run/autotest_cache.json or .claude/run/ is an attacker-planted symlink, the hook overwrites the target with cache JSON (destructive clobber, not injection). Non-atomic write can also corrupt the cache under concurrent hooks.",
-      "fix": "Write to a temp file in the same dir and os.replace() into place; refuse to follow a symlink at the final path (os.open with O_NOFOLLOW, or reject if os.path.islink(path))."
-    },
-    {
-      "severity": "Low",
-      "title": "Cache persists absolute paths (OS username / project layout) and is not covered by .gitignore",
-      "evidence": "python_index/js_index module lists and every debounce key store os.path.abspath(...) values like /Users/<user>/... (autotest.py:561, 356, 397). git check-ignore .claude/run/autotest_cache.json returns not-ignored (exit 1) and the repo .gitignore has no .claude/run/ entry, though docs/telemetry_schema.md asserts .claude/run/ is gitignored. No secrets/file-contents are stored, so impact is limited to leaking usernames and test structure if committed.",
-      "fix": "Add .claude/run/ to the kit's shipped/template .gitignore (and this repo's), and/or store project-relative paths in the cache."
-    }
-  ],
+  "security_findings": [],
   "minimality_findings": [
     {
       "severity": "Low",
-      "title": "[shrink] _load and _make_python_project duplicated verbatim between TestIndexCache and TestDebounce",
-      "evidence": "tests/test_autotest.py:545-560 duplicates tests/test_autotest.py:447-467 helper-for-helper.",
-      "fix": "Hoist both to module-level helpers (or a fixture) shared by the two classes (~22 lines removed)."
+      "title": "[shrink] run_hook can delegate to run_hook_raw in test_secret_guard.py",
+      "evidence": "tests/test_secret_guard.py:9 — run_hook's duplicated subprocess.run block.",
+      "fix": "out = run_hook_raw(json.dumps(payload)).stdout.strip(); return json.loads(out) if out else None (~7 lines removable)."
     },
     {
       "severity": "Low",
-      "title": "[delete] Per-call sys.path.insert + importlib.reload in test _load helpers",
-      "evidence": "tests/test_autotest.py:449-452 (and 547-550): the hook module holds no mutable global state the tests need reset, and repeated inserts accumulate in sys.path.",
-      "fix": "Single module-level import of autotest, folded into the shared helper above (~4 lines removed)."
+      "title": "[shrink] run_hook can delegate to run_hook_raw in test_dangerous_command_guard.py",
+      "evidence": "tests/test_dangerous_command_guard.py:9 — same duplicated subprocess.run block.",
+      "fix": "Same delegation of run_hook to run_hook_raw (~7 lines removable). Net removable across both files: ~14 lines. Deliberately NOT flagged: the duplicated footgun comment block (guards are standalone scripts with no import path) and the technically-redundant (JSONDecodeError, ValueError) tuple — its ValueError breadth is load-bearing per code finding 2; do not narrow it."
     }
   ],
   "ui_findings": null,
