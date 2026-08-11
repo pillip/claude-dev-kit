@@ -1,160 +1,41 @@
-# Security Review (degraded) — ISSUE-038 / PR #59
+# Security Review — ISSUE-042 (PR #64, branch issue/ISSUE-042-sprint-disable-model-invocation @ 82016f5)
 
-Runtime `/security-review` is not exposed; this is the degraded-path security pass.
-Scope: the security checklist only (injection, authn/z, secrets, input validation,
-deserialization, dependencies, XSS, misconfiguration). Code-quality and the
-minimality axis are covered by separate invocations.
+Dimension: security only (degraded path — runtime /security-review unavailable).
+Reviewer: degraded-path security auditor. Scope: 3-file diff vs main (49 insertions, 0 deletions).
 
-Files reviewed:
-- `project/.claude/hooks/autotest.py` (+256/-81) — the PostToolUse hook now
-  persists a module→test-file index and a debounce state under
-  `.claude/run/autotest_cache.json`.
-- `tests/test_autotest.py` (+206).
+## Verdict
 
-Threat-model baseline (from the task): the hook *already* discovers and executes
-test files from the workspace by design, and can BLOCK the model's action on
-failure. Findings below are scoped to NEW attack surface introduced by the cache.
+Security-positive change. One Low finding on guard-test robustness; no Critical/High/Medium findings.
 
-## Surfaces explicitly checked and cleared
+The change correctly closes the autonomous-invocation hole: `disable-model-invocation: true`
+is now set on the sprint skill in both the template and the generated file, making sprint —
+the heaviest repo-mutating orchestrator (allowed-tools includes `Bash(git *)`, `Bash(gh *)`,
+`Bash(python3 scripts/*)`, `Task`, `Write`, `Edit`) — invocable only by explicit user
+`/sprint`, never by autonomous model invocation (e.g., steered by prompt-injected repo
+content). All six orchestrators (implement, review, ship, kickoff, scan, sprint) are now
+consistent, each verified at `skills/<skill>/SKILL.md:4-5` in this worktree.
 
-- **Deserialization (pickle vs json).** Cache is read with `json.load` only
-  (`_load_cache`, line 255). No `pickle`/`eval`/`exec`/`yaml.load` anywhere in
-  the diff. `_load_cache` is strictly typed/validated and fail-soft
-  (`{{{ not json` → empty cache; test `test_corrupt_cache_rebuilds_and_exits_clean`).
-  Not a finding.
-- **Shell / command injection into argv.** All `subprocess.run` calls use list
-  form; no `shell=True`. Test file paths become discrete argv elements, so a
-  malicious *filename* cannot break out into a shell. (The one residual argv
-  concern — leading-dash option injection via a *poisoned* cache entry — is
-  folded into Finding 1.)
-- **Secrets / file contents.** The cache stores only file *paths*, `mtime_ns`,
-  `size`, and SHA-1 fingerprints. No file contents, tokens, or env values are
-  persisted. (Absolute-path/username leakage is Finding 4.)
-- **New env-var knobs / new subprocess-timeout instances.** None added.
-  `DEBOUNCE_SECONDS`/`CACHE_VERSION` are module constants, not env knobs; no new
-  `subprocess.run(timeout=...)` seam was introduced (the pre-existing 30s
-  `TIMEOUT` is out of scope per the task).
-- **Test code isolation.** Debounce tests monkeypatch at the correct seam
-  (`autotest.run_python_test`), so no recursive real-pytest spawn; other tests
-  run only trivial tempdir fixtures with test-controlled content. No unsafe
-  execution of untrusted input in the tests.
+## Findings
 
----
+### [Low] Guard test's first-match frontmatter parse can disagree with the runtime YAML parser on duplicate keys
 
-### [Medium] Cache-derived related-test paths are executed unvalidated on warm hits (cache poisoning → out-of-tree file execution + pytest/vitest option injection)
+- **Severity:** Low (requires a committed edit by someone who already has repo write access; no external attack vector — per policy, no-exploit-path caps at Medium, and this is theoretical, so Low).
+- **Evidence:** `tests/test_orchestrator_disable_model_invocation.py:34-42` — the loop `return`s on the FIRST unindented `disable-model-invocation:` line and never inspects the rest of the frontmatter.
+- **Impact:** If a later duplicate line `disable-model-invocation: false` were ever added to the frontmatter, the guard would still pass (first occurrence is `true`), while the runtime parser would either take last-wins (PyYAML-style → flag becomes `false`) or reject the block entirely (js-yaml-style duplicate-key error → all frontmatter silently dropped, which also drops `allowed-tools`). Both runtime outcomes are fail-open — autonomous invocation re-enabled — while the security guard stays green. The kit's oracle does not catch this either: `scripts/validate_frontmatter.py:32` limits pattern checks to `SCALAR_KEYS = {"name", "description", "argument-hint"}`, and its PyYAML path (`scripts/validate_frontmatter.py:84`) accepts duplicate keys without error (last-wins).
+- **Fix:** In the guard test, collect ALL top-level `disable-model-invocation` occurrences and assert (a) exactly one exists and (b) its value is `true` — e.g., gather matches into a list, `assert len(matches) == 1` then assert the value, instead of returning on the first hit. Two-line change, keeps the no-PyYAML constraint (ISSUE-021).
 
-**Evidence.** On a warm index hit, `find_related_python_tests` /
-`find_related_js_tests` return `list(cached)` verbatim with no re-validation
-(autotest.py:347-349, 384-386). `_run_source_branch` then appends every cached
-`rf` to `selected` **without** the `os.path.isfile` guard that `primary` gets:
+## Checklist results (no findings)
 
-```python
-if primary and os.path.isfile(primary):     # primary IS checked
-    test_files.append(primary)
-for rf in related:                            # rf (from cache) is NOT checked
-    if rf not in test_files:
-        test_files.append(rf)
-...
-for tf in selected:
-    blocked = run_python_test(tf) if lang == "py" else run_js_test(tf)
-```
-`run_python_test` passes `tf` straight into `subprocess.run([pytest, tf, "-x", ...])`
-(autotest.py:147-152). Pytest *imports* the file it is pointed at, so an arbitrary
-path executes module-level code.
+- **Injection / parsing confusion in the added frontmatter line:** None. `disable-model-invocation: true` (`skills/sprint/SKILL.md:5`, `skills/sprint/SKILL.md.tmpl:5`) is a static plain-scalar boolean — no user-controlled data, no quoting hazard, no `: ` inside a value, no flow-sequence. Oracle confirms: `python3 scripts/validate_frontmatter.py` → "Frontmatter OK — 55 skill/agent files parse cleanly." The key is outside `SCALAR_KEYS`, so no pattern-check interference, and it parses to a clean boolean under YAML.
+- **Test file attack surface:** Pure read-only. Imports only `pathlib.Path` and `pytest`; the only I/O is `path.read_text(encoding="utf-8")` (`tests/test_orchestrator_disable_model_invocation.py:25`). Paths are built from a frozen literal tuple (`ORCHESTRATOR_SKILLS`, line 21) joined under `ROOT` — no external input, so no path traversal. No file writes, no subprocess, no network, no environment mutation. Deliberately avoids PyYAML (no new dependency surface) and avoids subprocess (no shell surface).
+- **allowed-tools unchanged:** Confirmed in the diff for both `skills/sprint/SKILL.md` and `skills/sprint/SKILL.md.tmpl` — the `allowed-tools:` line appears only as an unmodified context line. No tool-surface widening.
+- **Regression protection is real and composes:** The guard checks the GENERATED `SKILL.md` (what Claude Code actually loads). The bypass route "edit the .tmpl, skip regeneration" is closed by the pre-existing drift guard (`tests/test_gen_skills.py:131` `test_dry_run_passes_when_fresh`, `:139` `test_dry_run_detects_stale`); regenerating from a flag-stripped tmpl trips the new guard. Exact-match `value.strip() == "true"` is fail-closed: quoted `'true'`, `True`, or a missing key all fail the test.
+- **Guard demonstrated live:** During this review the test was observed failing with `disable-model-invocation is set to 'false'` while the worktree file transiently differed (concurrent activity in the shared worktree — consistent with a parallel refute-first mutation check), then passing (6/6) against the committed state. The guard tripped on `false` and passed on `true` — it detects exactly the regression it exists to prevent. Informational only: like all lint tests here, it reads shared working-tree state, so concurrent mutation of the worktree can race it; not a defect of this change.
 
-The warm-hit path is fully attacker-steerable because the stored `fingerprint`
-is itself in the attacker-writable cache: the fingerprint is a SHA-1 of
-`(relpath, mtime_ns, size)` (`_stat_fingerprint`), all computable, so a poisoned
-cache can set `index["fingerprint"]` to match the *current* tree and thereby
-skip the scan entirely while returning arbitrary `modules` entries. Those entries
-can (a) point **outside** `tests/` and outside the project root (path traversal
-past what the scan would ever select), (b) skip the `test_`/`.test.` name
-predicate, and (c) begin with `-` (e.g. `"-pattacker_plugin"`, `"-c/tmp/evil.ini"`,
-`"--pdb"`), which pytest/vitest interpret as **options/plugins**, not paths.
+## Self-review
 
-Precondition is local write to `.claude/run/autotest_cache.json`, which is
-roughly baseline-equivalent to dropping a `tests/test_x.py` — hence **Medium**,
-not High. The genuine escalation over baseline is: reaching files *outside* the
-workspace, bypassing the name filter, and injecting collector options/plugins.
-
-**Fix.** Treat cached paths as untrusted on read. In `_run_source_branch` (and/or
-at the point `list(cached)` is returned), drop any entry that is not an existing
-regular file, not under `project_root` (py: under `project_root/tests`), does not
-match the test-name predicate (`_is_python_test_file` / `_is_js_test_file`), or
-starts with `-`. Apply the same `os.path.isfile` guard to `rf` that `primary`
-already gets. This keeps warm-hit performance while making a poisoned cache no
-more powerful than the baseline scan.
-
-### [Low] Debounce trusts an attacker-writable "pass" entry to suppress the block-on-failure safety signal
-
-**Evidence.** `_run_source_branch` returns `None` (no block, tests skipped) when a
-cached debounce entry has `result == "pass"`, a matching `test_set`, and
-`last_run` within `DEBOUNCE_SECONDS` (autotest.py:562-571). The cache is
-fail-soft and writable anywhere in the workspace, so a pre-seeded `"pass"` entry
-— keyed on `lang:abspath(source)` with a forged matching `test_set` (again just
-`(path, mtime_ns, size)` SHA-1 over the unchanged test files) and a recent
-`last_run` — silences a genuine failing run for up to 30s after a source edit
-that breaks tests but doesn't touch the test files. Impact is bounded: this is
-the advisory autotest convenience hook, not an authoritative gate
-(`verify_gates.py`/CI are elsewhere), the window is 30s, and it needs local
-cache write.
-
-**Fix.** Acceptable within the stated threat model, but treat the debounce record
-as advisory-only: document that the autotest hook is not a security control, and
-consider not letting a *stored* `pass` suppress a run across separate hook
-invocations (e.g. keep debounce in memory for a single event, or namespace/sign
-the cache) so on-disk tampering cannot mute a real failure.
-
-### [Low] Non-atomic, symlink-following cache write can clobber a pre-planted symlink target
-
-**Evidence.** `_save_cache` does `os.makedirs(dirname, exist_ok=True)` then
-`open(path, "w")` with no `O_NOFOLLOW` and no atomic temp-then-rename
-(autotest.py:277-279). If `.claude/run/autotest_cache.json` (or `.claude/run/`)
-is a symlink an attacker planted in the workspace, the hook overwrites the link
-target with cache JSON. Content is attacker-uncontrolled JSON, so this is
-destructive (file clobber) rather than an injection vector, and requires the
-attacker to plant the link first. The non-atomic write can also corrupt the
-cache under concurrent hook invocations, though `_load_cache` fails soft on that.
-
-**Fix.** Write to a temp file in the same directory and `os.replace()` into place
-(atomic), and refuse to follow a symlink at the final path (e.g. `os.open` with
-`O_NOFOLLOW`, or reject if `os.path.islink(path)`).
-
-### [Low] Cache persists absolute paths (OS username / project layout) and is not covered by .gitignore
-
-**Evidence.** `python_index`/`js_index` module lists and every `debounce` key
-store `os.path.abspath(...)` values such as `/Users/<user>/...`
-(autotest.py:561, 356, 397). `git check-ignore .claude/run/autotest_cache.json`
-returns "not ignored" (exit 1), and the repo `.gitignore` has no `.claude/run/`
-entry — even though `docs/telemetry_schema.md` asserts `.claude/run/` is
-gitignored. If a consumer commits the cache it leaks local usernames and internal
-test structure. No secrets or file contents are exposed, so severity is Low.
-
-**Fix.** Add `.claude/run/` to the kit's shipped/template `.gitignore` (and this
-repo's), and/or store project-relative paths in the cache instead of absolute
-ones.
-
----
-
-## Self-Review
-
-1. **Severity re-assessment.** Finding 1 yields code execution but its precondition
-   (local write to the cache) is ~equivalent to the hook's existing baseline
-   capability, so it is capped at Medium; the delta over baseline (out-of-tree
-   files, name-filter bypass, option injection, scan bypass via forged fingerprint)
-   is real and justifies Medium over Low. Findings 2–4 are bounded, local-precondition,
-   non-injection issues → Low.
-2. **False-positive check.** Finding 1: code-traced — `rf` is appended without the
-   `os.path.isfile` guard `primary` gets, and reaches `subprocess` argv (confirmed
-   autotest.py:549-551, 575-576, 147-152). Finding 4: confirmed via `git check-ignore`
-   exit 1. Finding 3: confirmed `open(path,"w")` with no atomic/no-follow. Finding 2:
-   confirmed `result == "pass"` gate. No FPs identified.
-3. **Blind-spot scan.** Injection (argv list-form — safe; option-injection folded
-   into F1), deserialization (json only — cleared), secrets (no contents stored —
-   cleared), dependencies (none added), authn/z & XSS (n/a for a local FS hook) all
-   re-examined; nothing further surfaced.
-4. **AC note.** Security dimension only; the cache/debounce behave as designed
-   (fail-soft, failures never debounced), which the tests demonstrate.
-5. **Confidence: Medium-High.** The hook is small and fully read; the only real
-   judgment call is the Medium-vs-Low calibration on Finding 1, which I anchored to
-   the local-write precondition and the "new surface beyond baseline" rule.
+1. **Severity re-assessment:** The single Low is a guard-robustness gap with no external exploit path — Low is correct, not confrontation-avoidance; there is no realistic path to High.
+2. **False-positive check:** Initial concern about tmpl/generated drift was refuted by `test_gen_skills.py` dry-run guards and removed. The duplicate-key finding was checked against the oracle — `validate_frontmatter.py` does not catch duplicates — so it stands.
+3. **Blind-spot scan (security dimension):** secrets — none added; authn/z — n/a; dependencies — none added; XSS — n/a; misconfiguration — the change REMOVES one (autonomous invocation of a repo-mutating orchestrator was previously possible). Cross-checked all six orchestrator skills for flag presence and consistency: all set `disable-model-invocation: true`.
+4. **AC verification:** ISSUE-042 asks for `disable-model-invocation: true` on the sprint skill. Satisfied in both source template and generated file, with a regression guard covering all six orchestrators. Validator passes across all 55 skill/agent files.
+5. **Confidence:** High for the diff itself (small, fully read, oracle-verified, test run twice). Medium only on the exact duplicate-key semantics of Claude Code's runtime YAML parser (last-wins vs reject) — flagged inside the Low finding; the finding holds under either behavior.
