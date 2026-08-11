@@ -1,24 +1,27 @@
-# Security Review — ISSUE-041 (degraded-path, security dimension)
+# Security review (degraded-path, dimension: security)
 
-Surface: build-time codegen (`scripts/fragments.py`, `scripts/gen_skills.py`) plus
-prompt/instruction text files. No network, no user-facing runtime, no data store.
+PR #73 (ISSUE-045) — TESTS-ONLY. Scope: risk introduced by the TEST code itself
+(argv injection, path traversal, untrusted input, out-of-tree execution).
 
-Checks performed:
-- `grep -nE 'eval\(|exec\(|os\.system|subprocess|shell=True|__import__|pickle'`
-  over `scripts/fragments.py` and `scripts/gen_skills.py` → **none found**.
-- Token resolution: `design_philosophy_fragment` / `design_philosophy_checkpoint`
-  call `str.format()` on **constant** templates, filling only constant values
-  (`_DESKTOP_EXTRA_QUESTION`, `_DESKTOP_EXTRA_DERIVE`, `_RESPONSE_STEP[...]`,
-  `/shortcut`). No untrusted/user input flows into the format string or its args,
-  so there is no format-string / injection vector.
-- `skill_name` is validated by `_require_uiux_skill` (raises `ValueError` for any
-  value outside the fixed `UIUX_SKILLS` tuple); `_RESPONSE_STEP[skill_name]` is
-  therefore always a known key (no `KeyError`/lookup-of-attacker-string path).
-- No file paths are constructed from input in `fragments.py` (no path traversal).
-  `gen_skills.py` globs `skills/*/SKILL.md.tmpl` from a fixed `KIT_ROOT` and writes
-  siblings — unchanged by this PR.
-- No secrets, keys, or credentials introduced.
+## Verification performed
+
+- The only `subprocess.run` (test_figma_verify_family.py:89-95) uses a fixed
+  argv list `[sys.executable, "-c", code]` — no `shell=True`, and `code` is a
+  hardcoded literal with no interpolation of dynamic/untrusted values. `cwd` is
+  derived from `__file__` (`Path(__file__).resolve().parents[1]`), a trusted
+  in-tree path. No injection surface, no out-of-tree file execution.
+- No network egress from the tests: `_check_playwright` and the browser
+  extraction functions are mocked to constants, and every `main()` invocation
+  supplies `--implementation`/`--url` so the real `_check_dev_server`
+  (localhost probes) and the pip/playwright auto-install path are never reached.
+- No path traversal / untrusted input: all filesystem paths are `tmp_path`
+  fixtures or the `__file__`-relative `FIXTURE`. Writes (`generate_css_file`,
+  skill fixture writers) stay under `tmp_path`.
+- No secrets, credentials, or hardcoded tokens in the test code or the
+  `design_data.json` fixture (fixture holds only synthetic colors/text nodes).
+- No `eval`/`exec` of untrusted data. The `_EXTRACT_JS` browser payload is never
+  executed by tests (the extraction seam is mocked).
 
 ## Findings
 
-_No findings._
+No findings.

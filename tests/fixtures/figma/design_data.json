@@ -1,0 +1,161 @@
+{
+  "summary": {
+    "colors": ["#3B82F6", "#111827", "#FFFFFF"],
+    "text_styles": [
+      {"font_family": "Inter", "font_size_px": 16, "font_weight": 400},
+      {"font_family": "Inter", "font_size_px": 32, "font_weight": 700}
+    ],
+    "font_weights": [400, 700],
+    "spacings": [8, 16, 24, 32],
+    "border_radii": [8, 12],
+    "interaction_states": [
+      {"state": "hover", "name": "Primary Button / hover", "colors": ["#2563EB", "#FFFFFF"]},
+      {"state": "focus", "name": "Nav / focus", "colors": ["#1D4ED8"]}
+    ]
+  },
+  "assets": [
+    {"name": "Logo", "node_id": "10:1", "path": "figma-export/assets/logo.svg"}
+  ],
+  "frames": [
+    {
+      "breakpoint": "desktop",
+      "tree": {
+        "name": "Home",
+        "type": "FRAME",
+        "node_id": "1:1",
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 900,
+        "background_color": "#FFFFFF",
+        "layout": {
+          "mode": "column",
+          "gap": 24,
+          "padding_top": 32,
+          "padding_right": 32,
+          "padding_bottom": 32,
+          "padding_left": 32
+        },
+        "children": [
+          {
+            "name": "Header",
+            "type": "FRAME",
+            "node_id": "2:1",
+            "x": 0,
+            "y": 0,
+            "width": 1440,
+            "height": 80,
+            "layout": {
+              "mode": "row",
+              "gap": 16,
+              "justify_content": "space-between",
+              "align_items": "center"
+            },
+            "children": [
+              {
+                "name": "Logo",
+                "type": "INSTANCE",
+                "node_id": "10:1",
+                "x": 32,
+                "y": 24,
+                "width": 120,
+                "height": 32,
+                "has_background_image": false
+              },
+              {
+                "name": "Nav",
+                "type": "FRAME",
+                "node_id": "3:1",
+                "x": 1200,
+                "y": 24,
+                "width": 208,
+                "height": 32,
+                "layout": {"mode": "row", "gap": 16},
+                "children": [
+                  {
+                    "name": "Home Link",
+                    "type": "TEXT",
+                    "node_id": "4:1",
+                    "x": 1200,
+                    "y": 28,
+                    "width": 60,
+                    "height": 24,
+                    "text_style": {
+                      "text_content": "Home",
+                      "font_family": "Inter",
+                      "font_size_px": 16,
+                      "font_weight": 400,
+                      "color": "#111827"
+                    }
+                  },
+                  {
+                    "name": "About Link",
+                    "type": "TEXT",
+                    "node_id": "4:2",
+                    "x": 1320,
+                    "y": 28,
+                    "width": 60,
+                    "height": 24,
+                    "text_style": {
+                      "text_content": "About",
+                      "font_family": "Inter",
+                      "font_size_px": 16,
+                      "font_weight": 400,
+                      "color": "#111827"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Hero Title",
+            "type": "TEXT",
+            "node_id": "5:1",
+            "x": 32,
+            "y": 160,
+            "width": 800,
+            "height": 40,
+            "text_style": {
+              "text_content": "Welcome to the Dashboard",
+              "font_family": "Inter",
+              "font_size_px": 32,
+              "font_weight": 700,
+              "color": "#3B82F6",
+              "text_align": "left"
+            }
+          },
+          {
+            "name": "Primary Button",
+            "type": "COMPONENT",
+            "node_id": "6:1",
+            "x": 32,
+            "y": 220,
+            "width": 160,
+            "height": 48,
+            "background_color": "#3B82F6",
+            "border_radius": 8,
+            "children": [
+              {
+                "name": "Button Label",
+                "type": "TEXT",
+                "node_id": "7:1",
+                "x": 60,
+                "y": 232,
+                "width": 100,
+                "height": 24,
+                "text_style": {
+                  "text_content": "Get Started",
+                  "font_family": "Inter",
+                  "font_size_px": 16,
+                  "font_weight": 700,
+                  "color": "#FFFFFF"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
