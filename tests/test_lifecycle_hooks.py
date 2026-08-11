@@ -205,6 +205,12 @@ def test_session_start_standalone_root_prints_resolvable_report_path():
         assert "CONTRIBUTOR MODE: ON" in out
         match = re.search(r"python3 (\S*contributor_report\.py)", out)
         assert match, f"no contributor_report.py invocation found in:\n{out}"
-        assert Path(match.group(1)).is_file(), (
-            f"printed invocation path does not exist on disk: {match.group(1)}")
+        # Pin the printed path to the FIXTURE root (subsumes an is_file()
+        # check): without the pin, a resolution regression silently falls
+        # back to parents[3] — the real kit repo — and the guard hollow-
+        # passes against the wrong root (ISSUE-047 review lesson; found in
+        # ISSUE-037 review, PR #58).
+        assert match.group(1) == str(root / "scripts" / "contributor_report.py"), (
+            f"printed invocation path is not the fixture's contributor_report.py "
+            f"(real-repo fallback?): {match.group(1)}")
         assert not re.search(VERSION_PINNED_CACHE_RE, out)
