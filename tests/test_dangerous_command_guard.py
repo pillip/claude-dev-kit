@@ -19,6 +19,15 @@ def run_hook(payload: dict) -> dict | None:
     return None
 
 
+def run_hook_raw(raw_stdin: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        input=raw_stdin,
+        capture_output=True,
+        text=True,
+    )
+
+
 def make_bash_payload(command: str) -> dict:
     return {
         "tool_name": "Bash",
@@ -123,3 +132,32 @@ class TestNonBashTool:
         }
         out = run_hook(payload)
         assert out is None
+
+
+class TestMalformedStdin:
+    def assert_guard_skipped(self, result: subprocess.CompletedProcess):
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+        assert "dangerous_command_guard" in result.stderr
+        assert "malformed hook payload" in result.stderr
+        assert "guard skipped" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    def test_garbage_stdin_skips_guard_without_traceback(self):
+        result = run_hook_raw("not-json")
+        self.assert_guard_skipped(result)
+
+    def test_empty_stdin_skips_guard_without_traceback(self):
+        result = run_hook_raw("")
+        self.assert_guard_skipped(result)
+
+    def test_truncated_json_skips_guard_without_traceback(self):
+        result = run_hook_raw('{"tool_name": "Write", "tool_input": {')
+        self.assert_guard_skipped(result)
+
+    def test_valid_blocking_payload_keeps_stderr_clean(self):
+        result = run_hook_raw(json.dumps(make_bash_payload("rm -rf /")))
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["decision"] == "block"
+        assert result.stderr == ""
