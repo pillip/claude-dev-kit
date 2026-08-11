@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
+
+# Session telemetry (kit runtime state); only the run/ subpath — .claude/ itself stays visible
+.claude/run/
 .worktrees/
 *.lock
 # uv.lock must be tracked for reproducible builds

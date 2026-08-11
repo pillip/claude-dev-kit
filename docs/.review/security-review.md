@@ -1,48 +1,9 @@
-# Security Review (degraded) — ISSUE-040 / PR #65
+# Security Review (degraded path — reviewer agent) — PR #68 / ISSUE-043
 
-Runtime `/security-review` is not exposed; this is the degraded-path security pass.
-Scope: security checklist only (injection, authn/z, secrets, input validation,
-deserialization, dependencies, XSS, misconfiguration) over `git diff main...HEAD`
-@ cced139 — `README.md` (+37/−14) and `tests/test_readme_consistency.py` (new).
+Source: claude-dev-kit:reviewer (degraded path; runtime /security-review not exposed to sub-agents).
 
-## Findings
-
+## Verdict
 No findings.
 
-## Checklist evidence (what was checked, not assumed)
-
-- **Secrets / credentials:** Full diff read; README changes are prose/diagram/table
-  edits and static shields.io badge URLs (no tokens, no signed URLs). Test file
-  contains no credentials, endpoints, or environment secrets.
-- **Injection / command execution:** The new tests execute nothing — no
-  `subprocess`, no `os.system`, no `eval`/`exec`, no shell. Pure `pathlib` reads.
-- **Input validation / deserialization:** No deserialization (no yaml/pickle/json
-  loads). Inputs are repo-controlled files only (`README.md`,
-  `tests/test_agent_effort.py`, `agents/*.md` filenames).
-- **File-system safety:** All paths are derived from
-  `Path(__file__).resolve().parents[1]` — reads stay inside the repo; zero writes,
-  zero deletes, no temp files, no path traversal from external input.
-- **Hermeticity / environment coupling:** No network, no env-var reads, no
-  subprocess spawn (consistent with the recalled ISSUE-047 lesson — these lint
-  tests stay pure-file). Deterministic given the repo tree.
-- **ReDoS:** All regexes are linear — no nested quantifiers or overlapping
-  alternations. The one lazy-dotall pattern (`^## Usage\n(.*?)(?=^## )`) runs
-  over the repo's own ~40KB README, not attacker-controlled input; no exploit
-  path even in theory.
-- **Dependencies:** None added, removed, or version-changed (stdlib `re` +
-  `pathlib` only).
-- **Misconfiguration:** No config files touched.
-
-## Self-Review
-
-1. **Severity re-assessment:** N/A — no findings to re-rate.
-2. **False-positive check:** N/A.
-3. **Blind-spot scan:** Absence-of-findings risk re-checked category by category
-   (list above); the only candidate surface — regex over file input — was probed
-   for backtracking blowup and trust-boundary origin. A docs+lint-test diff has
-   no auth, no user-facing output (XSS n/a), and no deploy surface.
-4. **AC verification:** Nothing in the ACs has a security dimension; the diff
-   introduces no new trust boundary.
-5. **Confidence: High** — the entire diff was read line by line and the test
-   file's runtime behavior was exercised directly (6/6 pass, 0.01s, no side
-   effects observed in the worktree).
+- .claude/run/ gitignore is correctly scoped and does not hide anything security-relevant. git check-ignore confirms .claude/settings.json is NOT ignored (settings/config stay visible); only the ephemeral telemetry subpath is ignored. The pattern .claude/run/ is anchored to repo root (mid-string slash), so it cannot accidentally match project/.claude/. Gitignoring runtime telemetry reduces accidental-secret-commit risk rather than raising it.
+- No injection / path-traversal in the guard test. tests/test_dead_script_removal.py uses list-form subprocess.run([...]) (no shell=True) with hardcoded literal args and cwd=ROOT derived from __file__. check=True on git ls-files; correctly omitted on git check-ignore (exit code 1 is the meaningful "not ignored" signal).
