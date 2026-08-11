@@ -12,6 +12,13 @@ __pycache__/
 # caused parallel branches to merge-conflict on disjoint source.
 .claude-kit/freeze-dir.txt
 
+# Review scratch artifacts (ISSUE-051); never tracked — the fixed path
+# docs/.review/{code-review,findings.json,minimality,security-review}.md is
+# regenerated and consumed WITHIN a single /review invocation (synthesizer →
+# docs/review_notes/ISSUE-XXX.md is the canonical committed record). Committing
+# the scratch made parallel review branches conflict on it every sprint.
+docs/.review/
+
 # Environment & secrets
 .env
 .env.*
