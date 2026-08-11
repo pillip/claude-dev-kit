@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-1167%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-1190%20passing-brightgreen.svg)]()
 
 Turn a PRD into shipped code. **32 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
 
