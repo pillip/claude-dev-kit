@@ -1,0 +1,27 @@
+# Review Notes — PR #70
+
+## Code Review
+_Source: reviewer-degraded_
+
+- **[Low] Misleading rationale comment in tests/test_ci_workflow.py docstring**
+  Evidence: tests/test_ci_workflow.py:2-4 states "Reads ci.yml as plain text (no yaml import — the uv venv has no pyyaml)". This is false: pyyaml>=6.0 is in the dev extra (pyproject.toml:15, uv.lock), so the dev venv used by `uv run pytest` DOES have pyyaml — the CI suite runs test_skill_frontmatter_yaml.py and test_plugin_manifest.py (both `import yaml`) green.
+  Fix: Reword to the real rationale, e.g. "Reads ci.yml as plain text to avoid a yaml dependency for a trivial substring assertion"; drop the false "the uv venv has no pyyaml" clause. The stdlib-only choice itself is fine; only the stated reason is wrong.
+
+- **[Low] Cleanup trap covers only EXIT, not INT/TERM (narrow orphan gap on the signal-cancel path)**
+  Evidence: scripts/gate_server.sh:73 `trap cleanup EXIT`. On SIGINT/SIGTERM (operator Ctrl-C or CI job cancel) bash does not run the EXIT trap, so cleanup never fires and the whole server process group is orphaned — the exact outcome ISSUE-044 targets, for the signal-termination path. Pre-existing (old code also trapped only EXIT), so not a regression. Note verify_gates.py wraps this in subprocess.run(timeout=...) whose timeout sends untrappable SIGKILL, which leaks the group regardless.
+  Fix: `trap cleanup INT TERM EXIT` — cleanup already re-exits idempotently and is safe to run once on the signal path. The SIGKILL-on-timeout case is unfixable in-script. Optional hardening; does not block merge.
+
+- **[Low] [debt] 3 no-trigger KIT-DEBT markers repo-wide (pre-existing, out of ISSUE-044 scope)**
+  Evidence: debt ledger harvest (advisory checkpoint) flags 3 no-trigger markers: scripts/debt_harvest.py:44 and tests/test_debt_harvest.py:27,59 — all are the harvester's OWN docstring/test-fixture example markers, none in the ISSUE-044 diff (gate_server.sh, ci.yml, pyproject.toml, uv.lock, the two test files). Recorded per SKILL 4.7 so the deferral is on the ledger.
+  Fix: No action in this PR — out of scope; the markers are debt_harvest's self-referential fixtures, not real deferred debt introduced here.
+
+## Security Findings
+_Source: reviewer-degraded_
+
+- **[Low] eval of operator-supplied start/test commands (pre-existing trust boundary, not widened by this PR)**
+  Evidence: scripts/gate_server.sh:52 `eval "$START_CMD" ...` and :102 `eval "$TEST_CMD"` execute arbitrary shell. Pre-existing and by design: commands come from trusted kit config (verify_gates.py passes config["server_start_cmd"] and the gate test_cmd), not external request data. The new cleanup only interpolates the numeric, set-u-guarded $SERVER_PID into `kill -TERM "-$SERVER_PID"`; the trap is registered (line 73) after the $! assignment (line 53) so $SERVER_PID can never be empty at trap time — the "empty var wipes caller's own group" failure mode is unreachable. No exploit path in the kit trust model.
+  Fix: No change required. Keep --start-cmd/--test-cmd sourced only from trusted config; if ever exposed to externally-influenced input, replace eval with a structured argv exec.
+
+## Over-Engineering
+
+_No findings._
