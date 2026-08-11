@@ -43,27 +43,40 @@ if [[ -n "$CWD" ]]; then
   cd "$CWD"
 fi
 
-# Start server in background, redirecting its I/O to /dev/null so it doesn't
-# hold parent's pipes open (prevents subprocess.run() from hanging).
+# Start server in its OWN process group, redirecting its I/O to /dev/null so it
+# doesn't hold parent's pipes open (prevents subprocess.run() from hanging).
+# `set -m` (job control) makes the background job a process-group leader whose
+# PGID equals its PID, so cleanup can signal the whole group — reaping any
+# children the server forks (portable across macOS bash 3.2 and Linux CI).
+set -m
 eval "$START_CMD" > /dev/null 2>&1 &
 SERVER_PID=$!
+set +m
 
-# Ensure cleanup on any exit — kill process group to catch child processes
+# Ensure cleanup on any exit — signal the whole process GROUP so forked
+# children are reaped, not just the leader PID. Kills are best-effort so a
+# failing kill under `set -e` never overrides the intended exit code (the
+# fix for the old trap clobbering `exit 125` with 1 on bash 3.2).
 cleanup() {
-  kill "$SERVER_PID" 2>/dev/null
-  # Give the server a moment to exit, but don't block indefinitely
+  local rc=$?
+  set +e
+  # Graceful TERM to the group, then poll before escalating to KILL.
+  kill -TERM "-$SERVER_PID" 2>/dev/null || true
   for _ in 1 2 3; do
-    kill -0 "$SERVER_PID" 2>/dev/null || return 0
+    kill -0 "-$SERVER_PID" 2>/dev/null || break
     sleep 0.3
   done
-  # Force kill if still alive
-  kill -9 "$SERVER_PID" 2>/dev/null
+  # Force kill any survivors in the group.
+  kill -KILL "-$SERVER_PID" 2>/dev/null || true
+  exit "$rc"
 }
 trap cleanup EXIT
 
-# Verify server process started
+# Verify the server group is alive — probe the GROUP, not just the leader, so a
+# daemonizing start-cmd (leader exits after forking a worker) is not
+# misclassified as "exited immediately".
 sleep 0.5
-if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+if ! kill -0 "-$SERVER_PID" 2>/dev/null; then
   echo "Error: Server process exited immediately" >&2
   exit 125
 fi

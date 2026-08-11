@@ -1,5 +1,21 @@
-# Over-Engineering / Minimality axis — PR #68 / ISSUE-043
+# Minimality (over-engineering axis) — PR #70 / ISSUE-044
+
+Reviewed the diff for unnecessary complexity only (correctness lives in
+code-review.md).
+
+- `gate_server.sh` process-group rewrite: every line earns its place —
+  `set -m`/`set +m` scope job control to the launch; the 3x TERM poll before
+  KILL is a minimal graceful window; `rc` capture + `exit "$rc"` is the exact
+  mechanism preserving the 124/125/passthrough contract. Nothing speculative.
+- `ci.yml`: a straight, lean uv migration; no redundant steps, no dead config.
+- `pyproject.toml`/`uv.lock`: this change REMOVES config + a dependency
+  (`asyncio_mode`, `pytest-asyncio`) — the opposite of over-building.
+- Tests: the 7+5 TCs each exercise a DISTINCT guaranteed behavior
+  (passthrough, immediate-exit 125, health-timeout 124, usage 2, forked-child
+  reaping, daemonizing-leader probe, SIGTERM-immune escalation, no-swallow,
+  uv-install, interpreter-consistency, asyncio-removal, config-warning). No
+  redundant TC; test helpers (`read_pid`/`wait_dead`/`best_effort_kill`) are
+  justified shared infra, not gold-plating. The verbose comments explain
+  non-obvious process-group semantics and are worth their lines.
 
 Lean already. Ship.
-
-The 120-line / 5-case guard is proportionate: it maps 1:1 to the 3 ACs plus 2 hygiene invariants, each catching a distinct future regression (re-add, re-wire, tracked artifact, missing ignore, over-broad ignore). The hand-rolled _iter_files rglob scan and substring match are self-contained and portable — not worth replacing with git grep. The 19-line module docstring is load-bearing (documents the .sh-extension rationale that prevents a maintainer from "simplifying" BANNED into a find_kit_root false-positive). No removable lines.

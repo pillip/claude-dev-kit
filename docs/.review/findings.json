@@ -1,21 +1,34 @@
 {
-  "pr_number": "68",
+  "pr_number": "70",
   "code_source": "reviewer-degraded",
   "security_source": "reviewer-degraded",
   "code_findings": [
     {
       "severity": "Low",
-      "title": "TC-043b reference scan excludes the tests/ tree",
-      "evidence": "tests/test_dead_script_removal.py:37-48 ACTIVE_SURFACES omits tests/ (necessary — the guard file itself contains the BANNED tokens in REMOVED_FILES/BANNED/docstring). A dead-script name re-introduced in a DIFFERENT test file would not be caught by TC-043b.",
-      "fix": "No change recommended. Impact is minimal and largely self-covering: a test that actually imports/calls a deleted script fails at runtime. If tightening ever matters, scan tests/ too while excluding this one guard module by name."
+      "title": "Misleading rationale comment in tests/test_ci_workflow.py docstring",
+      "evidence": "tests/test_ci_workflow.py:2-4 states \"Reads ci.yml as plain text (no yaml import — the uv venv has no pyyaml)\". This is false: pyyaml>=6.0 is in the dev extra (pyproject.toml:15, uv.lock), so the dev venv used by `uv run pytest` DOES have pyyaml — the CI suite runs test_skill_frontmatter_yaml.py and test_plugin_manifest.py (both `import yaml`) green.",
+      "fix": "Reword to the real rationale, e.g. \"Reads ci.yml as plain text to avoid a yaml dependency for a trivial substring assertion\"; drop the false \"the uv venv has no pyyaml\" clause. The stdlib-only choice itself is fine; only the stated reason is wrong."
     },
     {
       "severity": "Low",
-      "title": "Extension-less BANNED substring tokens are broader than the kit_root.sh token",
-      "evidence": "tests/test_dead_script_removal.py:35 BANNED = ('ensure_permissions','ensure_gh','kit_root.sh','lint_skill_cache_order'). Three tokens are bare identifiers; a future live identifier like ensure_github_token would false-positive. kit_root.sh deliberately keeps its .sh suffix so it is NOT a substring of the live find_kit_root in session_start.py (verified no collision today).",
-      "fix": "Acceptable as-is: the broader direction favors catching regressions and a false positive would be loud + trivially fixed (matches the occurrence-whitelist-over-blacklist lesson). Optional future tightening: prefix scripts/ or add extensions to the three bare tokens if a real collision appears."
+      "title": "Cleanup trap covers only EXIT, not INT/TERM (narrow orphan gap on the signal-cancel path)",
+      "evidence": "scripts/gate_server.sh:73 `trap cleanup EXIT`. On SIGINT/SIGTERM (operator Ctrl-C or CI job cancel) bash does not run the EXIT trap, so cleanup never fires and the whole server process group is orphaned — the exact outcome ISSUE-044 targets, for the signal-termination path. Pre-existing (old code also trapped only EXIT), so not a regression. Note verify_gates.py wraps this in subprocess.run(timeout=...) whose timeout sends untrappable SIGKILL, which leaks the group regardless.",
+      "fix": "`trap cleanup INT TERM EXIT` — cleanup already re-exits idempotently and is safe to run once on the signal path. The SIGKILL-on-timeout case is unfixable in-script. Optional hardening; does not block merge."
+    },
+    {
+      "severity": "Low",
+      "title": "[debt] 3 no-trigger KIT-DEBT markers repo-wide (pre-existing, out of ISSUE-044 scope)",
+      "evidence": "debt ledger harvest (advisory checkpoint) flags 3 no-trigger markers: scripts/debt_harvest.py:44 and tests/test_debt_harvest.py:27,59 — all are the harvester's OWN docstring/test-fixture example markers, none in the ISSUE-044 diff (gate_server.sh, ci.yml, pyproject.toml, uv.lock, the two test files). Recorded per SKILL 4.7 so the deferral is on the ledger.",
+      "fix": "No action in this PR — out of scope; the markers are debt_harvest's self-referential fixtures, not real deferred debt introduced here."
     }
   ],
-  "security_findings": [],
+  "security_findings": [
+    {
+      "severity": "Low",
+      "title": "eval of operator-supplied start/test commands (pre-existing trust boundary, not widened by this PR)",
+      "evidence": "scripts/gate_server.sh:52 `eval \"$START_CMD\" ...` and :102 `eval \"$TEST_CMD\"` execute arbitrary shell. Pre-existing and by design: commands come from trusted kit config (verify_gates.py passes config[\"server_start_cmd\"] and the gate test_cmd), not external request data. The new cleanup only interpolates the numeric, set-u-guarded $SERVER_PID into `kill -TERM \"-$SERVER_PID\"`; the trap is registered (line 73) after the $! assignment (line 53) so $SERVER_PID can never be empty at trap time — the \"empty var wipes caller's own group\" failure mode is unreachable. No exploit path in the kit trust model.",
+      "fix": "No change required. Keep --start-cmd/--test-cmd sourced only from trusted config; if ever exposed to externally-influenced input, replace eval with a structured argv exec."
+    }
+  ],
   "minimality_findings": []
 }
