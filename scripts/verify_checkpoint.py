@@ -436,17 +436,35 @@ def verify_implement_worktree(issue_id: str, **_) -> bool:
     return True
 
 
-def verify_implement_code(issue_id: str, **_) -> bool:
-    """Worktree has non-docs file changes (committed or uncommitted)."""
-    wt_path = _find_worktree_path(issue_id)
-    if not wt_path:
-        print(f"FAIL: no worktree found for {issue_id}")
-        return False
+def _merge_base(wt_path: str, base: str) -> str | None:
+    """Return the fork point (``git merge-base HEAD <base>``), or None.
 
-    base = _default_branch()
+    None signals an unresolvable base (unborn/detached HEAD, no common
+    ancestor, or a mocked environment) so callers can fall back to diffing
+    against <base> directly rather than crashing.
+    """
+    result = _run(["git", "merge-base", "HEAD", base], cwd=wt_path)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return None
 
-    # Committed changes vs default branch
-    diff_committed = _run(["git", "diff", "--name-only", base], cwd=wt_path)
+
+def _changed_files_vs_base(wt_path: str, base: str) -> set[str]:
+    """Files the branch itself changed, diffed against its merge-base with <base>.
+
+    Diffing against the fork point (``git merge-base HEAD <base>``) instead of
+    <base> directly means a worktree built on a STALE <base> does not surface
+    files that <base> added or deleted after the fork point — only the branch's
+    own delta is reported (ISSUE-048). Falls back to diffing <base> directly
+    when the fork point cannot be determined, preserving the previous behavior
+    rather than crashing.
+
+    Returns committed + staged + unstaged + untracked paths as a set.
+    """
+    diff_base = _merge_base(wt_path, base) or base
+
+    # Committed changes vs the branch's fork point (its own delta only)
+    diff_committed = _run(["git", "diff", "--name-only", diff_base], cwd=wt_path)
     # Staged but not yet committed
     diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
     # Unstaged modifications
@@ -460,6 +478,30 @@ def verify_implement_code(issue_id: str, **_) -> bool:
     for r in (diff_committed, diff_staged, diff_unstaged, untracked):
         if r.returncode == 0 and r.stdout.strip():
             all_files.update(r.stdout.strip().splitlines())
+    return all_files
+
+
+def _existing(wt_path: str, files) -> set[str]:
+    """Restrict a changed-file set to paths that exist in the worktree tree.
+
+    Belt-and-suspenders against stale-base / rename-as-delete phantoms
+    (ISSUE-048): a path that <base> added after the fork point (absent from
+    HEAD's tree) or a path renamed away must not be classified (e.g. mis-flagged
+    as a hollow test just because it can't be read).
+    """
+    wt = Path(wt_path)
+    return {f for f in files if f and (wt / f).exists()}
+
+
+def verify_implement_code(issue_id: str, **_) -> bool:
+    """Worktree has non-docs file changes (committed or uncommitted)."""
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        print(f"FAIL: no worktree found for {issue_id}")
+        return False
+
+    base = _default_branch()
+    all_files = _changed_files_vs_base(wt_path, base)
 
     changed = [f for f in all_files if f and not f.startswith("docs/")]
     if not changed:
@@ -582,19 +624,11 @@ def verify_implement_red(issue_id: str, **_) -> bool:
 
     wt = Path(wt_path)
 
-    # First, verify test files exist and have real assertions
+    # First, verify test files exist and have real assertions. Scope to the
+    # branch's own delta (merge-base diff) and keep only files that exist in the
+    # worktree, so a stale base can't inject a phantom test path (ISSUE-048).
     base = _default_branch()
-    diff_committed = _run(["git", "diff", "--name-only", base], cwd=wt_path)
-    diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
-    diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
-    untracked = _run(
-        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
-    )
-
-    all_files: set[str] = set()
-    for r in (diff_committed, diff_staged, diff_unstaged, untracked):
-        if r.returncode == 0 and r.stdout.strip():
-            all_files.update(r.stdout.strip().splitlines())
+    all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
     test_pattern = re.compile(
         r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
@@ -670,21 +704,10 @@ def verify_implement_tests_written(issue_id: str, **_) -> bool:
 
     base = _default_branch()
 
-    # Committed changes vs default branch
-    diff_committed = _run(["git", "diff", "--name-only", base], cwd=wt_path)
-    # Staged but not yet committed
-    diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
-    # Unstaged modifications
-    diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
-    # Untracked files
-    untracked = _run(
-        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
-    )
-
-    all_files: set[str] = set()
-    for r in (diff_committed, diff_staged, diff_unstaged, untracked):
-        if r.returncode == 0 and r.stdout.strip():
-            all_files.update(r.stdout.strip().splitlines())
+    # Scope to the branch's own delta (merge-base diff) and keep only files that
+    # actually exist in the worktree, so a stale base can't inject a phantom test
+    # path that then fails the hollow-test check (ISSUE-048).
+    all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
     # Match test files: test_*.py, *_test.py, *.spec.ts, *.test.ts, etc.
     test_pattern = re.compile(
