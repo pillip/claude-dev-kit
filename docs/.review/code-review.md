@@ -1,155 +1,95 @@
-# Code Review — ISSUE-042 (PR #64, branch issue/ISSUE-042-sprint-disable-model-invocation @ 82016f5)
+# Code Review (degraded) — ISSUE-040 / PR #65
 
-Degraded-path review. Dimension: CODE (correctness/quality) + Over-Engineering minimality axis.
-Runtime `/code-review` unavailable; security dimension NOT covered here (out of this invocation's scope).
+Scope: `git diff main...HEAD` @ cced139 — `README.md` (+37/−14), `tests/test_readme_consistency.py` (new, 120 lines). Reviewed dimension: code (+ minimality folded in). Security reviewed separately (`security-review.md`).
 
-## Verdict
+Verification performed: 6/6 new tests pass in the worktree (0.01s, hermetic). All four README agent-count statements (3 prose + 1 structure-comment) are captured by `COUNT_PATTERNS`. Table walker parses exactly 32 rows and terminates correctly on the blank line after the table. AC greps re-run independently: `v0.1` → 0, `opus (21` → 0, `.claude-kit/` → only the deliberately-live line 714, `33` → only the legal `ISSUE-033` reference. Agents/*.md = 32 = `test_agent_effort.py` pin. New auditor rows' role blurbs match agent frontmatter descriptions. AC 1–3 all satisfied.
 
-**Approve with non-blocking Low findings.** Both ACs verified empirically. No blocking issues.
+---
 
-## AC Verification (evidence, executed in the worktree)
+### [Medium] Tests badge "1167 passing" was generated from a venv missing dev extras — silently undercounts the canonical suite by 7
 
-- **AC1 PASS** — `skills/sprint/SKILL.md` frontmatter YAML-parses to a dict with
-  `disable-model-invocation == True` (bool, PyYAML `safe_load`). `python3 scripts/validate_frontmatter.py`:
-  55 files clean. `python3 scripts/gen_skills.py --dry-run`: "All 20 SKILL.md files are fresh"
-  (tmpl and generated file in sync).
-- **AC2 PASS** — sandbox regression runs (scratchpad copy, worktree untouched):
-  - flag set `false` → exit 1, message `sprint: disable-model-invocation is set to 'false' — …` (names skill and value)
-  - flag line removed → exit 1, `sprint: frontmatter lacks disable-model-invocation — …` (names skill)
-  - `SKILL.md` deleted → exit 1, `sprint: generated skills/sprint/SKILL.md not found`
-  - baseline (all six true) → 6 passed in 0.02s
-- **Scope PASS** — diff is exactly 3 files / 49 insertions / 0 deletions. One identical line in
-  `SKILL.md.tmpl` and generated `SKILL.md`; no workflow-body or allowed-tools drift; no flags flipped
-  on non-orchestrator skills. Full suite collects 1176 tests with no import errors or name collisions.
-- **Recalled review lessons** — (1) hard-coded subprocess timeouts: no subprocess calls anywhere in the
-  diff; n/a. (2) env-var knobs: none added; n/a. (3) delegation-seam mocking / recursive pytest spawn:
-  verified the test reads files via `Path.read_text` only — no subprocess, no pytest-in-pytest, no mocks
-  needed. Hermetic: no network, no writes, no mutation.
+**File:** `README.md:5` (changed in this diff: 1116 → 1167)
 
-## Findings
+**Evidence:** In this worktree's venv PyYAML is absent (`uv run python -c "import yaml"` → ModuleNotFoundError). Consequence: `tests/test_plugin_manifest.py`'s 6 tests are silently dropped at collection (module-level `pytest.importorskip("yaml")`, line 16 — `pytest --collect-only tests/test_plugin_manifest.py` → "no tests collected") and `test_strict_yaml_parse_when_pyyaml_present` skips at runtime. Full-repo collection here = 1168, so a run yields exactly **1167 passed, 1 skipped** — the badge number's provenance. But PyYAML is a declared optional dependency (`pyproject.toml:16`, `pyyaml>=6.0`) and `CONTRIBUTING.md:70` explicitly instructs installing dev extras so these tests run. In the env CONTRIBUTING itself prescribes, collection is 1174, not 1167.
 
-### [Low] Missing closing-fence check lets the guard scan the document body
-- **Evidence**: `tests/test_orchestrator_disable_model_invocation.py:27` —
-  `return text.split("---", 2)[1].splitlines()`. If a file starts with `---\n` but lacks a closing
-  `---`, `split` returns only 2 parts and `[1]` is the ENTIRE remainder of the file. Empirically
-  demonstrated false-pass: a fence-less file with `disable-model-invocation: true` only in the body
-  passes the guard. The docstring claims to mirror `scripts/validate_frontmatter.py`, but the oracle
-  guards this exact case (`scripts/validate_frontmatter.py:39-40`: `parts[1] if len(parts) >= 3 else None`).
-- **Impact**: false-pass requires two simultaneous defects (missing fence AND key at line-start in the
-  body), and `validate_frontmatter.py` in the release gate independently rejects fence-less files as
-  "no frontmatter block at byte 0" — so no realistic path to shipping a bad file. Low, not Medium.
-- **Fix**: in `_frontmatter_lines`, split once and assert `len(parts) >= 3` with a message like
-  `f"{path}: frontmatter closing '---' not found"` before returning `parts[1].splitlines()`.
+**Impact:** The one README line this PR freshly updated for accuracy is already wrong in the project's own canonical dev environment — the exact staleness class ISSUE-040 exists to sweep. It will also silently drift again on the next test addition (no guard exists, and none can reasonably exist — see fix).
 
-### [Low] First-match-wins diverges from YAML last-wins on duplicate keys
-- **Evidence**: `tests/test_orchestrator_disable_model_invocation.py:42` — `return` after the first
-  matching key. PyYAML `safe_load` silently takes the LAST duplicate. Empirically demonstrated:
-  frontmatter containing `disable-model-invocation: true` followed by `disable-model-invocation: false`
-  passes the guard while the effective parsed value is `false`.
-- **Impact**: requires a duplicate key to be introduced in the tmpl (generated files are gen-locked by
-  the `gen_skills.py --dry-run` freshness gate), and neither `validate_frontmatter.py` nor PyYAML flags
-  duplicates — so this guard is the only line of defense for this case, but there is no plausible path
-  to the state. Low.
-- **Fix**: collect all occurrences instead of returning on the first; assert the list is exactly
-  `["true"]` (catches both duplicates and wrong values in one assertion).
+**Suggested fix:** Regenerate the number from a dev-extras-synced env (`uv sync --extra dev` per CONTRIBUTING, expect 1174), or drop the hardcoded count entirely (e.g. "Tests passing") since it is unguardable. Per recalled review lessons (ISSUE-046/047): do **not** add a consistency test that shells out to pytest to verify the badge — recursive pytest spawn is the known anti-pattern; unguarded is acceptable, wrong is not.
 
-### [Low] `_frontmatter_lines` is copy-pasted from an existing test module
-- **Evidence**: `tests/test_orchestrator_disable_model_invocation.py:24-27` is logic-identical to
-  `tests/test_skill_frontmatter_yaml.py:21-24` (same `startswith` assert, same `split("---", 2)[1]`,
-  same missing-fence weakness).
-- **Impact**: duplication means the fence-check fix (finding 1) must be applied twice or will drift.
-- **Fix**: extract one shared helper (e.g., `tests/conftest.py` or a small `tests/_frontmatter.py`) with
-  the `len(parts) >= 3` guard added — one change fixes both files.
+---
 
-### [Low] [design] Frozen six-skill allowlist cannot catch a future orchestrator by itself — accepted
-- **Evidence**: `tests/test_orchestrator_disable_model_invocation.py:17-21` — `ORCHESTRATOR_SKILLS`
-  tuple with an explicit "adding a future orchestrator? Add it here as a conscious decision" comment.
-- **Judgment**: acceptable. A property-derived detection (e.g., "any skill whose allowed-tools grants
-  `Bash(git *)` + `Task` must set the flag") would auto-catch future orchestrators but adds heuristic
-  complexity and false-positive risk; the comment makes the allowlist a deliberate registry, which
-  matches the kit's lean bias. Non-blocking; no change requested.
+### [Low] `"v0.1" not in readme` is a substring check that will spuriously fail on future legitimate `v0.10`+ mentions
 
-## Edge-case probes (all empirically executed; conservative behavior confirmed)
+**File:** `tests/test_readme_consistency.py:88`
 
-- Indented key (`  disable-model-invocation: true`) → treated as absent → test fails. Correct: an
-  indented key is not a top-level YAML key; not stripping `key` is stricter than the oracle in the
-  right direction.
-- `disable-model-invocation : true` (space before colon) → test fails demanding the canonical form.
-  Stricter than YAML, acceptable for gen-produced canonical files (fails toward fixing, never toward
-  a silent pass).
-- Embedded `---` inside an earlier frontmatter value → frontmatter truncated at that point → key not
-  found → test fails (conservative). Identical truncation behavior to the oracle's own
-  `split("---", 2)`; consistent by construction. No current frontmatter value contains `---`.
-- `disable-model-invocation:  true ` (extra whitespace) → passes via `value.strip()`. Correct.
-- YAML comment `# disable-model-invocation: true` → key becomes `# disable-…` → skipped. Correct.
-- `True` / `"true"` / `yes` variants → fail with "must set it to exactly 'true'". Intentional
-  canonicalization of generated output; message says so explicitly. Correct.
+**Evidence:** `"v0.1" in "since v0.10"` → `True` (verified). When the kit reaches v0.10/v0.11 and any README sentence legitimately references it, this test fails with the misleading message "stale v0.1 version pin still in README".
 
-## Environment observation (not attributable to the diff)
+**Suggested fix:** `assert not re.search(r"v0\.1(?!\d)", readme)` — still catches `v0.1` and `v0.1.0` (both genuinely stale), permits `v0.10`+.
 
-During review, one `grep` read of `skills/sprint/SKILL.md` in the worktree transiently showed
-`disable-model-invocation: false` (file mtime 12:29:40, after the 12:19 checkout), then the file
-immediately read back as `true`, matched `git show HEAD:skills/sprint/SKILL.md` exactly, md5 was
-stable across three subsequent reads, and `git status` was clean. The diff under review contains no
-code that writes files (the test is read-only), so the rewrite came from something outside the PR —
-likely a local regeneration hook. The COMMITTED content at 82016f5 is verified correct. Flagging for
-awareness only; if the merge-auditor sees flapping too, investigate local hooks, not this PR.
+---
 
-## Over-Engineering (minimality axis)
+### [Low] `"33 agents" not in readme` guards a string that never existed; the historical stale string "old 33 per-agent pins" has no regression guard
 
-- `tests/test_orchestrator_disable_model_invocation.py:24`: shrink duplicate `_frontmatter_lines`
-  helper → reuse/extract the identical helper already in `tests/test_skill_frontmatter_yaml.py:21`
-  (shared conftest helper; also the seam for the fence-check fix)
+**File:** `tests/test_readme_consistency.py:89`
 
-Net removable lines: ~4. Everything else is load-bearing: the 9-line docstring carries the
-ISSUE-042/ISSUE-021 rationale, the `path.exists()` assert exists for skill-named failure messages,
-and the parametrize shape gives per-skill reporting. No delete/stdlib/native/yagni findings.
+**Evidence:** Verified: `"33 agents" in "33 engineering agents"` → False; `"33 agents" in "old 33 per-agent pins"` → False. The two 33-strings actually removed by this diff contain neither. "33 engineering agents" regressing IS caught (by both count tests, which fail on any count ≠ roster), but "the old 33 per-agent pins" (removed at README:515) regressing is caught by nothing. AC-literal is still satisfied (the AC's grep is the same substring), so this is hardening, not an AC gap.
+
+**Suggested fix:** Replace with `assert not re.search(r"\b33\b[^\n]*\bagent", readme)` (or add `assert "33 per-agent" not in readme`).
+
+---
+
+### [Low] `.claude-kit/` retirement guard is phrasing-dependent — a rephrased submodule mention slips through
+
+**File:** `tests/test_readme_consistency.py:97-107`
+
+**Evidence:** The prose check requires the exact substring `` `.claude-kit/` submodule `` and the diagram check requires `".claude-kit/"` **and** `"# submodule"` on the same line. A regression written as `├── .claude-kit/  # git submodule` or "vendored `.claude-kit/` checkout" passes both. AC-1 defines legality as "zero matches or explicitly-live only", which suggests pinning occurrences rather than pattern-matching retirement phrasings.
+
+**Suggested fix:** Invert the check — whitelist instead of blacklist: `offenders = [l for l in readme.splitlines() if ".claude-kit/" in l and "runtime state" not in l]; assert not offenders`. That makes ANY new `.claude-kit/` mention outside the one live line-714 context a failure.
+
+---
+
+### [Low] `test_readme_count_matches_effort_test_roster` passes vacuously if the README stops stating any count
+
+**File:** `tests/test_readme_consistency.py:52-60`
+
+**Evidence:** The `for count in _stated_counts(...)` loop has no `assert counts` guard (its sibling `test_stated_agent_counts_match_roster:44` has one). If a future rewrite drops all "N engineering agents" phrasings, this test passes with zero assertions executed. Suite-level signal survives via the sibling's guard, so this is single-test vacuity, not a suite blind spot.
+
+**Suggested fix:** Add the same `assert counts, "README states no agent count"` guard (or derive `counts` once at module/fixture level for both tests).
+
+---
+
+### [Low] `/spec` Usage test: two theoretical brittleness/power nits
+
+**File:** `tests/test_readme_consistency.py:110-120`
+
+**Evidence:** (1) The section extractor `r"^## Usage\n(.*?)(?=^## )"` requires a subsequent `## ` heading; if "Usage" ever becomes the last h2, the test fails spuriously with "README has no ## Usage section". (2) `r"^### Spec\b"` matches a hypothetical `### Spec-Required gate` heading (verified: `\b` matches before `-`), so the assertion could pass without a real `/spec` entry — though the companion `^/spec\b` code-block assertion mostly closes that hole.
+
+**Suggested fix:** (1) `(?=^## |\Z)`. (2) `r"^### Spec( |$|\s*—)"` or `r"^### Spec\b(?!-)"`.
+
+---
+
+### [Medium — PRE-EXISTING, record-only, not introduced by this branch] Three untouched agents-table Tools cells drift from frontmatter
+
+**File:** `README.md` agents table (rows untouched by this diff)
+
+**Evidence (per tech-lead verification, rows confirmed outside this diff):** `a11y-auditor` and `ui-reviewer` Tools cells omit `Bash`; `design-auditor` cell lists "Edit, Write" while frontmatter is only "Read, Glob, Grep". The new `test_agents_table_has_row_per_agent_file` checks row *names* only, so this column-level drift is invisible to the new tests.
+
+**Disposition:** Explicitly out of scope per issue AC ("fixing PRE-EXISTING drift in untouched table rows"). Recorded for a follow-up issue: either fix the three cells or extend the lint test to compare Effort/Tools cells against frontmatter (which would have caught this class permanently).
+
+---
+
+## Minimality axis (over-engineering)
+
+Scanned the full diff for delete/stdlib/native/yagni/shrink candidates. The test file is 120 lines for 6 AC-mandated tests, each with a distinct failure mode and helpful messages; helpers are minimal (`_readme`, `_stated_counts`, `_agent_table_names` each have ≥2 call sites or isolate one parsing concern). `test_readme_count_matches_effort_test_roster` is transitively redundant with the sibling count test (agents/ count == pin is already asserted by `test_agent_effort.py`), but the cross-check is explicitly required by AC-2 ("totals match tests/test_agent_effort.py roster pin") — explicitly-requested work is never a cut. README changes are targeted deletions/corrections, no added structure.
+
+Lean already. Ship.
+
+---
 
 ## Self-Review
 
-1. **Severity re-assessment**: all Lows re-checked. Finding 1 was the Medium candidate; downgraded
-   because the CI oracle gate (`validate_frontmatter.py`) independently rejects the precondition
-   (fence-less file), leaving no pipeline path to a shipped regression. Finding 2 has no plausible
-   path to the bad state at all. Neither causes data loss or hot-path failure.
-2. **False positive check**: findings 1 and 2 are demonstrated by sandbox execution, not inspection;
-   finding 3 verified by reading both files side by side. Not false positives.
-3. **Blind spot scan**: re-checked encoding (explicit utf-8), CRLF (`startswith("---\n")` fails
-   conservatively on CRLF; repo is LF), test isolation/order-dependence (module-level constants only,
-   no state mutation), suite collection (1176 tests, clean), failure-message quality (all three modes
-   name the skill and the file path). No additional findings surfaced.
-4. **AC verification**: AC1 and AC2 both empirically PASS (see evidence above); scope constraints
-   respected.
-5. **Confidence**: **High** — every finding and every AC claim is backed by executed evidence in the
-   worktree or a scratchpad sandbox. The single uncertainty (transient file rewrite) is external to
-   the diff and flagged explicitly above.
-
-## Synthesizer findings block
-
-```json
-[
-  {
-    "severity": "Low",
-    "title": "Frontmatter helper misses closing-fence check; scans body when fence absent (diverges from validate_frontmatter.py oracle)",
-    "evidence": "tests/test_orchestrator_disable_model_invocation.py:27 — text.split(\"---\", 2)[1] returns entire file remainder when no closing --- exists; empirically false-passes with key only in body. Oracle guards this at scripts/validate_frontmatter.py:39-40.",
-    "fix": "Assert len(text.split(\"---\", 2)) >= 3 in _frontmatter_lines with a named failure message before indexing [1]."
-  },
-  {
-    "severity": "Low",
-    "title": "First-match-wins on duplicate disable-model-invocation keys; YAML last-wins would yield false while guard passes",
-    "evidence": "tests/test_orchestrator_disable_model_invocation.py:42 — early return on first match; empirically passes on 'true' followed by 'false', which safe_load resolves to false.",
-    "fix": "Collect all matching values and assert the list equals [\"true\"] (catches duplicates and wrong values together)."
-  },
-  {
-    "severity": "Low",
-    "title": "[shrink] _frontmatter_lines duplicated from tests/test_skill_frontmatter_yaml.py (both copies share the fence weakness)",
-    "evidence": "tests/test_orchestrator_disable_model_invocation.py:24-27 vs tests/test_skill_frontmatter_yaml.py:21-24 — logic-identical helpers.",
-    "fix": "Extract one shared helper (tests/conftest.py) with the closing-fence assert; ~4 net lines removed and one seam for the fix."
-  },
-  {
-    "severity": "Low",
-    "title": "[design] Frozen ORCHESTRATOR_SKILLS allowlist cannot self-detect future orchestrators — accepted as conscious-decision registry",
-    "evidence": "tests/test_orchestrator_disable_model_invocation.py:17-21 — explicit comment directs future orchestrators to be added deliberately.",
-    "fix": "No change requested; optionally add a heuristic companion check (skills granting Bash(git *) must set the flag) if orchestrators proliferate."
-  }
-]
-```
+1. **Severity re-assessment:** Badge finding held at Medium — it is a factual error in a line this PR changed, in the project's canonical env, on the exact axis (README accuracy) the issue targets; no code-correctness impact keeps it below High. All regex findings held at Low: none fails today, all are future-brittleness or regression-power hardening.
+2. **False-positive check:** Badge — actively tried to refute by checking whether 1167 is correct for a lockfile-only env: it is (1168 collected − 1 runtime skip), but `pyproject.toml:16` + `CONTRIBUTING.md:70` establish dev-extras as the prescribed env, where the count is 1174; the refutation failed, finding stands (with the nuance stated). v0.10 collision, `\b`-before-hyphen, and vacuous-loop behaviors were all executed, not assumed.
+3. **Blind-spot scan (code dimension):** Re-checked error-message quality (all asserts carry actionable messages — good), duplication (none), edge cases of the table walker (multi-table README, missing separator row, EOF table: all fail loudly, none silently), hermeticity (no network/subprocess/env/writes; pure repo-relative file reads — consistent with recalled lesson that these must stay pure-file lint tests), and factual accuracy of every changed README line (counts, tiers, auditor blurbs, /spec claims, pattern-(b) prose — all check out except the badge).
+4. **AC verification:** AC-1 greps re-run clean (line-714 `.claude-kit/` exemption correctly implemented in the test); AC-2 table = 32 rows = 32 files = pin, enforced by tests; AC-3 `/spec` Usage entry present and format-consistent with sibling entries. All satisfied.
+5. **Confidence: High** — every finding is backed by an executed probe or file read in this worktree, and the 6 new tests were run in isolation as permitted.

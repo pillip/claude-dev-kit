@@ -1,10 +1,10 @@
-# claude-kit (v0.1)
+# claude-kit
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-1116%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-1190%20passing-brightgreen.svg)]()
 
-Turn a PRD into shipped code. **33 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
+Turn a PRD into shipped code. **32 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
 
 ## Why claude-kit?
 
@@ -13,7 +13,7 @@ Turn a PRD into shipped code. **33 engineering agents + 23 skills** handle the e
 Claude Code is powerful on its own, but without structure it produces inconsistent results — skipped tests, forgotten reviews, PRs that drift from requirements. claude-kit solves this by giving Claude Code **a repeatable process**:
 
 - **Structured pipeline**: Every issue goes through spec (when required) → implement → review → ship. No shortcuts, no skipped phases.
-- **Specialized agents**: Instead of one generalist prompt, 33 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
+- **Specialized agents**: Instead of one generalist prompt, 32 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
 - **Decision capture**: Non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / Trade-offs / Decision / Rollback. Sprint mode auto-runs it; non-sprint mode HOLDs for review.
 - **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
 - **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
@@ -264,13 +264,12 @@ The kit assumes **the repo IS the team boundary**. Two adoption patterns cover t
 
 ### Pattern (a) — Monorepo
 
-The common pattern. One repo holds all team work; the kit installs once at the root.
+The common pattern. One repo holds all team work; the kit is installed once as a plugin.
 
 - **Engineering team**: services live under `services/<name>/` subdirectories. Each service worktree is created from the repo root via `scripts/worktree.sh`. Shared state (`issues.md`, `STATUS.md`, `sprint_state.md`) sits at the root.
 
 ```
 ~/work/my-team/                       # team boundary == repo boundary
-├── .claude-kit/                      # submodule
 ├── .claude/
 ├── issues.md, STATUS.md
 ├── docs/                             # shared knowledge
@@ -281,14 +280,13 @@ The common pattern. One repo holds all team work; the kit installs once at the r
 
 ### Pattern (b) — Virtual monorepo wrapper (polyrepo teams)
 
-When services genuinely cannot be in one repo (independent release cadence, vendor isolation, etc.), wrap them. A top-level **wrapper directory** is itself a git repo holding the `.claude-kit/` submodule and shared kit state at its root; each independent service repo lives as an immediate subdirectory and is gitignored from the wrapper.
+When services genuinely cannot be in one repo (independent release cadence, vendor isolation, etc.), wrap them. A top-level **wrapper directory** is itself a git repo holding shared kit state (`issues.md`, `STATUS.md`, `docs/`) at its root — the kit itself is installed once as a plugin, not vendored into the repo; each independent service repo lives as an immediate subdirectory and is gitignored from the wrapper.
 
 ```
 ~/work/my-team/                       # wrapper = git repo
 ├── .git/
 ├── .gitignore                        # auth-service/, gateway-service/, ...
-├── .claude-kit/                      # submodule
-├── .claude/                          # installed at wrapper root
+├── .claude/                          # project settings/hooks at wrapper root
 ├── issues.md, STATUS.md, sprint_state.md
 ├── docs/
 ├── auth-service/                     # independent git repo (gitignored)
@@ -416,6 +414,14 @@ Scans source files for missing or hollow tests (empty functions, no assertions).
 
 Runs a phase-based sprint loop: each iteration reads `sprint_state.md`, picks the highest-priority phase (ship first, review second, implement last), and dispatches the team-lead agent for that single phase. This structural enforcement guarantees every issue completes the full implement → review → ship pipeline — no phase gets skipped. Includes automated feedback loops: review findings create follow-up issues, test failures trigger /diagnose, and shipped code gets test gap detection.
 
+### Spec — Capture a design decision
+
+```
+/spec [ISSUE-NNN]
+```
+
+Writes a tech spec to `docs/specs/SPEC-NNN.md` capturing the decision behind a non-trivial feature before code is written: Problem, at least 2 Options with measurable trade-offs, Decision, and Rollback. When linked to an issue, updates the issue's `Spec:` field in `issues.md`; with no argument, creates an ad-hoc SPEC at the next free number. Sprint mode runs it automatically via the `/implement` Phase 0 spec gate for issues flagged `Spec-Required: true`.
+
 ### Implement — Build an issue
 
 ```
@@ -504,9 +510,9 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-**33 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
+**32 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
 
-> **Deterministic deployments:** to pin agent behavior for production use, set the model once at the session/project level (`model` in `.claude/settings.json`, or `claude --model <alias>`) — one control point instead of the old 33 per-agent pins. All inherit-agents follow it.
+> **Deterministic deployments:** to pin agent behavior for production use, set the model once at the session/project level (`model` in `.claude/settings.json`, or `claude --model <alias>`) — one control point instead of the old per-agent pins. All inherit-agents follow it.
 
 | Agent | Effort | Role | Tools |
 |-------|-------|------|-------|
@@ -531,6 +537,9 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `ui-reviewer` | high | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Write |
 | `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep, Edit, Write |
 | `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Edit, Write |
+| `research-auditor` | medium | Separate-context refute-first audit of degraded-path research claims against captured source snapshots | Read, Grep |
+| `review-merge-auditor` | medium | Separate-context refute-first audit that runtime review findings survive into merged review notes unaltered | Read, Grep |
+| `synthesizer-auditor` | medium | Separate-context refute-first audit that /deep-research claims survive into rendered kit output unaltered | Read, Grep |
 | `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
 | `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 | `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
@@ -555,7 +564,7 @@ Recently shipped (Cluster C + D this session): `/spec` skill + Spec-Required met
 
 ```
 claude-dev-kit/
-├── agents/                  # Core engineering agents (33)
+├── agents/                  # Core engineering agents (32)
 ├── skills/                  # Core engineering / design / safety skills (23)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
@@ -729,7 +738,7 @@ bash scripts/flock_edit.sh "$ROOT/issues.md" -- bash -c 'echo "update" >> "$ROOT
 `flock_edit.sh` uses `flock(1)` when available, falling back to `mkdir`-based
 locking on macOS.
 
-## Current Scope (v0.1)
+## Current Scope
 
 - **Platform**: macOS / Linux
 - **Default stack** (when PRD doesn't specify):
@@ -737,7 +746,7 @@ locking on macOS.
   - Web frontend: React + TypeScript
   - Mobile: React Native (Expo)
 - **Custom stack**: Define your preferred tech stack during `/prd` and the architect agent will follow it
-- **Model mix**: opus (21 agents) for judgment/creativity, sonnet (12 agents) for structured extraction
+- **Models**: all agents inherit the session model (no per-agent pins — ISSUE-030); per-agent depth is tuned with effort tiers (`low`/`medium`/`high`/`xhigh`, with `xhigh` auto-falling back on models that cap at `high`)
 
 ## License
 
