@@ -1,0 +1,23 @@
+# Review Notes — PR #57
+
+## Code Review
+_Source: reviewer-degraded_
+
+- **[Low] Stale docstring in TestReviewStepHeadersAreMonotonic describes the pre-fix state and cites retired step numbers**
+  Evidence: tests/test_review_delegation_guard.py:118-121 — "step numbers 3.8/3.9/3.10 are currently reused twice … so cross-references like \"steps 3.11 and 3.12\" are unambiguous" — present-tense RED-phase wording becomes false once this PR merges, and 3.11/3.12 are the OLD synthesize/merge-audit numbers (now 3.14/3.15; 3.11/3.12 now denote ui-review/design-audit). Internally inconsistent with the module-level comment at lines 24-26, which correctly uses "steps 3.14 and 3.15".
+  Fix: Reword to past tense with current numbers: "step numbers 3.8/3.9/3.10 were once reused twice … so cross-references like 'steps 3.14 and 3.15' are unambiguous."
+
+- **[Low] [debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR**
+  Evidence: checkpoint.sh --skill review --phase debt --issue ISSUE-036: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-046/047 reviews' ledgers — pre-existing, not from PR #57's diff.
+  Fix: Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out.
+
+## Security Findings
+_Source: reviewer-degraded_
+
+_No findings._
+
+## Over-Engineering
+
+- **[Low] [shrink] Parametrize duplicated generated/template assertions in test_brainstorm_research_path_guard.py**
+  Evidence: tests/test_brainstorm_research_path_guard.py:41-79 — both test classes copy-paste identical assertion bodies (including multi-line failure messages) twice, once per file (SKILL.md vs SKILL.md.tmpl); 2 checks x 2 files = 4 near-identical bodies.
+  Fix: Use @pytest.mark.parametrize("path", [SKILL, TMPL], ids=["generated", "template"]) or extract the assertion loop into a shared helper alongside _auditor_lines; ~79 lines -> ~55 with identical coverage. Net removable: ~24 lines.

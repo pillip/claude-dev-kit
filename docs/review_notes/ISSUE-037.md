@@ -1,0 +1,39 @@
+# Review Notes — PR #58
+
+## Code Review
+_Source: reviewer-degraded_
+
+- **[Medium] TC-037b standalone regression guard can hollow-pass via silent real-repo fallback**
+  Evidence: tests/test_lifecycle_hooks.py:206-209 — `match = re.search(r"python3 (\S*contributor_report\.py)", out)` then `assert Path(match.group(1)).is_file()`; nothing pins the matched path to the fixture root. Empirically replayed: with the fixture scripts absent, find_kit_root falls back to parents[3] (the real kit repo, contributor_mode=true on contributor machines) and every TC-037b assertion still passes against the real repo's contributor_report.py. Same tmp-fixture/real-repo-fallback pattern as the ISSUE-047 review lesson. TC-037a is NOT affected (its asserts fail loudly in both fallback outcomes — verified).
+  Fix: Pin the assertion to the fixture, subsuming the is_file check: `assert match.group(1) == str(root / "scripts" / "contributor_report.py")`.
+
+- **[Low] Own-location parents[3] fallback mis-flags a plugin cache dir as non-pinned**
+  Evidence: project/.claude/hooks/session_start.py:33 — `candidates.append((Path(__file__).resolve().parents[3], False))`. Under plugin install the hook file lives inside the version-pinned cache dir, so parents[3] IS the pinned root but is hardcoded from_plugin=False; if that candidate ever wins (env stripped / manual wiring to the cache copy) the pinned path is printed again. No exploit path via shipped hooks.json (command expands $CLAUDE_PLUGIN_ROOT itself, env inherited), hence Low.
+  Fix: Backstop by path shape inside the resolution loop, e.g. `from_plugin = from_plugin or bool(re.search(r"[\\/]cache[\\/].+[\\/]\d+\.\d+\.\d+$", str(c)))`.
+
+- **[Low] Standalone instruction prints an unquoted absolute path — breaks on checkouts with spaces**
+  Evidence: project/.claude/hooks/session_start.py:77,83 — `report = str(kit / "scripts" / "contributor_report.py")` interpolated unquoted as `python3 {report} --skill ...`; a standalone checkout under e.g. `~/My Projects/` yields a non-executable instructed command. Pre-existing behavior, but the diff rewrites this line; TC-037b's `\S*` capture shares the whitespace assumption.
+  Fix: Quote the path in the printed instruction (`python3 "{report}" ...`) and relax the TC-037b regex to accept quotes.
+
+- **[Low] [debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR**
+  Evidence: checkpoint.sh --skill review --phase debt --issue ISSUE-037: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-046/047 reviews' ledgers — pre-existing, not from PR #58's diff.
+  Fix: Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out.
+
+## Security Findings
+_Source: reviewer-degraded_
+
+- **[Medium] Deferred <kit-root> resolution can degrade into executing an attacker-planted relative scripts/contributor_report.py without a permission prompt**
+  Evidence: project/.claude/hooks/session_start.py:73-75 defers path resolution to the model via 'the Kit Script Root absolute path shown in the preamble of any active kit skill'. A malicious project-local skill can impersonate that preamble; and with no failure-mode guidance the natural fallback is the relative form 'python3 scripts/contributor_report.py', which kit skills pre-allowlist (skills/ship/SKILL.md:5 'Bash(python3 scripts/*)') — in an untrusted cwd with a planted scripts/contributor_report.py this executes attacker code with no permission prompt. Preconditions: contributor mode ON, plugin install, model taking the impersonated/relative path (uncertainty flagged: model-behavior-dependent).
+  Fix: Bind resolution to 'the Kit Script Root in the preamble of the kit skill you are CURRENTLY executing', and add an explicit safe failure mode: 'if you cannot resolve an absolute Kit Script Root, skip the report — never invoke scripts/contributor_report.py via a relative path'. Structural alternative: print the stable non-pinned cache parent (CLAUDE_PLUGIN_ROOT minus the version segment) + 'highest installed version dir', removing free-text preamble scanning entirely.
+
+- **[Medium] (pre-existing in touched code) Plugin-wired hook falls back to executing untrusted project-directory scripts when the plugin-root probe fails**
+  Evidence: project/.claude/hooks/session_start.py:29-36 candidate order CLAUDE_PLUGIN_ROOT -> HOOK_ROOT/CLAUDE_PROJECT_DIR, and hooks/hooks.json SessionStart passes HOOK_ROOT="$CLAUDE_PROJECT_DIR". If the plugin cache root passes the hook-file [ -f ] guard but scripts/kit_update_check.py is missing (partial cache GC — the ISSUE-037 degradation class), the hook executes <project>/scripts/kit_update_check.py and kit_config.py with no permission gate at SessionStart (lines 60-66) and injects the first script's stdout verbatim into session context (lines 61-62). Edge-case trigger state, code-execution consequence; not introduced by this PR.
+  Fix: In find_kit_root, when CLAUDE_PLUGIN_ROOT is set (running as the plugin's hook), do not fall through to the project-dir candidate — return None if the plugin root fails the probe. HOOK_ROOT fallback stays valid for the snippet wiring, where the project is the trust root. No functionality loss: healthy plugin installs always pass the plugin-root probe.
+
+- **[Low] Script path unquoted in the injected command template**
+  Evidence: project/.claude/hooks/session_start.py:83 — f"workflow): python3 {report} --skill <name> ..." prints the path unquoted in both branches; a substituted kit-root path containing spaces (e.g. home dir with a space) yields a mis-tokenized command when the model runs the instruction verbatim. No practical attacker control over the path — hardening only.
+  Fix: Quote the path in the template: python3 "<kit-root>/scripts/contributor_report.py" / python3 "{report}".
+
+## Over-Engineering
+
+_No findings._
