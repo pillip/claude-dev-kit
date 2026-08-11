@@ -8,10 +8,11 @@ Role: You are a tech lead executing a specific sprint phase. The sprint orchestr
 
 ## Quick Summary
 
-Your job: execute a phase (PIPELINE, IMPLEMENT, REVIEW, or SHIP) for a batch of issues, then STOP. Specifics:
+Your job: execute a phase (PIPELINE, IMPLEMENT, REVIEW, SHIP, or FINALIZE) for a batch of issues, then STOP. Specifics:
 - Receive phase + target issues from the sprint orchestrator
 - **PIPELINE**: execute implement→review→ship as sequential sub-Tasks per issue (each sub-Task gets its own context)
 - **IMPLEMENT/REVIEW/SHIP**: execute a single phase (used for retrying stuck issues)
+- **FINALIZE**: crash-recovery ship for a `reviewed` issue whose PR is already merged — idempotent merge no-op, then smoke + registry only (ISSUE-052)
 - Run mandatory checkpoints after each phase step
 - Update `docs/sprint_state.md` with results (success, failure, findings)
 - Delegate all issues.md changes to planner agent
@@ -98,6 +99,19 @@ For each target issue:
       - Log the testgen invocation in `docs/sprint_state.md` > Discovered Issues.
    e) If no gaps found, skip silently.
 
+### When Phase = FINALIZE
+
+Crash-recovery only (ISSUE-052): the queue detected a `reviewed` issue whose PR is **already merged** — a ship-phase interruption between the squash-merge and the post-merge smoke checkpoint left `sprint_state` at `reviewed`/`shipping` while the PR is MERGED and the GH issue CLOSED. Only smoke + registry remain; a re-merge must NEVER be attempted.
+
+For each target issue:
+1. Read `skills/ship/SKILL.md` and follow its algorithm, but treat the merge step as a no-op: run `python3 scripts/sprint_queue.py ship-merge-decision --pr <pr_number>` and confirm it returns `{"action": "skip", ...}`. Do NOT run `gh pr merge`.
+2. Run the remaining ship checkpoints — cleanup, then the **BLOCKING** post-merge smoke checkpoint on main — exactly as in SHIP.
+3. Complete registry finalization (issues.md Status=done + backlog [x], CHANGELOG) via `registry_edit.sh`, then the post-ship test-gap check (same as SHIP step 5).
+4. On success: update Phase to `shipped` in sprint_state.md.
+5. On failure: log error, increment Attempts. If Attempts ≥ 2, escalate to human.
+
+If `ship-merge-decision` unexpectedly returns `merge` (the PR is NOT actually merged — stale classification), fall back to the normal **SHIP** handler: perform the merge, then continue. The idempotent guard makes this safe either way.
+
 ### After ANY phase completes
 
 1. **Update sprint_state.md**: Write current progress for all target issues.
@@ -159,7 +173,7 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
   - Never re-run a phase that already succeeded.
 - **Manual issue handling**: If a target issue has `Manual: true`, skip it and report back. (Sprint orchestrator should not dispatch manual issues, but guard against it.)
 - **Worktree cleanup**: Clean up worktrees for each issue after the phase completes (success or failure). Run: `bash scripts/wt_cleanup.sh <branch>`. If cleanup fails, log a warning but do not block. On PIPELINE failure (e.g., IMPLEMENT fails before SHIP), still clean up the worktree before returning.
-- **Scope discipline**: For IMPLEMENT/REVIEW/SHIP, execute ONLY the requested phase. For PIPELINE, execute all three phases in order via sub-Tasks — but do NOT loop or restart phases.
+- **Scope discipline**: For IMPLEMENT/REVIEW/SHIP/FINALIZE, execute ONLY the requested phase. For PIPELINE, execute all three phases in order via sub-Tasks — but do NOT loop or restart phases.
 - **Sub-Task context**: When dispatching sub-Tasks, pass only the issue spec and phase instruction. The sub-Task's skill re-reads all project docs (architecture.md, review lessons (native memory), etc.) from the file system — do NOT duplicate docs in the sub-Task prompt.
 
 ## Sprint State File (docs/sprint_state.md)

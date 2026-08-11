@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,7 +43,19 @@ ACTION_END_PHASE: dict[str, str] = {
     "IMPLEMENT": "implemented",
     "REVIEW": "reviewed",
     "SHIP": "shipped",
+    # FINALIZE (ISSUE-052): a reviewed issue whose PR was already merged before a
+    # ship-phase crash — only smoke + registry remain, which still ends at shipped.
+    "FINALIZE": "shipped",
 }
+
+# ISSUE-052 crash-recovery: timeout (seconds) for the optional `gh pr view` merge
+# probe. The queue runs frequently, so an offline/hung `gh` must never block it —
+# on timeout the probe degrades to a phase-only decision. Overridable and
+# documented via the env knob below (env-knob-documentation review lesson).
+#   KIT_SPRINT_QUEUE_GH_TIMEOUT — seconds for the merge-state probe (default 10)
+GH_MERGE_PROBE_TIMEOUT: float = float(
+    os.environ.get("KIT_SPRINT_QUEUE_GH_TIMEOUT", "10")
+)
 
 # Phases that count as "in-flight" (actively being worked on)
 IN_FLIGHT_PHASES = {"implementing", "reviewing", "shipping"}
@@ -133,12 +147,15 @@ def parse_issues_metadata(text: str) -> dict[str, dict]:
         depends_raw = _extract_field(part, "Depends-On")
         priority_raw = _extract_field(part, "Priority")
         status_raw = _extract_field(part, "Status")
+        pr_raw = _extract_field(part, "PR")
 
         issues[issue_id] = {
             "manual": manual_raw.lower() == "true",
             "depends_on": _parse_depends_on(depends_raw),
             "priority": priority_raw.lower() if priority_raw else "p2",
             "status": status_raw.lower() if status_raw else "",
+            # PR ref (URL or number) — used by the ISSUE-052 merge-state probe.
+            "pr": pr_raw.strip(),
         }
 
     return issues
@@ -184,6 +201,125 @@ def detect_circular_deps(issues_meta: dict[str, dict]) -> list[str]:
             if result:
                 return result
     return []
+
+
+# ── Crash-recovery: already-merged PR awareness (ISSUE-052) ─────────
+
+
+def _gh_pr_merge_state(pr_ref, *, timeout=None, runner=None):
+    """Return the merge state of a PR: ``"merged"``, ``"open"``, or ``None``.
+
+    Uses ``gh pr view <ref> --json state,mergedAt``. A PR counts as merged when
+    ``state == "MERGED"`` OR a ``mergedAt`` timestamp is present (the GH issue is
+    then CLOSED). Degrades to ``None`` — never raises — on an empty ref, a
+    missing/unauthenticated ``gh``, a non-zero exit, a timeout, or unparseable
+    JSON, so callers fall back to a phase-only decision. Offline-safe: the probe
+    is timeout-guarded (see ``GH_MERGE_PROBE_TIMEOUT``).
+
+    ``runner`` (defaults to ``subprocess.run``) is injectable for testing.
+    """
+    if not pr_ref:
+        return None
+    runner = runner or subprocess.run
+    if timeout is None:
+        timeout = GH_MERGE_PROBE_TIMEOUT
+    try:
+        proc = runner(
+            ["gh", "pr", "view", pr_ref, "--json", "state,mergedAt"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"Warning: gh merge-state probe failed for {pr_ref}: {exc}; "
+            "falling back to phase-only decision",
+            file=sys.stderr,
+        )
+        return None
+    if proc.returncode != 0:
+        print(
+            f"Warning: `gh pr view` exited {proc.returncode} for {pr_ref}: "
+            f"{proc.stderr.strip()}; falling back to phase-only decision",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except (ValueError, TypeError) as exc:
+        print(
+            f"Warning: `gh pr view` returned unparseable JSON for {pr_ref}: {exc}; "
+            "falling back to phase-only decision",
+            file=sys.stderr,
+        )
+        return None
+    if not isinstance(data, dict):
+        # Valid JSON that is not an object (null / list / scalar) — treat as
+        # indeterminate rather than raising, so AC3's "never crashes" holds.
+        print(
+            f"Warning: `gh pr view` JSON for {pr_ref} was not an object; "
+            "falling back to phase-only decision",
+            file=sys.stderr,
+        )
+        return None
+    state = str(data.get("state") or "").upper()
+    if state == "MERGED" or data.get("mergedAt"):
+        return "merged"
+    return "open"
+
+
+def classify_ship_ready(ship_ready, issues_meta, *, merge_state_fn=None):
+    """Split reviewed/ship-ready issues into ``(finalize_ready, ship_ready)``.
+
+    An issue whose PR is already MERGED (a crash between the squash-merge and the
+    post-merge smoke checkpoint) goes to ``finalize_ready`` — only smoke +
+    registry remain, and no re-merge must be attempted. Un-merged or indeterminate
+    (``gh`` error / no PR ref) issues stay in ``ship_ready`` (phase-only fallback).
+    Order is preserved and the probe is cached per PR ref.
+    """
+    merge_state_fn = merge_state_fn or _gh_pr_merge_state
+    finalize_ready: list[str] = []
+    still_ship: list[str] = []
+    cache: dict[str, str | None] = {}
+    for issue_id in ship_ready:
+        pr_ref = issues_meta.get(issue_id, {}).get("pr", "")
+        if not pr_ref:
+            # No PR recorded — cannot probe; leave it on the normal ship path.
+            still_ship.append(issue_id)
+            continue
+        if pr_ref not in cache:
+            cache[pr_ref] = merge_state_fn(pr_ref)
+        if cache[pr_ref] == "merged":
+            finalize_ready.append(issue_id)
+        else:
+            still_ship.append(issue_id)
+    return finalize_ready, still_ship
+
+
+def ship_merge_decision(pr_ref, *, merge_state_fn=None):
+    """Idempotent ship-merge decision (ISSUE-052 crash-recovery safety net).
+
+    Returns ``{"action": "skip"|"merge", "reason": str}``. ``"skip"`` when the PR
+    is already merged — the ship executor then proceeds straight to smoke +
+    registry without a second merge. ``"merge"`` otherwise, INCLUDING the
+    ``gh``-indeterminate case (let the real ``gh pr merge`` surface any failure).
+    This guard is the safety net even if the queue's classification is stale.
+    """
+    merge_state_fn = merge_state_fn or _gh_pr_merge_state
+    state = merge_state_fn(pr_ref)
+    if state == "merged":
+        return {
+            "action": "skip",
+            "reason": (
+                f"PR {pr_ref} is already merged — skip merge, proceed to "
+                "smoke + registry finalization"
+            ),
+        }
+    return {
+        "action": "merge",
+        "reason": f"PR {pr_ref} not merged (state={state}) — perform the merge",
+    }
 
 
 # ── Queue computation ───────────────────────────────────────────────
@@ -257,9 +393,24 @@ def choose_action(
 ) -> dict:
     """Apply strict priority to choose ONE action.
 
-    Priority order: SHIP > REVIEW > IMPLEMENT > STUCK > DONE.
+    Priority order: FINALIZE > SHIP > REVIEW > IMPLEMENT > STUCK > DONE.
     Caps targets at max_parallel.
     """
+    # FINALIZE (ISSUE-052): reviewed issues whose PR is already merged are half-
+    # shipped — clear them first (smoke + registry only) so the pipeline reaches a
+    # clean state and no re-merge is ever attempted. `.get` keeps callers that
+    # build queues without this key (compute_queues) working unchanged.
+    if queues.get("finalize_ready"):
+        targets = queues["finalize_ready"][:max_parallel]
+        return {
+            "action": "FINALIZE",
+            "targets": targets,
+            "reason": (
+                f"{len(queues['finalize_ready'])} reviewed issue(s) whose PR is "
+                "already merged — finalize only (smoke + registry), no re-merge"
+            ),
+        }
+
     if queues["ship_ready"]:
         targets = queues["ship_ready"][:max_parallel]
         return {
@@ -422,6 +573,20 @@ def cmd_next_action(args: argparse.Namespace) -> int:
         return 1
 
     queues = compute_queues(sprint_rows, issues_meta)
+
+    # ISSUE-052 crash-recovery: for reviewed/ship-ready issues, probe the PR merge
+    # state before proposing SHIP. An already-merged PR (a crash between merge and
+    # the smoke checkpoint) is reclassified as FINALIZE (smoke + registry only).
+    # Guarded so an offline/hung/unauthenticated `gh` never blocks or crashes the
+    # frequently-run queue: probes are timeout-bounded and degrade to phase-only.
+    # `--no-check-merged` opts out entirely (offline/deterministic runs).
+    if not getattr(args, "no_check_merged", False) and queues["ship_ready"]:
+        finalize_ready, still_ship = classify_ship_ready(
+            queues["ship_ready"], issues_meta
+        )
+        queues["finalize_ready"] = finalize_ready
+        queues["ship_ready"] = still_ship
+
     result = choose_action(queues, args.max_parallel)
 
     print(json.dumps(result))
@@ -447,6 +612,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
     result = validate_transitions(sprint_rows, args.action, targets)
     print(json.dumps(result))
     return 0 if result["valid"] else 1
+
+
+def cmd_ship_merge_decision(args: argparse.Namespace) -> int:
+    """Handler for 'ship-merge-decision' — idempotent merge guard (ISSUE-052).
+
+    Emits the JSON decision (``skip`` if the PR is already merged, else ``merge``)
+    that the ship executor consults before running ``gh pr merge``, so crash
+    recovery in the ship window never attempts a second merge. Always exits 0 —
+    a ``gh``-indeterminate probe yields ``merge`` and lets the real merge surface
+    any failure.
+    """
+    print(json.dumps(ship_merge_decision(args.pr)))
+    return 0
 
 
 # ── CLI entry point ─────────────────────────────────────────────────
@@ -480,6 +658,15 @@ def main(argv: list[str] | None = None) -> int:
         default=3,
         help="Maximum issues to process in parallel (default: 3)",
     )
+    na.add_argument(
+        "--no-check-merged",
+        action="store_true",
+        help=(
+            "Skip the ISSUE-052 `gh pr view` merge-state probe for reviewed "
+            "issues (offline / deterministic runs). Reviewed issues then always "
+            "propose SHIP (phase-only), never FINALIZE."
+        ),
+    )
 
     # validate subcommand
     va = subparsers.add_parser(
@@ -494,13 +681,24 @@ def main(argv: list[str] | None = None) -> int:
     va.add_argument(
         "--action",
         required=True,
-        choices=["SHIP", "REVIEW", "IMPLEMENT", "PIPELINE"],
+        choices=["SHIP", "REVIEW", "IMPLEMENT", "PIPELINE", "FINALIZE"],
         help="The action that was executed",
     )
     va.add_argument(
         "--targets",
         required=True,
         help="Comma-separated issue IDs (e.g. ISSUE-001,ISSUE-002)",
+    )
+
+    # ship-merge-decision subcommand (ISSUE-052 idempotent merge guard)
+    smd = subparsers.add_parser(
+        "ship-merge-decision",
+        help="Emit skip/merge for a PR so ship recovery never re-merges",
+    )
+    smd.add_argument(
+        "--pr",
+        required=True,
+        help="PR ref (number or URL) to probe for an already-merged state",
     )
 
     try:
@@ -516,6 +714,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_next_action(args)
     elif args.command == "validate":
         return cmd_validate(args)
+    elif args.command == "ship-merge-decision":
+        return cmd_ship_merge_decision(args)
 
     return 2
 

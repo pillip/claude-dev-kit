@@ -1,13 +1,17 @@
 """Unit tests for scripts/sprint_queue.py."""
 
 import json
+import subprocess
 
 from scripts.sprint_queue import (
+    _gh_pr_merge_state,
     choose_action,
+    classify_ship_ready,
     compute_queues,
     main,
     parse_issues_metadata,
     parse_sprint_table,
+    ship_merge_decision,
     validate_transitions,
 )
 
@@ -494,3 +498,316 @@ class TestCLI:
         assert exit_code == 1
         output = json.loads(captured.getvalue())
         assert output["action"] == "DONE"
+
+
+# ── ISSUE-052: crash-recovery — already-merged PR awareness ──────────
+
+
+class _FakeProc:
+    """Minimal stand-in for subprocess.CompletedProcess."""
+
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _runner(*, returncode=0, state=None, merged_at=None, stdout=None, stderr=""):
+    """Build a fake `runner` for _gh_pr_merge_state that records the argv."""
+    calls: list = []
+
+    def _run(cmd, **kwargs):
+        calls.append(cmd)
+        payload = stdout
+        if payload is None:
+            payload = json.dumps({"state": state, "mergedAt": merged_at})
+        return _FakeProc(returncode=returncode, stdout=payload, stderr=stderr)
+
+    _run.calls = calls
+    return _run
+
+
+class TestGhPrMergeState:
+    def test_merged_by_state(self):
+        assert _gh_pr_merge_state("123", runner=_runner(state="MERGED")) == "merged"
+
+    def test_merged_by_mergedat_even_if_state_open(self):
+        # A PR can report a mergedAt timestamp; treat presence as merged.
+        r = _runner(state="OPEN", merged_at="2026-08-11T00:00:00Z")
+        assert _gh_pr_merge_state("123", runner=r) == "merged"
+
+    def test_open(self):
+        assert _gh_pr_merge_state("123", runner=_runner(state="OPEN")) == "open"
+
+    def test_empty_ref_returns_none_without_calling_gh(self):
+        r = _runner(state="MERGED")
+        assert _gh_pr_merge_state("", runner=r) is None
+        assert r.calls == []
+
+    def test_nonzero_exit_degrades_to_none_with_warning(self, capsys):
+        r = _runner(returncode=1, stderr="gh: not authenticated")
+        assert _gh_pr_merge_state("123", runner=r) is None
+        assert "Warning" in capsys.readouterr().err
+
+    def test_exception_degrades_to_none_with_warning(self, capsys):
+        def _boom(cmd, **kwargs):
+            raise OSError("gh executable not found")
+
+        assert _gh_pr_merge_state("123", runner=_boom) is None
+        assert "Warning" in capsys.readouterr().err
+
+    def test_unparseable_json_degrades_to_none(self):
+        r = _runner(stdout="not-json")
+        assert _gh_pr_merge_state("123", runner=r) is None
+
+    def test_argv_is_fixed_and_shell_free(self):
+        r = _runner(state="MERGED")
+        _gh_pr_merge_state("PR-REF", runner=r)
+        assert r.calls[0] == ["gh", "pr", "view", "PR-REF", "--json", "state,mergedAt"]
+
+
+class TestClassifyShipReady:
+    def test_merged_goes_to_finalize(self):
+        meta = {"ISSUE-001": {"pr": "https://x/y/pull/1"}}
+        fin, ship = classify_ship_ready(
+            ["ISSUE-001"], meta, merge_state_fn=lambda ref, **kw: "merged"
+        )
+        assert fin == ["ISSUE-001"]
+        assert ship == []
+
+    def test_open_stays_ship(self):
+        meta = {"ISSUE-001": {"pr": "pull/1"}}
+        fin, ship = classify_ship_ready(
+            ["ISSUE-001"], meta, merge_state_fn=lambda ref, **kw: "open"
+        )
+        assert fin == []
+        assert ship == ["ISSUE-001"]
+
+    def test_gh_error_stays_ship(self):
+        meta = {"ISSUE-001": {"pr": "pull/1"}}
+        fin, ship = classify_ship_ready(
+            ["ISSUE-001"], meta, merge_state_fn=lambda ref, **kw: None
+        )
+        assert fin == []
+        assert ship == ["ISSUE-001"]
+
+    def test_missing_pr_ref_stays_ship_without_probe(self):
+        meta = {"ISSUE-001": {"pr": ""}}
+        calls = []
+
+        def _fn(ref, **kw):
+            calls.append(ref)
+            return "merged"
+
+        fin, ship = classify_ship_ready(["ISSUE-001"], meta, merge_state_fn=_fn)
+        assert fin == []
+        assert ship == ["ISSUE-001"]
+        assert calls == []  # no PR ref → no gh probe
+
+    def test_order_preserved_and_probe_cached(self):
+        meta = {
+            "ISSUE-001": {"pr": "pull/1"},
+            "ISSUE-002": {"pr": "pull/1"},  # same ref → probed once
+            "ISSUE-003": {"pr": "pull/3"},
+        }
+        calls = []
+
+        def _fn(ref, **kw):
+            calls.append(ref)
+            return "merged" if ref == "pull/1" else "open"
+
+        fin, ship = classify_ship_ready(
+            ["ISSUE-001", "ISSUE-002", "ISSUE-003"], meta, merge_state_fn=_fn
+        )
+        assert fin == ["ISSUE-001", "ISSUE-002"]
+        assert ship == ["ISSUE-003"]
+        assert calls == ["pull/1", "pull/3"]  # pull/1 cached, not re-probed
+
+
+class TestChooseActionFinalize:
+    def test_finalize_takes_priority_over_ship(self):
+        queues = {
+            "finalize_ready": ["ISSUE-001"],
+            "ship_ready": ["ISSUE-002"],
+            "review_ready": ["ISSUE-003"],
+            "implement_ready": [],
+            "in_flight": [],
+        }
+        result = choose_action(queues, max_parallel=3)
+        assert result["action"] == "FINALIZE"
+        assert result["targets"] == ["ISSUE-001"]
+
+    def test_ship_when_no_finalize_key_present(self):
+        # Backward compat: compute_queues never emits finalize_ready.
+        queues = {
+            "ship_ready": ["ISSUE-001"],
+            "review_ready": [],
+            "implement_ready": [],
+            "in_flight": [],
+        }
+        result = choose_action(queues, max_parallel=3)
+        assert result["action"] == "SHIP"
+
+    def test_finalize_caps_at_max_parallel(self):
+        queues = {
+            "finalize_ready": ["ISSUE-001", "ISSUE-002", "ISSUE-003"],
+            "ship_ready": [],
+            "review_ready": [],
+            "implement_ready": [],
+            "in_flight": [],
+        }
+        result = choose_action(queues, max_parallel=2)
+        assert result["targets"] == ["ISSUE-001", "ISSUE-002"]
+
+
+class TestShipMergeDecision:
+    def test_skip_when_already_merged(self):
+        d = ship_merge_decision("pull/1", merge_state_fn=lambda ref, **kw: "merged")
+        assert d["action"] == "skip"
+        assert "pull/1" in d["reason"]
+
+    def test_merge_when_open(self):
+        d = ship_merge_decision("pull/1", merge_state_fn=lambda ref, **kw: "open")
+        assert d["action"] == "merge"
+
+    def test_merge_when_gh_indeterminate(self):
+        # gh error → default to merge; the real `gh pr merge` surfaces any failure.
+        d = ship_merge_decision("pull/1", merge_state_fn=lambda ref, **kw: None)
+        assert d["action"] == "merge"
+
+
+class TestParsePrField:
+    def test_parses_pr_field(self):
+        text = (
+            "### ISSUE-009: t\n- Priority: P1\n- Status: reviewed\n"
+            "- Depends-On: none\n- PR: https://github.com/x/y/pull/9\n\n"
+            "#### Acceptance Criteria (DoD)\n- [ ] a\n"
+        )
+        meta = parse_issues_metadata(text)
+        assert meta["ISSUE-009"]["pr"] == "https://github.com/x/y/pull/9"
+
+    def test_pr_defaults_to_empty(self):
+        text = _make_issue(num="001")
+        meta = parse_issues_metadata(text)
+        assert meta["ISSUE-001"]["pr"] == ""
+
+
+class TestValidateFinalize:
+    def test_valid_finalize_transition(self):
+        rows = [{"issue": "ISSUE-001", "status": "active", "attempts": "1", "last_error": "—", "phase": "shipped"}]
+        result = validate_transitions(rows, "FINALIZE", ["ISSUE-001"])
+        assert result["valid"] is True
+        assert result["transitioned"] == ["ISSUE-001"]
+
+    def test_finalize_stuck_if_not_shipped(self):
+        rows = [{"issue": "ISSUE-001", "status": "active", "attempts": "1", "last_error": "—", "phase": "reviewed"}]
+        result = validate_transitions(rows, "FINALIZE", ["ISSUE-001"])
+        assert result["valid"] is False
+        assert result["stuck"] == ["ISSUE-001"]
+
+
+class TestCLIFinalize:
+    def _sprint_and_issues(self, tmp_path, pr_line="- PR: https://github.com/x/y/pull/1"):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(_make_sprint_state([
+            ("ISSUE-001", "active", "1", "—", "reviewed"),
+        ]))
+        issues = tmp_path / "issues.md"
+        issues.write_text(
+            "### ISSUE-001: t\n- Priority: P1\n- Status: reviewed\n"
+            f"- Depends-On: none\n{pr_line}\n\n"
+            "#### Acceptance Criteria (DoD)\n- [ ] a\n"
+        )
+        return sprint, issues
+
+    def _run_next_action(self, sprint, issues, capsys, extra=None):
+        argv = [
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--max-parallel", "2",
+        ]
+        if extra:
+            argv += extra
+        exit_code = main(argv)
+        out = json.loads(capsys.readouterr().out)
+        return exit_code, out
+
+    def test_finalize_when_pr_merged(self, tmp_path, capsys, monkeypatch):
+        import scripts.sprint_queue as q
+        monkeypatch.setattr(q, "_gh_pr_merge_state", lambda ref, **kw: "merged")
+        sprint, issues = self._sprint_and_issues(tmp_path)
+        _, out = self._run_next_action(sprint, issues, capsys)
+        assert out["action"] == "FINALIZE"
+        assert out["targets"] == ["ISSUE-001"]
+
+    def test_ship_when_pr_open(self, tmp_path, capsys, monkeypatch):
+        import scripts.sprint_queue as q
+        monkeypatch.setattr(q, "_gh_pr_merge_state", lambda ref, **kw: "open")
+        sprint, issues = self._sprint_and_issues(tmp_path)
+        _, out = self._run_next_action(sprint, issues, capsys)
+        assert out["action"] == "SHIP"
+        assert out["targets"] == ["ISSUE-001"]
+
+    def test_ship_when_gh_unavailable(self, tmp_path, capsys, monkeypatch):
+        import scripts.sprint_queue as q
+        monkeypatch.setattr(q, "_gh_pr_merge_state", lambda ref, **kw: None)
+        sprint, issues = self._sprint_and_issues(tmp_path)
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert out["action"] == "SHIP"  # graceful phase-only fallback
+        assert exit_code == 0
+
+    def test_no_check_merged_flag_skips_probe(self, tmp_path, capsys, monkeypatch):
+        import scripts.sprint_queue as q
+
+        def _boom(ref, **kw):
+            raise AssertionError("gh probe must not run with --no-check-merged")
+
+        monkeypatch.setattr(q, "_gh_pr_merge_state", _boom)
+        sprint, issues = self._sprint_and_issues(tmp_path)
+        _, out = self._run_next_action(sprint, issues, capsys, extra=["--no-check-merged"])
+        assert out["action"] == "SHIP"
+
+    def test_ship_merge_decision_subcommand_skip(self, capsys, monkeypatch):
+        import scripts.sprint_queue as q
+        monkeypatch.setattr(q, "_gh_pr_merge_state", lambda ref, **kw: "merged")
+        exit_code = main(["ship-merge-decision", "--pr", "1"])
+        out = json.loads(capsys.readouterr().out)
+        assert exit_code == 0
+        assert out["action"] == "skip"
+
+    def test_ship_merge_decision_subcommand_merge(self, capsys, monkeypatch):
+        import scripts.sprint_queue as q
+        monkeypatch.setattr(q, "_gh_pr_merge_state", lambda ref, **kw: "open")
+        exit_code = main(["ship-merge-decision", "--pr", "1"])
+        out = json.loads(capsys.readouterr().out)
+        assert exit_code == 0
+        assert out["action"] == "merge"
+
+
+class TestGhPrMergeStateRobustness:
+    """Regression guards: the probe must NEVER raise (AC3 'never crashes')."""
+
+    def test_non_object_json_degrades_to_none(self, capsys):
+        # Valid JSON that is not an object — must not raise AttributeError.
+        for payload in ("null", "[]", "123", '"x"'):
+            r = _runner(stdout=payload)
+            assert _gh_pr_merge_state("123", runner=r) is None
+        assert "Warning" in capsys.readouterr().err
+
+    def test_timeout_is_passed_to_runner(self):
+        seen = {}
+
+        def _run(cmd, **kwargs):
+            seen.update(kwargs)
+            return _FakeProc(returncode=0, stdout=json.dumps({"state": "OPEN"}))
+
+        _gh_pr_merge_state("123", timeout=3.5, runner=_run)
+        assert seen.get("timeout") == 3.5
+
+    def test_timeout_expired_degrades_to_none(self, capsys):
+        def _run(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout"))
+
+        assert _gh_pr_merge_state("123", runner=_run) is None
+        assert "Warning" in capsys.readouterr().err
