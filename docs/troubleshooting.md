@@ -19,6 +19,16 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 - **Cause**: Running verify_checkpoint.py from a worktree where issues.md doesn't exist
 - **Solution**: The script should auto-detect the repo root. Ensure `scripts/worktree.sh` exists or that you're in a valid git repository.
 
+### Problem: Visual-diff / computed-styles gate reports "browser unavailable"
+- **Symptom**: The visual-diff or computed-styles gate is skipped with a "browser unavailable" note on stderr
+- **Cause**: Playwright/Chromium is not installed, and by default the gate will not install it — a review/CI gate must not mutate its environment or hit the network as a silent side effect
+- **Solution**: Set `KIT_ALLOW_BROWSER_INSTALL=1` to auto-install Playwright + Chromium before the gate runs. If you leave it unset the skip is intentional, not a failure.
+
+### Problem: Sprint queue PR merge-state probe is slow or hangs
+- **Symptom**: The sprint queue stalls while checking a PR's merge state against an offline or hung `gh`
+- **Cause**: The `gh pr view` merge-state probe in `scripts/sprint_queue.py` is timeout-bounded so a stuck `gh` never blocks the frequently-run queue
+- **Solution**: `KIT_SPRINT_QUEUE_GH_TIMEOUT` defaults to `10` seconds; on timeout the probe degrades to a phase-only decision. Override the bound by exporting `KIT_SPRINT_QUEUE_GH_TIMEOUT=<seconds>`.
+
 ## GitHub Authentication
 
 ### Problem: `gh auth status` fails
