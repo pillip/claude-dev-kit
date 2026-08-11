@@ -21,24 +21,51 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 
-def _check_playwright() -> bool:
+def _playwright_importable() -> bool:
+    """True iff `playwright.sync_api` imports (lazy — never at module load)."""
     try:
         from playwright.sync_api import sync_playwright  # noqa: F401
         return True
     except ImportError:
-        import subprocess
-        try:
-            subprocess.run(["pip", "install", "playwright"], capture_output=True, timeout=60)
-            subprocess.run(["playwright", "install", "chromium"], capture_output=True, timeout=120)
-            from playwright.sync_api import sync_playwright  # noqa: F401
-            return True
-        except Exception:
-            return False
+        return False
+
+
+def _check_playwright() -> bool:
+    """Report whether Playwright is available; auto-install only on opt-in.
+
+    A review/CI gate must never mutate its environment or reach the network as a
+    silent side effect (ISSUE-049). When Playwright is missing, the heavy
+    `pip install playwright` + `playwright install chromium` provisioning runs
+    ONLY when the operator sets ``KIT_ALLOW_BROWSER_INSTALL=1``. Otherwise the
+    gate reports "browser unavailable" to stderr and returns False so the caller
+    takes its existing skip/degrade path. The diagnostic goes to stderr; stdout
+    stays clean for machine-readable output.
+    """
+    if _playwright_importable():
+        return True
+
+    if os.environ.get("KIT_ALLOW_BROWSER_INSTALL") != "1":
+        print(
+            "browser unavailable — skipping computed-style verification "
+            "(set KIT_ALLOW_BROWSER_INSTALL=1 to auto-install Playwright + Chromium)",
+            file=sys.stderr,
+        )
+        return False
+
+    # Opted in: heavy provisioning (network + subprocess) is expected here.
+    try:
+        subprocess.run(["pip", "install", "playwright"], capture_output=True, timeout=60)
+        subprocess.run(["playwright", "install", "chromium"], capture_output=True, timeout=120)
+    except Exception:
+        return False
+    return _playwright_importable()
 
 
 # ── Build Figma token reference ─────────────────────────────────────
