@@ -1,0 +1,17 @@
+# Review Notes — PR #73
+
+## Code Review
+_Source: reviewer-degraded_
+
+- **[Low] AA-aware _pixel_diff Pillow branch and the yaml gate branch are optional-dep-gated — coverage of the primary algorithms is env-dependent**
+  Evidence: In a minimal env without PyYAML/Pillow: test_malformed_yaml_exits_one and test_missing_required_key_exits_one (tests/test_validate_frontmatter.py:101-125) skip via pytest.importorskip('yaml'), so validate_frontmatter.main()'s yaml-parse + missing-key branch (scripts/validate_frontmatter.py:81-93) is unexercised; and test_identical_images_report_zero_diff / test_different_images_report_nonzero_diff (tests/test_figma_verify_family.py:161-172) fall into _pixel_diff's byte-level except-ImportError fallback (scripts/verify_visual_diff.py:189-202), leaving the AA-aware Pillow path (119-187) unexercised. Assertions deliberately hold in BOTH branches so this is not a hollow/flaky test; the AA building blocks _is_antialiased/_color_distance_sq ARE covered unconditionally (tests/test_figma_verify_family.py:174-193). This is the LESSON-3 'importorskip can hollow the coverage claim' class but does not breach the non-zero AC (all six scripts non-zero in both envs; gate env measured 91/77/79/75/68/51%).
+  Fix: Run the coverage-AC measurement in the canonical env with PyYAML+Pillow installed (CI does, per each script's docstring) rather than the bare .venv; optionally add a Pillow-gated test that asserts the AA branch classifies a sharp-edge pixel as anti-aliased and drops it from diff_pixels, so the primary _pixel_diff path is pinned when the dep is available. Record-only; no change required for this PR.
+
+## Security Findings
+_Source: reviewer-degraded_
+
+_No findings._
+
+## Over-Engineering
+
+_No findings._

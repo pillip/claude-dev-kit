@@ -1,19 +1,13 @@
 {
-  "pr_number": "68",
+  "pr_number": "73",
   "code_source": "reviewer-degraded",
   "security_source": "reviewer-degraded",
   "code_findings": [
     {
       "severity": "Low",
-      "title": "TC-043b reference scan excludes the tests/ tree",
-      "evidence": "tests/test_dead_script_removal.py:37-48 ACTIVE_SURFACES omits tests/ (necessary — the guard file itself contains the BANNED tokens in REMOVED_FILES/BANNED/docstring). A dead-script name re-introduced in a DIFFERENT test file would not be caught by TC-043b.",
-      "fix": "No change recommended. Impact is minimal and largely self-covering: a test that actually imports/calls a deleted script fails at runtime. If tightening ever matters, scan tests/ too while excluding this one guard module by name."
-    },
-    {
-      "severity": "Low",
-      "title": "Extension-less BANNED substring tokens are broader than the kit_root.sh token",
-      "evidence": "tests/test_dead_script_removal.py:35 BANNED = ('ensure_permissions','ensure_gh','kit_root.sh','lint_skill_cache_order'). Three tokens are bare identifiers; a future live identifier like ensure_github_token would false-positive. kit_root.sh deliberately keeps its .sh suffix so it is NOT a substring of the live find_kit_root in session_start.py (verified no collision today).",
-      "fix": "Acceptable as-is: the broader direction favors catching regressions and a false positive would be loud + trivially fixed (matches the occurrence-whitelist-over-blacklist lesson). Optional future tightening: prefix scripts/ or add extensions to the three bare tokens if a real collision appears."
+      "title": "AA-aware _pixel_diff Pillow branch and the yaml gate branch are optional-dep-gated — coverage of the primary algorithms is env-dependent",
+      "evidence": "In a minimal env without PyYAML/Pillow: test_malformed_yaml_exits_one and test_missing_required_key_exits_one (tests/test_validate_frontmatter.py:101-125) skip via pytest.importorskip('yaml'), so validate_frontmatter.main()'s yaml-parse + missing-key branch (scripts/validate_frontmatter.py:81-93) is unexercised; and test_identical_images_report_zero_diff / test_different_images_report_nonzero_diff (tests/test_figma_verify_family.py:161-172) fall into _pixel_diff's byte-level except-ImportError fallback (scripts/verify_visual_diff.py:189-202), leaving the AA-aware Pillow path (119-187) unexercised. Assertions deliberately hold in BOTH branches so this is not a hollow/flaky test; the AA building blocks _is_antialiased/_color_distance_sq ARE covered unconditionally (tests/test_figma_verify_family.py:174-193). This is the LESSON-3 'importorskip can hollow the coverage claim' class but does not breach the non-zero AC (all six scripts non-zero in both envs; gate env measured 91/77/79/75/68/51%).",
+      "fix": "Run the coverage-AC measurement in the canonical env with PyYAML+Pillow installed (CI does, per each script's docstring) rather than the bare .venv; optionally add a Pillow-gated test that asserts the AA branch classifies a sharp-edge pixel as anti-aliased and drops it from diff_pixels, so the primary _pixel_diff path is pinned when the dep is available. Record-only; no change required for this PR."
     }
   ],
   "security_findings": [],

@@ -1,9 +1,27 @@
-# Security Review (degraded path — reviewer agent) — PR #68 / ISSUE-043
+# Security review (degraded-path, dimension: security)
 
-Source: claude-dev-kit:reviewer (degraded path; runtime /security-review not exposed to sub-agents).
+PR #73 (ISSUE-045) — TESTS-ONLY. Scope: risk introduced by the TEST code itself
+(argv injection, path traversal, untrusted input, out-of-tree execution).
 
-## Verdict
+## Verification performed
+
+- The only `subprocess.run` (test_figma_verify_family.py:89-95) uses a fixed
+  argv list `[sys.executable, "-c", code]` — no `shell=True`, and `code` is a
+  hardcoded literal with no interpolation of dynamic/untrusted values. `cwd` is
+  derived from `__file__` (`Path(__file__).resolve().parents[1]`), a trusted
+  in-tree path. No injection surface, no out-of-tree file execution.
+- No network egress from the tests: `_check_playwright` and the browser
+  extraction functions are mocked to constants, and every `main()` invocation
+  supplies `--implementation`/`--url` so the real `_check_dev_server`
+  (localhost probes) and the pip/playwright auto-install path are never reached.
+- No path traversal / untrusted input: all filesystem paths are `tmp_path`
+  fixtures or the `__file__`-relative `FIXTURE`. Writes (`generate_css_file`,
+  skill fixture writers) stay under `tmp_path`.
+- No secrets, credentials, or hardcoded tokens in the test code or the
+  `design_data.json` fixture (fixture holds only synthetic colors/text nodes).
+- No `eval`/`exec` of untrusted data. The `_EXTRACT_JS` browser payload is never
+  executed by tests (the extraction seam is mocked).
+
+## Findings
+
 No findings.
-
-- .claude/run/ gitignore is correctly scoped and does not hide anything security-relevant. git check-ignore confirms .claude/settings.json is NOT ignored (settings/config stay visible); only the ephemeral telemetry subpath is ignored. The pattern .claude/run/ is anchored to repo root (mid-string slash), so it cannot accidentally match project/.claude/. Gitignoring runtime telemetry reduces accidental-secret-commit risk rather than raising it.
-- No injection / path-traversal in the guard test. tests/test_dead_script_removal.py uses list-form subprocess.run([...]) (no shell=True) with hardcoded literal args and cwd=ROOT derived from __file__. check=True on git ls-files; correctly omitted on git check-ignore (exit code 1 is the meaningful "not ignored" signal).
