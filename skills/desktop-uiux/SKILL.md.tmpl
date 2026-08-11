@@ -37,43 +37,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
    - **If exists with Decision Matrix**: Skip interview — reuse web decisions. Present to user for confirmation.
    - **If not exists or missing Decision Matrix**: Run the Design Interview below.
 
-   Ask the user the following questions to anchor the design direction.
-   These answers become binding constraints for Phase 2.
-   Present all questions at once (not one-by-one) and wait for answers.
-   Also tell the user: "If any of these are hard to answer right now, just say 'skip'. You can also skip the entire interview."
-
-   a) **Brand Personality**: "If this product were a person, who would they be?"
-      (e.g., a luxury hotel concierge, a neighborhood cafe barista, a strict operating room nurse, a playful friend)
-
-   b) **Emotional Target**: "What one emotion do you want users to feel when they see the first screen?"
-      (e.g., trust, curiosity, relief, excitement, calm)
-
-   c) **Anti-Reference**: "What competing product or design should this absolutely NOT look like?"
-      (a feeling you want to avoid, or a specific product name)
-
-   d) **Aspiration Reference**: "Is there a product or brand you'd like to reference for design? (doesn't have to be the same domain)"
-      (e.g., Stripe's cleanliness, Nintendo's playfulness, Aesop's luxury)
-
-   e) **Desktop Identity**: "Should this app feel like a native part of the OS, or should it have its own distinct visual identity?"
-      (e.g., natural integration like a macOS native app vs distinct UI identity like Figma/Notion)
-
-5.6) Handle user response:
-
-   **Case A — User answers (partially or fully)**:
-   Record answers in memory — these become HARD CONSTRAINTS for Phase 2.
-   If the user skips individual questions, note them as "unconstrained" but still avoid generic defaults.
-
-   **Case B — User skips the entire interview** (says "skip", "pass", etc.):
-   - Do NOT silently proceed with generic defaults.
-   - Instead, the agent MUST auto-derive initial constraints from the PRD/UX spec:
-     a) Brand Personality → infer from target user personas and product category in PRD
-     b) Emotional Target → infer from the product's core value proposition
-     c) Anti-Reference → infer from competitor analysis in PRD (if any), otherwise mark "unconstrained"
-     d) Aspiration Reference → mark "unconstrained"
-     e) Desktop Identity → infer from product type (productivity tool → native feel, creative tool → branded)
-   - Present the auto-derived constraints to the user: "Since you skipped the interview, here's what I inferred from the PRD: [constraints]. Shall I proceed with these?"
-   - If approved, proceed with these as soft constraints (not hard).
-   - If rejected, re-offer the interview questions or accept corrections.
+   {{DESIGN_PHILOSOPHY}}
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Verify Phase 1 outputs: `docs/ux_spec.md` exists, PRD was read, interview answers (or auto-derived/reused constraints) are recorded.
@@ -149,12 +113,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 10) Present the design philosophy to the user and ask for approval before proceeding.
     - If rejected, iterate on the direction.
 
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_philosophy.md` exists with:
-> (a) a **Signature Move** that is numeric/token-specific (not prose-only);
-> (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line; AND
-> (c) when Reference Anchors is present, exactly **2–3** adopted cues (not 1, not 4+), each citing an image path, plus a `literal_quote:` field with a concrete word/number/glyph/shortcut (NOT an adjective like "luxury"). The literal_quote may only be omitted if Phase 1.5 interview was explicitly skipped — in which case `literal_quote: (skipped — interview not run)` must appear instead of the field being absent.
-> If any of (a) / (b) / (c) fails: STOP and fix before proceeding.
+{{DESIGN_PHILOSOPHY_CHECKPOINT}}
 
 ### Phase 3 — Desktop Design System
 11) Generate `docs/design_system_desktop.md` reflecting the chosen aesthetic:

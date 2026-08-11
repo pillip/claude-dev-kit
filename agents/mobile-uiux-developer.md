@@ -217,7 +217,7 @@ Every screen MUST implement all applicable states from the wireframes:
 - **Accessibility**: Does every interactive element have `accessibilityLabel` and `accessibilityRole`? Is `useReducedMotion()` applied?
 - **Prototype runnability**: Does `npx expo start` succeed without errors? Are all dependencies in `package.json` correct?
 - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-  - If Low: re-check prototype setup and fix issues before finalizing.
+  - If Low: re-check prototype and fix issues before finalizing.
   - If Medium: flag specific concerns in deliverable docs.
   - If High: proceed to finalize.
 

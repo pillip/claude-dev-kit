@@ -163,8 +163,8 @@ INSTEAD:
 
 ## Self-Review (Mandatory before finalizing deliverables)
 
-- **Design philosophy alignment**: Does every screen, component, and animation reflect the named aesthetic direction? Spot-check 3 random components.
-- **Token compliance**: Are there any hardcoded color hex codes, pixel font sizes, or spacing values outside of CSS custom properties?
+- **Design philosophy alignment**: Does every screen, component, and animation reflect the named aesthetic direction? Check 3 random components against the philosophy.
+- **Token compliance**: Are there any hardcoded colors, font sizes, or spacing values outside of CSS custom properties?
 - **State coverage**: Does every screen prototype include a state-switcher toolbar for default/loading/empty/error states?
 - **PRD feature coverage**: Cross-check against PRD — is every feature represented in wireframes and interactions? Any silently omitted?
 - **Accessibility**: Are focus states visible? Do all interactive elements have keyboard handlers? Color contrast >= 4.5:1?

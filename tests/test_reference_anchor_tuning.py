@@ -8,23 +8,34 @@ These tests verify the three uiux skill templates declare:
 - The Phase 2 CHECKPOINT requires the literal_quote field
 
 The tests parse the markdown — they do NOT run /uiux.
+
+Since ISSUE-041 the design-interview and Phase 2 checkpoint boilerplate is
+injected via the {{DESIGN_PHILOSOPHY}} / {{DESIGN_PHILOSOPHY_CHECKPOINT}}
+tokens (scripts/fragments.py), so the contract is asserted against the
+RESOLVED template content — what /uiux actually reads — not the raw tmpl.
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from gen_skills import process_template  # noqa: E402
+
 UIUX_TMPL_PATHS = [
-    Path("skills/uiux/SKILL.md.tmpl"),
-    Path("skills/mobile-uiux/SKILL.md.tmpl"),
-    Path("skills/desktop-uiux/SKILL.md.tmpl"),
+    ROOT / "skills/uiux/SKILL.md.tmpl",
+    ROOT / "skills/mobile-uiux/SKILL.md.tmpl",
+    ROOT / "skills/desktop-uiux/SKILL.md.tmpl",
 ]
 
 
 def _read(path: Path) -> str:
     assert path.exists(), f"missing template: {path}"
-    return path.read_text(encoding="utf-8")
+    return process_template(path)
 
 
 class TestCueCountReduced:

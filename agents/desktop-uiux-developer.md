@@ -275,7 +275,7 @@ Every screen MUST implement all applicable states from the wireframes:
 - **Memory safety**: Do all `useEffect` hooks return cleanup functions? Are portal containers cleaned up? Are fetch calls using `AbortController`?
 - **Bundle health**: Is vendor chunk split from app code? Are Electron built-ins externalized? Is renderer bundle under 500KB gzip?
 - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-  - If Low: re-check prototype setup and fix issues before finalizing.
+  - If Low: re-check prototype and fix issues before finalizing.
   - If Medium: flag specific concerns in deliverable docs.
   - If High: proceed to finalize.
 
