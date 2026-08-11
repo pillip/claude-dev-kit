@@ -27,7 +27,24 @@ Steps:
    ```bash
    bash scripts/registry_edit.sh STATUS.md -- bash -c '<update command>'
    ```
-4) Merge via `gh pr merge` (merge/squash per repo rules) and delete branch.
+4) **Idempotent merge** (crash-recovery safe — ISSUE-052). A ship-phase interruption
+   (e.g. an API/spend limit) BETWEEN the merge and the smoke checkpoint can leave the
+   PR already **MERGED** while `sprint_state.md` still reads `reviewed`/`shipping`; in
+   that case `sprint_queue.py next-action` emits a **FINALIZE** action (smoke + registry
+   only), not SHIP. Whether invoked for a normal SHIP or a FINALIZE recovery, consult
+   the idempotent decision helper BEFORE merging so recovery never attempts a second
+   merge:
+   ```bash
+   python3 scripts/sprint_queue.py ship-merge-decision --pr <pr_number>
+   ```
+   - `{"action": "skip", ...}` (PR already merged) → do NOT run `gh pr merge`; proceed
+     straight to worktree cleanup, the smoke checkpoint, and registry finalization.
+   - `{"action": "merge", ...}` (un-merged, or `gh` indeterminate) → merge via
+     `gh pr merge` (merge/squash per repo rules) and delete the branch as usual.
+
+   The probe degrades gracefully (an offline/unauthenticated `gh` yields `merge`, so a
+   normal ship is never blocked); the merge checkpoint below still confirms the PR is
+   merged either way.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `{{CHECKPOINT_CMD}} --skill ship --phase merge --issue $ARGUMENTS`
