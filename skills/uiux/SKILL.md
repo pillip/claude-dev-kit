@@ -50,9 +50,9 @@ Run these checks silently at the start. Use results to adapt behavior:
 
 ### Phase 1.5 — Design Interview (CRITICAL — drives differentiation)
 4.5) Ask the user the following questions to anchor the design direction.
-     These answers become binding constraints for Phase 2.
-     Present all questions at once (not one-by-one) and wait for answers.
-     Also tell the user: "If any of these are hard to answer right now, just say 'skip'. You can also skip the entire interview."
+   These answers become binding constraints for Phase 2.
+   Present all questions at once (not one-by-one) and wait for answers.
+   Also tell the user: "If any of these are hard to answer right now, just say 'skip'. You can also skip the entire interview."
 
    a) **Brand Personality**: "If this product were a person, who would they be?"
       (e.g., a luxury hotel concierge, a neighborhood cafe barista, a strict operating room nurse, a playful friend)
