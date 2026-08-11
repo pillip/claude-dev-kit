@@ -1,52 +1,160 @@
-# Security Review (degraded) — ISSUE-037 / PR #58
+# Security Review (degraded) — ISSUE-038 / PR #59
 
-Scope: `project/.claude/hooks/session_start.py` (+29/-13), `tests/test_lifecycle_hooks.py` (+58), diff `origin/main...HEAD` @ 7b552e0. The hook's stdout is injected into the model's session context, so it was reviewed as an instruction-injection surface.
+Runtime `/security-review` is not exposed; this is the degraded-path security pass.
+Scope: the security checklist only (injection, authn/z, secrets, input validation,
+deserialization, dependencies, XSS, misconfiguration). Code-quality and the
+minimality axis are covered by separate invocations.
 
-Positive note (context for severity): the new plugin-branch instruction (session_start.py:73-87) is a **constant string** — no env var, file content, or path segment is interpolated into the injected text on the plugin path. This is a strict reduction of attacker-influenceable data in the injection surface versus the old pinned absolute path.
+Files reviewed:
+- `project/.claude/hooks/autotest.py` (+256/-81) — the PostToolUse hook now
+  persists a module→test-file index and a debounce state under
+  `.claude/run/autotest_cache.json`.
+- `tests/test_autotest.py` (+206).
+
+Threat-model baseline (from the task): the hook *already* discovers and executes
+test files from the workspace by design, and can BLOCK the model's action on
+failure. Findings below are scoped to NEW attack surface introduced by the cache.
+
+## Surfaces explicitly checked and cleared
+
+- **Deserialization (pickle vs json).** Cache is read with `json.load` only
+  (`_load_cache`, line 255). No `pickle`/`eval`/`exec`/`yaml.load` anywhere in
+  the diff. `_load_cache` is strictly typed/validated and fail-soft
+  (`{{{ not json` → empty cache; test `test_corrupt_cache_rebuilds_and_exits_clean`).
+  Not a finding.
+- **Shell / command injection into argv.** All `subprocess.run` calls use list
+  form; no `shell=True`. Test file paths become discrete argv elements, so a
+  malicious *filename* cannot break out into a shell. (The one residual argv
+  concern — leading-dash option injection via a *poisoned* cache entry — is
+  folded into Finding 1.)
+- **Secrets / file contents.** The cache stores only file *paths*, `mtime_ns`,
+  `size`, and SHA-1 fingerprints. No file contents, tokens, or env values are
+  persisted. (Absolute-path/username leakage is Finding 4.)
+- **New env-var knobs / new subprocess-timeout instances.** None added.
+  `DEBOUNCE_SECONDS`/`CACHE_VERSION` are module constants, not env knobs; no new
+  `subprocess.run(timeout=...)` seam was introduced (the pre-existing 30s
+  `TIMEOUT` is out of scope per the task).
+- **Test code isolation.** Debounce tests monkeypatch at the correct seam
+  (`autotest.run_python_test`), so no recursive real-pytest spawn; other tests
+  run only trivial tempdir fixtures with test-controlled content. No unsafe
+  execution of untrusted input in the tests.
 
 ---
 
-### [Medium] `<kit-root>` deferred resolution can degrade into executing an attacker-planted relative `scripts/contributor_report.py` without a permission prompt
+### [Medium] Cache-derived related-test paths are executed unvalidated on warm hits (cache poisoning → out-of-tree file execution + pytest/vitest option injection)
 
-**Evidence**: `project/.claude/hooks/session_start.py:73-75` — the injected instruction defers path resolution to the model: `report = "<kit-root>/scripts/contributor_report.py"` with `<kit-root> = "the Kit Script Root absolute path shown in the preamble of any active kit skill"`. Two weaknesses in that binding:
+**Evidence.** On a warm index hit, `find_related_python_tests` /
+`find_related_js_tests` return `list(cached)` verbatim with no re-validation
+(autotest.py:347-349, 384-386). `_run_source_branch` then appends every cached
+`rf` to `selected` **without** the `os.path.isfile` guard that `primary` gets:
 
-1. "**any** active kit skill" — the model must judge which in-context skills are kit skills; a project-local skill (`.claude/skills/` in an untrusted repo) can impersonate a kit preamble and present a fake `### Kit Script Root` pointing at an attacker directory.
-2. No failure-mode guidance: if the model cannot resolve an absolute root, the natural fallback (also suggested by the genuine preamble's standalone-layout branch, `scripts/preambles.py:44` "run commands as written") is the relative form `python3 scripts/contributor_report.py`. Kit skills pre-allowlist exactly that shape — `skills/ship/SKILL.md:5` frontmatter includes `Bash(python3 scripts/*)` — so in an untrusted project cwd that planted `scripts/contributor_report.py`, the command executes attacker code **with no permission prompt**.
+```python
+if primary and os.path.isfile(primary):     # primary IS checked
+    test_files.append(primary)
+for rf in related:                            # rf (from cache) is NOT checked
+    if rf not in test_files:
+        test_files.append(rf)
+...
+for tf in selected:
+    blocked = run_python_test(tf) if lang == "py" else run_js_test(tf)
+```
+`run_python_test` passes `tf` straight into `subprocess.run([pytest, tf, "-x", ...])`
+(autotest.py:147-152). Pytest *imports* the file it is pointed at, so an arbitrary
+path executes module-level code.
 
-Preconditions (why Medium, not High): contributor mode ON (kit-developer setting, small population), plugin install, untrusted repo with a planted file, and the model taking the impersonated/relative resolution path instead of the genuine preamble's absolute path. Uncertainty flag: exploit probability is model-behavior-dependent; the channel itself is verified.
+The warm-hit path is fully attacker-steerable because the stored `fingerprint`
+is itself in the attacker-writable cache: the fingerprint is a SHA-1 of
+`(relpath, mtime_ns, size)` (`_stat_fingerprint`), all computable, so a poisoned
+cache can set `index["fingerprint"]` to match the *current* tree and thereby
+skip the scan entirely while returning arbitrary `modules` entries. Those entries
+can (a) point **outside** `tests/` and outside the project root (path traversal
+past what the scan would ever select), (b) skip the `test_`/`.test.` name
+predicate, and (c) begin with `-` (e.g. `"-pattacker_plugin"`, `"-c/tmp/evil.ini"`,
+`"--pdb"`), which pytest/vitest interpret as **options/plugins**, not paths.
 
-**Fix**: Tighten the injected instruction: (a) bind resolution to "the Kit Script Root shown in the preamble of the kit skill **you are currently executing** (the one whose step you are rating)", not "any active kit skill"; (b) add an explicit safe failure mode: "if you cannot resolve an absolute Kit Script Root, skip filing the report — never invoke `scripts/contributor_report.py` via a relative path." Alternative structural fix: have the hook print the stable, non-pinned cache **parent** dir (strip the trailing version segment from `CLAUDE_PLUGIN_ROOT`) plus "use the highest installed version directory" — keeps resolution deterministic and out of free-text preamble scanning entirely.
+Precondition is local write to `.claude/run/autotest_cache.json`, which is
+roughly baseline-equivalent to dropping a `tests/test_x.py` — hence **Medium**,
+not High. The genuine escalation over baseline is: reaching files *outside* the
+workspace, bypassing the name filter, and injecting collector options/plugins.
+
+**Fix.** Treat cached paths as untrusted on read. In `_run_source_branch` (and/or
+at the point `list(cached)` is returned), drop any entry that is not an existing
+regular file, not under `project_root` (py: under `project_root/tests`), does not
+match the test-name predicate (`_is_python_test_file` / `_is_js_test_file`), or
+starts with `-`. Apply the same `os.path.isfile` guard to `rf` that `primary`
+already gets. This keeps warm-hit performance while making a poisoned cache no
+more powerful than the baseline scan.
+
+### [Low] Debounce trusts an attacker-writable "pass" entry to suppress the block-on-failure safety signal
+
+**Evidence.** `_run_source_branch` returns `None` (no block, tests skipped) when a
+cached debounce entry has `result == "pass"`, a matching `test_set`, and
+`last_run` within `DEBOUNCE_SECONDS` (autotest.py:562-571). The cache is
+fail-soft and writable anywhere in the workspace, so a pre-seeded `"pass"` entry
+— keyed on `lang:abspath(source)` with a forged matching `test_set` (again just
+`(path, mtime_ns, size)` SHA-1 over the unchanged test files) and a recent
+`last_run` — silences a genuine failing run for up to 30s after a source edit
+that breaks tests but doesn't touch the test files. Impact is bounded: this is
+the advisory autotest convenience hook, not an authoritative gate
+(`verify_gates.py`/CI are elsewhere), the window is 30s, and it needs local
+cache write.
+
+**Fix.** Acceptable within the stated threat model, but treat the debounce record
+as advisory-only: document that the autotest hook is not a security control, and
+consider not letting a *stored* `pass` suppress a run across separate hook
+invocations (e.g. keep debounce in memory for a single event, or namespace/sign
+the cache) so on-disk tampering cannot mute a real failure.
+
+### [Low] Non-atomic, symlink-following cache write can clobber a pre-planted symlink target
+
+**Evidence.** `_save_cache` does `os.makedirs(dirname, exist_ok=True)` then
+`open(path, "w")` with no `O_NOFOLLOW` and no atomic temp-then-rename
+(autotest.py:277-279). If `.claude/run/autotest_cache.json` (or `.claude/run/`)
+is a symlink an attacker planted in the workspace, the hook overwrites the link
+target with cache JSON. Content is attacker-uncontrolled JSON, so this is
+destructive (file clobber) rather than an injection vector, and requires the
+attacker to plant the link first. The non-atomic write can also corrupt the
+cache under concurrent hook invocations, though `_load_cache` fails soft on that.
+
+**Fix.** Write to a temp file in the same directory and `os.replace()` into place
+(atomic), and refuse to follow a symlink at the final path (e.g. `os.open` with
+`O_NOFOLLOW`, or reject if `os.path.islink(path)`).
+
+### [Low] Cache persists absolute paths (OS username / project layout) and is not covered by .gitignore
+
+**Evidence.** `python_index`/`js_index` module lists and every `debounce` key
+store `os.path.abspath(...)` values such as `/Users/<user>/...`
+(autotest.py:561, 356, 397). `git check-ignore .claude/run/autotest_cache.json`
+returns "not ignored" (exit 1), and the repo `.gitignore` has no `.claude/run/`
+entry — even though `docs/telemetry_schema.md` asserts `.claude/run/` is
+gitignored. If a consumer commits the cache it leaks local usernames and internal
+test structure. No secrets or file contents are exposed, so severity is Low.
+
+**Fix.** Add `.claude/run/` to the kit's shipped/template `.gitignore` (and this
+repo's), and/or store project-relative paths in the cache instead of absolute
+ones.
 
 ---
 
-### [Medium] (pre-existing in touched code) Plugin-wired hook falls back to executing project-directory scripts when the plugin-root probe fails
+## Self-Review
 
-**Evidence**: `project/.claude/hooks/session_start.py:29-36` — candidate order is `CLAUDE_PLUGIN_ROOT` → `HOOK_ROOT`/`CLAUDE_PROJECT_DIR` → `parents[3]`, and `hooks/hooks.json` (SessionStart) invokes the hook with `HOOK_ROOT="$CLAUDE_PROJECT_DIR"`. If the plugin cache root exists (the `[ -f … ]` guard passed, so the hook file is present) but `scripts/kit_update_check.py` is missing there (partial cache GC — the exact degradation class ISSUE-037 documents — or a future repackaging), the hook resolves the kit root to the **untrusted project directory** and then, at `session_start.py:60-66`, executes `<project>/scripts/kit_update_check.py` and `<project>/scripts/kit_config.py` with the user's Python at SessionStart — hooks run with no permission gate — and injects the first script's stdout **verbatim** into session context (line 61-62), an unfiltered instruction-injection channel on top of the direct code execution.
-
-This PR did not introduce the fallback order (it only threaded `from_plugin` through), but the changed hunk contains it and the PR's own premise (cache dirs get GC'd) makes the trigger state credible. Medium because the required partial state (hook file survives, scripts/ gone) is an edge case; the consequence when it fires is arbitrary code execution.
-
-**Fix**: In `find_kit_root`, when `CLAUDE_PLUGIN_ROOT` is set (i.e., running as the plugin's hook), do not fall through to the project-dir candidate — return `None` if the plugin root fails the probe. The `HOOK_ROOT` candidate remains correct for the snippet wiring (copied install), where the project genuinely is the trust root. Cheap change, no functionality loss: healthy plugin installs always pass the plugin-root probe.
-
----
-
-### [Low] Script path unquoted in the injected command template
-
-**Evidence**: `project/.claude/hooks/session_start.py:83` — `f"workflow): python3 {report} --skill <name> …"` prints the path unquoted in both branches; the plugin-branch template likewise shows `python3 <kit-root>/scripts/contributor_report.py` unquoted, and the substituted marketplace-cache path can contain spaces (e.g., a home directory with a space). A model executing the instruction verbatim produces a mis-tokenized command. No practical attacker control over the path (the kit-root path is chosen by the user/installer, not by repo content), hence Low — hardening only.
-
-**Fix**: Quote the path in the template: `python3 "<kit-root>/scripts/contributor_report.py"` / `python3 "{report}"`.
-
----
-
-## Surfaces checked, no findings
-
-- **Secrets leakage into session context**: none; the plugin branch prints only constant text and the diff removes the cache path (which encodes username) from plugin-mode output. Standalone branch prints a local absolute path into the local session only — not exfiltration.
-- **Injected env/file content (plugin branch)**: constant string; nothing interpolated.
-- **Subprocess safety**: list argv, no `shell=True`, `capture_output`, `timeout=20` — unchanged by diff; no new invocation added.
-- **stdin handling**: `json.load(sys.stdin)` drained and unused; exceptions swallowed by design; payload cannot influence output.
-- **Never-fail contract**: the diff adds no new exception masking; `run_quiet`'s swallow-all is pre-existing and intentional (never block session start). The Medium fallback finding above is the only place the contract intersects a security-relevant state, and it is reported there.
-- **New test code**: executes only literal stub scripts written by the tests themselves into `tempfile.TemporaryDirectory()`; `_run_session_start` pops `CLAUDE_PLUGIN_ROOT` and pins `HOOK_ROOT` to the temp root, so the subprocess cannot resolve the developer's real environment as the kit root in the paths under test. No untrusted input executed; assertions (`VERSION_PINNED_CACHE_RE`, `str(pinned_root) not in out`, on-disk existence check in TC-037b) genuinely enforce the AC.
-- **Dependencies**: none added.
-
-## Confidence
-
-**Medium.** Evidence for each finding is verified in the wiring configs and source (not inferred), but both Medium findings depend on conditions I cannot measure from the diff alone: F1 on probabilistic model resolution behavior, F2 on a partial cache-GC state whose real-world frequency is unknown. Those uncertainties are flagged inline; severities already discount for them.
+1. **Severity re-assessment.** Finding 1 yields code execution but its precondition
+   (local write to the cache) is ~equivalent to the hook's existing baseline
+   capability, so it is capped at Medium; the delta over baseline (out-of-tree
+   files, name-filter bypass, option injection, scan bypass via forged fingerprint)
+   is real and justifies Medium over Low. Findings 2–4 are bounded, local-precondition,
+   non-injection issues → Low.
+2. **False-positive check.** Finding 1: code-traced — `rf` is appended without the
+   `os.path.isfile` guard `primary` gets, and reaches `subprocess` argv (confirmed
+   autotest.py:549-551, 575-576, 147-152). Finding 4: confirmed via `git check-ignore`
+   exit 1. Finding 3: confirmed `open(path,"w")` with no atomic/no-follow. Finding 2:
+   confirmed `result == "pass"` gate. No FPs identified.
+3. **Blind-spot scan.** Injection (argv list-form — safe; option-injection folded
+   into F1), deserialization (json only — cleared), secrets (no contents stored —
+   cleared), dependencies (none added), authn/z & XSS (n/a for a local FS hook) all
+   re-examined; nothing further surfaced.
+4. **AC note.** Security dimension only; the cache/debounce behave as designed
+   (fail-soft, failures never debounced), which the tests demonstrate.
+5. **Confidence: Medium-High.** The hook is small and fully read; the only real
+   judgment call is the Medium-vs-Low calibration on Finding 1, which I anchored to
+   the local-write precondition and the "new surface beyond baseline" rule.

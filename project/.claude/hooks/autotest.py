@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """PostToolUse hook: auto-run related tests after Write/Edit on source files."""
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 
 SKIP_EXTS = {".json", ".md", ".toml", ".yaml", ".yml", ".css", ".html", ".txt", ".cfg", ".ini", ".lock"}
 PYTHON_EXTS = {".py"}
@@ -13,6 +15,9 @@ JS_EXTS = {".js", ".ts", ".jsx", ".tsx"}
 E2E_EXTS = {".spec.ts", ".spec.js", ".cy.ts", ".cy.js"}
 TIMEOUT = 30
 E2E_TIMEOUT = 60
+CACHE_VERSION = 1
+CACHE_RELPATH = os.path.join(".claude", "run", "autotest_cache.json")
+DEBOUNCE_SECONDS = 30.0
 
 
 def find_python_test(filepath: str) -> str | None:
@@ -192,35 +197,186 @@ def run_js_test(test_file: str) -> dict | None:
 MAX_RELATED_TESTS = 5
 
 
-def find_related_python_tests(filepath: str) -> list[str]:
-    """Find all test files that import or reference the edited module."""
-    basename = os.path.basename(filepath)
-    module_name = basename.replace(".py", "")
-    results = []
-
-    # Walk up to find project root (directory containing tests/ or pyproject.toml)
-    search_dir = os.path.dirname(filepath)
-    project_root = None
-    d = search_dir
+def _find_python_root(filepath: str) -> str | None:
+    """Find the project root: nearest ancestor with a tests/ dir or pyproject.toml."""
+    d = os.path.dirname(filepath)
     while d:
         if os.path.isdir(os.path.join(d, "tests")) or os.path.isfile(os.path.join(d, "pyproject.toml")):
-            project_root = d
-            break
+            return d
         parent = os.path.dirname(d)
         if parent == d:
             break
         d = parent
+    return None
 
+
+def _find_js_root(filepath: str) -> str | None:
+    """Find the project root: nearest ancestor containing package.json."""
+    d = os.path.dirname(filepath)
+    while d:
+        if os.path.isfile(os.path.join(d, "package.json")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return None
+
+
+def _is_python_test_file(name: str) -> bool:
+    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+
+
+def _is_js_test_file(name: str) -> bool:
+    return ".test." in name or ".spec." in name
+
+
+def _skip_js_scan_dir(name: str) -> bool:
+    # Skip node_modules and ALL hidden dirs: the cache itself lives under
+    # .claude/run/, so scanning hidden dirs would self-invalidate the
+    # fingerprint on every save.
+    return name == "node_modules" or name.startswith(".")
+
+
+def _valid_cached_tests(cached, containment_root: str, is_test_file) -> bool:
+    """Validate a cache-derived test-file list before trusting a warm hit.
+
+    The cache lives in the workspace and is writable by anything that can
+    write the project, so cached paths are untrusted input (ISSUE-038
+    review, security finding): every entry must be a non-option-shaped
+    string naming an existing regular test file inside containment_root.
+    Any violation rejects the warm hit — the caller falls through to a
+    full rebuild, which overwrites the bad entry (fail-soft, self-healing).
+    """
+    if not isinstance(cached, list):
+        return False
+    root = os.path.realpath(containment_root)
+    prefix = root + os.sep
+    for p in cached:
+        if not isinstance(p, str) or not p or p.startswith("-"):
+            return False
+        real = os.path.realpath(p)
+        if not real.startswith(prefix):
+            return False
+        if not os.path.isfile(real) or not is_test_file(os.path.basename(real)):
+            return False
+    return True
+
+
+def _empty_cache() -> dict:
+    return {
+        "version": CACHE_VERSION,
+        "python_index": {"fingerprint": "", "modules": {}},
+        "js_index": {"fingerprint": "", "modules": {}},
+        "debounce": {},
+    }
+
+
+def _load_cache(project_root: str) -> dict:
+    """Load the on-disk cache; any problem yields a fresh empty cache (fail-soft)."""
+    path = os.path.join(project_root, CACHE_RELPATH)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return _empty_cache()
+    if not isinstance(data, dict) or data.get("version") != CACHE_VERSION:
+        return _empty_cache()
+    for key in ("python_index", "js_index"):
+        index = data.get(key)
+        if (
+            not isinstance(index, dict)
+            or not isinstance(index.get("fingerprint"), str)
+            or not isinstance(index.get("modules"), dict)
+        ):
+            return _empty_cache()
+    if not isinstance(data.get("debounce"), dict):
+        return _empty_cache()
+    return data
+
+
+def _save_cache(project_root: str, cache: dict) -> None:
+    """Best-effort write of the cache file; never raises."""
+    path = os.path.join(project_root, CACHE_RELPATH)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh)
+    except OSError:
+        pass
+
+
+def _stat_fingerprint(scan_root: str, match, skip_dir=None) -> str:
+    """Hash of sorted (relpath, mtime_ns, size) for matching files under scan_root.
+
+    Uses recursive os.scandir — stat-only, no os.walk and no file reads — so
+    warm cache hits never touch the tests tree beyond cheap stats.
+    """
+    entries: list[tuple[str, int, int]] = []
+
+    def scan(d: str) -> None:
+        try:
+            with os.scandir(d) as it:
+                for entry in it:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            if skip_dir and skip_dir(entry.name):
+                                continue
+                            scan(entry.path)
+                        elif entry.is_file(follow_symlinks=False) and match(entry.name):
+                            st = entry.stat(follow_symlinks=False)
+                            entries.append(
+                                (os.path.relpath(entry.path, scan_root), st.st_mtime_ns, st.st_size)
+                            )
+                    except OSError:
+                        continue
+        except OSError:
+            pass
+
+    scan(scan_root)
+    entries.sort()
+    return hashlib.sha1(repr(entries).encode("utf-8")).hexdigest()
+
+
+def _test_set_hash(paths: list[str]) -> str:
+    """Hash identifying the exact set + content-state of the selected test files."""
+    entries: list[tuple[str, int, int]] = []
+    for p in sorted(paths):
+        try:
+            st = os.stat(p)
+            entries.append((p, st.st_mtime_ns, st.st_size))
+        except OSError:
+            entries.append((p, -1, -1))
+    return hashlib.sha1(repr(entries).encode("utf-8")).hexdigest()
+
+
+def find_related_python_tests(filepath: str) -> list[str]:
+    """Find all test files that import or reference the edited module."""
+    basename = os.path.basename(filepath)
+    module_name = basename.replace(".py", "")
+
+    project_root = _find_python_root(filepath)
     if not project_root:
-        return results
+        return []
 
     tests_dir = os.path.join(project_root, "tests")
     if not os.path.isdir(tests_dir):
-        return results
+        return []
 
-    for root, _dirs, files in os.walk(tests_dir):
+    cache = _load_cache(project_root)
+    fingerprint = _stat_fingerprint(tests_dir, _is_python_test_file)
+    index = cache["python_index"]
+    if index["fingerprint"] != fingerprint:
+        index = {"fingerprint": fingerprint, "modules": {}}
+        cache["python_index"] = index
+    cached = index["modules"].get(module_name)
+    if _valid_cached_tests(cached, tests_dir, _is_python_test_file):
+        return list(cached)
+
+    results = []
+    for root, _, files in os.walk(tests_dir):
         for f in files:
-            if not f.endswith(".py") or not (f.startswith("test_") or f.endswith("_test.py")):
+            if not _is_python_test_file(f):
                 continue
             test_path = os.path.join(root, f)
             try:
@@ -230,6 +386,8 @@ def find_related_python_tests(filepath: str) -> list[str]:
             except OSError:
                 continue
 
+    index["modules"][module_name] = results
+    _save_cache(project_root, cache)
     return results
 
 
@@ -237,28 +395,29 @@ def find_related_js_tests(filepath: str) -> list[str]:
     """Find all test files that import or reference the edited JS/TS module."""
     basename = os.path.basename(filepath)
     name, _ = os.path.splitext(basename)
-    results = []
 
-    search_dir = os.path.dirname(filepath)
-    project_root = None
-    d = search_dir
-    while d:
-        if os.path.isfile(os.path.join(d, "package.json")):
-            project_root = d
-            break
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-
+    project_root = _find_js_root(filepath)
     if not project_root:
-        return results
+        return []
 
-    for root, _dirs, files in os.walk(project_root):
+    cache = _load_cache(project_root)
+    fingerprint = _stat_fingerprint(project_root, _is_js_test_file, _skip_js_scan_dir)
+    index = cache["js_index"]
+    if index["fingerprint"] != fingerprint:
+        index = {"fingerprint": fingerprint, "modules": {}}
+        cache["js_index"] = index
+    cached = index["modules"].get(name)
+    if _valid_cached_tests(cached, project_root, _is_js_test_file):
+        return list(cached)
+
+    results = []
+    for root, _, files in os.walk(project_root):
+        # Unlike the fingerprint scan, this walk skips only node_modules —
+        # test files are not expected in hidden dirs.
         if "node_modules" in root.split(os.sep):
             continue
         for f in files:
-            if not (".test." in f or ".spec." in f):
+            if not _is_js_test_file(f):
                 continue
             test_path = os.path.join(root, f)
             try:
@@ -268,6 +427,8 @@ def find_related_js_tests(filepath: str) -> list[str]:
             except OSError:
                 continue
 
+    index["modules"][name] = results
+    _save_cache(project_root, cache)
     return results
 
 
@@ -277,7 +438,7 @@ def detect_e2e_framework(filepath: str) -> str | None:
         # Check if it's in a Playwright or Cypress directory
         if "cypress" in filepath.lower() or filepath.endswith(".cy.ts") or filepath.endswith(".cy.js"):
             return "cypress"
-        if os.path.sep + "e2e" + os.sep in filepath or filepath.startswith("tests/e2e/"):
+        if os.path.sep + "e2e" + os.path.sep in filepath or filepath.startswith("tests/e2e/"):
             return "playwright"
         return "playwright"  # default for .spec files
     if filepath.endswith((".cy.ts", ".cy.js")):
@@ -393,74 +554,113 @@ def run_e2e_test(test_file: str, framework: str) -> dict | None:
     return None
 
 
-def main():
-    hook_input = json.loads(sys.stdin.read())
+def _run_source_branch(filepath: str, lang: str) -> dict | None:
+    """Run unit + related E2E tests for a Python ("py") or JS ("js") source file.
+
+    Identical passing runs within DEBOUNCE_SECONDS are skipped; failures are
+    never debounced — a "fail" entry always re-runs on the next edit.
+    """
+    if lang == "py":
+        primary = find_python_test(filepath)
+        related = find_related_python_tests(filepath)
+        project_root = _find_python_root(filepath)
+    else:
+        primary = find_js_test(filepath)
+        related = find_related_js_tests(filepath)
+        project_root = _find_js_root(filepath)
+
+    test_files = []
+    if primary and os.path.isfile(primary):
+        test_files.append(primary)
+    for rf in related:
+        if rf not in test_files:
+            test_files.append(rf)
+
+    # Cap unit and E2E selection BEFORE running anything (debounce covers both)
+    selected = test_files[:MAX_RELATED_TESTS]
+    e2e_selected = find_e2e_tests(filepath)[:2]  # Cap at 2 E2E tests
+
+    cache = key = test_set = None
+    if project_root and (selected or e2e_selected):
+        cache = _load_cache(project_root)
+        key = lang + ":" + os.path.abspath(filepath)
+        test_set = _test_set_hash(selected + [t for t, _ in e2e_selected])
+        entry = cache["debounce"].get(key)
+        if (
+            isinstance(entry, dict)
+            and entry.get("test_set") == test_set
+            and entry.get("result") == "pass"
+            and isinstance(entry.get("last_run"), (int, float))
+            and time.time() - entry["last_run"] < DEBOUNCE_SECONDS
+        ):
+            return None
+
+    # Runners looked up via module globals so tests can monkeypatch them
+    blocked = None
+    for tf in selected:
+        blocked = run_python_test(tf) if lang == "py" else run_js_test(tf)
+        if blocked:
+            break
+    if blocked is None:
+        for e2e_file, framework in e2e_selected:
+            blocked = run_e2e_test(e2e_file, framework)
+            if blocked:
+                break
+
+    # Record the outcome BEFORE returning any block dict
+    if cache is not None and project_root is not None:
+        cache["debounce"][key] = {
+            "test_set": test_set,
+            "last_run": time.time(),
+            "result": "fail" if blocked else "pass",
+        }
+        _save_cache(project_root, cache)
+
+    return blocked
+
+
+def handle_event(hook_input: dict) -> dict | None:
+    """Process one PostToolUse event; return a block dict or None."""
     tool_name = hook_input.get("tool_name", "")
 
     if tool_name not in ("Write", "Edit"):
-        return
+        return None
 
     tool_input = hook_input.get("tool_input", {})
     filepath = tool_input.get("file_path", "")
     if not filepath:
-        return
+        return None
 
     _, ext = os.path.splitext(filepath)
     ext = ext.lower()
 
     if ext in SKIP_EXTS:
-        return
+        return None
 
-    # Check if the file itself is an E2E test
+    # Check if the file itself is an E2E test (direct E2E runs are never debounced)
     e2e_fw = detect_e2e_framework(filepath)
     if e2e_fw:
-        result = run_e2e_test(filepath, e2e_fw)
-        if result:
-            print(json.dumps(result))
-        return
+        return run_e2e_test(filepath, e2e_fw)
 
     if ext in PYTHON_EXTS:
-        # Primary: direct corresponding test
-        test_files = []
-        primary = find_python_test(filepath)
-        if primary and os.path.isfile(primary):
-            test_files.append(primary)
+        return _run_source_branch(filepath, "py")
 
-        # Secondary: all test files that reference this module
-        for rf in find_related_python_tests(filepath):
-            if rf not in test_files:
-                test_files.append(rf)
+    if ext in JS_EXTS:
+        return _run_source_branch(filepath, "js")
 
-        # Run all (capped to avoid slow runs)
-        for tf in test_files[:MAX_RELATED_TESTS]:
-            result = run_python_test(tf)
-            if result:
-                print(json.dumps(result))
-                return
-
-    elif ext in JS_EXTS:
-        test_files = []
-        primary = find_js_test(filepath)
-        if primary and os.path.isfile(primary):
-            test_files.append(primary)
-
-        for rf in find_related_js_tests(filepath):
-            if rf not in test_files:
-                test_files.append(rf)
-
-        for tf in test_files[:MAX_RELATED_TESTS]:
-            result = run_js_test(tf)
-            if result:
-                print(json.dumps(result))
-                return
-
-    # Also check for related E2E tests when editing source files
-    e2e_tests = find_e2e_tests(filepath)
-    for e2e_file, framework in e2e_tests[:2]:  # Cap at 2 E2E tests
+    # Also check for related E2E tests when editing other source files
+    for e2e_file, framework in find_e2e_tests(filepath)[:2]:  # Cap at 2 E2E tests
         result = run_e2e_test(e2e_file, framework)
         if result:
-            print(json.dumps(result))
-            return
+            return result
+    return None
+
+
+def main():
+    hook_input = json.loads(sys.stdin.read())
+    result = handle_event(hook_input)
+    if result:
+        print(json.dumps(result))
 
 
 if __name__ == "__main__":
