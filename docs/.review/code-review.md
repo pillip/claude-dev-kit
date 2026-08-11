@@ -1,41 +1,48 @@
-# Code Review (degraded) — ISSUE-036 / PR #57
+# Code Review (degraded) — ISSUE-037 / PR #58
 
-Reviewed: `git diff origin/main...HEAD` @ 9e2334f (skills/brainstorm/SKILL.md(+tmpl), skills/review/SKILL.md(+tmpl), tests/test_brainstorm_research_path_guard.py (new), tests/test_review_delegation_guard.py (+45)).
+Scope: `git diff origin/main...HEAD` (b0d8bb3...7b552e0). Files: `project/.claude/hooks/session_start.py` (+29/-13), `tests/test_lifecycle_hooks.py` (+58). All 9 tests in `tests/test_lifecycle_hooks.py` pass (`uv run pytest -q`, 0.31s). RED validity of TC-037a verified empirically: the pre-fix hook (origin/main) fails all three key assertions (pinned regex leak, pinned-root substring leak, missing "Kit Script Root").
 
-Verification performed (read-only):
-- `python3 scripts/gen_skills.py --dry-run` → "All 20 SKILL.md files are fresh." (tmpl↔generated freshness holds).
-- `uv run pytest -q tests/test_review_delegation_guard.py tests/test_brainstorm_research_path_guard.py` → 19 passed.
-- Mutation check: applied the new `STEP_HEADER_RE` monotonicity logic to `origin/main:skills/review/SKILL.md` — pre-fix header order `[1, 2, 5, 6, 7, 8, 9, 10, 8, 9, 10, 11, 12]` yields violation `3.10 -> 3.8`. The guard genuinely rejects the duplicated cluster it was written for (adjacent-pair `cur <= prev` comparison is sound and complete for strict monotonicity — any non-monotonic sequence has an adjacent inversion, and duplicates are caught by `<=`).
-- Repo-wide grep for stale step references: external mentions of "Figma 3.5–3.10" (docs/specs/SPEC-019.md, agents/review-merge-auditor.md, scripts/synthesize_review_notes.py docstring) remain accurate because the Figma cluster kept its numbers. No external reference to the old 3.11/3.12 (synthesize/merge-audit) numbering survives — except one, inside the new test itself (finding below).
-- Checkpoint phase names (`figma-compliance`, `computed-styles`, `structural-match`, `layout`, `visual-diff`, `ui-review`, `synthesis-audit`) untouched — scope-out respected.
-- Recalled review lessons (subprocess timeouts / env-var knobs / mock seams): not applicable — the diff contains no `subprocess`, no `timeout=`, no env vars, no mocks.
+Fix approach matches spec candidate (a): under plugin install the hook emits a `<kit-root>` placeholder that defers resolution to the Kit Script Root preamble section, which is verifiably present in every generated skill (`tests/test_plugin_root_resolution.py` enforces it) and is substituted at load time with the currently installed version's path. Standalone keeps the concrete absolute path. Never-fail contract preserved (no new exception paths; `run_quiet` still swallows; plugin wiring wraps with `|| true`). No new `timeout=` literals or env-var knobs introduced (recalled lessons 1–2: clean).
+
+### [Medium] TC-037b standalone regression guard can hollow-pass via silent real-repo fallback
+
+**Evidence:** `tests/test_lifecycle_hooks.py:206-209`:
+
+```python
+match = re.search(r"python3 (\S*contributor_report\.py)", out)
+assert match, ...
+assert Path(match.group(1)).is_file(), ...
+```
+
+Nothing pins the matched path to the fixture root. If the fixture ever stops resolving (candidate-order change in `find_kit_root`, `HOOK_ROOT` plumbing regression, fixture path drift), the hook silently falls back to `Path(__file__).resolve().parents[3]` — the real kit repo. Empirically replayed on this machine (real `kit_config.py get contributor_mode` → `true`, the typical kit-contributor config): with the fixture scripts absent, the hook still prints `CONTRIBUTOR MODE: ON` with the real repo's `contributor_report.py`, which exists → every assertion in TC-037b passes while testing the wrong root. This is the exact tmp-fixture/real-repo-fallback pattern from the ISSUE-047 review lesson. (TC-037a is NOT affected: in both fallback outcomes its asserts fail loudly — verified.)
+
+**Fix:** Replace the `is_file()` assert with an equality pin that subsumes it:
+`assert match.group(1) == str(root / "scripts" / "contributor_report.py")`.
+
+### [Low] Own-location fallback mis-flags a plugin cache dir as non-pinned
+
+**Evidence:** `project/.claude/hooks/session_start.py:33`:
+
+```python
+candidates.append((Path(__file__).resolve().parents[3], False))
+```
+
+Under a plugin install the hook file itself lives inside the version-pinned cache dir, so `parents[3]` IS the pinned root — but it is hardcoded `from_plugin=False`. If this candidate ever wins while the file runs from the cache (env stripped, or manual/non-standard hook wiring pointing at the cache copy), the pinned absolute path gets printed again — resurrecting the exact ISSUE-037 bug through the back door. No exploit path via the shipped wiring: `hooks/hooks.json` invokes the hook as `python3 "$CLAUDE_PLUGIN_ROOT/..."`, so the env var must be set for the command to resolve at all and is inherited by the subprocess — hence Low, defense-in-depth only.
+
+**Fix:** Backstop by path shape rather than trusting only the source: e.g. `from_plugin = from_plugin or bool(re.search(r"[\\/]cache[\\/].+[\\/]\d+\.\d+\.\d+$", str(c)))` inside the resolution loop (or flag the `parents[3]` candidate pinned when it matches that pattern).
+
+### [Low] Standalone instruction prints an unquoted absolute path — breaks on paths with spaces
+
+**Evidence:** `project/.claude/hooks/session_start.py:77` + `:83`: `report = str(kit / "scripts" / "contributor_report.py")` interpolated as `python3 {report} --skill ...`. A standalone checkout under a directory with spaces (e.g. `~/My Projects/`) yields a non-executable instructed command. Pre-existing behavior, but this diff rewrites the line. (Related: TC-037b's `\S*` capture group has the same whitespace assumption — the equality-pin fix above at least turns it into a loud failure.)
+
+**Fix:** Quote the path in the printed instruction: `f'python3 "{report}" --skill ...'` (and relax the TC-037b regex to accept the quotes).
 
 ## AC Verification
 
-- **AC1 — strictly increasing `3.N)` sequence in generated SKILL.md**: PASS. Extracted document-order headers: 3.1, 3.2, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15. No duplicates. (Gaps 3.3/3.4 are pre-existing and permitted by the AC's "strictly increasing" wording; the test correctly tolerates them — it could not do otherwise.)
-- **AC2 — synthesis cross-references exact**: PASS. Step 3.14 reads "(Figma 3.5–3.10, UI review 3.11, design audit 3.12, a11y audit 3.13)"; the Figma cluster is exactly 3.5 (compliance) through 3.10 (visual diff debug images). The italic aside was updated to "checks 3.5–3.13 … see steps 3.14 and 3.15", the minimality-axis note now says "(step 3.14)", and step 5 says "produced by step 3.14". All in-file references consistent in both tmpl and generated output.
-- **AC3 — brainstorm degraded path names canonical dir**: PASS. The research-auditor invocation line (skills/brainstorm/SKILL.md:40) reads `inputs = (draft, \`docs/references/research/\`)`; "snapshot directory" occurs 0 times in both SKILL.md and SKILL.md.tmpl.
-- **Tests promised**: PASS. Monotonicity guard added (both tmpl and generated file, mutation-verified above); brainstorm canonical-dir assertion added and deliberately scoped to the `subagent_type: research-auditor` line to avoid a vacuous whole-file substring pass (the canonical dir already appears elsewhere in the file) — good non-hollow design, explicitly documented in the module docstring.
-
-## Findings
-
-### [Low] Stale docstring in TestReviewStepHeadersAreMonotonic describes the pre-fix state and cites retired step numbers
-
-**Evidence**: tests/test_review_delegation_guard.py:118-121
-
-```
-"""ISSUE-036 — step numbers 3.8/3.9/3.10 are currently reused twice
-(Figma cluster AND ui/design/a11y cluster). Step headers must be
-strictly increasing in document order so cross-references like
-"steps 3.11 and 3.12" are unambiguous. ...
-```
-
-Two problems once this PR lands: (a) "are currently reused twice" is present-tense RED-phase wording that becomes false the moment the fix merges — a future reader will think the bug is live; (b) the example cross-reference "steps 3.11 and 3.12" refers to the OLD numbers of synthesize/merge-audit, which this very PR renumbers to 3.14/3.15 — post-fix, 3.11/3.12 denote ui-review/design-audit, so the example points at the wrong steps and no longer matches any cross-reference in the skill (the module-level comment at lines 24-26 already uses the correct "steps 3.14 and 3.15" example, making the class docstring internally inconsistent with it).
-
-**Fix**: Reword to past tense with current numbers, e.g.: `"""ISSUE-036 — step numbers 3.8/3.9/3.10 were once reused twice (Figma cluster AND ui/design/a11y cluster). Step headers must be strictly increasing in document order so cross-references like "steps 3.14 and 3.15" are unambiguous. ..."""`
+- **AC1** (no `/cache/…/<semver>/` segment in contributor-mode output under pinned `CLAUDE_PLUGIN_ROOT`): **PASS** — plugin branch emits only the `<kit-root>` placeholder; TC-037a asserts both the regex and the direct pinned-root substring (the substring assert also covers semver formats the regex misses, e.g. `0.2.0-rc1`).
+- **AC2** (instruction resolves current version after update/GC): **PASS by construction** — resolution is deferred to the Kit Script Root shown in the invoking skill's preamble, substituted at load time with the currently installed root; the report is only ever filed mid-kit-skill-workflow, when such a preamble is guaranteed in context. Not end-to-end executable in a unit test; TC-037a's `"Kit Script Root" in out` assert is the proxy, consistent with the tests the spec promised.
+- **AC3** (standalone contributor mode still yields a working invocation): **PASS** — non-plugin branch behavior unchanged (concrete absolute path); TC-037b asserts the printed path exists on disk (with the hollow-fallback caveat in the Medium finding above).
 
 ## Over-Engineering (minimality axis)
 
-tests/test_brainstorm_research_path_guard.py:41: shrink 2×2 copy-pasted assertion bodies (identical message blocks repeated for generated vs tmpl in both classes) → parametrize over the two paths (`@pytest.mark.parametrize("path", [SKILL, TMPL], ids=["generated", "template"])`) or extract the assertion loop into a shared helper alongside `_auditor_lines`; ~79 lines becomes ~55 with identical coverage and failure messages.
-
-Net removable lines: ~24.
+Lean already. Ship.
