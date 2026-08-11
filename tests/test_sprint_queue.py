@@ -1,6 +1,7 @@
 """Unit tests for scripts/sprint_queue.py."""
 
 import json
+import subprocess
 
 from scripts.sprint_queue import (
     _gh_pr_merge_state,
@@ -782,3 +783,31 @@ class TestCLIFinalize:
         out = json.loads(capsys.readouterr().out)
         assert exit_code == 0
         assert out["action"] == "merge"
+
+
+class TestGhPrMergeStateRobustness:
+    """Regression guards: the probe must NEVER raise (AC3 'never crashes')."""
+
+    def test_non_object_json_degrades_to_none(self, capsys):
+        # Valid JSON that is not an object — must not raise AttributeError.
+        for payload in ("null", "[]", "123", '"x"'):
+            r = _runner(stdout=payload)
+            assert _gh_pr_merge_state("123", runner=r) is None
+        assert "Warning" in capsys.readouterr().err
+
+    def test_timeout_is_passed_to_runner(self):
+        seen = {}
+
+        def _run(cmd, **kwargs):
+            seen.update(kwargs)
+            return _FakeProc(returncode=0, stdout=json.dumps({"state": "OPEN"}))
+
+        _gh_pr_merge_state("123", timeout=3.5, runner=_run)
+        assert seen.get("timeout") == 3.5
+
+    def test_timeout_expired_degrades_to_none(self, capsys):
+        def _run(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout"))
+
+        assert _gh_pr_merge_state("123", runner=_run) is None
+        assert "Warning" in capsys.readouterr().err

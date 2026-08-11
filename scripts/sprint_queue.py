@@ -254,6 +254,15 @@ def _gh_pr_merge_state(pr_ref, *, timeout=None, runner=None):
             file=sys.stderr,
         )
         return None
+    if not isinstance(data, dict):
+        # Valid JSON that is not an object (null / list / scalar) — treat as
+        # indeterminate rather than raising, so AC3's "never crashes" holds.
+        print(
+            f"Warning: `gh pr view` JSON for {pr_ref} was not an object; "
+            "falling back to phase-only decision",
+            file=sys.stderr,
+        )
+        return None
     state = str(data.get("state") or "").upper()
     if state == "MERGED" or data.get("mergedAt"):
         return "merged"

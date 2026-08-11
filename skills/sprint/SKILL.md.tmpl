@@ -76,9 +76,9 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
 
       - If action = **DONE** → **Go to step 5.**
       - If action = **STUCK** → Log warning with the `reason`. Increment attempt counts for stuck issues in sprint_state.md. If attempts ≥ 3, escalate. Otherwise continue to next iteration.
-      - If action = **PIPELINE**, **SHIP**, or **REVIEW** → proceed to step 4d with the action and targets from the script output.
+      - If action = **PIPELINE**, **SHIP**, **REVIEW**, or **FINALIZE** → proceed to step 4d with the action and targets from the script output.
 
-      **IMPORTANT**: Do NOT manually compute queues or override the script's action choice. The script enforces strict priority ordering (SHIP > REVIEW > PIPELINE) to prevent phase skipping.
+      **IMPORTANT**: Do NOT manually compute queues or override the script's action choice. The script enforces strict priority ordering (FINALIZE > SHIP > REVIEW > PIPELINE) to prevent phase skipping. **FINALIZE** is a crash-recovery action (ISSUE-052): the queue detected a `reviewed` issue whose PR is already merged (a ship-phase interruption between the merge and the smoke checkpoint), so only smoke + registry remain — it must NOT be re-shipped/re-merged.
 
       > For reference, the script computes these queues internally:
       > - `ship_ready`    = issues where Phase = `reviewed`
@@ -90,7 +90,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
       ```
       You are the team-lead agent. Execute the {action} phase for these issues.
 
-      ## Phase: {PIPELINE | SHIP | REVIEW}
+      ## Phase: {PIPELINE | SHIP | REVIEW | FINALIZE}
 
       ## Target Issues
       {For each target: full issue spec from issues.md — ID, title, AC, all fields}
@@ -111,6 +111,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
       - **PIPELINE**: Full implement→review→ship for backlog issues. Each issue goes through all three phases in one invocation. No phase can be skipped.
       - **REVIEW**: Retry review for issues stuck in `implemented` status (recovery only).
       - **SHIP**: Retry ship for issues stuck in `reviewed` status (recovery only).
+      - **FINALIZE** (crash recovery, ISSUE-052): a `reviewed` issue whose PR is already merged. Route it to the team-lead **ship** executor — its merge step is idempotent (`python3 scripts/sprint_queue.py ship-merge-decision --pr <n>` returns `skip`), so it skips the already-done merge and completes only the post-merge smoke checkpoint + registry finalization. Never re-merge. Validate in step 4f with `--action FINALIZE` (expected end phase `shipped`).
 
    **e) After team-lead returns**:
       - Re-read `docs/sprint_state.md` to confirm phase transitions happened
