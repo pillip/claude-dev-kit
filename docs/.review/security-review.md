@@ -1,38 +1,52 @@
-# Security Review — ISSUE-047 (PR #56, commit 8b7bbaa)
+# Security Review (degraded) — ISSUE-037 / PR #58
 
-Dimension: security (degraded path — runtime /security-review not invocable)
+Scope: `project/.claude/hooks/session_start.py` (+29/-13), `tests/test_lifecycle_hooks.py` (+58), diff `origin/main...HEAD` @ 7b552e0. The hook's stdout is injected into the model's session context, so it was reviewed as an instruction-injection surface.
 
-Scope: `git diff c04b78b..HEAD` — scripts/verify_gates.py (+25/-2: `_DEFAULT_TEST_TIMEOUT`, `_test_timeout()`, two `run_gate_unit` call sites), scripts/verify_checkpoint.py (+1 comment), tests/test_verify_gates.py (+94), tests/test_verify_checkpoint.py (+14/-2). Local/CI developer tooling, not user-facing.
+Positive note (context for severity): the new plugin-branch instruction (session_start.py:73-87) is a **constant string** — no env var, file content, or path segment is interpolated into the injected text on the plugin path. This is a strict reduction of attacker-influenceable data in the injection surface versus the old pinned absolute path.
 
-## Verdict
+---
 
-Clean on every high-impact axis. One Low-severity finding — the same no-upper-bound gap ISSUE-046's review found in the identical `verify_checkpoint.py` pattern, re-verified here against verify_gates.py's own exception handling and both invocation paths. Nothing blocking.
+### [Medium] `<kit-root>` deferred resolution can degrade into executing an attacker-planted relative `scripts/contributor_report.py` without a permission prompt
 
-Verified in the worktree code, not just the diff description:
+**Evidence**: `project/.claude/hooks/session_start.py:73-75` — the injected instruction defers path resolution to the model: `report = "<kit-root>/scripts/contributor_report.py"` with `<kit-root> = "the Kit Script Root absolute path shown in the preamble of any active kit skill"`. Two weaknesses in that binding:
 
-- **Injection**: `KIT_CHECKPOINT_TEST_TIMEOUT` flows through `int()` (scripts/verify_gates.py:74-79) and only into the `timeout=` kwarg of `_run` → `subprocess.run` (scripts/verify_gates.py:349-355, 44-48). It never reaches argv or a shell string. `grep 'shell=True|os.system|eval(|exec('` over both changed scripts returns nothing. The only place the value is stringified is the `f"{prog}: timed out after {timeout}s"` stderr message — plain output, and by that point it is a plain int. No new subprocess call sites introduced.
-- **Input validation**: probed empirically by executing `_test_timeout()` in the worktree — `""`, `"abc"`, `"0"`, `"-5"`, `"600.5"` all fall back to 600; `" 900 "`, `"+900"`, `"1_000"` parse as plain ints. Fail direction on bad input is fail-safe (default), never crash, never 0. The `timeout=0` → `None` ("no timeout") branch in `_run` (scripts/verify_gates.py:47) is unreachable via the env var since non-positive maps to the default — confirmed by TC-047c tests and by direct execution.
-- **Denial / gate bypass**: no fail-open path. A tiny valid value (e.g. `1`) makes the unit gate time out → rc 124 → `status="fail"`, `blocking=True` (scripts/verify_gates.py:366) — fails closed. A huge value crashes or removes the hang bound (finding below) but can never convert a failing test run into a pass. Crash containment verified on both invocation paths: (a) CLI `main()` — unhandled exception → interpreter exit 1, which callers interpret as "blocking gate failed"; (b) in-process via `verify_checkpoint._run_verify_gates` (scripts/verify_checkpoint.py:868-872) — `except Exception` catches OverflowError and returns `not blocking`, i.e. FAIL when blocking=True. The blocking=False implement-phase path warns and continues, but in that mode gate failures are warnings by design, so nothing is bypassed that would otherwise block.
-- **Secrets / dependencies / deserialization / XSS / misconfig**: nothing added or touched by this diff. No new dependencies.
-- **Tests execute nothing real**: confirmed. `TestUnitGateTimeout` and `TestTimeoutContract.test_gate_fails_when_run_times_out` patch `vg._run`; `test_run_returns_rc_124_and_timed_out_stderr_on_timeout` patches global `subprocess.run` before calling the real `_run`, so no process spawns. Env mutation uses `monkeypatch` (auto-restored). The `test_verify_checkpoint.py` changes patch `_run_verify_gates`, which *removes* a pre-existing real-execution hazard (accidental recursive full-suite pytest spawn from the repo root) — a test-safety improvement, not a finding.
+1. "**any** active kit skill" — the model must judge which in-context skills are kit skills; a project-local skill (`.claude/skills/` in an untrusted repo) can impersonate a kit preamble and present a fake `### Kit Script Root` pointing at an attacker directory.
+2. No failure-mode guidance: if the model cannot resolve an absolute root, the natural fallback (also suggested by the genuine preamble's standalone-layout branch, `scripts/preambles.py:44` "run commands as written") is the relative form `python3 scripts/contributor_report.py`. Kit skills pre-allowlist exactly that shape — `skills/ship/SKILL.md:5` frontmatter includes `Bash(python3 scripts/*)` — so in an untrusted project cwd that planted `scripts/contributor_report.py`, the command executes attacker code **with no permission prompt**.
 
-## Findings
+Preconditions (why Medium, not High): contributor mode ON (kit-developer setting, small population), plugin install, untrusted repo with a planted file, and the model taking the impersonated/relative resolution path instead of the genuine preamble's absolute path. Uncertainty flag: exploit probability is model-behavior-dependent; the channel itself is verified.
 
-```json
-[
-  {
-    "severity": "Low",
-    "title": "No upper bound on KIT_CHECKPOINT_TEST_TIMEOUT in verify_gates.py: values >= ~1e9 raise unhandled OverflowError inside subprocess.run (fails closed); large-but-valid values silently remove the unit gate's hang bound",
-    "evidence": "scripts/verify_gates.py:79 `return value if value > 0 else _DEFAULT_TEST_TIMEOUT` — no upper clamp; scripts/verify_gates.py:49-60 — `_run` catches only TimeoutExpired and FileNotFoundError, so OverflowError propagates. Reproduced in the worktree: `vg._run([\"true\"], timeout=10**9)` -> `OverflowError: timeout is too large`; `10**12` -> `timestamp too large to convert to C _PyTime_t`. Containment verified fail-closed on both paths: CLI -> unhandled traceback -> exit 1 (blocking-failure semantics); in-process -> caught by `except Exception` at scripts/verify_checkpoint.py:870-872 -> checkpoint FAIL when blocking=True. Values just under the threshold (e.g. 1e8 s ~ 3 years) effectively disable the hang bound for the blocking unit gate. Requires local env control, no gate bypass, crash fails closed — hence Low.",
-    "fix": "Clamp in _test_timeout(), e.g. `return min(value, 86400) if value > 0 else _DEFAULT_TEST_TIMEOUT` (optionally WARN when clamping), and apply the same clamp to the mirrored helper in verify_checkpoint.py (the '# keep in sync' comment makes this a single change done twice). Alternatively catch OverflowError alongside TimeoutExpired in _run, but the clamp is simpler and also restores a meaningful hang bound."
-  }
-]
-```
+**Fix**: Tighten the injected instruction: (a) bind resolution to "the Kit Script Root shown in the preamble of the kit skill **you are currently executing** (the one whose step you are rating)", not "any active kit skill"; (b) add an explicit safe failure mode: "if you cannot resolve an absolute Kit Script Root, skip filing the report — never invoke `scripts/contributor_report.py` via a relative path." Alternative structural fix: have the hook print the stable, non-pinned cache **parent** dir (strip the trailing version segment from `CLAUDE_PLUGIN_ROOT`) plus "use the highest installed version directory" — keeps resolution deterministic and out of free-text preamble scanning entirely.
 
-## Self-review
+---
 
-- Severity re-checked: exploitation requires setting an env var on the developer's own machine/runner — anyone with that access can already run arbitrary code or skip the gate entirely; the crash fails closed and no input value can flip a failing gate to pass. Low is impact-honest; matches the ISSUE-046 precedent rating for the identical pattern.
-- False-positive check: every claim was executed against the worktree code (parsing table, OverflowError at 1e9/1e12/1e20, harmless `true` command), and both crash-containment paths were read in source, not assumed from the ISSUE-046 report.
-- Blind-spot re-scan (security dimension only): re-read the diff for shell usage, string-built commands, secrets, deserialization of the env value, new dependencies, and log injection via the rc-124 f-string (int by print time) — nothing found. Considered TOCTOU (env read once per gate at call time — fine) and tiny-timeout DoS (fails closed).
-- AC check: env override, 600 default, invalid-value fallback, and fully mocked tests are all present in the diff; no acceptance criterion introduces a security regression.
-- Confidence: High — small diff, the env value's full data flow was traced end to end and behavior verified empirically.
+### [Medium] (pre-existing in touched code) Plugin-wired hook falls back to executing project-directory scripts when the plugin-root probe fails
+
+**Evidence**: `project/.claude/hooks/session_start.py:29-36` — candidate order is `CLAUDE_PLUGIN_ROOT` → `HOOK_ROOT`/`CLAUDE_PROJECT_DIR` → `parents[3]`, and `hooks/hooks.json` (SessionStart) invokes the hook with `HOOK_ROOT="$CLAUDE_PROJECT_DIR"`. If the plugin cache root exists (the `[ -f … ]` guard passed, so the hook file is present) but `scripts/kit_update_check.py` is missing there (partial cache GC — the exact degradation class ISSUE-037 documents — or a future repackaging), the hook resolves the kit root to the **untrusted project directory** and then, at `session_start.py:60-66`, executes `<project>/scripts/kit_update_check.py` and `<project>/scripts/kit_config.py` with the user's Python at SessionStart — hooks run with no permission gate — and injects the first script's stdout **verbatim** into session context (line 61-62), an unfiltered instruction-injection channel on top of the direct code execution.
+
+This PR did not introduce the fallback order (it only threaded `from_plugin` through), but the changed hunk contains it and the PR's own premise (cache dirs get GC'd) makes the trigger state credible. Medium because the required partial state (hook file survives, scripts/ gone) is an edge case; the consequence when it fires is arbitrary code execution.
+
+**Fix**: In `find_kit_root`, when `CLAUDE_PLUGIN_ROOT` is set (i.e., running as the plugin's hook), do not fall through to the project-dir candidate — return `None` if the plugin root fails the probe. The `HOOK_ROOT` candidate remains correct for the snippet wiring (copied install), where the project genuinely is the trust root. Cheap change, no functionality loss: healthy plugin installs always pass the plugin-root probe.
+
+---
+
+### [Low] Script path unquoted in the injected command template
+
+**Evidence**: `project/.claude/hooks/session_start.py:83` — `f"workflow): python3 {report} --skill <name> …"` prints the path unquoted in both branches; the plugin-branch template likewise shows `python3 <kit-root>/scripts/contributor_report.py` unquoted, and the substituted marketplace-cache path can contain spaces (e.g., a home directory with a space). A model executing the instruction verbatim produces a mis-tokenized command. No practical attacker control over the path (the kit-root path is chosen by the user/installer, not by repo content), hence Low — hardening only.
+
+**Fix**: Quote the path in the template: `python3 "<kit-root>/scripts/contributor_report.py"` / `python3 "{report}"`.
+
+---
+
+## Surfaces checked, no findings
+
+- **Secrets leakage into session context**: none; the plugin branch prints only constant text and the diff removes the cache path (which encodes username) from plugin-mode output. Standalone branch prints a local absolute path into the local session only — not exfiltration.
+- **Injected env/file content (plugin branch)**: constant string; nothing interpolated.
+- **Subprocess safety**: list argv, no `shell=True`, `capture_output`, `timeout=20` — unchanged by diff; no new invocation added.
+- **stdin handling**: `json.load(sys.stdin)` drained and unused; exceptions swallowed by design; payload cannot influence output.
+- **Never-fail contract**: the diff adds no new exception masking; `run_quiet`'s swallow-all is pre-existing and intentional (never block session start). The Medium fallback finding above is the only place the contract intersects a security-relevant state, and it is reported there.
+- **New test code**: executes only literal stub scripts written by the tests themselves into `tempfile.TemporaryDirectory()`; `_run_session_start` pops `CLAUDE_PLUGIN_ROOT` and pins `HOOK_ROOT` to the temp root, so the subprocess cannot resolve the developer's real environment as the kit root in the paths under test. No untrusted input executed; assertions (`VERSION_PINNED_CACHE_RE`, `str(pinned_root) not in out`, on-disk existence check in TC-037b) genuinely enforce the AC.
+- **Dependencies**: none added.
+
+## Confidence
+
+**Medium.** Evidence for each finding is verified in the wiring configs and source (not inferred), but both Medium findings depend on conditions I cannot measure from the diff alone: F1 on probabilistic model resolution behavior, F2 on a partial cache-GC state whose real-world frequency is unknown. Those uncertainties are flagged inline; severities already discount for them.
