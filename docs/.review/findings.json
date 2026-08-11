@@ -1,61 +1,21 @@
 {
-  "pr_number": "65",
+  "pr_number": "68",
   "code_source": "reviewer-degraded",
   "security_source": "reviewer-degraded",
   "code_findings": [
     {
-      "severity": "Medium",
-      "title": "Tests badge \"1167 passing\" was generated from a venv missing dev extras — undercounts the canonical suite by 9",
-      "evidence": "README.md:5 (changed in this diff: 1116 -> 1167). In the worktree's lockfile-only venv PyYAML is absent (uv run python -c \"import yaml\" -> ModuleNotFoundError), so tests/test_plugin_manifest.py's tests are dropped at collection (module-level pytest.importorskip(\"yaml\")) and the suite yields 1167 passed, 2 skipped. But PyYAML is a declared dev extra (pyproject.toml [project.optional-dependencies] dev) and CONTRIBUTING.md prescribes installing dev extras; in that canonical env the suite is 1176 passed, 0 skipped (verified: uv run --extra dev pytest -q -> \"1176 passed in 9.71s\"). The one number this staleness-sweep PR freshly updated is already stale in the project's own prescribed environment.",
-      "fix": "Regenerate the badge from a dev-extras-synced env (1176), or drop the hardcoded count (e.g. \"Tests passing\") since it is unguardable. Per recalled ISSUE-046/047 lessons, do NOT guard it with a test that shells out to pytest — recursive pytest spawn is the known anti-pattern; unguarded is acceptable, wrong is not."
-    },
-    {
-      "severity": "Medium",
-      "title": "[pre-existing, record-only] Three untouched agents-table Tools cells drift from agent frontmatter",
-      "evidence": "README.md agents table, rows NOT touched by this diff (context lines in git diff main...HEAD): a11y-auditor and ui-reviewer Tools cells omit Bash (frontmatter: \"Read, Glob, Grep, Write, Edit, Bash\" / \"Read, Glob, Grep, Edit, Bash, Write\"); design-auditor cell lists \"Read, Glob, Grep, Edit, Write\" while frontmatter is only \"Read, Glob, Grep\". The three NEWLY ADDED auditor rows (research-auditor, review-merge-auditor, synthesizer-auditor) were verified correct against frontmatter (effort medium, tools Read, Grep). The new test_agents_table_has_row_per_agent_file checks row names only, so column-level drift stays invisible.",
-      "fix": "Out of scope per issue AC (pre-existing drift in untouched rows, sweep-adjacent). Follow-up candidate: fix the three cells and/or extend tests/test_readme_consistency.py to compare Effort/Tools cells against agent frontmatter, which would close this drift class permanently."
+      "severity": "Low",
+      "title": "TC-043b reference scan excludes the tests/ tree",
+      "evidence": "tests/test_dead_script_removal.py:37-48 ACTIVE_SURFACES omits tests/ (necessary — the guard file itself contains the BANNED tokens in REMOVED_FILES/BANNED/docstring). A dead-script name re-introduced in a DIFFERENT test file would not be caught by TC-043b.",
+      "fix": "No change recommended. Impact is minimal and largely self-covering: a test that actually imports/calls a deleted script fails at runtime. If tightening ever matters, scan tests/ too while excluding this one guard module by name."
     },
     {
       "severity": "Low",
-      "title": "\"v0.1\" stale-string guard is a substring check that will spuriously fail on future legitimate v0.10+ mentions",
-      "evidence": "tests/test_readme_consistency.py:85 — assert \"v0.1\" not in readme. Verified: \"v0.1\" in \"since v0.10\" -> True; at kit v0.10/v0.11 any legitimate README mention fails the test with the misleading message \"stale v0.1 version pin still in README\".",
-      "fix": "assert not re.search(r\"v0\\.1(?!\\d)\", readme) — still catches v0.1 and v0.1.0 (genuinely stale), permits v0.10+."
-    },
-    {
-      "severity": "Low",
-      "title": "\"33 agents\" guard checks a string that never existed in the README; removed \"old 33 per-agent pins\" phrase has no regression guard",
-      "evidence": "tests/test_readme_consistency.py:86 — verified: \"33 agents\" is a substring of neither \"33 engineering agents\" nor \"old 33 per-agent pins\" (the two 33-strings actually removed by this diff). A \"33 engineering agents\" regression IS caught by the two count tests (any count != roster fails); \"the old 33 per-agent pins\" regressing is caught by nothing. AC-literal is still satisfied (the AC's grep is the same substring), so this is hardening, not an AC gap.",
-      "fix": "Replace with assert not re.search(r\"\\b33\\b[^\\n]*\\bagent\", readme) or add assert \"33 per-agent\" not in readme."
-    },
-    {
-      "severity": "Low",
-      "title": ".claude-kit/ retirement guard is phrasing-dependent — a rephrased submodule mention slips through",
-      "evidence": "tests/test_readme_consistency.py:95-107 — prose check requires the exact substring `.claude-kit/` submodule and the diagram check requires \".claude-kit/\" AND \"# submodule\" on the same line. A regression written as \"|-- .claude-kit/  # git submodule\" or \"vendored .claude-kit/ checkout\" passes both checks.",
-      "fix": "Invert to a whitelist: offenders = [l for l in readme.splitlines() if \".claude-kit/\" in l and \"runtime state\" not in l]; assert not offenders — any new .claude-kit/ mention outside the one live runtime-state context (README line 714) fails."
-    },
-    {
-      "severity": "Low",
-      "title": "test_readme_count_matches_effort_test_roster passes vacuously if the README stops stating any count",
-      "evidence": "tests/test_readme_consistency.py:49-57 — the for-loop over _stated_counts() has no assert counts guard (sibling test_stated_agent_counts_match_roster:42 has one). If a future rewrite drops all \"N engineering agents\" phrasings, this test passes with zero assertions executed. Suite-level signal survives via the sibling's guard, so this is single-test vacuity, not a suite blind spot.",
-      "fix": "Add the same assert counts guard (or derive counts once at module/fixture level for both tests)."
-    },
-    {
-      "severity": "Low",
-      "title": "/spec Usage test: section extractor requires a following h2, and \"### Spec\\b\" also matches hypothetical \"### Spec-Required ...\" headings",
-      "evidence": "tests/test_readme_consistency.py:110-120 — (1) r\"^## Usage\\n(.*?)(?=^## )\" fails spuriously if Usage ever becomes the last h2 section. (2) Verified \\b matches before a hyphen, so r\"^### Spec\\b\" would match \"### Spec-Required gate\"; the companion ^/spec\\b code-block assertion mostly closes that hole.",
-      "fix": "(1) Use (?=^## |\\Z). (2) Use r\"^### Spec( |$|\\s*\\u2014)\" or r\"^### Spec\\b(?!-)\"."
-    },
-    {
-      "severity": "Low",
-      "title": "[debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR",
-      "evidence": "checkpoint.sh --skill review --phase debt --issue ISSUE-040: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-036/037/038/046/047 reviews' ledgers — pre-existing, not from PR #65's diff.",
-      "fix": "Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out."
+      "title": "Extension-less BANNED substring tokens are broader than the kit_root.sh token",
+      "evidence": "tests/test_dead_script_removal.py:35 BANNED = ('ensure_permissions','ensure_gh','kit_root.sh','lint_skill_cache_order'). Three tokens are bare identifiers; a future live identifier like ensure_github_token would false-positive. kit_root.sh deliberately keeps its .sh suffix so it is NOT a substring of the live find_kit_root in session_start.py (verified no collision today).",
+      "fix": "Acceptable as-is: the broader direction favors catching regressions and a false positive would be loud + trivially fixed (matches the occurrence-whitelist-over-blacklist lesson). Optional future tightening: prefix scripts/ or add extensions to the three bare tokens if a real collision appears."
     }
   ],
   "security_findings": [],
-  "minimality_findings": [],
-  "ui_findings": null,
-  "design_findings": null,
-  "a11y_findings": null,
-  "figma_findings": null
+  "minimality_findings": []
 }
