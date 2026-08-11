@@ -643,6 +643,24 @@ before the gate runs. Server-based gates (e2e-web, api) use
 `scripts/gate_server.sh` to start the app, poll a health endpoint, run
 the test command, and clean up the process group on exit.
 
+### Behaviour-control environment variables
+
+A few environment variables tune gate behaviour without editing code. All are
+optional — the defaults are safe for local and CI runs:
+
+- `KIT_CHECKPOINT_TEST_TIMEOUT` — seconds allowed for test-phase checkpoints
+  (`/implement` RED/test, `/ship` smoke) and the `verify_gates.py` unit gate.
+  Default `600`; invalid or non-positive values fall back to the default.
+- `KIT_SPRINT_QUEUE_GH_TIMEOUT` — default `10`; seconds for the sprint queue's
+  `gh pr view` merge-state probe (`scripts/sprint_queue.py`). On timeout the
+  probe degrades to a phase-only decision so an offline or hung `gh` never
+  blocks the frequently-run queue.
+- `KIT_ALLOW_BROWSER_INSTALL` — set to `1` to let the visual-diff and
+  computed-styles gates auto-install Playwright + Chromium (heavy network +
+  subprocess provisioning) when the browser is missing. Unset (the default) or
+  any other value keeps the gate side-effect-free: it skips with a "browser
+  unavailable" note instead of mutating the environment.
+
 ### Configuring gates via `docs/test_plan.md`
 
 `qa-designer` generates a `## Verify Gates Configuration` section in
