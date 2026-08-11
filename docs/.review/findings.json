@@ -1,103 +1,59 @@
 {
-  "pr_number": "59",
+  "pr_number": "65",
   "code_source": "reviewer-degraded",
   "security_source": "reviewer-degraded",
   "code_findings": [
     {
       "severity": "Medium",
-      "title": "Non-atomic, lock-free cache writes: a stale \"pass\" can overwrite a fresh \"fail\" debounce entry under concurrent hook processes",
-      "evidence": "project/.claude/hooks/autotest.py:273-281 _save_cache truncate-writes with open(path,'w')+json.dump (no temp+os.replace, no lock); :585-592 records last_run=time.time() AFTER runs complete (runs can take minutes). Interleaving: slow pass-run finishing after a newer fail-run overwrites result='fail' with 'pass' + fresh last_run; next edit within 30s with unchanged tests is skipped — AC-4 hazard. All other race outcomes (torn write, lost index entry) degrade safely to rebuild/re-run.",
-      "fix": "Write atomically (dump to path+'.tmp', os.replace); record last_run as run START time; when writing 'pass', do not clobber a newer entry whose result is 'fail'."
+      "title": "Tests badge \"1167 passing\" was generated from a venv missing dev extras — undercounts the canonical suite by 9",
+      "evidence": "README.md:5 (changed in this diff: 1116 -> 1167). In the worktree's lockfile-only venv PyYAML is absent (uv run python -c \"import yaml\" -> ModuleNotFoundError), so tests/test_plugin_manifest.py's tests are dropped at collection (module-level pytest.importorskip(\"yaml\")) and the suite yields 1167 passed, 2 skipped. But PyYAML is a declared dev extra (pyproject.toml [project.optional-dependencies] dev) and CONTRIBUTING.md prescribes installing dev extras; in that canonical env the suite is 1176 passed, 0 skipped (verified: uv run --extra dev pytest -q -> \"1176 passed in 9.71s\"). The one number this staleness-sweep PR freshly updated is already stale in the project's own prescribed environment.",
+      "fix": "Regenerate the badge from a dev-extras-synced env (1176), or drop the hardcoded count (e.g. \"Tests passing\") since it is unguardable. Per recalled ISSUE-046/047 lessons, do NOT guard it with a test that shells out to pytest — recursive pytest spawn is the known anti-pattern; unguarded is acceptable, wrong is not."
     },
     {
       "severity": "Medium",
-      "title": "Index caches absolute test paths but fingerprint is relpath-based — mv/clone of the project keeps a matching fingerprint pointing at the old tree",
-      "evidence": "project/.claude/hooks/autotest.py:304 fingerprint uses os.path.relpath(entry.path, scan_root); :356-364 and :397-405 store absolute test_path in the module index; :575-576 run selected files with no existence check. mv (or mtime-preserving copy) keeps mtime_ns -> fingerprint matches -> warm path returns old absolute paths: false 'Test failed' block on missing files, or silently running the ORIGINAL tree's tests (copy case).",
-      "fix": "Store module index entries relative to project_root and join on read; or verify each cached path with os.path.isfile on a warm hit and fall through to rebuild if any is missing."
+      "title": "[pre-existing, record-only] Three untouched agents-table Tools cells drift from agent frontmatter",
+      "evidence": "README.md agents table, rows NOT touched by this diff (context lines in git diff main...HEAD): a11y-auditor and ui-reviewer Tools cells omit Bash (frontmatter: \"Read, Glob, Grep, Write, Edit, Bash\" / \"Read, Glob, Grep, Edit, Bash, Write\"); design-auditor cell lists \"Read, Glob, Grep, Edit, Write\" while frontmatter is only \"Read, Glob, Grep\". The three NEWLY ADDED auditor rows (research-auditor, review-merge-auditor, synthesizer-auditor) were verified correct against frontmatter (effort medium, tools Read, Grep). The new test_agents_table_has_row_per_agent_file checks row names only, so column-level drift stays invisible.",
+      "fix": "Out of scope per issue AC (pre-existing drift in untouched rows, sweep-adjacent). Follow-up candidate: fix the three cells and/or extend tests/test_readme_consistency.py to compare Effort/Tools cells against agent frontmatter, which would close this drift class permanently."
     },
     {
       "severity": "Low",
-      "title": "Fingerprint vs discovery predicate mismatch: hidden-dir JS tests and symlinked test files are discoverable but never invalidate the index",
-      "evidence": "project/.claude/hooks/autotest.py:234-238 _skip_js_scan_dir excludes node_modules AND all hidden dirs from the JS fingerprint; :389-393 the discovery os.walk skips only node_modules (and never prunes dirs, still descending node_modules — pre-existing); :301 is_file(follow_symlinks=False) excludes symlinked test files from the fingerprint while os.walk+open includes them. Adding/changing such a test never refreshes the index (AC-2 corner).",
-      "fix": "Use one predicate on both sides: prune the discovery walk via dirs[:] filtering with _skip_js_scan_dir, and align symlink handling between fingerprint and discovery."
+      "title": "\"v0.1\" stale-string guard is a substring check that will spuriously fail on future legitimate v0.10+ mentions",
+      "evidence": "tests/test_readme_consistency.py:85 — assert \"v0.1\" not in readme. Verified: \"v0.1\" in \"since v0.10\" -> True; at kit v0.10/v0.11 any legitimate README mention fails the test with the misleading message \"stale v0.1 version pin still in README\".",
+      "fix": "assert not re.search(r\"v0\\.1(?!\\d)\", readme) — still catches v0.1 and v0.1.0 (genuinely stale), permits v0.10+."
     },
     {
       "severity": "Low",
-      "title": "Warm-path cache entries not validated to string paths — valid-JSON garbage reaches subprocess.run and crashes the hook (fail-soft contract dent)",
-      "evidence": "project/.claude/hooks/autotest.py:347-349 and :384-386 'if isinstance(cached, list): return list(cached)' trusts element types; _load_cache (:258-269) validates outer shape only. A hand-edited cache with e.g. [1] passes validation, then subprocess.run([pytest_cmd, 1, ...]) raises uncaught TypeError -> traceback, exit 1 (non-blocking noise, no exploit path).",
-      "fix": "Accept a cached hit only if all(isinstance(x, str) for x in cached) (optionally + os.path.isfile, which also mitigates the stale-abs-path finding); otherwise rebuild."
+      "title": "\"33 agents\" guard checks a string that never existed in the README; removed \"old 33 per-agent pins\" phrase has no regression guard",
+      "evidence": "tests/test_readme_consistency.py:86 — verified: \"33 agents\" is a substring of neither \"33 engineering agents\" nor \"old 33 per-agent pins\" (the two 33-strings actually removed by this diff). A \"33 engineering agents\" regression IS caught by the two count tests (any count != roster fails); \"the old 33 per-agent pins\" regressing is caught by nothing. AC-literal is still satisfied (the AC's grep is the same substring), so this is hardening, not an AC gap.",
+      "fix": "Replace with assert not re.search(r\"\\b33\\b[^\\n]*\\bagent\", readme) or add assert \"33 per-agent\" not in readme."
     },
     {
       "severity": "Low",
-      "title": "DEBOUNCE_SECONDS is a new hard-coded time knob with no env override and no doc line",
-      "evidence": "project/.claude/hooks/autotest.py:20 'DEBOUNCE_SECONDS = 30.0'; zero mentions in module docstring, README, or docs/troubleshooting.md (grep-verified). Kit lesson ISSUE-046/047: undocumented, non-configurable timing constants recur as breakage. Cannot break gates (not a subprocess timeout; failures are exempt from debounce). Diff introduces no new subprocess timeout= literals.",
-      "fix": "DEBOUNCE_SECONDS = float(os.environ.get('AUTOTEST_DEBOUNCE_SECONDS', '30')) + one docstring line + one docs/troubleshooting.md line (0 = disable)."
+      "title": ".claude-kit/ retirement guard is phrasing-dependent — a rephrased submodule mention slips through",
+      "evidence": "tests/test_readme_consistency.py:95-107 — prose check requires the exact substring `.claude-kit/` submodule and the diagram check requires \".claude-kit/\" AND \"# submodule\" on the same line. A regression written as \"|-- .claude-kit/  # git submodule\" or \"vendored .claude-kit/ checkout\" passes both checks.",
+      "fix": "Invert to a whitelist: offenders = [l for l in readme.splitlines() if \".claude-kit/\" in l and \"runtime state\" not in l]; assert not offenders — any new .claude-kit/ mention outside the one live runtime-state context (README line 714) fails."
     },
     {
       "severity": "Low",
-      "title": "Debounce map grows without pruning; entire cache JSON rewritten every event",
-      "evidence": "project/.claude/hooks/autotest.py:587-592 cache['debounce'][key] keyed by absolute source path; entries for deleted/renamed files persist forever and every event round-trips the full JSON. Bounded by source-file count — perf/bloat only.",
-      "fix": "On save, drop debounce entries with last_run older than a few debounce windows (one-line dict comprehension)."
+      "title": "test_readme_count_matches_effort_test_roster passes vacuously if the README stops stating any count",
+      "evidence": "tests/test_readme_consistency.py:49-57 — the for-loop over _stated_counts() has no assert counts guard (sibling test_stated_agent_counts_match_roster:42 has one). If a future rewrite drops all \"N engineering agents\" phrasings, this test passes with zero assertions executed. Suite-level signal survives via the sibling's guard, so this is single-test vacuity, not a suite blind spot.",
+      "fix": "Add the same assert counts guard (or derive counts once at module/fixture level for both tests)."
     },
     {
       "severity": "Low",
-      "title": "Coverage gap: debounce window expiry is untested — an unbounded-window regression would silently stop re-testing passing modules",
-      "evidence": "tests/test_autotest.py:571-595 asserts the within-window skip only; no test asserts a re-run once DEBOUNCE_SECONDS elapses. A flipped comparison or wrong last_run type would pass every current test.",
-      "fix": "Monkeypatch autotest.time.time (or set autotest.DEBOUNCE_SECONDS = 0.0) and assert the second handle_event re-runs the tests."
-    },
-    {
-      "severity": "Low",
-      "title": "Corrupt-cache test cannot detect a late hook crash — run_hook discards returncode/stderr, making 'exits clean' unasserted",
-      "evidence": "tests/test_autotest.py:11-21 run_hook returns parsed stdout or None; tests/test_autotest.py:542-547 asserts out is None + rebuilt cache is valid JSON. A crash AFTER find_related_python_tests saves the rebuilt cache (e.g. in the debounce block) yields empty stdout + exit 1 and the test still passes. Crash-on-load IS caught (cache stays corrupt).",
-      "fix": "Surface result.returncode/stderr from run_hook (or locally in this test) and assert returncode == 0 with no traceback in stderr."
+      "title": "/spec Usage test: section extractor requires a following h2, and \"### Spec\\b\" also matches hypothetical \"### Spec-Required ...\" headings",
+      "evidence": "tests/test_readme_consistency.py:110-120 — (1) r\"^## Usage\\n(.*?)(?=^## )\" fails spuriously if Usage ever becomes the last h2 section. (2) Verified \\b matches before a hyphen, so r\"^### Spec\\b\" would match \"### Spec-Required gate\"; the companion ^/spec\\b code-block assertion mostly closes that hole.",
+      "fix": "(1) Use (?=^## |\\Z). (2) Use r\"^### Spec( |$|\\s*\\u2014)\" or r\"^### Spec\\b(?!-)\"."
     },
     {
       "severity": "Low",
       "title": "[debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR",
-      "evidence": "checkpoint.sh --skill review --phase debt --issue ISSUE-038: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-046/047 reviews' ledgers — pre-existing, not from PR #59's diff.",
+      "evidence": "checkpoint.sh --skill review --phase debt --issue ISSUE-040: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-036/037/038/046/047 reviews' ledgers — pre-existing, not from PR #65's diff.",
       "fix": "Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out."
     }
   ],
-  "security_findings": [
-    {
-      "severity": "Medium",
-      "title": "Cache-derived related-test paths executed unvalidated on warm hits (cache poisoning -> out-of-tree file execution + pytest/vitest option injection)",
-      "evidence": "find_related_python_tests/find_related_js_tests return list(cached) with no re-validation (autotest.py:347-349, 384-386); _run_source_branch appends cached rf without the os.path.isfile guard primary gets (autotest.py:549-551) and passes it to subprocess argv in run_python_test ([pytest, tf, -x, ...], autotest.py:147-152). The stored fingerprint is itself in the writable cache, so a poisoned cache can match the current tree, skip the scan, and return arbitrary modules entries pointing outside tests/ or the project root, bypassing the test-name predicate, or starting with '-' (interpreted by pytest/vitest as options/plugins like -p/-c/--pdb).",
-      "fix": "Treat cached paths as untrusted on read: drop any entry that is not an existing regular file, not under project_root (py: project_root/tests), fails the _is_*_test_file predicate, or starts with '-'. Apply the os.path.isfile guard to rf that primary already gets."
-    },
-    {
-      "severity": "Low",
-      "title": "Debounce trusts an attacker-writable 'pass' entry to suppress the block-on-failure safety signal",
-      "evidence": "_run_source_branch returns None (tests skipped, no block) when a cached debounce entry has result=='pass', matching test_set, and last_run within DEBOUNCE_SECONDS (autotest.py:562-571). The fail-soft, workspace-writable cache lets a pre-seeded 'pass' entry (forged test_set is just a SHA-1 over unchanged test files' path/mtime/size) mute a genuine failing run for up to 30s after a source edit that breaks tests without touching test files. Bounded: advisory hook, 30s window, local-write precondition.",
-      "fix": "Document that autotest is not a security control; consider not letting a stored 'pass' suppress a run across separate hook invocations (in-memory debounce, or namespace/sign the cache) so on-disk tampering cannot mute a real failure."
-    },
-    {
-      "severity": "Low",
-      "title": "Non-atomic, symlink-following cache write can clobber a pre-planted symlink target",
-      "evidence": "_save_cache does os.makedirs(exist_ok=True) then open(path, 'w') with no O_NOFOLLOW and no atomic temp-then-rename (autotest.py:277-279). If .claude/run/autotest_cache.json or .claude/run/ is an attacker-planted symlink, the hook overwrites the target with cache JSON (destructive clobber, not injection). Non-atomic write can also corrupt the cache under concurrent hooks.",
-      "fix": "Write to a temp file in the same dir and os.replace() into place; refuse to follow a symlink at the final path (os.open with O_NOFOLLOW, or reject if os.path.islink(path))."
-    },
-    {
-      "severity": "Low",
-      "title": "Cache persists absolute paths (OS username / project layout) and is not covered by .gitignore",
-      "evidence": "python_index/js_index module lists and every debounce key store os.path.abspath(...) values like /Users/<user>/... (autotest.py:561, 356, 397). git check-ignore .claude/run/autotest_cache.json returns not-ignored (exit 1) and the repo .gitignore has no .claude/run/ entry, though docs/telemetry_schema.md asserts .claude/run/ is gitignored. No secrets/file-contents are stored, so impact is limited to leaking usernames and test structure if committed.",
-      "fix": "Add .claude/run/ to the kit's shipped/template .gitignore (and this repo's), and/or store project-relative paths in the cache."
-    }
-  ],
-  "minimality_findings": [
-    {
-      "severity": "Low",
-      "title": "[shrink] _load and _make_python_project duplicated verbatim between TestIndexCache and TestDebounce",
-      "evidence": "tests/test_autotest.py:545-560 duplicates tests/test_autotest.py:447-467 helper-for-helper.",
-      "fix": "Hoist both to module-level helpers (or a fixture) shared by the two classes (~22 lines removed)."
-    },
-    {
-      "severity": "Low",
-      "title": "[delete] Per-call sys.path.insert + importlib.reload in test _load helpers",
-      "evidence": "tests/test_autotest.py:449-452 (and 547-550): the hook module holds no mutable global state the tests need reset, and repeated inserts accumulate in sys.path.",
-      "fix": "Single module-level import of autotest, folded into the shared helper above (~4 lines removed)."
-    }
-  ],
+  "security_findings": [],
+  "minimality_findings": [],
   "ui_findings": null,
   "design_findings": null,
   "a11y_findings": null,

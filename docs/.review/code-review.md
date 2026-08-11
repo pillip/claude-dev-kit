@@ -1,86 +1,95 @@
-# Code Review (degraded) — ISSUE-038 / PR #59
+# Code Review (degraded) — ISSUE-040 / PR #65
 
-Scope: `git diff origin/main...HEAD` @ 1401f58 — `project/.claude/hooks/autotest.py` (+256/−81), `tests/test_autotest.py` (+206). Suite run in worktree: **31 passed in 2.69s** (no spawn-leak signal). Reviewed dimension: code (+ minimality folded in). Security reviewed separately.
+Scope: `git diff main...HEAD` @ cced139 — `README.md` (+37/−14), `tests/test_readme_consistency.py` (new, 120 lines). Reviewed dimension: code (+ minimality folded in). Security reviewed separately (`security-review.md`).
 
-### [Medium] Non-atomic, lock-free cache writes: a stale "pass" can overwrite a fresh "fail" debounce entry under concurrent hook processes
+Verification performed: 6/6 new tests pass in the worktree (0.01s, hermetic). All four README agent-count statements (3 prose + 1 structure-comment) are captured by `COUNT_PATTERNS`. Table walker parses exactly 32 rows and terminates correctly on the blank line after the table. AC greps re-run independently: `v0.1` → 0, `opus (21` → 0, `.claude-kit/` → only the deliberately-live line 714, `33` → only the legal `ISSUE-033` reference. Agents/*.md = 32 = `test_agent_effort.py` pin. New auditor rows' role blurbs match agent frontmatter descriptions. AC 1–3 all satisfied.
 
-**Evidence:** `project/.claude/hooks/autotest.py:273-281` — `_save_cache` truncate-writes the whole file (`open(path, "w")` + `json.dump`), no temp-file/`os.replace`, no locking. `project/.claude/hooks/autotest.py:585-592` — the outcome is recorded with `"last_run": time.time()` taken *after* the runs complete (runs can take minutes: up to 5×30s unit + 2×60s E2E).
+---
 
-**Impact:** Most race outcomes are fail-safe: a torn/interleaved write produces invalid JSON, which `_load_cache` rebuilds (re-run, never skip); a lost index entry just re-walks. But one interleaving is not: process A starts on source state S0 (tests pass), process B starts after an edit introduces a bug and records `"fail"`, then slow A finishes and overwrites the entry with `"pass"` and a fresh `last_run`. The next edit within 30s with unchanged test files is skipped — a failure debounced into silence, the exact AC-4 hazard. Requires two concurrent hook processes on the same file in the same project root (PostToolUse hooks serialize per agent, and kit worktrees have separate cache files, so this is narrow — hence Medium, not High).
+### [Medium] Tests badge "1167 passing" was generated from a venv missing dev extras — silently undercounts the canonical suite by 7
 
-**Fix:** (1) Write atomically: dump to `path + ".tmp"` then `os.replace` (also eliminates the torn-write/rebuild churn). (2) Record `last_run` as the run *start* time, so the skip window is measured from when the tested state was captured. (3) When writing a `"pass"`, don't clobber an existing entry whose `last_run` is newer and whose result is `"fail"`.
+**File:** `README.md:5` (changed in this diff: 1116 → 1167)
 
-### [Medium] Index caches absolute test paths but the fingerprint is relpath-based — `mv`/clone of the project keeps a "valid" fingerprint pointing at the old tree
+**Evidence:** In this worktree's venv PyYAML is absent (`uv run python -c "import yaml"` → ModuleNotFoundError). Consequence: `tests/test_plugin_manifest.py`'s 6 tests are silently dropped at collection (module-level `pytest.importorskip("yaml")`, line 16 — `pytest --collect-only tests/test_plugin_manifest.py` → "no tests collected") and `test_strict_yaml_parse_when_pyyaml_present` skips at runtime. Full-repo collection here = 1168, so a run yields exactly **1167 passed, 1 skipped** — the badge number's provenance. But PyYAML is a declared optional dependency (`pyproject.toml:16`, `pyyaml>=6.0`) and `CONTRIBUTING.md:70` explicitly instructs installing dev extras so these tests run. In the env CONTRIBUTING itself prescribes, collection is 1174, not 1167.
 
-**Evidence:** `project/.claude/hooks/autotest.py:304` — fingerprint entries use `os.path.relpath(entry.path, scan_root)`; `project/.claude/hooks/autotest.py:356-364` and `397-405` — the module index stores absolute `test_path` values; `project/.claude/hooks/autotest.py:575-576` — selected files are executed with no existence check.
+**Impact:** The one README line this PR freshly updated for accuracy is already wrong in the project's own canonical dev environment — the exact staleness class ISSUE-040 exists to sweep. It will also silently drift again on the next test addition (no guard exists, and none can reasonably exist — see fix).
 
-**Impact:** `mv project/ project2/` (or an APFS clonefile / `cp -c` / ns-preserving rsync copy) preserves mtimes exactly. The relocated cache's relpath fingerprint still matches, so the warm path returns the *old* absolute paths. If the old tree is gone: pytest runs a nonexistent path → nonzero exit → false `"Test failed"` block on every edit until a test file's mtime changes. If the old tree still exists (copy case): the hook silently runs the *original* tree's tests against stale code — a wrong-tree pass/fail with no signal. Workaround exists (delete `.claude/run/autotest_cache.json`), so Medium.
+**Suggested fix:** Regenerate the number from a dev-extras-synced env (`uv sync --extra dev` per CONTRIBUTING, expect 1174), or drop the hardcoded count entirely (e.g. "Tests passing") since it is unguardable. Per recalled review lessons (ISSUE-046/047): do **not** add a consistency test that shells out to pytest to verify the badge — recursive pytest spawn is the known anti-pattern; unguarded is acceptable, wrong is not.
 
-**Fix:** Store module index entries as paths relative to `project_root` and join on read; or on a warm hit, verify each cached path with `os.path.isfile` and fall through to a rebuild if any is missing.
+---
 
-### [Low] Fingerprint and discovery use mismatched predicates: hidden-dir JS tests and symlinked test files are discoverable but never invalidate the index
+### [Low] `"v0.1" not in readme` is a substring check that will spuriously fail on future legitimate `v0.10`+ mentions
 
-**Evidence:** `project/.claude/hooks/autotest.py:234-238` — `_skip_js_scan_dir` excludes `node_modules` *and all hidden dirs* from the JS fingerprint; `project/.claude/hooks/autotest.py:389-393` — the discovery `os.walk` skips only `node_modules` (and doesn't prune `dirs`, so it still descends the node_modules tree — pre-existing). Also `project/.claude/hooks/autotest.py:301` — `entry.is_file(follow_symlinks=False)` excludes symlinked test files from the fingerprint, while `os.walk` + `open()` includes them in discovery (both Python and JS paths).
+**File:** `tests/test_readme_consistency.py:88`
 
-**Impact:** A test file added/changed in a hidden dir (JS) or reached via symlink is invisible to the fingerprint: adding one never refreshes the index (AC-2 corner), and removing one leaves it cached. Rare layouts; degraded discovery only, debounce is unaffected (`_test_set_hash` stats the selected files directly). Low.
+**Evidence:** `"v0.1" in "since v0.10"` → `True` (verified). When the kit reaches v0.10/v0.11 and any README sentence legitimately references it, this test fails with the misleading message "stale v0.1 version pin still in README".
 
-**Fix:** Use the same predicate on both sides: prune the discovery walk with `_skip_js_scan_dir` (via `dirs[:] = [...]`, which also stops descending node_modules) and either include symlinked files in the fingerprint or exclude them from discovery.
+**Suggested fix:** `assert not re.search(r"v0\.1(?!\d)", readme)` — still catches `v0.1` and `v0.1.0` (both genuinely stale), permits `v0.10`+.
 
-### [Low] Warm-path cache entries not validated to string paths — valid-JSON garbage can crash the hook, denting the fail-soft contract
+---
 
-**Evidence:** `project/.claude/hooks/autotest.py:347-349` / `384-386` — `if isinstance(cached, list): return list(cached)` trusts element types. `_load_cache` (`:258-269`) validates the outer shape only. A hand-edited cache like `{"modules": {"user": [1]}}` passes validation; the int then reaches `subprocess.run([pytest_cmd, 1, ...])` → uncaught `TypeError` → traceback, exit 1.
+### [Low] `"33 agents" not in readme` guards a string that never existed; the historical stale string "old 33 per-agent pins" has no regression guard
 
-**Impact:** The stated contract is "corrupt cache → rebuild, never crash". Exit 1 is non-blocking in Claude Code (stderr noise, edit proceeds), and the trigger requires a hand-corrupted-but-valid-JSON cache, so no real exploit path — Low.
+**File:** `tests/test_readme_consistency.py:89`
 
-**Fix:** Treat a cached value as a hit only if `all(isinstance(x, str) for x in cached)` (adding an `os.path.isfile` check here also mitigates the stale-abs-path finding above); otherwise fall through to rebuild.
+**Evidence:** Verified: `"33 agents" in "33 engineering agents"` → False; `"33 agents" in "old 33 per-agent pins"` → False. The two 33-strings actually removed by this diff contain neither. "33 engineering agents" regressing IS caught (by both count tests, which fail on any count ≠ roster), but "the old 33 per-agent pins" (removed at README:515) regressing is caught by nothing. AC-literal is still satisfied (the AC's grep is the same substring), so this is hardening, not an AC gap.
 
-### [Low] `DEBOUNCE_SECONDS` is a new hard-coded time knob: no env override, no doc line
+**Suggested fix:** Replace with `assert not re.search(r"\b33\b[^\n]*\bagent", readme)` (or add `assert "33 per-agent" not in readme`).
 
-**Evidence:** `project/.claude/hooks/autotest.py:20` — `DEBOUNCE_SECONDS = 30.0`. No mention in the module docstring, README, or `docs/troubleshooting.md` (grep confirms zero user-facing doc hits).
+---
 
-**Impact:** Kit lesson (ISSUE-046/047): hard-coded timing constants introduced without env-configurability + docs recur as breakage. This one cannot break gates (it is not a subprocess timeout, and mis-sizing only delays or repeats *passing* runs — failures are exempt), so Low. Note: the diff introduces **no new subprocess `timeout=` literals**; the pre-existing 30s/60s caps remain the known logged planner candidate, out of this issue's scope.
+### [Low] `.claude-kit/` retirement guard is phrasing-dependent — a rephrased submodule mention slips through
 
-**Fix:** `DEBOUNCE_SECONDS = float(os.environ.get("AUTOTEST_DEBOUNCE_SECONDS", "30"))`, one line in the module docstring, one line in `docs/troubleshooting.md` (0 = disable).
+**File:** `tests/test_readme_consistency.py:97-107`
 
-### [Low] Debounce map grows without pruning; full cache is rewritten on every event
+**Evidence:** The prose check requires the exact substring `` `.claude-kit/` submodule `` and the diagram check requires `".claude-kit/"` **and** `"# submodule"` on the same line. A regression written as `├── .claude-kit/  # git submodule` or "vendored `.claude-kit/` checkout" passes both. AC-1 defines legality as "zero matches or explicitly-live only", which suggests pinning occurrences rather than pattern-matching retirement phrasings.
 
-**Evidence:** `project/.claude/hooks/autotest.py:587-592` — `cache["debounce"][key] = {...}` keyed by absolute source path; entries for deleted/renamed files persist forever, and every event round-trips the entire JSON (both indexes + all debounce entries).
+**Suggested fix:** Invert the check — whitelist instead of blacklist: `offenders = [l for l in readme.splitlines() if ".claude-kit/" in l and "runtime state" not in l]; assert not offenders`. That makes ANY new `.claude-kit/` mention outside the one live line-714 context a failure.
 
-**Impact:** Bounded by source-file count, so perf/bloat only. Low.
+---
 
-**Fix:** On save, drop debounce entries with `last_run` older than a few windows (one-line dict comprehension).
+### [Low] `test_readme_count_matches_effort_test_roster` passes vacuously if the README stops stating any count
 
-### [Low] Coverage gap: debounce window *expiry* is untested
+**File:** `tests/test_readme_consistency.py:52-60`
 
-**Evidence:** `tests/test_autotest.py:571-595` asserts the within-window skip; no test asserts that an identical passing pair re-runs once `DEBOUNCE_SECONDS` elapses.
+**Evidence:** The `for count in _stated_counts(...)` loop has no `assert counts` guard (its sibling `test_stated_agent_counts_match_roster:44` has one). If a future rewrite drops all "N engineering agents" phrasings, this test passes with zero assertions executed. Suite-level signal survives via the sibling's guard, so this is single-test vacuity, not a suite blind spot.
 
-**Impact:** A regression to an unbounded window (flipped comparison, wrong `last_run` type) would make the hook silently stop re-testing a passing module on later source edits — and no current test would fail. The main safety property (failures re-run) *is* tested, so Low.
+**Suggested fix:** Add the same `assert counts, "README states no agent count"` guard (or derive `counts` once at module/fixture level for both tests).
 
-**Fix:** Monkeypatch `autotest.time.time` (or set `autotest.DEBOUNCE_SECONDS = 0.0`) and assert the second `handle_event` re-runs.
+---
 
-### [Low] Corrupt-cache test cannot detect a late hook crash — `run_hook` discards returncode/stderr
+### [Low] `/spec` Usage test: two theoretical brittleness/power nits
 
-**Evidence:** `tests/test_autotest.py:11-21` — `run_hook` returns parsed stdout or `None`; `tests/test_autotest.py:542-547` (`test_corrupt_cache_rebuilds_and_exits_clean`) asserts `out is None` and that the cache file is valid JSON. A crash *after* `find_related_python_tests` saves the rebuilt cache (e.g. in the debounce block) produces empty stdout + traceback on stderr + exit 1 — and the test still passes. The "exits clean" claim in the name is not asserted.
+**File:** `tests/test_readme_consistency.py:110-120`
 
-**Impact:** Hollow-assertion risk for exactly the fail-soft contract this test exists to pin. Low (the crash-on-load case *is* caught via the still-corrupt cache file).
+**Evidence:** (1) The section extractor `r"^## Usage\n(.*?)(?=^## )"` requires a subsequent `## ` heading; if "Usage" ever becomes the last h2, the test fails spuriously with "README has no ## Usage section". (2) `r"^### Spec\b"` matches a hypothetical `### Spec-Required gate` heading (verified: `\b` matches before `-`), so the assertion could pass without a real `/spec` entry — though the companion `^/spec\b` code-block assertion mostly closes that hole.
 
-**Fix:** Have `run_hook` (or this test locally) surface `result.returncode`/`stderr` and assert `returncode == 0` and no traceback.
+**Suggested fix:** (1) `(?=^## |\Z)`. (2) `r"^### Spec( |$|\s*—)"` or `r"^### Spec\b(?!-)"`.
 
-## Over-Engineering (minimality axis)
+---
 
-- tests/test_autotest.py:545-560: shrink — `_load` and `_make_python_project` duplicated verbatim between `TestIndexCache` and `TestDebounce` → hoist both to module-level helpers (or a fixture) shared by the two classes (~22 lines).
-- tests/test_autotest.py:449-452: delete — per-call `sys.path.insert` + `importlib.reload`; the module holds no mutable global state the tests reset, and repeated inserts accumulate in `sys.path` → single module-level import (folds into the shared helper above) (~4 lines).
-- Considered, rejected: the hand-rolled recursive `os.scandir` in `_stat_fingerprint` looks like an `os.walk` reinvention, but AC-1's letter (zero `os.walk` calls on the warm path, asserted by monkeypatch) mandates it — not a cut. `CACHE_VERSION` is cheap forward-compat for an on-disk format — not yagni.
+### [Medium — PRE-EXISTING, record-only, not introduced by this branch] Three untouched agents-table Tools cells drift from frontmatter
 
-Net removable lines: ~25 (all test-side).
+**File:** `README.md` agents table (rows untouched by this diff)
 
-## AC verification
+**Evidence (per tech-lead verification, rows confirmed outside this diff):** `a11y-auditor` and `ui-reviewer` Tools cells omit `Bash`; `design-auditor` cell lists "Edit, Write" while frontmatter is only "Read, Glob, Grep". The new `test_agents_table_has_row_per_agent_file` checks row *names* only, so this column-level drift is invisible to the new tests.
 
-- **AC-1 (warm index, no walk): PASS.** Warm hit is `_load_cache` + stat-only scandir fingerprint + cached list; zero `os.walk` calls asserted for both Python and JS paths (TC-038a). Stat scan on the hot path is explicitly allowed by the spec's "tests-dir mtime scan" note.
-- **AC-2 (invalidation): PASS** (with the hidden-dir/symlink corner, Low). Any add/modify/delete of a fingerprint-visible test file changes `(relpath, mtime_ns, size)` → immediate reindex; TC-038b asserts discovery and on-disk persistence.
-- **AC-3 (debounce skip): PASS.** Same `(lang:abspath, test-set hash)` with `result == "pass"` inside 30s skips; TC-038c mocks the module-global runner seam with a call-count guard (correct seam per kit lesson).
-- **AC-4 (failure never debounced): PASS.** The skip path requires `result == "pass"`; TC-038d asserts a second block and an increased run count. Residual: the narrow cross-process pass-over-fail overwrite (Medium finding above).
+**Disposition:** Explicitly out of scope per issue AC ("fixing PRE-EXISTING drift in untouched table rows"). Recorded for a follow-up issue: either fix the three cells or extend the lint test to compare Effort/Tools cells against frontmatter (which would have caught this class permanently).
 
-Behavior knobs preserved: `MAX_RELATED_TESTS = 5` (autotest.py:197,555), `TIMEOUT = 30` / `E2E_TIMEOUT = 60` untouched, block-dict shape and unit-then-E2E ordering unchanged; caps are applied *before* the debounce hash so the debounce covers exactly what runs.
+---
 
-Confidence: **High** — full diff + full file read, suite run green (2.69s), mock seams and tmp_path containment verified against recalled lessons, each finding actively falsification-checked (e.g. `mv` preserves mtime_ns, making the stale-abs-path fingerprint match real; all other write races degrade to safe re-runs).
+## Minimality axis (over-engineering)
+
+Scanned the full diff for delete/stdlib/native/yagni/shrink candidates. The test file is 120 lines for 6 AC-mandated tests, each with a distinct failure mode and helpful messages; helpers are minimal (`_readme`, `_stated_counts`, `_agent_table_names` each have ≥2 call sites or isolate one parsing concern). `test_readme_count_matches_effort_test_roster` is transitively redundant with the sibling count test (agents/ count == pin is already asserted by `test_agent_effort.py`), but the cross-check is explicitly required by AC-2 ("totals match tests/test_agent_effort.py roster pin") — explicitly-requested work is never a cut. README changes are targeted deletions/corrections, no added structure.
+
+Lean already. Ship.
+
+---
+
+## Self-Review
+
+1. **Severity re-assessment:** Badge finding held at Medium — it is a factual error in a line this PR changed, in the project's canonical env, on the exact axis (README accuracy) the issue targets; no code-correctness impact keeps it below High. All regex findings held at Low: none fails today, all are future-brittleness or regression-power hardening.
+2. **False-positive check:** Badge — actively tried to refute by checking whether 1167 is correct for a lockfile-only env: it is (1168 collected − 1 runtime skip), but `pyproject.toml:16` + `CONTRIBUTING.md:70` establish dev-extras as the prescribed env, where the count is 1174; the refutation failed, finding stands (with the nuance stated). v0.10 collision, `\b`-before-hyphen, and vacuous-loop behaviors were all executed, not assumed.
+3. **Blind-spot scan (code dimension):** Re-checked error-message quality (all asserts carry actionable messages — good), duplication (none), edge cases of the table walker (multi-table README, missing separator row, EOF table: all fail loudly, none silently), hermeticity (no network/subprocess/env/writes; pure repo-relative file reads — consistent with recalled lesson that these must stay pure-file lint tests), and factual accuracy of every changed README line (counts, tiers, auditor blurbs, /spec claims, pattern-(b) prose — all check out except the badge).
+4. **AC verification:** AC-1 greps re-run clean (line-714 `.claude-kit/` exemption correctly implemented in the test); AC-2 table = 32 rows = 32 files = pin, enforced by tests; AC-3 `/spec` Usage entry present and format-consistent with sibling entries. All satisfied.
+5. **Confidence: High** — every finding is backed by an executed probe or file read in this worktree, and the 6 new tests were run in isolation as permitted.

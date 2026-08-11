@@ -1,0 +1,45 @@
+# Review Notes — PR #65
+
+## Code Review
+_Source: reviewer-degraded_
+
+- **[Medium] Tests badge "1167 passing" was generated from a venv missing dev extras — undercounts the canonical suite by 9**
+  Evidence: README.md:5 (changed in this diff: 1116 -> 1167). In the worktree's lockfile-only venv PyYAML is absent (uv run python -c "import yaml" -> ModuleNotFoundError), so tests/test_plugin_manifest.py's tests are dropped at collection (module-level pytest.importorskip("yaml")) and the suite yields 1167 passed, 2 skipped. But PyYAML is a declared dev extra (pyproject.toml [project.optional-dependencies] dev) and CONTRIBUTING.md prescribes installing dev extras; in that canonical env the suite is 1176 passed, 0 skipped (verified: uv run --extra dev pytest -q -> "1176 passed in 9.71s"). The one number this staleness-sweep PR freshly updated is already stale in the project's own prescribed environment.
+  Fix: Regenerate the badge from a dev-extras-synced env (1176), or drop the hardcoded count (e.g. "Tests passing") since it is unguardable. Per recalled ISSUE-046/047 lessons, do NOT guard it with a test that shells out to pytest — recursive pytest spawn is the known anti-pattern; unguarded is acceptable, wrong is not.
+
+- **[Medium] [pre-existing, record-only] Three untouched agents-table Tools cells drift from agent frontmatter**
+  Evidence: README.md agents table, rows NOT touched by this diff (context lines in git diff main...HEAD): a11y-auditor and ui-reviewer Tools cells omit Bash (frontmatter: "Read, Glob, Grep, Write, Edit, Bash" / "Read, Glob, Grep, Edit, Bash, Write"); design-auditor cell lists "Read, Glob, Grep, Edit, Write" while frontmatter is only "Read, Glob, Grep". The three NEWLY ADDED auditor rows (research-auditor, review-merge-auditor, synthesizer-auditor) were verified correct against frontmatter (effort medium, tools Read, Grep). The new test_agents_table_has_row_per_agent_file checks row names only, so column-level drift stays invisible.
+  Fix: Out of scope per issue AC (pre-existing drift in untouched rows, sweep-adjacent). Follow-up candidate: fix the three cells and/or extend tests/test_readme_consistency.py to compare Effort/Tools cells against agent frontmatter, which would close this drift class permanently.
+
+- **[Low] "v0.1" stale-string guard is a substring check that will spuriously fail on future legitimate v0.10+ mentions**
+  Evidence: tests/test_readme_consistency.py:85 — assert "v0.1" not in readme. Verified: "v0.1" in "since v0.10" -> True; at kit v0.10/v0.11 any legitimate README mention fails the test with the misleading message "stale v0.1 version pin still in README".
+  Fix: assert not re.search(r"v0\.1(?!\d)", readme) — still catches v0.1 and v0.1.0 (genuinely stale), permits v0.10+.
+
+- **[Low] "33 agents" guard checks a string that never existed in the README; removed "old 33 per-agent pins" phrase has no regression guard**
+  Evidence: tests/test_readme_consistency.py:86 — verified: "33 agents" is a substring of neither "33 engineering agents" nor "old 33 per-agent pins" (the two 33-strings actually removed by this diff). A "33 engineering agents" regression IS caught by the two count tests (any count != roster fails); "the old 33 per-agent pins" regressing is caught by nothing. AC-literal is still satisfied (the AC's grep is the same substring), so this is hardening, not an AC gap.
+  Fix: Replace with assert not re.search(r"\b33\b[^\n]*\bagent", readme) or add assert "33 per-agent" not in readme.
+
+- **[Low] .claude-kit/ retirement guard is phrasing-dependent — a rephrased submodule mention slips through**
+  Evidence: tests/test_readme_consistency.py:95-107 — prose check requires the exact substring `.claude-kit/` submodule and the diagram check requires ".claude-kit/" AND "# submodule" on the same line. A regression written as "|-- .claude-kit/  # git submodule" or "vendored .claude-kit/ checkout" passes both checks.
+  Fix: Invert to a whitelist: offenders = [l for l in readme.splitlines() if ".claude-kit/" in l and "runtime state" not in l]; assert not offenders — any new .claude-kit/ mention outside the one live runtime-state context (README line 714) fails.
+
+- **[Low] test_readme_count_matches_effort_test_roster passes vacuously if the README stops stating any count**
+  Evidence: tests/test_readme_consistency.py:49-57 — the for-loop over _stated_counts() has no assert counts guard (sibling test_stated_agent_counts_match_roster:42 has one). If a future rewrite drops all "N engineering agents" phrasings, this test passes with zero assertions executed. Suite-level signal survives via the sibling's guard, so this is single-test vacuity, not a suite blind spot.
+  Fix: Add the same assert counts guard (or derive counts once at module/fixture level for both tests).
+
+- **[Low] /spec Usage test: section extractor requires a following h2, and "### Spec\b" also matches hypothetical "### Spec-Required ..." headings**
+  Evidence: tests/test_readme_consistency.py:110-120 — (1) r"^## Usage\n(.*?)(?=^## )" fails spuriously if Usage ever becomes the last h2 section. (2) Verified \b matches before a hyphen, so r"^### Spec\b" would match "### Spec-Required gate"; the companion ^/spec\b code-block assertion mostly closes that hole.
+  Fix: (1) Use (?=^## |\Z). (2) Use r"^### Spec( |$|\s*\u2014)" or r"^### Spec\b(?!-)".
+
+- **[Low] [debt] KIT-DEBT ledger has 3 no-trigger markers (silent-rot risk) — all harvester self-references, none introduced by this PR**
+  Evidence: checkpoint.sh --skill review --phase debt --issue ISSUE-040: total 14 markers, 3 no-trigger (scripts/debt_harvest.py:44 docstring format example; tests/test_debt_harvest.py:27 and :59 deliberate no-trigger test fixtures), 1 malformed (tests/test_debt_harvest.py:35 deliberate fixture). Identical state to the ISSUE-036/037/038/046/047 reviews' ledgers — pre-existing, not from PR #65's diff.
+  Fix: Pre-existing and self-referential (harvester's own docs/tests): consider teaching debt_harvest.py to exclude its own docstring examples and test fixture strings from the ledger so real no-trigger debt stands out.
+
+## Security Findings
+_Source: reviewer-degraded_
+
+_No findings._
+
+## Over-Engineering
+
+_No findings._
