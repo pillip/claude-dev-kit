@@ -49,9 +49,19 @@ def test_no_review_scratch_files_are_tracked():
 
 
 def test_gitignore_documents_the_scratch_rule():
-    """The .gitignore entry exists so the decision is durable and greppable."""
-    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert "docs/.review" in gitignore, (
-        ".gitignore must contain an explicit 'docs/.review' rule documenting that "
-        "review scratch artifacts are intentionally untracked (ISSUE-051)."
+    """A functional (non-comment) .gitignore rule ignores docs/.review/ (durable decision).
+
+    Matches the actual rule LINE, not any substring — a rationale comment alone
+    (which also contains 'docs/.review') must not keep this green if the functional
+    rule is deleted (ISSUE-040 absence-guard: occurrence-whitelist, not phrasing).
+    """
+    lines = [
+        line.strip()
+        for line in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    ]
+    rule_lines = [line for line in lines if line and not line.startswith("#")]
+    assert "docs/.review/" in rule_lines, (
+        "a non-comment '.gitignore' rule line must equal 'docs/.review/' so review "
+        "scratch artifacts are intentionally untracked (ISSUE-051); a rationale "
+        "comment alone is not enough."
     )
