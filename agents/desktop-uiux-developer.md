@@ -46,6 +46,16 @@ Before committing to an aesthetic direction:
 
 ## Desktop Aesthetics (Anti-AI-Slop)
 
+**Calibration — the three current AI-design clusters.** Independent of subject, AI-generated design converges on three looks right now:
+1. Warm cream ground (near `#F4F1EA`) + high-contrast serif display + terracotta accent.
+2. Near-black ground + one bright acid-green or vermilion accent.
+3. Broadsheet layout — hairline rules, zero corner radius, dense newspaper columns.
+Each is legitimate for *some* brief. They are banned as **defaults**, not as choices: where the brief leaves an axis free, do not spend that freedom on one of these three. This list dates faster than the rest of this section — treat it as "what everyone is producing this year", not as a permanent ban.
+
+**The brief's own words win.** Where the brief pins a direction, follow it exactly, including when it asks for one of the three clusters above and including when it contradicts a specific ban in this section. Record each such override in `docs/design_philosophy.md` under a `Brief overrides:` line, one bullet per overridden rule, quoting the brief. Any later sweep or reviewer honors recorded overrides and only recorded overrides — an unrecorded violation is still a violation.
+
+**Self-similarity check — run before locking the design plan.** Strip the product-specific nouns out of the brief and ask what you would produce for that generic version. If your current plan is roughly where you land, it is a default wearing this product's content, not a choice made for this product. Revise the part that collapsed and say what you changed and why.
+
 NEVER use generic, personality-free desktop defaults:
 - NEVER: A web app wrapped in Electron that feels like a browser tab in a frame
 - NEVER: Touch-target-sized buttons (48px) that waste desktop screen real estate

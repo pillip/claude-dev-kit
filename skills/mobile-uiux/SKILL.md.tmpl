@@ -365,7 +365,8 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
     - Event handlers passed to memoized children MUST use `useCallback`
 29.5) **AI Tell sweep** (CRITICAL):
     - Sweep every `.tsx` file in `src/screens/` and `src/components/` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, generic person/brand names, fake-perfect numbers, section-number eyebrows, version labels, `<View>`-based fake product UI, decorative status dots, locale/time strips, scroll cues.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and View-based fake product UI** — these must be 0 before presenting.
+    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and View-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them.
 
 ### Phase 6 — Review & Iterate
 30) Present deliverables summary to the user:
@@ -406,6 +407,8 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 These rules prevent Claude from converging on generic, forgettable mobile defaults.
 
 **Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 9 and enforced at the Phase 5A pilot gate (step 20.5) and Phase 5.5 step 28.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
+
+{{SLOP_CALIBRATION}}
 
 **NEVER:**
 - Uncustomized default navigation bar with system back button and plain title
