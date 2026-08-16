@@ -79,6 +79,8 @@
 - [x] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — done 2026-07-26: `scripts/eval_review.py` runs a fresh `claude -p` judge over review_notes + the PR diff, scoring coverage/false-positive/actionability/traceability (rubric in `templates/review_eval_rubric.md`), emitting `docs/review_eval_<pr>.md`. Wired as a **non-blocking** step 8 in /ship — always exits 0; missed Critical/High or a dimension ≤2 → `concerns`, else `pass`. **No separate billing** (session auth, not ANTHROPIC_API_KEY); degraded-mode skips silently if the CLI/notes are absent. Determinism via `--runs N` (Critical/High Jaccard overlap; ≥80% is the floor — CLI has no temperature control). 17 unit tests cover rubric contract, verdict derivation (judge "pass" + missed High → concerns), determinism math, degraded mode, never-blocks-on-error, and the /ship wiring. Judge grades the platform /code-review-fed notes post-029, sidestepping self-grading. **Live-verified 2026-07-26**: the judge round-trip produced valid JSON and correctly caught a deliberately-missed SQL-injection (coverage 0, verdict `concerns`, missed Critical flagged with diff_ref) — rubric → parseable verdict confirmed end-to-end)_
 - [x] ISSUE-046: Fix verify_checkpoint.py's 60s pytest timeout breaking the GREEN gate and hollowing the RED gate on 4-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: test-phase subprocess timeouts (implement red/test, ship smoke; were hard-coded 60s/120s) now env-configurable via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) through a _test_timeout() helper; RED-phase exit-124 reported as inconclusive FAIL instead of being mistaken for a failing suite; absorbed verify_ship_smoke full-suite + no-runner-fallback caps (reviewer-accepted scope). Squash-merged PR #54 @ c04b78b 2026-08-10; ship smoke initially blocked solely by the pre-filed ISSUE-047 verify_gates 120s unit-gate cap — retried post-ISSUE-047 on 2026-08-11: GATE PASS unit [blocking] 14.5s, smoke PASS; review 0 Critical/High, 6 Low; eval artifacts in docs/review_notes/ISSUE-046.md)_
 - [x] ISSUE-047: Fix verify_gates.py hard-coded 120s unit-gate timeout (and sibling short caps) breaking blocking ship-smoke gates on multi-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: env-configurable unit-gate timeout via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) mirroring verify_checkpoint.py::_test_timeout, _run() timeout-mock contract (rc 124) preserved; absorbed test-isolation fix for two verify_implement_test tests whose unmocked gate-runner seam recursively spawned the full suite — the source of the false "~5-min suite" premise (true base ~21s). Squash-merged PR #56 @ b0d8bb3; post-merge smoke: GATE PASS unit [blocking] 14.6s, suite 1145 passed / 2 skipped ~11s; review 0 Critical/High/Medium, 6 Low; eval: pass)_
+- [ ] ISSUE-054: Brownfield design path — extract a design system from existing UI code so /uiux can extend instead of replace _(track: platform, P2, 1.5d — 2026-08-17 official-plugin comparison; no platform capability covers it)_
+
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
 - [x] ISSUE-003: Cumulative learning memory MVP — promote review_lessons to structured store — **dropped 2026-07-16** (superseded by ISSUE-033: CC native persistent memory replaces the patterns.jsonl + preamble-injection design; review_lessons.md never accumulated an entry) _(track: platform, P1, 1.5d)_
@@ -2980,3 +2982,61 @@ All kit behaviour-control env knobs are documented consistently in the user-faci
 
 #### Rollback
 `git revert` — docs-only (README.md + docs/troubleshooting.md) plus a small consistency test; no runtime surface touched.
+
+---
+
+### ISSUE-054: Brownfield design path — extract a design system from existing UI code so /uiux can extend instead of replace
+
+> `/uiux` only ever *creates*. Phase 1 step 4 globs existing UI files and reads them "to understand current design patterns and tech stack", but nothing downstream consumes that: Phase 2 unconditionally commits to a new aesthetic direction and a new Signature Move, and Error Handling states prototypes stay pure HTML/CSS regardless of the framework detected. `/scan` has no design dimension (no design_system / design_philosophy output anywhere in its agent chain). `/figma2proto` needs the Figma API. Net effect: a project that already ships a UI but has no Figma file has **no kit path** to "read the design that exists, then add screens that match it" — the user's only options are a from-scratch redesign or hand-writing the design docs.
+>
+> Verified 2026-08-17 against the installed official plugin catalog: `frontend-design` (Anthropic, single 55-line skill) is greenfield aesthetic guidance with no codebase-extraction mechanism; the only catalog plugin that reads a codebase for design context is `superdesign` (3rd-party, ties output to a hosted canvas product). The platform-native `DesignSync` tool + `/design-sync` skill sync a local component library **to** a claude.ai design-system project — a publish/sync surface, not an extraction one. So no platform capability covers this and, per the platform-first rule, the kit owns it. (The same comparison also produced the ISSUE-041-fragment slop-calibration harvest, landed separately.)
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- PRD-Ref: none (kit self-development; 2026-08-17 official-plugin comparison)
+- Priority: P2
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-054-brownfield-design-extract
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Running `/uiux` on a project that already has UI code produces design docs that **describe the design already shipping** and new screens that visually belong to it, instead of a fresh aesthetic that contradicts the existing product.
+
+#### Scope (In/Out)
+- In:
+  - An extraction step that reads existing UI sources (CSS custom properties, Tailwind/theme config, styled-components / RN `StyleSheet` / Electron theme files, component files) and emits `docs/design_system.md` with **observed** tokens — colors, type scale, spacing scale, radii, motion — each tagged with the file it came from.
+  - An inferred `docs/design_philosophy.md`: aesthetic name, Signature Move reverse-engineered from what the codebase actually repeats, and an explicit confidence tag per claim (mirroring `/scan`'s CONFIRMED / INFERRED convention).
+  - A `create` vs `extend` mode branch in `/uiux`: in `extend` mode Phase 2 does not invent a new direction, the Phase 1.5 interview reframes to "what should change / what must stay", and the Phase 5A pilot gate judges *consistency with the extracted system* rather than distinctiveness.
+  - Mode selection: auto-detect existing UI, then confirm with the user (never silently switch modes).
+- Out:
+  - Refactoring or rewriting the existing UI code.
+  - Screenshot/visual-regression comparison against the running app (that is the existing Figma visual-diff family's surface; reuse it later if it fits, do not extend it here).
+  - `mobile-uiux` / `desktop-uiux` parity — land web first, port only once the seam is proven.
+  - Any claude.ai `/design-sync` integration.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a project with an existing stylesheet or theme config and no `docs/ux_spec.md`, when `/uiux` runs, then it detects the existing UI, offers `extend` mode, and on confirmation emits `docs/design_system.md` whose token values match the source files (spot-checked, no invented values).
+- [ ] Given extraction output, when any token or philosophy claim cannot be traced to a file, then it is tagged INFERRED with its reasoning; every CONFIRMED claim carries a `file:line` reference.
+- [ ] Given `extend` mode, when Phase 2 runs, then no new aesthetic direction is invented — the Signature Move is derived from a pattern that already recurs in the codebase, and the pilot gate's specificity check is replaced by a consistency check against the extracted system.
+- [ ] Given a project with **no** existing UI code, when `/uiux` runs, then behaviour is byte-identical to today's `create` path (no regression).
+
+#### Implementation Notes
+- Decide in the SPEC (this issue is `Spec-Required: true`) between: (a) a new `design-scanner` agent joining the `/scan` family, (b) an extraction phase inline in `/uiux`, or (c) extending `codebase-scanner` with a design pass. Option (a) fits the existing scan-family separation but grows the roster (see ISSUE-034's roster-diet rationale — justify the addition or pick (b)).
+- The `Brief overrides:` mechanism just added to Anti-AI-Slop is the natural place to record "the existing product already does X, and X is a listed tell" so the Phase 5.5 sweeps do not fight the codebase.
+- Do NOT hand-copy token values into docs — read them from source at generation time (canonical-env-numbers lesson: generated numbers must come from the canonical environment, not memory).
+- `scripts/fragments.py` already owns the shared uiux-family design boilerplate; any new shared text goes there, not into three copies.
+
+#### Tests
+- [ ] Fixture project (existing CSS custom properties + a component file) → extraction produces the expected token set; assert against a pinned fixture, not a smoke "it ran".
+- [ ] Mode-detection unit tests: UI present → `extend` offered; no UI → `create`, and the `create` path output is unchanged from the current baseline.
+- [ ] Provenance guard: every CONFIRMED claim in generated `design_system.md` resolves to a real `file:line` in the fixture (mutation-test it by deleting the source line and asserting the claim flips or fails).
+
+#### Rollback
+`git revert` — additive (new mode branch + extraction step/agent). The `create` path is unchanged, so reverting restores today's behaviour exactly.
