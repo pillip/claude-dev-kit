@@ -27,9 +27,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
    - Exception: if the user explicitly wants to skip kickoff, proceed with PRD only (warn about limited context).
 **Caching rule**: All documents read in Phase 1 (`docs/ux_spec.md`, `docs/requirements.md`, `docs/architecture.md`, PRD) are reused across all subsequent Phases. Do not re-read the same file with the Read tool.
 
-4) Scan the project for existing UI code:
-   - Glob for `**/*.html`, `**/*.css`, `**/*.tsx`, `**/*.jsx`, `**/*.vue`, `**/*.svelte`
-   - If found, read key files to understand current design patterns and tech stack.
+{{DESIGN_EXTEND_MODE}}
 
 ### Phase 1.5 — Design Interview (CRITICAL — drives differentiation)
 4.5) {{DESIGN_PHILOSOPHY}}

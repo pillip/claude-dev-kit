@@ -142,6 +142,132 @@ wearing this product's content, not a choice made for this product. Revise the \
 part that collapsed and say what you changed and why."""
 
 
+# ---------------------------------------------------------------------------
+# Skill-side fragment: create/extend mode branch (ISSUE-054 / SPEC-054)
+#
+# SPEC-054 chose ONE platform-parameterized design-scanner agent over three
+# per-platform scanners: the platform difference is the source map (where a
+# token lives), while the risky half — provenance, confidence tagging,
+# refusing to invent values — is identical. Only the source map and the
+# detection globs vary per skill below.
+# ---------------------------------------------------------------------------
+
+_EXTEND_MODE_PLATFORM: dict[str, dict[str, str]] = {
+    "uiux": {
+        "step": "4",
+        "subject": "existing UI code",
+        "platform": "web",
+        "globs": (
+            "`**/*.html`, `**/*.css`, `**/*.tsx`, `**/*.jsx`, `**/*.vue`, "
+            "`**/*.svelte`"
+        ),
+        "source_map": (
+            "CSS custom properties in stylesheets, `tailwind.config.*` theme "
+            "keys, styled-components / emotion theme objects, and the "
+            "component files that consume them"
+        ),
+        "system_doc": "docs/design_system.md",
+        "extracted_doc": "docs/design_system.extracted.md",
+    },
+    "mobile-uiux": {
+        "step": "5",
+        "subject": "existing mobile code",
+        "platform": "mobile",
+        "globs": (
+            "`**/*.tsx`, `**/*.ts`, `app.json`, `app.config.js`, "
+            "`app.config.ts`"
+        ),
+        "source_map": (
+            "`src/theme/` modules, `StyleSheet.create` objects across screens "
+            "and components, and Expo config (`app.json`, `app.config.*`). "
+            "React Native has no cascade, so a value applies only where it is "
+            "written"
+        ),
+        "system_doc": "docs/design_system_mobile.md",
+        "extracted_doc": "docs/design_system_mobile.extracted.md",
+    },
+    "desktop-uiux": {
+        "step": "5",
+        "subject": "existing desktop code",
+        "platform": "desktop",
+        "globs": (
+            "`**/electron/**`, `**/main.ts`, `**/preload.ts`, "
+            "`**/electron-builder.*`, `**/forge.config.*`, `**/*.tsx`, "
+            "`**/*.ts`"
+        ),
+        "source_map": (
+            "`src/theme/` modules and renderer-process CSS custom properties, "
+            "plus the renderer component files that consume them. Native "
+            "chrome (title bar, tray, menu structure) carries no token and is "
+            "out of scope"
+        ),
+        "system_doc": "docs/design_system_desktop.md",
+        "extracted_doc": "docs/design_system_desktop.extracted.md",
+    },
+}
+
+_EXTEND_MODE_TEMPLATE = """\
+{step}) Scan the project for {subject}, then choose the working mode:
+   - Glob for {globs}
+   - If found, read key files to understand current design patterns and tech stack.
+
+   **Mode selection — `create` or `extend`** (ISSUE-054):
+   - **Nothing found** → mode is `create`. Proceed exactly as this skill always
+     has; nothing below applies.
+   - **Found {subject}** → ask the user which mode they want, quoting what you
+     detected (file count and the token-bearing files you saw):
+     - `create` — design a new aesthetic. The existing UI will not constrain it.
+     - `extend` — read the design that already ships and add to it.
+     **Never switch modes silently.** Detection proposes; the user decides. If the
+     user does not answer, default to `create` (today's behaviour) and say so.
+
+   **On `extend` only** — invoke the **design-scanner** agent via the Task tool
+   before the design interview. Pass it:
+   - the platform: `{platform}`
+   - the token-bearing files you detected. On `{platform}` those live in
+     {source_map}.
+
+   The agent returns a structured Design Scan report. It has no write tools; **you**
+   write `{system_doc}` from its report.
+
+   **Overwrite guard (MANDATORY)** — before writing, check whether `{system_doc}`
+   already exists. If it does not, write it and continue. **If that file already
+   exists, STOP** and ask the user, quoting its line count and last-modified date so
+   they can see what is at stake:
+   - `1) overwrite` — replace it; the previous content survives only in git history.
+   - `2) write alongside` — write `{extracted_doc}` instead and show a summary of how
+     it differs from the current file. Nothing existing is touched.
+   - `3) cancel` — stop `extend` mode here.
+   **Do not write until the user answers.** A hand-maintained design system is the one
+   artifact this mode can destroy, and "it's in git" is not consent.
+
+   When transcribing the report into whichever file you write, preserve its tags
+   verbatim:
+   - `[CONFIRMED]` claims keep their `file:line` reference. Never promote an
+     `[INFERRED]` claim to `[CONFIRMED]`, and never drop a tag when transcribing.
+   - Carry over `Dead tokens`, `Gaps`, and undeclared-but-repeated values. These are
+     findings about the host product, not noise to tidy away.
+   - If the report says `extraction_verdict: insufficient`, tell the user verbatim and
+     ask whether to continue in `extend` (mostly-`[INFERRED]` system) or fall back to
+     `create`. Do not decide this silently.
+
+   **What `extend` changes downstream** (the mode contract — apply all of it):
+   - **Design philosophy**: do NOT commit to a new aesthetic direction. Name the
+     aesthetic the codebase already has, and take the Signature Move from the
+     agent's `signature_move` field. If it reported `none found`, say so to the user
+     and agree on one derived from an existing recurring pattern — never invent one
+     the codebase does not already show.
+   - **Design interview**: reframe from "what should this be?" to "what should change,
+     and what must stay?" Answers are constraints on the delta, not on the whole system.
+   - **Pilot gate**: the specificity check becomes a **consistency check** — instead of
+     "name 3 details that only make sense for THIS product", ask "name 3 details that
+     match the extracted system, citing its `file:line` provenance". A pilot that reads
+     as a redesign FAILS the gate even if it is distinctive.
+   - **AI Tell sweep**: when the host codebase already uses a listed tell, record it as a
+     `Brief overrides:` bullet quoting the source (`existing product convention —
+     <file:line>`) instead of rewriting the product's own conventions."""
+
+
 def _require_uiux_skill(skill_name: str) -> None:
     if skill_name not in UIUX_SKILLS:
         raise ValueError(
@@ -178,6 +304,17 @@ def slop_calibration_fragment(skill_name: str) -> str:
     """
     _require_uiux_skill(skill_name)
     return _SLOP_CALIBRATION
+
+
+def design_extend_mode_fragment(skill_name: str) -> str:
+    """Resolve the {{DESIGN_EXTEND_MODE}} token for a uiux-family skill.
+
+    One method, three source maps (SPEC-054). The mode contract, the
+    provenance-transcription rules, and the downstream overrides are identical
+    across platforms; only the detection globs and the source map vary.
+    """
+    _require_uiux_skill(skill_name)
+    return _EXTEND_MODE_TEMPLATE.format(**_EXTEND_MODE_PLATFORM[skill_name])
 
 
 # ---------------------------------------------------------------------------
