@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
 [![Tests](https://img.shields.io/badge/Tests-1190%20passing-brightgreen.svg)]()
 
-Turn a PRD into shipped code. **32 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
+Turn a PRD into shipped code. **33 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
 
 ## Why claude-kit?
 
@@ -13,7 +13,7 @@ Turn a PRD into shipped code. **32 engineering agents + 23 skills** handle the e
 Claude Code is powerful on its own, but without structure it produces inconsistent results — skipped tests, forgotten reviews, PRs that drift from requirements. claude-kit solves this by giving Claude Code **a repeatable process**:
 
 - **Structured pipeline**: Every issue goes through spec (when required) → implement → review → ship. No shortcuts, no skipped phases.
-- **Specialized agents**: Instead of one generalist prompt, 32 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
+- **Specialized agents**: Instead of one generalist prompt, 33 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
 - **Decision capture**: Non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / Trade-offs / Decision / Rollback. Sprint mode auto-runs it; non-sprint mode HOLDs for review.
 - **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
 - **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
@@ -510,7 +510,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-**32 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
+**33 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
 
 > **Deterministic deployments:** to pin agent behavior for production use, set the model once at the session/project level (`model` in `.claude/settings.json`, or `claude --model <alias>`) — one control point instead of the old per-agent pins. All inherit-agents follow it.
 
@@ -543,6 +543,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
 | `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 | `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
+| `design-scanner` | medium | Extract the design system a codebase already ships — tokens, scales, Signature Move — with file:line provenance | Read, Glob, Grep |
 | `scan-analyst` | low | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |
 | `scan-architect` | medium | Document as-is architecture from scan context | Read, Glob, Grep, Write, Edit |
 | `scan-data-modeler` | medium | Extract data models from ORM/migration/schema declarations | Read, Glob, Grep, Write, Edit |
@@ -564,7 +565,7 @@ Recently shipped (Cluster C + D this session): `/spec` skill + Spec-Required met
 
 ```
 claude-dev-kit/
-├── agents/                  # Core engineering agents (32)
+├── agents/                  # Core engineering agents (33)
 ├── skills/                  # Core engineering / design / safety skills (23)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md

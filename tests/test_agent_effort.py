@@ -34,7 +34,7 @@ HEAVY = {"architect", "developer", "reviewer",
          "planner", "desktop-uiux-developer", "mobile-uiux-developer", "uiux-developer"}
 LIGHT = {"scan-analyst", "scan-architect", "scan-data-modeler", "scan-qa-designer",
          "documenter", "issue-writer", "requirement-analyst", "a11y-auditor",
-         "codebase-scanner"}
+         "codebase-scanner", "design-scanner"}
 
 
 def _frontmatter_block(path: Path) -> str:
@@ -57,7 +57,8 @@ def test_all_agents_present():
     # 29 core + 3 delegation auditors (ISSUE-029). ISSUE-034 absorbed 4 dead
     # persona files (diagnostician, migrator, refactorer, prd-writer) into their
     # skills — they were never invoked (no Task/subagent_type spawn).
-    assert len(AGENTS) == 32
+    # ISSUE-054 added design-scanner (brownfield design extraction).
+    assert len(AGENTS) == 33
 
 
 def test_agents_inherit_session_model():
