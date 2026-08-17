@@ -7,9 +7,10 @@ design-philosophy boilerplate (design interview + derivation, philosophy
 checkpoint, token-compliance rule, self-review checklist). This module is
 the single source of truth:
 
-- Skill side: ``{{DESIGN_PHILOSOPHY}}`` and ``{{DESIGN_PHILOSOPHY_CHECKPOINT}}``
-  tokens in the three SKILL.md.tmpl files resolve through
-  :func:`design_philosophy_fragment` / :func:`design_philosophy_checkpoint`
+- Skill side: ``{{DESIGN_PHILOSOPHY}}``, ``{{DESIGN_PHILOSOPHY_CHECKPOINT}}``
+  and ``{{SLOP_CALIBRATION}}`` tokens in the three SKILL.md.tmpl files resolve
+  through :func:`design_philosophy_fragment` /
+  :func:`design_philosophy_checkpoint` / :func:`slop_calibration_fragment`
   (registered in scripts/gen_skills.py next to ``PREAMBLE``). Resolution is
   per-skill, mirroring preambles.py: the desktop skill gets its two extra
   interview lines (question e, derivation e) and the ``/shortcut`` glyph
@@ -109,6 +110,38 @@ _CHECKPOINT_TEMPLATE = """\
 > If any of (a) / (b) / (c) fails: STOP and fix before proceeding."""
 
 
+# ---------------------------------------------------------------------------
+# Skill-side fragment: slop calibration (cluster list + brief override +
+# self-similarity check). Shared verbatim with the three developer agents via
+# AGENT_DESIGN_FRAGMENTS below, so keep it free of skill-only step numbers.
+# ---------------------------------------------------------------------------
+
+_SLOP_CALIBRATION = """\
+**Calibration — the three current AI-design clusters.** Independent of subject, \
+AI-generated design converges on three looks right now:
+1. Warm cream ground (near `#F4F1EA`) + high-contrast serif display + terracotta accent.
+2. Near-black ground + one bright acid-green or vermilion accent.
+3. Broadsheet layout — hairline rules, zero corner radius, dense newspaper columns.
+Each is legitimate for *some* brief. They are banned as **defaults**, not as \
+choices: where the brief leaves an axis free, do not spend that freedom on one \
+of these three. This list dates faster than the rest of this section — treat it \
+as "what everyone is producing this year", not as a permanent ban.
+
+**The brief's own words win.** Where the brief pins a direction, follow it \
+exactly, including when it asks for one of the three clusters above and \
+including when it contradicts a specific ban in this section. Record each such \
+override in `docs/design_philosophy.md` under a `Brief overrides:` line, one \
+bullet per overridden rule, quoting the brief. Any later sweep or reviewer \
+honors recorded overrides and only recorded overrides — an unrecorded \
+violation is still a violation.
+
+**Self-similarity check — run before locking the design plan.** Strip the \
+product-specific nouns out of the brief and ask what you would produce for that \
+generic version. If your current plan is roughly where you land, it is a default \
+wearing this product's content, not a choice made for this product. Revise the \
+part that collapsed and say what you changed and why."""
+
+
 def _require_uiux_skill(skill_name: str) -> None:
     if skill_name not in UIUX_SKILLS:
         raise ValueError(
@@ -134,6 +167,17 @@ def design_philosophy_checkpoint(skill_name: str) -> str:
     return _CHECKPOINT_TEMPLATE.format(
         glyph_extra="/shortcut" if skill_name == "desktop-uiux" else ""
     )
+
+
+def slop_calibration_fragment(skill_name: str) -> str:
+    """Resolve the {{SLOP_CALIBRATION}} token for a uiux-family skill.
+
+    Platform-agnostic by design: the three clusters, the brief-override rule,
+    and the self-similarity check apply identically to web / mobile / desktop.
+    Platform-specific bans stay inline in each tmpl's NEVER/INSTEAD lists.
+    """
+    _require_uiux_skill(skill_name)
+    return _SLOP_CALIBRATION
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +239,11 @@ Before committing to an aesthetic direction:
   - If Low: re-check prototype and fix issues before finalizing.
   - If Medium: flag specific concerns in deliverable docs.
   - If High: proceed to finalize.""",
+    # Same text the skills get via {{SLOP_CALIBRATION}}. Split into three
+    # chunks so a drift report names which block moved.
+    "slop_calibration_clusters": _SLOP_CALIBRATION.split("\n\n")[0],
+    "slop_calibration_brief_wins": _SLOP_CALIBRATION.split("\n\n")[1],
+    "slop_calibration_self_similarity": _SLOP_CALIBRATION.split("\n\n")[2],
     "guidelines_read_first": """\
 - Always read the PRD and existing UX spec first before generating anything.""",
     "guidelines_realistic_content": """\

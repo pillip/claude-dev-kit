@@ -339,7 +339,8 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
     - If `issues.md` does not exist, skip silently.
 22.7) **AI Tell sweep** (CRITICAL):
     - Sweep every file in `prototype/screens/` and `prototype/styles.css` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`), `100vh`/`height: 100vh` on full-height sections, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, hero version labels, three equal feature cards, `<div>`-based fake product UI, decorative status dots, locale/time strips, scroll cues, mono-caps decoration strips.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
+    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
 22.8) **Slop-proof mechanics sweep** (deterministic — grep `prototype/styles.css` and screens):
     - Flag and fix: `transition: all` / `transition-all`; animating `width`/`height`/`top`/`left`/`margin`/`padding`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0` (only the nav may sit there); all-caps display with `line-height` < 1.0.
     - Confirm present: `overflow-x: clip` on BOTH `html` and `body`; input fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Phase 5A step 14.
@@ -387,6 +388,8 @@ These rules prevent Claude from converging on generic, forgettable defaults.
 
 **Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 17.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
 
+{{SLOP_CALIBRATION}}
+
 **NEVER:**
 - Inter, Roboto, Arial, Open Sans as primary display font
 - Purple gradients on white backgrounds
@@ -429,6 +432,7 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 *CSS mechanics (web):*
 - Full-height hero: use `min-height: 100dvh`, NEVER `100vh` / `height: 100vh` (iOS Safari address-bar jump).
 - Multi-column layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`).
+- Selector-specificity collisions: a section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Section-to-section `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
 - Full deterministic layout/motion/input rules live in Phase 5A step 14 ("Layout-safety / Motion / Input-state mechanics") and are swept in Phase 5.5.
 
 *Typography & interaction tells:*

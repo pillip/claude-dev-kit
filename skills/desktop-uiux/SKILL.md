@@ -472,7 +472,8 @@ Run these checks silently at the start. Use results to adapt behavior:
     - Electron built-in modules (`electron`, `path`, `fs`) MUST be externalized, not bundled
 30.5) **AI Tell sweep** (CRITICAL):
     - Sweep every `.tsx`/`.css` file in `src/screens/`, `src/components/`, and theme/style files for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, decorative version labels, `<div>`-based fake product UI, decorative status dots, locale/time strips.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
+    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
 
 ### Phase 6 — Review & Iterate
 31) Present deliverables summary to the user:
@@ -512,6 +513,16 @@ Run these checks silently at the start. Use results to adapt behavior:
 These rules prevent Claude from converging on generic, forgettable desktop defaults.
 
 **Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 9 and enforced at the Phase 5A pilot gate (step 19.5) and Phase 5.5 step 27.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
+
+**Calibration — the three current AI-design clusters.** Independent of subject, AI-generated design converges on three looks right now:
+1. Warm cream ground (near `#F4F1EA`) + high-contrast serif display + terracotta accent.
+2. Near-black ground + one bright acid-green or vermilion accent.
+3. Broadsheet layout — hairline rules, zero corner radius, dense newspaper columns.
+Each is legitimate for *some* brief. They are banned as **defaults**, not as choices: where the brief leaves an axis free, do not spend that freedom on one of these three. This list dates faster than the rest of this section — treat it as "what everyone is producing this year", not as a permanent ban.
+
+**The brief's own words win.** Where the brief pins a direction, follow it exactly, including when it asks for one of the three clusters above and including when it contradicts a specific ban in this section. Record each such override in `docs/design_philosophy.md` under a `Brief overrides:` line, one bullet per overridden rule, quoting the brief. Any later sweep or reviewer honors recorded overrides and only recorded overrides — an unrecorded violation is still a violation.
+
+**Self-similarity check — run before locking the design plan.** Strip the product-specific nouns out of the brief and ask what you would produce for that generic version. If your current plan is roughly where you land, it is a default wearing this product's content, not a choice made for this product. Revise the part that collapsed and say what you changed and why.
 
 **NEVER:**
 - A web app wrapped in Electron with browser-like UI (address bar feel, no native integration)
@@ -562,6 +573,7 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 
 *CSS mechanics (renderer) — deterministic, all mandatory:*
 - Multi-column / split-pane layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
+- Selector-specificity collisions: a pane/section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Pane-to-pane `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
 - `overflow-x: clip` on BOTH `html` and `body` (use `clip`, not `hidden` — preserves descendant `sticky`/`fixed`); no horizontal scroll at any window width down to 320px.
 - Any grid track holding an image uses `minmax(0, 1fr)`, never bare `1fr`.
 - Display headers set `overflow-wrap: anywhere; min-width: 0`; all-caps display type uses `line-height ≥ 1.0`.

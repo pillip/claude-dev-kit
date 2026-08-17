@@ -419,7 +419,8 @@ Run these checks silently at the start. Use results to adapt behavior:
     - Event handlers passed to memoized children MUST use `useCallback`
 29.5) **AI Tell sweep** (CRITICAL):
     - Sweep every `.tsx` file in `src/screens/` and `src/components/` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, generic person/brand names, fake-perfect numbers, section-number eyebrows, version labels, `<View>`-based fake product UI, decorative status dots, locale/time strips, scroll cues.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and View-based fake product UI** — these must be 0 before presenting.
+    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
+    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and View-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them.
 
 ### Phase 6 — Review & Iterate
 30) Present deliverables summary to the user:
@@ -460,6 +461,16 @@ Run these checks silently at the start. Use results to adapt behavior:
 These rules prevent Claude from converging on generic, forgettable mobile defaults.
 
 **Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 9 and enforced at the Phase 5A pilot gate (step 20.5) and Phase 5.5 step 28.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
+
+**Calibration — the three current AI-design clusters.** Independent of subject, AI-generated design converges on three looks right now:
+1. Warm cream ground (near `#F4F1EA`) + high-contrast serif display + terracotta accent.
+2. Near-black ground + one bright acid-green or vermilion accent.
+3. Broadsheet layout — hairline rules, zero corner radius, dense newspaper columns.
+Each is legitimate for *some* brief. They are banned as **defaults**, not as choices: where the brief leaves an axis free, do not spend that freedom on one of these three. This list dates faster than the rest of this section — treat it as "what everyone is producing this year", not as a permanent ban.
+
+**The brief's own words win.** Where the brief pins a direction, follow it exactly, including when it asks for one of the three clusters above and including when it contradicts a specific ban in this section. Record each such override in `docs/design_philosophy.md` under a `Brief overrides:` line, one bullet per overridden rule, quoting the brief. Any later sweep or reviewer honors recorded overrides and only recorded overrides — an unrecorded violation is still a violation.
+
+**Self-similarity check — run before locking the design plan.** Strip the product-specific nouns out of the brief and ask what you would produce for that generic version. If your current plan is roughly where you land, it is a default wearing this product's content, not a choice made for this product. Revise the part that collapsed and say what you changed and why.
 
 **NEVER:**
 - Uncustomized default navigation bar with system back button and plain title

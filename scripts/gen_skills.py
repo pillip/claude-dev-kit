@@ -34,6 +34,7 @@ from preambles import generate_preamble  # noqa: E402
 from fragments import (  # noqa: E402
     design_philosophy_checkpoint,
     design_philosophy_fragment,
+    slop_calibration_fragment,
 )
 
 # Wrapper-script based commands. Each placeholder resolves to a single
@@ -78,6 +79,7 @@ RESOLVERS: dict[str, Callable[[str], str]] = {
     # resolution like PREAMBLE; source of truth is scripts/fragments.py.
     "DESIGN_PHILOSOPHY": design_philosophy_fragment,
     "DESIGN_PHILOSOPHY_CHECKPOINT": design_philosophy_checkpoint,
+    "SLOP_CALIBRATION": slop_calibration_fragment,
     "CHECKPOINT_CMD": _resolve_checkpoint_cmd,
     "WORKTREE_SETUP": _resolve_worktree_setup,
     "WORKTREE_CLEANUP": _resolve_worktree_cleanup,
