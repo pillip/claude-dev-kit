@@ -2,7 +2,7 @@
 
 > SSOT: Progress and completion are tracked by the Status field in this document (not inferred from code analysis)
 > Rule: **1 Issue = 1 PR** (GitHub-first)
-> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 32 agents / 28 skills primitive set (counts asserted by tests/test_agent_effort.py and the skill generator).
+> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 33 agents / 28 skills primitive set (counts asserted by tests/test_agent_effort.py and the skill generator).
 
 ## Conventions
 - Track: `product` | `platform`
@@ -79,7 +79,7 @@
 - [x] ISSUE-002: Workflow eval gate MVP — LLM-as-judge for review_notes quality _(track: platform, P1, 1.5d — done 2026-07-26: `scripts/eval_review.py` runs a fresh `claude -p` judge over review_notes + the PR diff, scoring coverage/false-positive/actionability/traceability (rubric in `templates/review_eval_rubric.md`), emitting `docs/review_eval_<pr>.md`. Wired as a **non-blocking** step 8 in /ship — always exits 0; missed Critical/High or a dimension ≤2 → `concerns`, else `pass`. **No separate billing** (session auth, not ANTHROPIC_API_KEY); degraded-mode skips silently if the CLI/notes are absent. Determinism via `--runs N` (Critical/High Jaccard overlap; ≥80% is the floor — CLI has no temperature control). 17 unit tests cover rubric contract, verdict derivation (judge "pass" + missed High → concerns), determinism math, degraded mode, never-blocks-on-error, and the /ship wiring. Judge grades the platform /code-review-fed notes post-029, sidestepping self-grading. **Live-verified 2026-07-26**: the judge round-trip produced valid JSON and correctly caught a deliberately-missed SQL-injection (coverage 0, verdict `concerns`, missed Critical flagged with diff_ref) — rubric → parseable verdict confirmed end-to-end)_
 - [x] ISSUE-046: Fix verify_checkpoint.py's 60s pytest timeout breaking the GREEN gate and hollowing the RED gate on 4-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: test-phase subprocess timeouts (implement red/test, ship smoke; were hard-coded 60s/120s) now env-configurable via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) through a _test_timeout() helper; RED-phase exit-124 reported as inconclusive FAIL instead of being mistaken for a failing suite; absorbed verify_ship_smoke full-suite + no-runner-fallback caps (reviewer-accepted scope). Squash-merged PR #54 @ c04b78b 2026-08-10; ship smoke initially blocked solely by the pre-filed ISSUE-047 verify_gates 120s unit-gate cap — retried post-ISSUE-047 on 2026-08-11: GATE PASS unit [blocking] 14.5s, smoke PASS; review 0 Critical/High, 6 Low; eval artifacts in docs/review_notes/ISSUE-046.md)_
 - [x] ISSUE-047: Fix verify_gates.py hard-coded 120s unit-gate timeout (and sibling short caps) breaking blocking ship-smoke gates on multi-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: env-configurable unit-gate timeout via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) mirroring verify_checkpoint.py::_test_timeout, _run() timeout-mock contract (rc 124) preserved; absorbed test-isolation fix for two verify_implement_test tests whose unmocked gate-runner seam recursively spawned the full suite — the source of the false "~5-min suite" premise (true base ~21s). Squash-merged PR #56 @ b0d8bb3; post-merge smoke: GATE PASS unit [blocking] 14.6s, suite 1145 passed / 2 skipped ~11s; review 0 Critical/High/Medium, 6 Low; eval: pass)_
-- [ ] ISSUE-054: Brownfield design path — extract a design system from existing UI code so /uiux can extend instead of replace _(track: platform, P2, 1.5d — 2026-08-17 official-plugin comparison; no platform capability covers it)_
+- [x] ISSUE-054: Brownfield design path — extract a design system from existing UI code so /uiux can extend instead of replace _(track: platform, P2, 1.5d — 2026-08-17 official-plugin comparison; no platform capability covers it)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -3000,11 +3000,11 @@ All kit behaviour-control env knobs are documented consistently in the user-faci
 - PRD-Ref: none (kit self-development; 2026-08-17 official-plugin comparison)
 - Priority: P2
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-054-brownfield-design-extract
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/88
+- PR: https://github.com/pillip/claude-dev-kit/pull/89
 - Depends-On: none
 
 #### Goal
