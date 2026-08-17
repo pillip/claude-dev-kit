@@ -5,6 +5,59 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+## 0.5.0 — 2026-08-17
+
+Brownfield design support. The three uiux skills could only ever *create* a
+design; they can now *read* the one a codebase already ships and extend it.
+
+### Added
+- **`extend` mode across `/uiux`, `/mobile-uiux`, and `/desktop-uiux`.** Each
+  skill globbed existing UI files at Phase 1 and then discarded the reading —
+  Phase 2 unconditionally committed to a new aesthetic and the pilot gate
+  stamped a new Signature Move onto every screen. A project with a shipping UI
+  and no Figma file had no path to "read the design that exists, then add
+  screens that match", and running the skill anyway fought the codebase because
+  existing patterns matching a listed AI Tell got swept out at Phase 5.5.
+  Detection now proposes a mode and the user decides; modes never switch
+  silently, and with no UI detected the `create` path is unchanged.
+  (ISSUE-054, SPEC-054, PR #89)
+- **`design-scanner` agent** (roster 32 → 33) — one platform-parameterized
+  extraction agent, read-only by tool set (`Read, Glob, Grep`), carrying three
+  source maps over one shared method: web CSS custom properties /
+  `tailwind.config.*` / CSS-in-JS, React Native `StyleSheet` + `src/theme/`,
+  and Electron renderer CSS + `src/theme/`. Provenance is non-negotiable:
+  `[CONFIRMED]` requires a `file:line`, `[INFERRED]` requires a stated reason,
+  and values are never invented. A codebase too thin to extract from returns
+  `extraction_verdict: insufficient` rather than a padded system, and the
+  Signature Move is derived by recurrence count or honestly reported as
+  `none found` — a fabricated one would silently redesign the host product.
+  (ISSUE-054, PR #89)
+- **Overwrite guard on the extracted design system doc.** `extend` halts before
+  writing when `docs/design_system[_mobile|_desktop].md` already exists and
+  offers overwrite / write-alongside (`.extracted.md` plus a diff summary) /
+  cancel, quoting the file's line count and last-modified date. A
+  hand-maintained design system is the one artifact this mode can destroy, and
+  "it's in git" is not treated as consent. (SPEC-054 open question 1, PR #89)
+- **Slop calibration in the Anti-AI-Slop rules**, harvested from a comparison
+  against the official `frontend-design` plugin: the three AI-design clusters
+  currently produced regardless of subject (cream/serif/terracotta,
+  near-black + acid accent, broadsheet hairline), banned as *defaults* rather
+  than as choices; a self-similarity check before locking a design plan; and a
+  CSS selector-specificity rule for web and the Electron renderer.
+  Landed as a shared `{{SLOP_CALIBRATION}}` fragment plus three guarded agent
+  chunks, so the three uiux skills and their developer agents cannot drift.
+  (PR #86)
+
+### Changed
+- **`Brief overrides:` resolves a standing contradiction in the slop rules.**
+  The "Specific AI Tells" header already allowed a brief to call for a banned
+  pattern, while the Phase 5.5 sweep enforced zero tolerance — the two
+  disagreed. Brief-pinned directions now win, recorded as `Brief overrides:`
+  bullets in `docs/design_philosophy.md`, and each skill's AI Tell sweep exempts
+  exactly the recorded tells and no others. An unrecorded violation is still a
+  violation. `extend` mode reuses this seam so the sweeps stop rewriting the
+  host product's own conventions. (PR #86, PR #89)
+
 ## 0.4.0 — 2026-08-12
 
 ### Added
