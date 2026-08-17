@@ -180,6 +180,39 @@ class TestModeContract:
         assert "extraction_verdict: insufficient" in frag
 
 
+class TestOverwriteGuard:
+    """SPEC-054 open question 1, resolved 2026-08-17: `extend` must never
+    silently overwrite a hand-maintained design system doc. It is the one
+    artifact this mode can destroy, and git is not a substitute for asking."""
+
+    @pytest.mark.parametrize("skill", UIUX_SKILLS)
+    def test_guard_stops_before_writing(self, skill):
+        frag = _norm(design_extend_mode_fragment(skill))
+        assert "If that file already exists, STOP" in frag
+        assert "Do not write until the user answers" in frag
+
+    @pytest.mark.parametrize("skill", UIUX_SKILLS)
+    def test_guard_offers_three_choices(self, skill):
+        frag = _norm(design_extend_mode_fragment(skill))
+        for choice in ("overwrite", "write alongside", "cancel"):
+            assert choice in frag, f"{skill}: overwrite guard missing {choice!r} option"
+
+    @pytest.mark.parametrize("skill", UIUX_SKILLS)
+    def test_alongside_target_is_platform_specific(self, skill):
+        expected = {
+            "uiux": "docs/design_system.extracted.md",
+            "mobile-uiux": "docs/design_system_mobile.extracted.md",
+            "desktop-uiux": "docs/design_system_desktop.extracted.md",
+        }[skill]
+        assert expected in design_extend_mode_fragment(skill)
+
+    @pytest.mark.parametrize("skill", UIUX_SKILLS)
+    def test_guard_quotes_evidence_to_the_user(self, skill):
+        """Asking without saying what is at stake is not a real prompt."""
+        frag = _norm(design_extend_mode_fragment(skill))
+        assert "line count" in frag and "last-modified" in frag
+
+
 class TestPlatformSourceMaps:
     """TC-054b: SPEC-054 bets on one method with three source maps. Each skill
     must get its own map and only its own."""

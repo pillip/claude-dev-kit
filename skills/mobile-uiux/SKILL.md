@@ -66,7 +66,21 @@ Run these checks silently at the start. Use results to adapt behavior:
      `src/theme/` modules, `StyleSheet.create` objects across screens and components, and Expo config (`app.json`, `app.config.*`). React Native has no cascade, so a value applies only where it is written.
 
    The agent returns a structured Design Scan report. It has no write tools; **you**
-   write `docs/design_system_mobile.md` from its report, preserving its tags verbatim:
+   write `docs/design_system_mobile.md` from its report.
+
+   **Overwrite guard (MANDATORY)** — before writing, check whether `docs/design_system_mobile.md`
+   already exists. If it does not, write it and continue. **If that file already
+   exists, STOP** and ask the user, quoting its line count and last-modified date so
+   they can see what is at stake:
+   - `1) overwrite` — replace it; the previous content survives only in git history.
+   - `2) write alongside` — write `docs/design_system_mobile.extracted.md` instead and show a summary of how
+     it differs from the current file. Nothing existing is touched.
+   - `3) cancel` — stop `extend` mode here.
+   **Do not write until the user answers.** A hand-maintained design system is the one
+   artifact this mode can destroy, and "it's in git" is not consent.
+
+   When transcribing the report into whichever file you write, preserve its tags
+   verbatim:
    - `[CONFIRMED]` claims keep their `file:line` reference. Never promote an
      `[INFERRED]` claim to `[CONFIRMED]`, and never drop a tag when transcribing.
    - Carry over `Dead tokens`, `Gaps`, and undeclared-but-repeated values. These are

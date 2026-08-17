@@ -167,6 +167,7 @@ _EXTEND_MODE_PLATFORM: dict[str, dict[str, str]] = {
             "component files that consume them"
         ),
         "system_doc": "docs/design_system.md",
+        "extracted_doc": "docs/design_system.extracted.md",
     },
     "mobile-uiux": {
         "step": "5",
@@ -183,6 +184,7 @@ _EXTEND_MODE_PLATFORM: dict[str, dict[str, str]] = {
             "written"
         ),
         "system_doc": "docs/design_system_mobile.md",
+        "extracted_doc": "docs/design_system_mobile.extracted.md",
     },
     "desktop-uiux": {
         "step": "5",
@@ -200,6 +202,7 @@ _EXTEND_MODE_PLATFORM: dict[str, dict[str, str]] = {
             "out of scope"
         ),
         "system_doc": "docs/design_system_desktop.md",
+        "extracted_doc": "docs/design_system_desktop.extracted.md",
     },
 }
 
@@ -225,7 +228,21 @@ _EXTEND_MODE_TEMPLATE = """\
      {source_map}.
 
    The agent returns a structured Design Scan report. It has no write tools; **you**
-   write `{system_doc}` from its report, preserving its tags verbatim:
+   write `{system_doc}` from its report.
+
+   **Overwrite guard (MANDATORY)** — before writing, check whether `{system_doc}`
+   already exists. If it does not, write it and continue. **If that file already
+   exists, STOP** and ask the user, quoting its line count and last-modified date so
+   they can see what is at stake:
+   - `1) overwrite` — replace it; the previous content survives only in git history.
+   - `2) write alongside` — write `{extracted_doc}` instead and show a summary of how
+     it differs from the current file. Nothing existing is touched.
+   - `3) cancel` — stop `extend` mode here.
+   **Do not write until the user answers.** A hand-maintained design system is the one
+   artifact this mode can destroy, and "it's in git" is not consent.
+
+   When transcribing the report into whichever file you write, preserve its tags
+   verbatim:
    - `[CONFIRMED]` claims keep their `file:line` reference. Never promote an
      `[INFERRED]` claim to `[CONFIRMED]`, and never drop a tag when transcribing.
    - Carry over `Dead tokens`, `Gaps`, and undeclared-but-repeated values. These are

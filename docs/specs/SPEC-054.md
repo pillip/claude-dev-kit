@@ -112,8 +112,14 @@ Existing projects need no migration: with no UI detected, mode resolves to `crea
 
 ## Open Questions
 
-- [ ] Does `extend` mode overwrite an existing `docs/design_system.md`, or write alongside it and diff? Overwriting a hand-maintained system doc is the destructive case. — owner: pillip, by: implementation
-- [ ] How deep does Tailwind config parsing go — read `tailwind.config.*` theme keys only, or resolve the full merged theme including plugin output? — owner: pillip, by: implementation
-- [ ] What is the floor for RN extraction when a project inlines styles at the call site instead of centralizing in `src/theme/`? Options are refusing `extend` mode below a token-density threshold, or accepting a mostly-INFERRED system and saying so loudly. — owner: pillip, by: implementation
-- [ ] Does desktop `extend` mode try to extract native chrome conventions (title-bar style, tray behaviour, menu structure) as design facts, or leave them out of the design system entirely as this SPEC currently assumes? — owner: pillip, by: implementation
+Resolved 2026-08-17 (pillip), before implementation shipped. Recorded here rather than deleted, because three of the four confirm a default that is otherwise invisible in the diff:
+
+- [x] **Overwrite an existing design system doc?** → **No. Stop and ask.** When `{system_doc}` already exists, `extend` halts before writing and offers overwrite / write-alongside (`docs/design_system[.platform].extracted.md` plus a diff summary) / cancel, quoting the file's line count and last-modified date. This was the only one of the four that was genuinely unhandled — the fragment wrote unconditionally. "It's in git" was rejected as a substitute for consent, since a hand-maintained design system is the one artifact this mode can destroy.
+- [x] **Tailwind parsing depth?** → **`theme` / `theme.extend` keys only.** No plugin output, no merged-default resolution. Resolving the full theme would require executing config JS or inferring Tailwind's defaults, and neither produces a value that can carry a `file:line` — so neither could ever be tagged `[CONFIRMED]`. Fidelity to what is written beats fidelity to what renders.
+- [x] **RN floor when styles are inlined at the call site?** → **Report and let the user decide.** The agent returns `extraction_verdict: insufficient` below ~5 distinct reusable tokens with no value repeating across 3+ component files, and the skill surfaces that verbatim with a create/extend choice. Not a hard refusal: a thin extraction can still beat nothing, and the caller has context the threshold does not.
+- [x] **Desktop native chrome as design facts?** → **Excluded.** Title bar, tray, and menu structure carry no token; admitting them would put un-citable entries in a provenance-tagged document.
+
+Still open:
+
+- [ ] Are the `insufficient` thresholds (~5 distinct tokens, 3+ file recurrence) right? They are uncalibrated magic numbers in a prompt, chosen by judgement with no sample of real projects behind them. Revisit once `extend` has run against a handful of real codebases. — owner: pillip, by: after first real-world `extend` runs
 - [ ] Should `/scan` eventually surface "this project has a design system worth extracting" as a next-step hint, given the two skills deliberately stay unaware of each other here? — owner: pillip, by: next kit audit
