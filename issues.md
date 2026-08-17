@@ -2996,6 +2996,7 @@ All kit behaviour-control env knobs are documented consistently in the user-faci
 - Platform: web
 - Manual: false
 - Spec-Required: true
+- Spec: docs/specs/SPEC-054.md
 - PRD-Ref: none (kit self-development; 2026-08-17 official-plugin comparison)
 - Priority: P2
 - Estimate: 1.5d
@@ -3007,36 +3008,41 @@ All kit behaviour-control env knobs are documented consistently in the user-faci
 - Depends-On: none
 
 #### Goal
-Running `/uiux` on a project that already has UI code produces design docs that **describe the design already shipping** and new screens that visually belong to it, instead of a fresh aesthetic that contradicts the existing product.
+Running `/uiux`, `/mobile-uiux`, or `/desktop-uiux` on a project that already has UI code produces design docs that **describe the design already shipping** and new screens that visually belong to it, instead of a fresh aesthetic that contradicts the existing product.
 
 #### Scope (In/Out)
 - In:
   - An extraction step that reads existing UI sources (CSS custom properties, Tailwind/theme config, styled-components / RN `StyleSheet` / Electron theme files, component files) and emits `docs/design_system.md` with **observed** tokens — colors, type scale, spacing scale, radii, motion — each tagged with the file it came from.
   - An inferred `docs/design_philosophy.md`: aesthetic name, Signature Move reverse-engineered from what the codebase actually repeats, and an explicit confidence tag per claim (mirroring `/scan`'s CONFIRMED / INFERRED convention).
-  - A `create` vs `extend` mode branch in `/uiux`: in `extend` mode Phase 2 does not invent a new direction, the Phase 1.5 interview reframes to "what should change / what must stay", and the Phase 5A pilot gate judges *consistency with the extracted system* rather than distinctiveness.
+  - A `create` vs `extend` mode branch across **all three** uiux skills (`/uiux`, `/mobile-uiux`, `/desktop-uiux`): in `extend` mode Phase 2 does not invent a new direction, the design interview reframes to "what should change / what must stay", and each skill's pilot gate judges *consistency with the extracted system* rather than distinctiveness.
+  - One platform-parameterized `design-scanner` agent covering all three source maps (web CSS custom properties / Tailwind / styled-components, RN `StyleSheet` + `src/theme/`, Electron renderer CSS + `src/theme/`), not three agents.
+  - The shared `create`/`extend` skill text lands as a fragment in `scripts/fragments.py` resolving over the existing `UIUX_SKILLS` tuple, not as three copies.
   - Mode selection: auto-detect existing UI, then confirm with the user (never silently switch modes).
 - Out:
   - Refactoring or rewriting the existing UI code.
   - Screenshot/visual-regression comparison against the running app (that is the existing Figma visual-diff family's surface; reuse it later if it fits, do not extend it here).
-  - `mobile-uiux` / `desktop-uiux` parity — land web first, port only once the seam is proven.
+  - Desktop native chrome (title-bar style, tray, menu structure) as extractable design facts — it has no token to read and stays out of the extracted system (SPEC-054 open question).
   - Any claude.ai `/design-sync` integration.
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a project with an existing stylesheet or theme config and no `docs/ux_spec.md`, when `/uiux` runs, then it detects the existing UI, offers `extend` mode, and on confirmation emits `docs/design_system.md` whose token values match the source files (spot-checked, no invented values).
+- [ ] Given a project with an existing stylesheet or theme config and no `docs/ux_spec.md`, when any of the three uiux skills runs, then it detects the existing UI, offers `extend` mode, and on confirmation emits `docs/design_system.md` whose token values match the source files (spot-checked, no invented values).
 - [ ] Given extraction output, when any token or philosophy claim cannot be traced to a file, then it is tagged INFERRED with its reasoning; every CONFIRMED claim carries a `file:line` reference.
 - [ ] Given `extend` mode, when Phase 2 runs, then no new aesthetic direction is invented — the Signature Move is derived from a pattern that already recurs in the codebase, and the pilot gate's specificity check is replaced by a consistency check against the extracted system.
-- [ ] Given a project with **no** existing UI code, when `/uiux` runs, then behaviour is byte-identical to today's `create` path (no regression).
+- [ ] Given a project with **no** existing UI code, when any of the three uiux skills runs, then behaviour is byte-identical to that skill's current `create` path (no regression on any platform).
+- [ ] Given the same extraction method run against a web, an RN, and an Electron fixture, when the outputs are compared, then all three carry the same provenance and confidence-tagging contract — the platform difference is confined to which files were read.
 
 #### Implementation Notes
-- Decide in the SPEC (this issue is `Spec-Required: true`) between: (a) a new `design-scanner` agent joining the `/scan` family, (b) an extraction phase inline in `/uiux`, or (c) extending `codebase-scanner` with a design pass. Option (a) fits the existing scan-family separation but grows the roster (see ISSUE-034's roster-diet rationale — justify the addition or pick (b)).
-- The `Brief overrides:` mechanism just added to Anti-AI-Slop is the natural place to record "the existing product already does X, and X is a listed tell" so the Phase 5.5 sweeps do not fight the codebase.
+- Decided in SPEC-054: **Option A** — one platform-parameterized `design-scanner` agent invoked directly by the three uiux skills, deliberately NOT a `/scan`-family member (`/scan` Step 6 regenerates `issues.md`, too destructive to make a prerequisite for adding a screen). Rejected: inline extraction (shares one context with generation — the failure the Phase 5A pilot gate exists to prevent), extending `codebase-scanner` (couples two consumers to one output contract and breaks its documented no-disk-write rule), and three per-platform scanners (roster 32 → 35, triplicates the provenance contract).
+- Roster goes 32 → 33. Update `tests/test_agent_effort.py:60` and both README surfaces (`README.md:16` prose count, agents table at `README.md:537`) — ISSUE-050's linter checks the table against agent frontmatter.
+- The `Brief overrides:` mechanism just added to Anti-AI-Slop is the natural place to record "the existing product already does X, and X is a listed tell" so each skill's AI Tell sweep does not fight the codebase.
 - Do NOT hand-copy token values into docs — read them from source at generation time (canonical-env-numbers lesson: generated numbers must come from the canonical environment, not memory).
-- `scripts/fragments.py` already owns the shared uiux-family design boilerplate; any new shared text goes there, not into three copies.
+- `scripts/fragments.py` already owns the shared uiux-family design boilerplate and resolves per skill over `UIUX_SKILLS`; the `create`/`extend` branch goes there as a new token, not into three copies.
 
 #### Tests
-- [ ] Fixture project (existing CSS custom properties + a component file) → extraction produces the expected token set; assert against a pinned fixture, not a smoke "it ran".
-- [ ] Mode-detection unit tests: UI present → `extend` offered; no UI → `create`, and the `create` path output is unchanged from the current baseline.
-- [ ] Provenance guard: every CONFIRMED claim in generated `design_system.md` resolves to a real `file:line` in the fixture (mutation-test it by deleting the source line and asserting the claim flips or fails).
+- [ ] One extraction fixture per platform (web CSS custom properties + component file; RN `StyleSheet` + `src/theme/`; Electron renderer CSS) → extraction produces the expected token set; assert against a pinned fixture, not a smoke "it ran".
+- [ ] Mode-detection unit tests per skill: UI present → `extend` offered; no UI → `create`, and each skill's `create` path output is unchanged from its current baseline.
+- [ ] Provenance guard: every CONFIRMED claim in generated `design_system.md` resolves to a real `file:line` in the fixture (mutation-test it by deleting the source line and asserting the claim flips or fails). Run it against all three fixtures — this is the shared contract the one-agent decision is betting on.
+- [ ] Fragment drift guard: the `create`/`extend` text resolves from `scripts/fragments.py` for all three skills, so a single-skill edit fails the suite (extend the existing `tests/test_design_fragments.py` pattern).
 
 #### Rollback
 `git revert` — additive (new mode branch + extraction step/agent). The `create` path is unchanged, so reverting restores today's behaviour exactly.
