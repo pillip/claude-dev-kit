@@ -510,7 +510,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Agents
 
-**33 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
+**32 core engineering agents.** Agents **inherit the session model** (no `model:` pins — ISSUE-030): whatever model your session runs, subagents run it too, so the kit never caps agent quality below the model you chose. Per-agent cost/depth is tuned with **effort tiers** instead — `high`/`xhigh` for judgment and creation, `low`/`medium` for structured extraction (`xhigh` auto-falls-back on models that cap at `high`).
 
 > **Deterministic deployments:** to pin agent behavior for production use, set the model once at the session/project level (`model` in `.claude/settings.json`, or `claude --model <alias>`) — one control point instead of the old per-agent pins. All inherit-agents follow it.
 
@@ -564,7 +564,7 @@ Recently shipped (Cluster C + D this session): `/spec` skill + Spec-Required met
 
 ```
 claude-dev-kit/
-├── agents/                  # Core engineering agents (33)
+├── agents/                  # Core engineering agents (32)
 ├── skills/                  # Core engineering / design / safety skills (23)
 │   ├── brainstorm/SKILL.md
 │   ├── bizanalysis/SKILL.md
