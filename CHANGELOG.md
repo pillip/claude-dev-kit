@@ -5,6 +5,76 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+## 0.6.0 — 2026-09-02
+
+Machinery deflation. Of ISSUE-036..054, 16 of 19 issues came from two
+self-generators — a repo self-audit sweep and the sprint runner's own discovery
+— and cost +4,456 net lines while adding no user-facing capability. This release
+removes the layers that produced them and adds a gate so the pattern does not
+regenerate, here or in any project the plugin is installed into.
+
+### Removed
+- **`review-merge-auditor` agent** (roster 33 → 32) — a separate-context LLM
+  agent auditing the output of `synthesize_review_notes.py`. That synthesizer is
+  deterministic (severity copied verbatim from the intermediate, findings never
+  dropped) and covered by its own 16 unit tests, so the audit graded a mapping
+  that cannot drift. Its `review/synthesis-audit` checkpoint phase was an alias
+  for `review/review`; the structural gate on review notes is unchanged and
+  still runs at step 5. (PR #92)
+- **`/ship` step 8, the review-quality eval** — `scripts/eval_review.py` and
+  `templates/review_eval_rubric.md`, an LLM-as-judge grading the review of a PR.
+  Its own outputs (`docs/review_eval_*.md`) were never committed in eight runs.
+  Removing it drops the `claude -p` subprocess from the ship path. (PR #92)
+- **autotest hook cache + debounce** — reverted to the pre-cache hook. The
+  optimization was never measured as needed and introduced a workspace-writable
+  index that had to be validated as untrusted input on every read. The hook's
+  behavior is otherwise identical. (ISSUE-038 reverted, PR #92)
+- **Document-consistency tests and the facts they policed.** The README stated
+  its agent count in four places and its test count in a badge; every roster
+  change drifted them and each drift failed the build while nothing was broken
+  for a user. The counts and badge are gone, and with them
+  `test_stated_agent_counts_match_roster`,
+  `test_readme_count_matches_effort_test_roster` (which regex-parsed another
+  test file's source to compare a pinned number against prose),
+  `TestRosterSurfaces`, `tests/test_env_knob_docs.py` (ISSUE-053), and the
+  ISSUE-050 agents-table-vs-frontmatter linter. The env-knob **documentation**
+  stays; only the test policing it is gone. `test_agent_effort.py`'s roster pin
+  is now a non-empty guard against vacuous per-agent passes. (PR #92)
+
+### Added
+- **`record` tag on the review minimality axis** (`agents/reviewer.md`) — flags
+  a test whose assertions land on document text (README, docs, agent or skill
+  markdown, a changelog) rather than on the result of executing code. The
+  prescribed fix is never a better linter: generate the derived fact from its
+  source, or delete the sentence that states it, and drop the guard with it.
+  Explicitly excludes documents the product consumes at runtime (config, schema,
+  prompt templates) and non-empty/fixture-pin guards. (PR #92)
+- **User-impact gate before issue creation** (`agents/team-lead.md`, Review
+  Artifact Triage step 5c) — for each candidate finding: *if this is never
+  fixed, what breaks for someone using this project?* When the only answer is
+  that a document disagrees with the code, the finding is logged in
+  `sprint_state.md` as `not-filed: record-only` instead of becoming a backlog
+  item. Previously every unresolved Critical/High finding was filed
+  unconditionally. (PR #92)
+- **Learning-loop guard** (`/review` step 5.5) — the loop may no longer store a
+  lesson that teaches a better document guard; such a lesson widens what every
+  future review checks. Three of this repo's six accumulated lessons were
+  exactly that. (PR #92)
+
+### Fixed
+- **`team-lead` lessons escalation keyed on a field that no longer exists.** The
+  rule escalated any lesson with `Frequency >= 3`, but ISSUE-033 moved lessons
+  to Claude Code native memory, which stores one fact per entry updated in place
+  and carries no Frequency counter — the string appears zero times in the store,
+  so the rule could never match. Recurrence is now read from the observed-issues
+  list inside the entry. (PR #92)
+
+### Notes
+- Suite: 1424 → 1385 tests, runtime ~35s → ~21s, coverage 82.69%.
+- The three additions are model-followed prompt rules, not script-enforced
+  gates. No test accompanies them by design: asserting that a phrase appears in
+  an agent markdown file is precisely the `record` class being introduced.
+
 ## 0.5.0 — 2026-08-17
 
 Brownfield design support. The three uiux skills could only ever *create* a
