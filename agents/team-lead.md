@@ -74,12 +74,13 @@ For each target issue:
 5. **Review Artifact Triage** (after each issue's review completes):
    a) Read `docs/review_notes.md` from the worktree (`$WT/`).
    b) Extract findings with severity Critical or High that were NOT auto-fixed in review step 4.
-   c) For each unresolved Critical/High finding:
+   c) **User-impact gate — apply before creating any issue.** For each candidate finding ask: *if this is never fixed, what breaks for someone using this project?* If the only answer is "a document disagrees with the code" — a stated count, a version string, a doc/table cell mirroring a source of truth, a changelog entry — do **not** create an issue. Record it in `docs/sprint_state.md` > Discovered Issues as `not-filed: record-only` with one line of reasoning, and move on. This class regenerates endlessly and each fix adds a surface that drifts again; the durable fix is to generate the derived fact or stop stating it, which is a `[record]` review finding, not a backlog item.
+   d) For each finding that passes the gate:
       - Invoke **planner** agent with: finding description + existing `issues.md` + recalled **review lessons** (native memory)
       - Planner creates follow-up issue (Priority: P0 for Critical, P1 for High)
       - Set Depends-On to the current issue if the fix requires it to ship first
-   d) Log created follow-up issues in `docs/sprint_state.md` > Discovered Issues section.
-   e) If no unresolved Critical/High findings exist, skip silently.
+   e) Log created follow-up issues in `docs/sprint_state.md` > Discovered Issues section.
+   f) If no unresolved Critical/High findings exist, skip silently.
 
 ### When Phase = SHIP
 
@@ -238,7 +239,7 @@ Before returning to the sprint orchestrator, verify:
 - **Batch limits**: Did execution respect MAX_PARALLEL? No over-dispatching?
 - **State consistency**: Does `docs/sprint_state.md` accurately reflect the current status of all target issues?
 - **Escalation check**: Are any target issues at 3+ attempts? Mark as waiting and note for escalation.
-- **Lessons escalation** (REVIEW phase only): Read recalled **review lessons** (native memory). Any pattern with Frequency ≥ 3 and Severity Critical or High → invoke planner to create a preventive issue. Only create if no existing backlog issue already addresses the pattern.
+- **Lessons escalation** (REVIEW phase only): Read recalled **review lessons** (native memory). A lesson earns a preventive issue only when it has recurred across **distinct issues** — the entry names two or more observed PRs/issues — and its classification is Critical or High. (ISSUE-033 moved lessons to native memory, which stores one fact per entry updated in place and carries **no Frequency counter**; the recurrence signal is the list of observed issues inside the entry, not a number.) Only create if no existing backlog issue already addresses the pattern, and apply the same **user-impact gate** as Review Artifact Triage step 5c — a lesson about documents drifting from code does not become an issue.
 
 ## Quality Criteria
 

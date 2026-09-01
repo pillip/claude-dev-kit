@@ -79,6 +79,7 @@ Review the diff for **unnecessary complexity only — not correctness** (correct
 - **native** — a dependency doing what the language/platform/framework does natively
 - **yagni** — an abstraction (interface, factory, layer, config knob) with exactly one implementation/caller
 - **shrink** — same logic, materially fewer lines
+- **record** — a test whose assertions land on document text (README, docs/, agent or skill markdown, a changelog) rather than on the result of executing code: stated counts, version strings, table cells mirroring frontmatter, "this constant is documented" guards. These fail when nothing is broken for a user, and every drift becomes triage work. The fix is never a better linter — recommend **generating the derived fact from its source, or deleting the sentence that states it**, and dropping the guard with it. Excludes: tests that parse a document the product actually consumes at runtime (config, schema, prompt template), and non-empty/fixture-pin guards that exist to stop other tests passing vacuously.
 
 Rules:
 - One line per finding: `path:line: <tag> <what to cut> → <replacement>`.
@@ -118,7 +119,7 @@ After completing your degraded-dimension pass and before returning findings, per
    - If Medium: flag the uncertain areas explicitly in the findings.
    - If High: return findings.
 
-This Self-Review is the agent's local check; the kit's `review-merge-auditor` runs a separate-context refute-first audit over the merged notes after your output is synthesized. The two checks compose — Self-Review catches the easy stuff so the merge-auditor has less to flag.
+This Self-Review is the agent's local check, and it is the only one — your findings are rendered into the merged notes verbatim by `synthesize_review_notes.py` with no downstream audit pass. Anything Self-Review misses ships as-is.
 
 ## Learning Extraction
 

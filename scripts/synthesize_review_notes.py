@@ -12,9 +12,10 @@ upstream severity.
 
 The LLM-y extraction (turning runtime prose output into structured
 findings) happens in the SKILL.md.tmpl prompt itself; this Python module
-takes a structured intermediate and renders. The review-merge-auditor
-(separate Task invocation, refute-first prompt) then verifies the
-mapping did not drop / distort / change severity of any finding.
+takes a structured intermediate and renders. Rendering is deterministic:
+severity is copied verbatim from the intermediate and findings are never
+dropped, so the mapping is verified by this module's own unit tests
+rather than by a downstream audit agent.
 
 Input contract (Python dict / JSON):
     {
