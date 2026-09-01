@@ -13,7 +13,10 @@ Coverage map:
 - TC-054d  generated SKILL.md carries the fragment exactly once
 - TC-054e  AC-4 no-regression: each skill's original detection globs survive
 - TC-054f  design-scanner agent contract (read-only, provenance, all 3 maps)
-- TC-054g  roster grew 32 -> 33 and the README surfaces agree
+
+(TC-054g asserted that a roster count reached every README surface; dropped
+along with the hand-maintained counts it policed — the README no longer states
+one. `tests/test_readme_consistency.py` still checks the agent is documented.)
 """
 
 import re
@@ -339,24 +342,3 @@ class TestDesignScannerAgent:
         assert "NOT written to disk" in text or "does not write" in text.lower()
 
 
-class TestRosterSurfaces:
-    """TC-054g: the roster count lands on every surface that asserts it."""
-
-    def test_roster_count(self):
-        agents = sorted((ROOT / "agents").glob("*.md"))
-        assert len(agents) == 32
-
-    def test_readme_prose_count_updated(self):
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        assert "32 engineering agents" in readme
-        assert "33 engineering agents" not in readme
-
-    def test_readme_agents_table_has_design_scanner(self):
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        rows = [ln for ln in readme.splitlines() if ln.startswith("| `design-scanner`")]
-        assert len(rows) == 1, "expected exactly 1 design-scanner row in the agents table"
-        fm = _frontmatter(SCANNER)
-        assert f"| {fm['effort']} |" in rows[0], (
-            "README agents-table effort cell disagrees with agent frontmatter "
-            "(ISSUE-050 lint contract)"
-        )

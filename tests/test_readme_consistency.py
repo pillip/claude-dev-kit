@@ -1,8 +1,6 @@
 """Lint tests for README consistency (ISSUE-040 staleness sweep).
 
 The README must match shipped reality:
-- every stated agent count equals the actual roster (agents/*.md) and the
-  roster count asserted by tests/test_agent_effort.py
 - the agents table has a row per agents/*.md file (no missing auditors)
 - retired-era strings are gone: the "v0.1" version pin (VERSION /
   .claude-plugin/plugin.json are the single source of version truth), the
@@ -19,42 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 AGENT_STEMS = sorted(p.stem for p in (ROOT / "agents").glob("*.md"))
 
-# Every phrasing the README uses to state the agent count.
-COUNT_PATTERNS = (
-    r"(\d+)\s+(?:core\s+)?engineering agents",  # "32 engineering agents", "32 core engineering agents"
-    r"[Cc]ore engineering agents \((\d+)\)",    # project-structure comment "agents/  # Core engineering agents (32)"
-)
-
-
 def _readme() -> str:
     return README.read_text(encoding="utf-8")
-
-
-def _stated_counts(readme: str) -> list[int]:
-    counts = []
-    for pattern in COUNT_PATTERNS:
-        counts += [int(n) for n in re.findall(pattern, readme)]
-    return counts
-
-
-def test_stated_agent_counts_match_roster():
-    counts = _stated_counts(_readme())
-    assert counts, "README states no agent count — expected at least one 'N engineering agents' mention"
-    for count in counts:
-        assert count == len(AGENT_STEMS), (
-            f"README states {count} agents but agents/ has {len(AGENT_STEMS)} files"
-        )
-
-
-def test_readme_count_matches_effort_test_roster():
-    effort_test = (ROOT / "tests" / "test_agent_effort.py").read_text(encoding="utf-8")
-    m = re.search(r"len\(AGENTS\) == (\d+)", effort_test)
-    assert m, "tests/test_agent_effort.py no longer asserts len(AGENTS) == N"
-    roster = int(m.group(1))
-    for count in _stated_counts(_readme()):
-        assert count == roster, (
-            f"README states {count} agents but test_agent_effort.py pins the roster at {roster}"
-        )
 
 
 def _agent_table_names() -> set[str]:

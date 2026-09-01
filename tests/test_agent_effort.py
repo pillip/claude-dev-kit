@@ -54,11 +54,9 @@ def _frontmatter(path: Path) -> dict:
 
 
 def test_all_agents_present():
-    # 29 core + 3 delegation auditors (ISSUE-029). ISSUE-034 absorbed 4 dead
-    # persona files (diagnostician, migrator, refactorer, prd-writer) into their
-    # skills — they were never invoked (no Task/subagent_type spawn).
-    # ISSUE-054 added design-scanner (brownfield design extraction).
-    assert len(AGENTS) == 32
+    # Not a count pin (the roster changes by design) — this guards against an
+    # empty glob, which would make every per-agent test below pass vacuously.
+    assert AGENTS, "no agent files found under agents/ — per-agent tests would be hollow"
 
 
 def test_agents_inherit_session_model():
