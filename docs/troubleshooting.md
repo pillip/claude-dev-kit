@@ -58,18 +58,6 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 - **Cause**: Worktree was never created, or the branch slug doesn't match the expected pattern
 - **Solution**: Create the worktree with the correct slug: `bash scripts/worktree.sh create <type>/<issue-slug>`.
 
-## Autotest Hook
-
-### Problem: autotest runs stale or unexpected tests after files were moved/renamed
-- **Symptom**: The PostToolUse autotest hook runs tests unrelated to your edit, or you suspect its module→test mapping is stale
-- **Cause**: The hook caches a module-to-test-file index at `.claude/run/autotest_cache.json` (project root). It auto-invalidates when the tests directory changes, but if you suspect a bad index you can force a rebuild
-- **Solution**: Delete `.claude/run/autotest_cache.json` from the project root. The hook rebuilds it automatically on the next edit; a corrupt or missing cache is always fail-soft.
-
-### Problem: autotest didn't re-run tests after an edit
-- **Symptom**: You edit a source file and no test run happens
-- **Cause**: Repeat runs are debounced — editing the same module within 30 seconds with unchanged test files skips a duplicate *passing* run. Failures are never debounced.
-- **Solution**: This is expected. Wait for the debounce window to expire, edit the test file, or delete `.claude/run/autotest_cache.json` to force a run.
-
 ## validate_issues.py Warnings
 
 ### Problem: "circular dependency detected"

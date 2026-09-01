@@ -118,7 +118,7 @@ After completing your degraded-dimension pass and before returning findings, per
    - If Medium: flag the uncertain areas explicitly in the findings.
    - If High: return findings.
 
-This Self-Review is the agent's local check; the kit's `review-merge-auditor` runs a separate-context refute-first audit over the merged notes after your output is synthesized. The two checks compose — Self-Review catches the easy stuff so the merge-auditor has less to flag.
+This Self-Review is the agent's local check, and it is the only one — your findings are rendered into the merged notes verbatim by `synthesize_review_notes.py` with no downstream audit pass. Anything Self-Review misses ships as-is.
 
 ## Learning Extraction
 

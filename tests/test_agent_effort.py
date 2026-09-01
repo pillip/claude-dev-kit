@@ -58,7 +58,7 @@ def test_all_agents_present():
     # persona files (diagnostician, migrator, refactorer, prd-writer) into their
     # skills — they were never invoked (no Task/subagent_type spawn).
     # ISSUE-054 added design-scanner (brownfield design extraction).
-    assert len(AGENTS) == 33
+    assert len(AGENTS) == 32
 
 
 def test_agents_inherit_session_model():

@@ -40,9 +40,6 @@
 | `review_delegated_to_code_review`    | review      | `pr_number: int | str`                  | Emitted when runtime `/code-review` is invoked. |
 | `review_delegated_to_security_review`| review      | `pr_number: int | str`                  | Emitted when runtime `/security-review` is invoked. |
 | `review_degraded_path_used`          | review      | `dimension: "code" | "security"`        | One emission per missing dimension. |
-| `review_finding_dropped`             | review      | `finding_id: str, dimension: str`       | From review-merge-auditor. |
-| `review_severity_changed`            | review      | `finding_id: str, from: str, to: str`   | From review-merge-auditor. |
-| `review_merge_audit_finding`         | review      | `verdict: str, finding_count: int`      | Aggregate audit summary. |
 
 ### ISSUE-007 — spec gate (already emitted)
 

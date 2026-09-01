@@ -31,9 +31,6 @@ class TestRequiredArtifactsPresent:
     def test_synthesize_review_notes_script_exists(self):
         assert (KIT_ROOT / "scripts" / "synthesize_review_notes.py").is_file()
 
-    def test_review_merge_auditor_agent_exists(self):
-        assert (KIT_ROOT / "agents" / "review-merge-auditor.md").is_file()
-
     def test_reviewer_agent_still_exists(self):
         # reviewer.md is retitled to degraded-only, NOT removed
         assert (KIT_ROOT / "agents" / "reviewer.md").is_file()
@@ -52,11 +49,6 @@ class TestSkillTemplateReferencesDelegationFlow:
     def test_skill_invokes_synthesizer(self):
         text = (KIT_ROOT / "skills" / "review" / "SKILL.md.tmpl").read_text(encoding="utf-8")
         assert "synthesize_review_notes.py" in text
-
-    def test_skill_invokes_merge_auditor_via_task(self):
-        text = (KIT_ROOT / "skills" / "review" / "SKILL.md.tmpl").read_text(encoding="utf-8")
-        assert "review-merge-auditor" in text
-        assert "subagent_type" in text
 
     def test_skill_preserves_kit_distinctive_phases(self):
         # Figma 3.5-3.10 + ui-reviewer + design-auditor + a11y-auditor must survive
@@ -77,7 +69,6 @@ class TestSkillTemplateReferencesDelegationFlow:
             "review_delegated_to_code_review",
             "review_delegated_to_security_review",
             "review_degraded_path_used",
-            "review_merge_audit_finding",
         ):
             assert ev in text, f"telemetry event {ev!r} missing from /review skill"
 
@@ -159,9 +150,6 @@ class TestTelemetryScemaDocumentsReviewEvents:
             "review_delegated_to_code_review",
             "review_delegated_to_security_review",
             "review_degraded_path_used",
-            "review_finding_dropped",
-            "review_severity_changed",
-            "review_merge_audit_finding",
         ):
             assert ev in text, (
                 f"docs/telemetry_schema.md must document {ev!r} per SPEC-019."

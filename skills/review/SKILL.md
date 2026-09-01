@@ -174,13 +174,6 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.13 com
    - Run: `python3 scripts/synthesize_review_notes.py --input docs/.review/findings.json --out docs/review_notes/$ARGUMENTS.md`
    - The synthesizer preserves severity verbatim from upstream, sorts findings within each section by severity (Critical → Low), and renders empty runtime sections with the `_No findings._` literal. Kit-distinctive sections appear only when they ran.
 
-3.15) **Audit the merge**: invoke Task with `subagent_type: review-merge-auditor`, inputs = (merged `docs/review_notes/$ARGUMENTS.md`, raw runtime outputs under `docs/.review/`, any kit-distinctive outputs that ran). The auditor returns structured findings of verdict `finding_dropped` / `severity_changed` / `evidence_distorted` / `scope_change` / `ok`. **Block save** on any non-`ok` verdict whose `severity_change.direction` is `down` or whose verdict is one of the first three. Severity UPGRADES (direction `up`) are surfaced for human review but do not block by default. Emit `review_merge_audit_finding` per finding and the aggregate via telemetry.
-
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Run: `bash scripts/checkpoint.sh --skill review --phase synthesis-audit --issue $ARGUMENTS`
-> Confirms `docs/review_notes/$ARGUMENTS.md` exists and the merge-auditor returned no blocking findings.
-> If exit code ≠ 0: STOP immediately and report the auditor's findings. Do NOT proceed.
-
 4) Apply minimal fixes for Critical/High findings (code + UI + design audit + a11y audit + Figma compliance); re-run tests inside `$WT/`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
@@ -200,7 +193,7 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.13 com
 > Always exits 0. Lists every `KIT-DEBT(ceiling=…, trigger=…)` marker; flags markers missing a `trigger=` as **silent-rot risk**.
 > Record any `no-trigger` markers as Low-severity `code_findings` entries (title prefixed `[debt]`) in `docs/.review/findings.json` so deferrals don't become permanent. Does NOT block the review.
 
-5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.14** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json` and re-invoke `review-merge-auditor`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
+5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.14** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
 
 5.5) **Learning Extraction → native memory** (kit-distinctive, not duplicated by runtime). Identify findings in `docs/review_notes/$ARGUMENTS.md` that could have been prevented earlier (at kickoff or implementation time), and record each preventable pattern as a **review lesson in Claude Code's native persistent memory** so it auto-recalls into future sessions — replacing the retired `docs/review_lessons.md` registry (ISSUE-033).
    - Persist to the project memory topic file `review-lessons.md` (in the native auto-memory directory — `${autoMemoryDirectory}` if set, else `~/.claude/projects/<project>/memory/`; use your memory capability rather than a hard-coded path). Add a one-line pointer under a `## Review Lessons` heading in `MEMORY.md` so the index surfaces it at session start.

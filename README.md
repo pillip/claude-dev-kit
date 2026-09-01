@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
 [![Tests](https://img.shields.io/badge/Tests-1190%20passing-brightgreen.svg)]()
 
-Turn a PRD into shipped code. **33 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
+Turn a PRD into shipped code. **32 engineering agents + 23 skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
 
 ## Why claude-kit?
 
@@ -13,7 +13,7 @@ Turn a PRD into shipped code. **33 engineering agents + 23 skills** handle the e
 Claude Code is powerful on its own, but without structure it produces inconsistent results — skipped tests, forgotten reviews, PRs that drift from requirements. claude-kit solves this by giving Claude Code **a repeatable process**:
 
 - **Structured pipeline**: Every issue goes through spec (when required) → implement → review → ship. No shortcuts, no skipped phases.
-- **Specialized agents**: Instead of one generalist prompt, 33 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
+- **Specialized agents**: Instead of one generalist prompt, 32 engineering agents each handle what they're best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
 - **Decision capture**: Non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / Trade-offs / Decision / Rollback. Sprint mode auto-runs it; non-sprint mode HOLDs for review.
 - **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
 - **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
@@ -538,7 +538,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep |
 | `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Write, Edit, Bash |
 | `research-auditor` | medium | Separate-context refute-first audit of degraded-path research claims against captured source snapshots | Read, Grep |
-| `review-merge-auditor` | medium | Separate-context refute-first audit that runtime review findings survive into merged review notes unaltered | Read, Grep |
 | `synthesizer-auditor` | medium | Separate-context refute-first audit that /deep-research claims survive into rendered kit output unaltered | Read, Grep |
 | `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
 | `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |

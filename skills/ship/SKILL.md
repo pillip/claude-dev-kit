@@ -140,15 +140,6 @@ Steps:
    - This step is advisory only — it does NOT block the ship or fail the pipeline.
    - If no gaps found, skip silently.
 
-8) **Review-quality eval advisory** (optional, non-blocking — ISSUE-002):
-   - Resolve the merged PR's review notes: `docs/review_notes/$ARGUMENTS.md` (or legacy `docs/review_notes.md`). If neither exists, skip silently.
-   - Run the LLM-as-judge eval — a fresh `claude -p` process (no separate billing; uses the session auth):
-     ```bash
-     python3 scripts/eval_review.py --pr <pr_number> --notes docs/review_notes/$ARGUMENTS.md
-     ```
-   - The script writes `docs/review_eval_<pr>.md` and prints `eval: pass|concerns → <path>`. Surface the verdict + any missed Critical/High findings to the user.
-   - **Non-blocking**: `eval_review.py` always exits 0 — on `concerns`, or if the `claude` CLI is unavailable (`eval skipped: …`), report it and continue. It never fails the ship.
-
 ## Shared Registry Files
 **IMPORTANT**: Never commit `issues.md`, `STATUS.md`, or `CHANGELOG.md` to the feature branch.
 These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.

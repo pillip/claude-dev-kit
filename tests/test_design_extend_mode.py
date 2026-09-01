@@ -340,16 +340,16 @@ class TestDesignScannerAgent:
 
 
 class TestRosterSurfaces:
-    """TC-054g: roster 32 -> 33 lands on every surface that asserts it."""
+    """TC-054g: the roster count lands on every surface that asserts it."""
 
     def test_roster_count(self):
         agents = sorted((ROOT / "agents").glob("*.md"))
-        assert len(agents) == 33
+        assert len(agents) == 32
 
     def test_readme_prose_count_updated(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        assert "33 engineering agents" in readme
-        assert "32 engineering agents" not in readme
+        assert "32 engineering agents" in readme
+        assert "33 engineering agents" not in readme
 
     def test_readme_agents_table_has_design_scanner(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
