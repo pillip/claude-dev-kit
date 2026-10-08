@@ -36,16 +36,42 @@ Thanks for your interest in contributing!
 - Follow the project's existing conventions
 - Keep PRs focused: one issue = one PR
 
+## Kept-Surface Criterion (SPEC-055)
+
+Every new or substantially changed skill/agent states which bucket its value lives in.
+This is the successor to ISSUE-034's kept-agent criterion; the evidence base is the
+classification in `docs/evolution_audit.md`.
+
+| Bucket | Value lives in | As models improve |
+|---|---|---|
+| **A — capability scaffolding** | teaching the model HOW: step-by-step technique, thinking scaffolds, craft tutorials, prompts duplicating native capability | depreciates — shrink, delete, or delegate to a runtime capability |
+| **B — contract** | WHAT must exist: artifact schemas, invariants, postconditions, machine-parsed outputs | holds — strip the HOW wrapped around it |
+| **C — verification core** | trust infrastructure: refute-first separate-context auditors, deterministic gates/validators, provenance contracts, state machines, hook enforcement | appreciates — invest |
+
+Rules of thumb:
+
+- **A-bucket additions need justification**: explain why the content cannot be expressed
+  as a contract (B) or a deterministic check (C). "Current models get this wrong" is a
+  valid reason — but then mark it as depreciating (same spirit as KIT-DEBT: name the
+  trigger that lets it be deleted when models catch up).
+- **Prefer the delegation idiom** (`probe → delegate → synthesize → audit → degrade`,
+  see the README architecture section) over re-implementing a capability the Claude Code
+  runtime already ships.
+- **A checkable predicate belongs in a script, not in prose.** If your skill text asks
+  the model to grep or verify something deterministic, promote it to a validator.
+
 ## Adding a New Agent
 
 1. Create `agents/<name>.md` with frontmatter (name, description, tools, model)
 2. Update `README.md` agent table if needed
+3. State the agent's kept-surface bucket (and A-bucket justification, if any) in the PR description
 
 ## Adding a New Skill
 
 1. Create `skills/<name>/SKILL.md.tmpl` with frontmatter and `{{PREAMBLE}}` token
 2. Run `python3 scripts/gen_skills.py` to generate `SKILL.md`
 3. Never edit `SKILL.md` directly -- always edit the `.tmpl` file
+4. State the skill's kept-surface bucket (and A-bucket justification, if any) in the PR description
 
 ## Marking Tech Debt (KIT-DEBT)
 

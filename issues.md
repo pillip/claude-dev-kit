@@ -80,6 +80,13 @@
 - [x] ISSUE-046: Fix verify_checkpoint.py's 60s pytest timeout breaking the GREEN gate and hollowing the RED gate on 4-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: test-phase subprocess timeouts (implement red/test, ship smoke; were hard-coded 60s/120s) now env-configurable via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) through a _test_timeout() helper; RED-phase exit-124 reported as inconclusive FAIL instead of being mistaken for a failing suite; absorbed verify_ship_smoke full-suite + no-runner-fallback caps (reviewer-accepted scope). Squash-merged PR #54 @ c04b78b 2026-08-10; ship smoke initially blocked solely by the pre-filed ISSUE-047 verify_gates 120s unit-gate cap — retried post-ISSUE-047 on 2026-08-11: GATE PASS unit [blocking] 14.5s, smoke PASS; review 0 Critical/High, 6 Low; eval artifacts in docs/review_notes/ISSUE-046.md)_
 - [x] ISSUE-047: Fix verify_gates.py hard-coded 120s unit-gate timeout (and sibling short caps) breaking blocking ship-smoke gates on multi-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: env-configurable unit-gate timeout via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) mirroring verify_checkpoint.py::_test_timeout, _run() timeout-mock contract (rc 124) preserved; absorbed test-isolation fix for two verify_implement_test tests whose unmocked gate-runner seam recursively spawned the full suite — the source of the false "~5-min suite" premise (true base ~21s). Squash-merged PR #56 @ b0d8bb3; post-merge smoke: GATE PASS unit [blocking] 14.6s, suite 1145 passed / 2 skipped ~11s; review 0 Critical/High/Medium, 6 Low; eval: pass)_
 - [x] ISSUE-054: Brownfield design path — extract a design system from existing UI code so /uiux can extend instead of replace _(track: platform, P2, 1.5d — 2026-08-17 official-plugin comparison; no platform capability covers it)_
+- [ ] ISSUE-056: Promote the four model-executed verification sweeps to deterministic validators _(track: platform, P1, 1.5d — SPEC-055 / evolution audit finding 3; numbering note: 055 skipped — consumed by ad-hoc SPEC-055)_
+- [ ] ISSUE-057: Add script checkpoints to the five zero-checkpoint skills _(track: platform, P1, 1.5d — SPEC-055 / audit finding 2)_
+- [ ] ISSUE-058: Delegation idiom expansion — test execution _(track: platform, P2, 1d — SPEC-019 flagged candidate; SPEC-055 / audit roadmap 4)_
+- [ ] ISSUE-059: Deflate scaffolding residue — persona blocks, confidence-rating boilerplate, inline prompts _(track: platform, P2, 1d — SPEC-055 / audit roadmap 3a)_
+- [ ] ISSUE-060: Contract-convert the uiux triplet — strip craft tutorials, keep gates and anti-slop contracts _(track: platform, P1, 1.5d — SPEC-055 / audit roadmap 3b; depends on 056, 059)_
+- [ ] ISSUE-061: Consolidate the scan-*/greenfield sibling agent pairs behind an evidence-mode flag _(track: platform, P2, 1.5d — SPEC-055 / audit roadmap 5)_
+- [ ] ISSUE-062: Dissolve A-bucket conversational agents into their skill contracts _(track: platform, P2, 1d — SPEC-055 / audit roadmap 6)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -3046,3 +3053,355 @@ Running `/uiux`, `/mobile-uiux`, or `/desktop-uiux` on a project that already ha
 
 #### Rollback
 `git revert` — additive (new mode branch + extraction step/agent). The `create` path is unchanged, so reverting restores today's behaviour exactly.
+
+---
+
+### ISSUE-056: Promote the four model-executed verification sweeps to deterministic validators
+
+> Evolution audit finding 3 (docs/evolution_audit.md): four falsifiable gates live as model-executed grep instructions inside skill prose — the `literal_quote` verbatim check and the Signature Move presence check (uiux/mobile-uiux/desktop-uiux Phase 5.5), the AI Tell sweep (same skills), and the hollow-test predicate (testgen step 3d, test-generator agent). Each is already a checkable predicate; leaving them to model self-assertion is the weakest verification exactly where generation is longest. Promoting them turns A-bucket prose into C-bucket assets and is a prerequisite for cutting the surrounding prose (ISSUE-060).
+> (Numbering: ISSUE-055 skipped — the number was consumed by ad-hoc SPEC-055, and a linked `/spec` run on a future ISSUE-055 would collide with that file.)
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 2)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-056-sweeps-to-validators
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+The four sweeps run as scripts with exit codes, callable from `checkpoint.sh` phases, so a skipped or hallucinated model self-check can no longer pass the gate.
+
+#### Scope (In/Out)
+- In:
+  - `literal_quote` verbatim validator: the exact characters of each `literal_quote` appear in rendered prototype HTML (whitespace-insensitive per the existing skill rule; not in comments).
+  - Signature Move validator: the named reusable class exists in `styles.css` and is applied on every screen file.
+  - AI Tell sweep validator: occurrence-whitelist mechanics per the review lesson (lint for the presence of banned *rendered* patterns, not phrasing blacklists over prose).
+  - Hollow-test validator: the existing predicate (`def test_` + assertion/mock/raises; `it(`/`test(` + `expect`/`toBe`/`toEqual`) as a script over a test directory.
+  - Unit tests per validator, including mutation-style fixtures (remove the quote/class/assertion → validator fails).
+- Out:
+  - Wiring the validators into skill prose/checkpoint phases (ISSUE-057 and ISSUE-060 own the call sites).
+  - Any new sweep categories beyond the four named.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a prototype fixture whose HTML contains the `literal_quote` characters, when the validator runs, then it exits 0; given the quote is altered by one character or moved into a comment, then it exits non-zero naming the missing quote.
+- [ ] Given a screens fixture where one screen lacks the Signature Move class, when the validator runs, then it exits non-zero naming the screen file.
+- [ ] Given a test-file fixture containing one assertion-free test function, when the hollow-test validator runs, then it exits non-zero naming the function; given every test asserts, then it exits 0.
+- [ ] Given each validator, when its target defect is introduced into the fixture (mutation test), then the validator fails — no validator passes vacuously on an empty input set.
+
+#### Implementation Notes
+- Follow the existing verify_* family conventions (exit 0/1/2, `--json` where useful); these land in `scripts/` beside `verify_figma_compliance.py`.
+- The AI Tell sweep must use occurrence-whitelists, not phrasing blacklists (review lesson: absence-guards get mutation-tested with actually-removed strings).
+- SPEC should decide: one `verify_design_sweeps.py` with subcommands vs four small scripts (measurable comparator: call-site count in ISSUE-057/060 vs file count).
+
+#### Tests
+- [ ] Pinned fixtures per validator (pass case + one mutation each), following the verify-family test pattern from ISSUE-045.
+
+#### Rollback
+`git revert` — purely additive scripts + tests until ISSUE-057/060 wire them in.
+
+---
+
+### ISSUE-057: Add script checkpoints to the five zero-checkpoint skills
+
+> Evolution audit finding 2: `checkpoint.sh` is invoked by only 8 of 23 skills, and the five skills with the longest prose (kickoff, scan, uiux, mobile-uiux, desktop-uiux) have zero script checkpoints — their "CHECKPOINT — MANDATORY" blocks are model self-assertions. `verify_checkpoint.py` (the engine) already serves 8 other skills; this issue extends its phase coverage to the five orchestration/design skills so artifact presence and structure are verified outside the model.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 2)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-057-zero-checkpoint-skills
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Every prose `CHECKPOINT — MANDATORY` block in kickoff, scan, uiux, mobile-uiux, and desktop-uiux is backed by (or replaced with) a `checkpoint.sh --skill <name> --phase <phase>` call that verifies the phase's artifacts deterministically.
+
+#### Scope (In/Out)
+- In:
+  - New `verify_checkpoint.py` phase definitions for the five skills (artifact existence + required-section presence, mirroring what the prose blocks currently assert).
+  - `.tmpl` edits replacing or backing each prose checkpoint with the script call (two-tier blocking/advisory per the ISSUE-031 convention).
+  - Conditional-phase handling for scan (data-model phase only when DB detected) and the uiux extend mode.
+- Out:
+  - The four design sweeps (ISSUE-056 builds them; wiring them into uiux phases may land here only if 056 has merged, otherwise follows in 060).
+  - Changing what the phases require — this issue scripts the existing assertions, it does not strengthen them.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a kickoff run that produced all phase artifacts, when each new checkpoint runs, then it exits 0; given one required file or section is missing, then the checkpoint exits non-zero naming it.
+- [ ] Given the five skills' generated SKILL.md files, when grepped, then every `CHECKPOINT` block contains a `checkpoint.sh` invocation (no bare prose self-assertion remains).
+- [ ] Given a scan run on a fixture without database usage, when the data-model checkpoint phase runs, then it reports skip (not fail), matching the skill's conditional contract.
+
+#### Implementation Notes
+- `verify_checkpoint.py` already encodes per-skill/phase expectations for 8 skills — follow its existing table structure; this is extension, not redesign.
+- Keep the blocking/advisory tier assignment conservative: artifact-presence = blocking; cross-document consistency checks stay advisory (they are judgment-shaped).
+- Update the team-lead checkpoint-coverage table (agents/team-lead.md) for the new phases.
+
+#### Tests
+- [ ] verify_checkpoint unit tests for each new skill/phase pair: full-artifact fixture passes, one-missing-artifact fixture fails, scan's conditional phase skips (extend the existing test_verify_checkpoint pattern).
+
+#### Rollback
+`git revert` — checkpoint additions are independent per skill; a single skill's phase set can be reverted without touching the engine's existing 8-skill coverage.
+
+---
+
+### ISSUE-058: Delegation idiom expansion — test execution
+
+> SPEC-019 explicitly flagged test execution as the next delegation candidate ("probe → runtime delegation → synthesizer → merge-auditor → degraded fallback" named "a reusable kit idiom worth investing in"). Today the kit owns test execution end-to-end via `verify_gates.py` (1,014 lines: platform detection + gate running). If the Claude Code runtime exposes a test-execution capability, the kit should probe for it and delegate, keeping `verify_gates.py` as the degraded fallback and its gate-result contract as the synthesis target.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 4; SPEC-019 follow-up signal from ISSUE-014)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-058-delegate-test-execution
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Test execution follows the same five-stage idiom as review/research: probe for a runtime capability, delegate when present, synthesize results into the existing gate-result contract, fall back to `verify_gates.py` when absent — with telemetry tagging which path ran.
+
+#### Scope (In/Out)
+- In:
+  - SPEC first (Spec-Required): survey what runtime capability actually exists for test execution (the SPEC-019 signal predates current runtime builds); if none exists yet, the SPEC documents the probe contract and lands only the `has_skill.py` probe + telemetry, deferring delegation until the capability ships.
+  - Probe wiring in the ship/review paths that currently call `verify_gates.py`.
+  - Synthesis: runtime results map into the existing per-gate pass/fail/skip/warn + blocking contract consumed by checkpoints.
+- Out:
+  - Rewriting `verify_gates.py` — it remains the degraded fallback unchanged.
+  - CI-side test execution (GitHub Actions) — this is about local gate runs.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the runtime capability is absent (probe exit 1), when `/ship` runs its smoke checkpoint, then behaviour is byte-identical to today's `verify_gates.py` path and telemetry records the degraded tag.
+- [ ] Given the runtime capability is present (probe exit 0/2), when the gates run, then the synthesized result carries the same per-gate schema (pass/fail/skip/warn + blocking) the checkpoint already consumes — no consumer change.
+- [ ] Given the SPEC finds no runtime capability currently exists, when this issue closes, then the probe + telemetry + documented contract have still landed and the delegation branch is marked dormant with its activation trigger named.
+
+#### Implementation Notes
+- Mirror the SPEC-018/019 structure: `has_skill.py` probe semantics (0/2 = attempt, 1 = degrade), telemetry event names analogous to `review_delegated_to_code_review` / `review_degraded_path_used`.
+- The gate-result contract is the synthesis target — the deterministic mapper owns schema fidelity, unit-tested like `synthesize_review_notes.py` (no separate merge-auditor; results are structured data, not prose).
+
+#### Tests
+- [ ] Probe-absent path: fixture run asserts the verify_gates fallback executes and the degraded telemetry event is emitted.
+- [ ] Synthesis mapper unit tests: runtime-shaped fixture input → exact gate-result schema out, including blocking-flag preservation.
+
+#### Rollback
+`git revert`; with the probe short-circuiting to the degraded path, reverting only removes the delegation branch — `verify_gates.py` behaviour was never modified.
+
+---
+
+### ISSUE-059: Deflate scaffolding residue — persona blocks, confidence-rating boilerplate, inline prompts
+
+> Evolution audit roadmap 3a: three classes of pure capability-scaffolding (A-bucket) survive across the surface. (1) `## Execution Principles (absorbed from the <persona> — ISSUE-034)` blocks in prd/diagnose/refactor/migrate plus diagnose's step 5.5 six-item cognitive checklist. (2) Self-Review confidence-rating (High/Med/Low) boilerplate in ~22 of 32 agents — SPEC-010 already recorded self-grading sycophancy as a defect, and business-analyst itself declares its Self-Review "not the load-bearing gate"; the load-bearing checks are separate-context auditors and scripts. (3) `/implement`'s ~50-line inline figma-converter prompt duplicating the agent file it invokes.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 3a)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-059-deflate-scaffolding-residue
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+The three scaffolding classes are removed with behaviour-relevant invariants preserved: prompts shrink, no gate weakens, and the deleted self-checks are demonstrably owned by an external check (auditor, validator, or checkpoint) or acknowledged as dropped.
+
+#### Scope (In/Out)
+- In:
+  - Delete the four persona blocks and diagnose step 5.5; keep each skill's actual invariants (regression-test rule, one-major-bump rule, behaviour-preserving rule) stated as contract lines where not already.
+  - Remove the Self-Review confidence-rating boilerplate from agents where a downstream script/auditor owns the check; keep genuinely distinctive self-checks (e.g., reviewer's false-positive/blind-spot scan, developer's blast-radius check) as explicit exceptions listed in the PR.
+  - Replace `/implement`'s inline figma-converter prompt with a reference to the agent definition (single source).
+- Out:
+  - The uiux triplet skills/agents (ISSUE-060 owns them).
+  - Any change to auditors, validators, or checkpoint behaviour.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the edited skills/agents, when grepped, then no `Execution Principles (absorbed from` block and no confidence-rating boilerplate remains outside the documented exception list.
+- [ ] Given the full test suite (including preamble/fragment/frontmatter lint tests), when run after the deletions, then it passes — tests that pinned deleted boilerplate are updated in the same PR, not weakened.
+- [ ] Given `/implement`'s SKILL.md.tmpl, when the figma loop section is read, then the subagent contract is a reference to `agents/figma-converter.md` plus call parameters, not a duplicated prompt body.
+
+#### Implementation Notes
+- Several tests pin agent prompt structure (test_agent_effort, test_design_fragments, test_preambles) — update assertions alongside, never delete a failing test to make the diff pass.
+- Where a deleted self-check has no external owner, say so in the PR description (honest-drop list) rather than silently removing the only check.
+
+#### Tests
+- [ ] A lint test asserting the persona-block marker and the confidence-rating boilerplate pattern do not reappear (occurrence-whitelist for the documented exceptions).
+
+#### Rollback
+`git revert` per file class; deletions are independent across the three classes.
+
+---
+
+### ISSUE-060: Contract-convert the uiux triplet — strip craft tutorials, keep gates and anti-slop contracts
+
+> Evolution audit: the uiux/mobile-uiux/desktop-uiux skills (568/590/648 lines) plus their developer agents (193/241/300 lines) are the kit's largest fast-depreciating surface — craft tutorials (CSS mechanics, motion duration bands, Expo config pins, Electron perf rules) that frontier models absorb release by release. The durable value is the falsifiable gates (pilot gate with separate-context critique, literal_quote, Signature Move, 2–3 cues), the anti-slop trio (banned-defaults, Brief-overrides ledger, self-similarity check), and the cross-document consistency contracts. Depends on ISSUE-056 (sweeps must be scripted before the prose that hosts them is cut) and ISSUE-059 (boilerplate classes removed first so this diff is purely the triplet).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 3b)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-060-uiux-triplet-contract-conversion
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-056, ISSUE-059
+
+#### Goal
+The three uiux skills and their developer agents shrink to contract + gates — platform knowledge the model already has is deleted; every surviving MUST is either a script-checked gate or a named contract — without weakening any existing gate.
+
+#### Scope (In/Out)
+- In:
+  - Extract the shared surviving text (anti-slop trio, pilot-gate protocol, cross-doc consistency rules) into `scripts/fragments.py` tokens over the existing `UIUX_SKILLS` tuple (the ISSUE-041/054 mechanism), deleting the three near-verbatim copies.
+  - Delete craft-tutorial prose: CSS mechanics lists, duration-band tables, Expo dependency pins, Electron perf prescriptions — except items the SPEC explicitly marks as still-failing empirical knowledge, which stay with a KIT-DEBT-style depreciation trigger.
+  - Replace Phase 5.5 model-executed sweep instructions with ISSUE-056 validator calls (via ISSUE-057's checkpoint wiring where it exists).
+- Out:
+  - The pilot gate's separate-context structure (unchanged — it is C-bucket).
+  - figma2proto/figma-converter (different pipeline, different issue if ever).
+  - Behaviour of `create` vs `extend` modes (ISSUE-054 contract preserved).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the converted skills, when a design run executes on a fixture brief, then every gate that passed/failed before conversion passes/fails identically — gate behaviour is the regression surface, not prose similarity.
+- [ ] Given the three SKILL.md.tmpl files, when diffed against main, then shared surviving text exists once in `scripts/fragments.py` and zero times as per-skill copies (extend `tests/test_design_fragments.py`).
+- [ ] Given the deleted tutorial content, when the SPEC's keep-list is read, then every retained prescription names its depreciation trigger; everything else is gone (no orphaned MUSTs without an owner gate).
+
+#### Implementation Notes
+- SPEC decides the keep-list: which prescriptions are still-failing empirical knowledge (kept with trigger) vs model-absorbed (deleted). Measurable comparator for the decision: spot-check generations with/without the prescription on the current model tier.
+- Line counts are an outcome, not a target — do not chase a number; chase "every MUST has an owner".
+
+#### Tests
+- [ ] Fragment drift guard extension (single-skill edit of shared text fails the suite).
+- [ ] Gate-parity fixture: pilot gate + sweeps produce identical verdicts pre/post conversion on the same fixture.
+
+#### Rollback
+`git revert` of the triplet PR restores current prose; ISSUE-056 validators and 057 checkpoints are independent and unaffected.
+
+---
+
+### ISSUE-061: Consolidate the scan-*/greenfield sibling agent pairs behind an evidence-mode flag
+
+> Evolution audit roadmap 5: five agent pairs are near-duplicates by design — planner/scan-planner, qa-designer/scan-qa-designer, architect/scan-architect, data-modeler/scan-data-modeler, requirement-analyst/scan-analyst. Each scan twin deliberately mirrors its greenfield sibling's output template "for downstream compatibility", differing only in the evidence contract (CONFIRMED/INFERRED tags, Evidence fields, audit-not-redesign stance). The output contracts being already identical makes consolidation cheap; the risk is losing the scan twins' forensic posture, which must survive as an explicit mode.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 5)
+- Priority: P2
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-061-scan-sibling-consolidation
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+One agent per domain serves both greenfield and scan invocations, with the evidence contract (provenance tags, Evidence fields, as-is-not-to-be stance) activated by an explicit mode — roster shrinks by up to 5 with zero change to either mode's output contract.
+
+#### Scope (In/Out)
+- In:
+  - SPEC first: per pair, merge vs keep — ISSUE-034's criterion applies (separate context is a valid reason to keep a twin; the SPEC must argue each pair, not blanket-merge).
+  - For merged pairs: an `evidence-mode` section in the unified agent gating the scan-only rules; `/scan` and `/kickoff` invocation prompts updated to select the mode.
+  - Roster/test/README sync (test_agent_effort roster, agents table, issues.md header counts are generated or updated per the record-tests lesson).
+- Out:
+  - codebase-scanner and design-scanner (no greenfield twin; unchanged).
+  - Any change to either mode's output document templates — downstream compatibility is the invariant that makes this safe.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a `/kickoff` run on a PRD fixture, when the merged agents produce their documents, then output is template-identical to the current greenfield agents' output (section-level diff, no evidence-mode artifacts leaking in).
+- [ ] Given a `/scan` run on a code fixture, when the merged agents run in evidence mode, then every claim carries CONFIRMED/INFERRED + source citation and issues carry Evidence fields — the scan contract survives verbatim.
+- [ ] Given the SPEC keeps any pair split, when the decision is read, then it cites which ISSUE-034 criterion applied (not "felt safer").
+
+#### Implementation Notes
+- The scan twins' distinctive content is mostly their evidence rules, which read as a self-contained block — extraction into a shared mode section should be mechanical; the hard part is prompt-length budget per agent, which the SPEC should measure.
+- Mode selection must come from the calling skill explicitly, never inferred by the agent from context (predictability guard).
+
+#### Tests
+- [ ] Per-domain golden-output comparison for both modes against current-main fixtures (template-structure assertions, not byte equality).
+
+#### Rollback
+Pairs are independent — revert any single pair's merge without touching the others; the retired twin files restore from git.
+
+---
+
+### ISSUE-062: Dissolve A-bucket conversational agents into their skill contracts
+
+> Evolution audit roadmap 6: five agents' remaining value is invariants their calling skills already state or can absorb — brainstormer and business-analyst (SPEC-018 made the skills own the delegation routing and claim-provenance invariants; the agents' conversational technique is native capability), devops (generic best-practice checklist), documenter ("commands must exist" verification rule + ship-scoped early exit), copywriter (per-screen × per-state inventory contract). Dissolving them continues the ISSUE-034 roster diet with the SPEC-055 criterion: conversation-shaping prompts are A-bucket; only their invariants survive, as skill contract lines.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 6)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-062-dissolve-a-bucket-agents
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Each of the five agents is either dissolved (invariants absorbed into the calling skill, agent file deleted, callers rewired) or kept with a recorded ISSUE-034/SPEC-055 justification — ending with every surviving roster entry holding a stated bucket.
+
+#### Scope (In/Out)
+- In:
+  - SPEC first, arguing each agent separately (the ISSUE-034 precedent: a blanket audit over-counted; per-agent analysis found fewer true dissolutions).
+  - For dissolved agents: invariant absorption into the skill `.tmpl`, caller rewiring (team-lead dispatch table, kickoff/scan orchestration), agent file deletion, roster/test/README sync.
+  - Separate-context needs survive dissolution: where a skill used the agent for context isolation (not expertise), the skill keeps a subagent call with an inline contract instead of a roster agent.
+- Out:
+  - The three uiux developer agents (ISSUE-060 shrinks them in place; dissolution is a later question).
+  - architect (plan-mode delegation is its own future idiom candidate, not a dissolution).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a dissolved agent's calling skill, when its workflow runs on a fixture, then every invariant the agent enforced (e.g., business-analyst's no-data literal and single-source range rendering) is still observably enforced — cite where each landed.
+- [ ] Given the final roster, when the SPEC's decision table is read, then all five agents have an explicit dissolve-or-keep verdict with the criterion that decided it.
+- [ ] Given the full test suite after rewiring, when run, then it passes with roster-pinning tests updated in the same PR.
+
+#### Implementation Notes
+- brainstormer/business-analyst were explicitly kept by ISSUE-034 as "029 degraded-path research agents, freshly guard-tested" — the SPEC must address why SPEC-018's landing changes that verdict (the skills now own the degraded path routing) or keep them.
+- Deletion order: rewire callers first, delete files last, one agent per commit for revert granularity.
+
+#### Tests
+- [ ] Per-dissolved-agent invariant tests at the skill level (the absorbed contract lines are asserted by the same fixtures that previously exercised the agent).
+
+#### Rollback
+One commit per agent — revert restores any single agent and its wiring independently.
