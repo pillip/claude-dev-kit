@@ -70,6 +70,23 @@ EXPECTED_BLOCKING = {
     ("mobile-uiux", "context"),
     ("mobile-uiux", "philosophy"),
     ("mobile-uiux", "system"),
+    # ISSUE-057: orchestration/design skill phases — artifact presence is
+    # blocking by the conservative tiering rule (cross-document consistency
+    # checks stay model-side prose, not advisory script phases).
+    ("kickoff", "prd-digest"),
+    ("kickoff", "requirements"),
+    ("kickoff", "ux-architecture"),
+    ("kickoff", "data-model"),
+    ("kickoff", "planning"),
+    ("scan", "prd-digest"),
+    ("scan", "requirements"),
+    ("scan", "architecture"),
+    ("scan", "data-model"),
+    ("scan", "test-plan"),
+    ("scan", "issues"),
+    ("desktop-uiux", "context"),
+    ("desktop-uiux", "philosophy"),
+    ("desktop-uiux", "system"),
 }
 
 

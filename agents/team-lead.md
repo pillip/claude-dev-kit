@@ -230,6 +230,11 @@ Every skill phase has a mandatory checkpoint verified by `scripts/verify_checkpo
 | implement | test-plan, figma (auto-skips if no Figma URLs), issue, worktree, tests-written, red, code, test, push, pr, registry |
 | review | checkout, review, figma-compliance, computed-styles, visual-diff, structural-match, layout, ui-review (UI issues only), test-quality, test, push |
 | ship | checks, merge, smoke, cleanup |
+| kickoff | prd-digest, requirements, ux-architecture, data-model, planning |
+| scan | prd-digest, requirements, architecture, data-model (skips when no DB detected), test-plan, issues |
+| uiux | context, philosophy, system |
+| mobile-uiux | context, philosophy, system |
+| desktop-uiux | context, philosophy, system |
 
 ## Self-Review (Mandatory before returning)
 
