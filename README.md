@@ -680,6 +680,13 @@ optional — the defaults are safe for local and CI runs:
   subprocess provisioning) when the browser is missing. Unset (the default) or
   any other value keeps the gate side-effect-free: it skips with a "browser
   unavailable" note instead of mutating the environment.
+- `KIT_GATE_RESULTS_FILE` — path to a runtime test-execution results JSON
+  (the SPEC-058 delegation handoff artifact, validated as untrusted input by
+  `scripts/synthesize_gate_results.py`). Unset (the default, until the runtime
+  capability ships): gate runs take the `verify_gates.py` path unchanged.
+- `KIT_RUN_ID` — run id for the kit's best-effort telemetry appends to
+  `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset:
+  script-side telemetry emission is a silent no-op.
 
 ### Configuring gates via `docs/test_plan.md`
 
