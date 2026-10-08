@@ -1,8 +1,11 @@
 __pycache__/
 *.pyc
 
-# Session telemetry (kit runtime state); only the run/ subpath — .claude/ itself stays visible
+# Session telemetry (kit runtime state); only the run/ + runs/ subpaths — .claude/ itself stays visible
+# run/  = delegation handoff artifacts (KIT_GATE_RESULTS_FILE containment dir)
+# runs/ = telemetry event sink (.claude/runs/<run-id>.jsonl, per docs/telemetry_schema.md)
 .claude/run/
+.claude/runs/
 .worktrees/
 *.lock
 # uv.lock must be tracked for reproducible builds

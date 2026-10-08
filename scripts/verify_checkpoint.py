@@ -888,11 +888,36 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
         return not blocking  # If blocking=True and module missing, FAIL
 
     pp = Path(project_path)
+
+    # ISSUE-058 (SPEC-058): consult the dormant delegation layer first. Only a
+    # valid runtime handoff artifact (KIT_GATE_RESULTS_FILE) yields synthesized
+    # results; on ANY other outcome — probe miss, dormant, invalid artifact, or
+    # a crash inside the delegation layer — fall back to verify_gates unchanged
+    # (the degraded path is byte-identical to the legacy behavior).
+    results = None
     try:
-        results = verify_gates.run_applicable_gates(pp)
-    except Exception as exc:
-        print(f"WARN: verify_gates raised an error: {exc}")
-        return not blocking  # If blocking=True and gates crash, FAIL
+        import synthesize_gate_results as _gate_delegation
+
+        decision, delegated, _reason = _gate_delegation.decide_gate_path(pp)
+        if decision == "delegated":
+            results = delegated
+            # A delegated run must never be byte-indistinguishable from a
+            # real gate run — only the DEGRADED path is pinned byte-identical
+            # (security review, PR #100 finding 2).
+            print(
+                f"  GATES DELEGATED: {len(delegated)} synthesized gate result(s) "
+                f"ingested from {_gate_delegation.GATE_RESULTS_ENV} — tests were "
+                "NOT executed by this checkpoint process"
+            )
+    except Exception:
+        results = None
+
+    if results is None:
+        try:
+            results = verify_gates.run_applicable_gates(pp)
+        except Exception as exc:
+            print(f"WARN: verify_gates raised an error: {exc}")
+            return not blocking  # If blocking=True and gates crash, FAIL
 
     if not results:
         return True

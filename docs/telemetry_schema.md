@@ -41,6 +41,13 @@
 | `review_delegated_to_security_review`| review      | `pr_number: int | str`                  | Emitted when runtime `/security-review` is invoked. |
 | `review_degraded_path_used`          | review      | `dimension: "code" | "security"`        | One emission per missing dimension. |
 
+### ISSUE-058 — test-execution gate delegation (dormant until the runtime capability ships)
+
+| Event type                    | Owner script              | Payload fields                                                                        | Notes |
+|-------------------------------|---------------------------|----------------------------------------------------------------------------------------|-------|
+| `gates_delegated_to_runtime`  | synthesize_gate_results   | `skill: str, gate_count: int`                                                           | Emitted when a valid `KIT_GATE_RESULTS_FILE` handoff artifact is synthesized into gate results. |
+| `gates_degraded_path_used`    | synthesize_gate_results   | `reason: "skill_missing" | "capability_dormant" | "invalid_results", detail?: str`      | One emission per gate run that falls back to `verify_gates.py`. `invalid_results` carries a `detail` naming `KIT_GATE_RESULTS_FILE` (truncated to keep the event under the 4 KB append cap — padding must not drop the forensic record). |
+
 ### ISSUE-007 — spec gate (already emitted)
 
 | Event type                          | Owner skill | Payload fields                                  | Notes |
@@ -56,7 +63,10 @@ Until ISSUE-001 lands its collector, events should be appended to
 `.claude/runs/<run-id>.jsonl` (project-side, gitignored) using `O_APPEND`
 with payloads kept under 4 KB to preserve POSIX atomicity. Each event line
 must validate against this schema; future ingestion replays these files
-under the ISSUE-001 pipeline.
+under the ISSUE-001 pipeline. Script-side emitters (e.g.
+`scripts/synthesize_gate_results.py`) resolve the run-id from the
+`KIT_RUN_ID` env var; unset — or no `.claude/runs/` directory — means
+emission is a silent no-op.
 
 When the kit's telemetry pipeline is unconfigured (no `.claude/runs/`
 directory, no run-id available), event emission is a silent no-op — never
