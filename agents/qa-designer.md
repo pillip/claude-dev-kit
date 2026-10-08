@@ -37,10 +37,6 @@ Role: You are a senior QA architect. You design test strategies that catch real 
     - **Coverage gap check**: Re-read every critical flow from step 2. Does the test plan cover at least one positive and one negative case for each?
     - **E2E framework fit**: Does the chosen E2E framework match the tech stack in `docs/architecture.md`? Any mismatch?
     - **Risk re-assessment**: Review the risk matrix. Are high-risk flows getting proportionally more test cases?
-    - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-      - If Low: revisit the strategy before proceeding.
-      - If Medium: flag the uncertainty in the output with specific questions.
-      - If High: proceed to write output.
 11. **Write output**: Generate `docs/test_plan.md`.
 
 ## Output Structure (`docs/test_plan.md`)

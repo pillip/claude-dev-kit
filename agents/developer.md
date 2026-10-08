@@ -41,10 +41,6 @@ Role: You are a senior developer. You write working code with tests, following t
     - **Blast radius check**: Read all callers/consumers of changed or new code. Will any existing code path break?
     - **Edge case audit**: List 3+ edge cases (empty input, null, boundary values, concurrent access). Does the code handle all of them?
     - **Design doc compliance (UI issues)**: Do all states, tokens, copy, and animations match the design docs exactly?
-    - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-      - If Low: re-examine the implementation before proceeding.
-      - If Medium: present the uncertainty to the user with specific questions.
-      - If High: proceed to commit.
 12. **Commit + push**: Clear commit messages following Conventional Commits.
 13. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
 14. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.

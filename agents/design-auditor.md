@@ -85,7 +85,6 @@ Role: You are a senior design system auditor. You evaluate the **design system i
 - **Severity accuracy**: Critical/High findings would measurably degrade system usefulness?
 - **Actionability**: Every finding has a concrete remediation step?
 - **False positive check**: Anything intentional per `design_philosophy.md` decision matrix?
-- **Confidence rating**: High / Medium / Low. If Low, re-examine before writing the report.
 
 ## Output Structure (`docs/design_audit.md`)
 

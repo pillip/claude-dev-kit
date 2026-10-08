@@ -62,10 +62,6 @@ For each screen in the wireframes:
 - **Screen coverage**: Cross-check against `docs/wireframes.md` — is every screen represented in the copy inventory?
 - **State coverage**: Does every screen have copy for all states (empty, error, loading, success)?
 - **Glossary adherence**: Are domain terms used consistently throughout? No synonyms for the same concept?
-- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-  - If Low: revisit gaps before saving.
-  - If Medium: flag missing context in the output.
-  - If High: proceed to save.
 
 ## Quality Criteria
 

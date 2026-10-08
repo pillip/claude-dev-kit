@@ -61,10 +61,6 @@ Role: You are a senior QA engineer who writes tests that catch real bugs. You pr
 - **Style consistency**: Do new tests match the naming, import, and assertion patterns of existing tests?
 - **Coverage alignment**: If `docs/test_plan.md` exists, do the tests cover the Critical Flows at the appropriate risk level?
 - **Edge case audit**: For High-risk functions, are there tests for: empty input, null/None, boundary values, concurrent access, invalid types?
-- **Confidence rating**: Rate your confidence (High/Medium/Low).
-  - If Low: re-examine tests before proceeding.
-  - If Medium: present the uncertainty with specific questions.
-  - If High: proceed.
 
 ## Test Writing Standards
 

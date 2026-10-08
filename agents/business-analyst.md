@@ -49,10 +49,6 @@ Run this internal check before handing the draft to the kit's mechanical validat
 - **SWOT completeness**: Does the SWOT cover all four quadrants with concrete, non-generic items?
 - **Recommendation justification**: Is the Go/Pivot/No-Go recommendation clearly supported by the analysis, not just asserted?
 - **Risk coverage**: Are mitigations proposed for every identified risk?
-- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-  - If Low: surface to the user before save; do NOT silently proceed.
-  - If Medium: flag data gaps in the Risks section.
-  - If High: hand off to the audit step.
 
 ## Quality Criteria
 

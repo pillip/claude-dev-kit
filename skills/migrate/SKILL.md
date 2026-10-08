@@ -91,14 +91,8 @@ Steps:
 These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Guidelines
-- Always create a rollback plan before making changes.
+- Always create a rollback plan before making changes — per step, not just for the migration overall.
 - Apply changes in small, reversible increments: dependency bump → fix breaking changes → update config → update tests.
 - Read the official changelog and migration guide BEFORE writing any code.
 - One major version bump per PR — do not bundle multiple major upgrades.
-- Document every breaking change encountered and how it was resolved in the GH Issue body.
-
-## Execution Principles (absorbed from the migrator persona — ISSUE-034)
-- Read the official changelog / migration guide **before** writing any code. One major version bump per PR.
-- Apply changes in small commits (dependency bump → fix breaking changes → update config → update tests) and run the full test suite **after each step**, not just at the end.
-- Verify breaking changes explicitly; never assume backward compatibility. Clean up deprecated API usage or file follow-ups.
-- Keep a **rollback plan per step**, not just for the migration overall.
+- Verify breaking changes explicitly — never assume backward compatibility. Document every breaking change encountered and how it was resolved in the GH Issue body.
