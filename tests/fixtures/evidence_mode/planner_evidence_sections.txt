@@ -1,0 +1,7 @@
+### ISSUE-NNN: [imperative verb + object]
+#### Goal
+#### Scope (In/Out)
+#### Acceptance Criteria (DoD)
+#### Implementation Notes
+#### Tests
+#### Rollback

@@ -1,0 +1,12 @@
+# Test Plan
+## Strategy
+## Risk Matrix
+## Critical Flows (ordered by risk)
+## E2E Testing Strategy
+## Backend Robustness
+## Edge Cases & Boundary Tests
+## Test Data & Fixtures
+## Automation Candidates
+## Visual Regression
+## Release Checklist (Smoke)
+## Verify Gates Configuration
