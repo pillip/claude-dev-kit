@@ -901,6 +901,14 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
         decision, delegated, _reason = _gate_delegation.decide_gate_path(pp)
         if decision == "delegated":
             results = delegated
+            # A delegated run must never be byte-indistinguishable from a
+            # real gate run — only the DEGRADED path is pinned byte-identical
+            # (security review, PR #100 finding 2).
+            print(
+                f"  GATES DELEGATED: {len(delegated)} synthesized gate result(s) "
+                f"ingested from {_gate_delegation.GATE_RESULTS_ENV} — tests were "
+                "NOT executed by this checkpoint process"
+            )
     except Exception:
         results = None
 

@@ -46,7 +46,7 @@
 | Event type                    | Owner script              | Payload fields                                                                        | Notes |
 |-------------------------------|---------------------------|----------------------------------------------------------------------------------------|-------|
 | `gates_delegated_to_runtime`  | synthesize_gate_results   | `skill: str, gate_count: int`                                                           | Emitted when a valid `KIT_GATE_RESULTS_FILE` handoff artifact is synthesized into gate results. |
-| `gates_degraded_path_used`    | synthesize_gate_results   | `reason: "skill_missing" | "capability_dormant" | "invalid_results", detail?: str`      | One emission per gate run that falls back to `verify_gates.py`. `invalid_results` carries a `detail` naming `KIT_GATE_RESULTS_FILE`. |
+| `gates_degraded_path_used`    | synthesize_gate_results   | `reason: "skill_missing" | "capability_dormant" | "invalid_results", detail?: str`      | One emission per gate run that falls back to `verify_gates.py`. `invalid_results` carries a `detail` naming `KIT_GATE_RESULTS_FILE` (truncated to keep the event under the 4 KB append cap — padding must not drop the forensic record). |
 
 ### ISSUE-007 — spec gate (already emitted)
 

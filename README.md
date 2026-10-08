@@ -682,8 +682,11 @@ optional — the defaults are safe for local and CI runs:
   unavailable" note instead of mutating the environment.
 - `KIT_GATE_RESULTS_FILE` — path to a runtime test-execution results JSON
   (the SPEC-058 delegation handoff artifact, validated as untrusted input by
-  `scripts/synthesize_gate_results.py`). Unset (the default, until the runtime
+  `scripts/synthesize_gate_results.py`; must live under the gitignored
+  `.claude/run/` directory). Unset (the default, until the runtime
   capability ships): gate runs take the `verify_gates.py` path unchanged.
+  When set and valid, the checkpoint prints a `GATES DELEGATED` marker —
+  delegated runs are never silent.
 - `KIT_RUN_ID` — run id for the kit's best-effort telemetry appends to
   `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset:
   script-side telemetry emission is a silent no-op.

@@ -22,16 +22,22 @@ Decision table (``decide_gate_path``):
     probe exit 0/2, env set, valid file -> delegated (synthesized GateResults)
 
 The results artifact is **untrusted input**: option-shaped paths are
-rejected, the realpath must stay inside the project path, only a regular
-JSON file up to ``MAX_RESULTS_BYTES`` is accepted, and the payload must be a
-non-empty JSON array matching the strict per-gate schema below. Every
-violation degrades toward *running the real gates* — never toward skipping
-them.
+rejected, the realpath must stay inside ``<project>/.claude/run/`` (the
+kit's gitignored run-scoped scratch dir — a tracked artifact cannot live
+there without a visible force-add), only a regular JSON file up to
+``MAX_RESULTS_BYTES`` is accepted, and the payload must be a non-empty JSON
+array matching the strict per-gate schema below. Every violation degrades
+toward *running the real gates* — never toward skipping them. A delegated
+run is never silent: the checkpoint consumer prints an unmistakable
+``GATES DELEGATED`` stdout marker naming ``KIT_GATE_RESULTS_FILE`` (only
+the *degraded* path is byte-identical to the legacy output).
 
 Ingestion contract (the synthesis source): a JSON array of objects, each
-exactly ``{gate: non-empty str, status: "pass"|"fail"|"skip"|"warn",
-blocking: bool, output?: str, duration_s?: number >= 0}`` — no extra keys.
-The synthesis target is ``verify_gates.GateResult``; the checkpoint consumer
+exactly ``{gate: slug str (see _GATE_NAME_RE), status:
+"pass"|"fail"|"skip"|"warn", blocking: bool, output?: str free of control
+characters other than \\n and \\t, duration_s?: finite number in
+[0, MAX_DURATION_S]}`` — no extra keys. The synthesis target is
+``verify_gates.GateResult``; the checkpoint consumer
 (``verify_checkpoint._run_verify_gates``) is unchanged.
 
 Env knobs (documented here and in README's environment-variable list):
@@ -45,7 +51,9 @@ Env knobs (documented here and in README's environment-variable list):
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -72,6 +80,20 @@ MAX_RESULTS_BYTES = 1_000_000
 ALLOWED_STATUSES = frozenset({"pass", "fail", "skip", "warn"})
 
 _ALLOWED_KEYS = frozenset({"gate", "status", "blocking", "output", "duration_s"})
+
+# Gate names are slugs (the real vocabulary is unit/integration/e2e-web/…);
+# anything looser would let a crafted name forge transcript lines at the
+# consumer's raw print (security review, PR #100 finding 5).
+_GATE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+# Output is printed raw by the checkpoint consumer (last lines of a fail
+# tail) — reject C0/C1 control characters except \n and \t so a delegated
+# artifact cannot drive the operator's terminal (ANSI/OSC injection).
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+# Finite ceiling for duration_s (~115 days). Unbounded ints overflow the
+# consumer's float formatting; NaN/Infinity parse from JSON by default.
+MAX_DURATION_S = 10**7
 
 _SCRIPT_NAME = "synthesize_gate_results"
 
@@ -115,8 +137,10 @@ def synthesize_gate_results(payload: object) -> list["verify_gates.GateResult"]:
             raise GateSynthesisError(f"entry {i}: unknown key(s) {sorted(unknown)}")
 
         gate = entry.get("gate")
-        if not isinstance(gate, str) or not gate:
-            raise GateSynthesisError(f"entry {i}: 'gate' must be a non-empty string")
+        if not isinstance(gate, str) or not _GATE_NAME_RE.fullmatch(gate):
+            raise GateSynthesisError(
+                f"entry {i}: 'gate' must be a slug matching {_GATE_NAME_RE.pattern}"
+            )
 
         status = entry.get("status")
         if status not in ALLOWED_STATUSES:
@@ -132,15 +156,27 @@ def synthesize_gate_results(payload: object) -> list["verify_gates.GateResult"]:
         output = entry.get("output", "")
         if not isinstance(output, str):
             raise GateSynthesisError(f"entry {i}: 'output' must be a string")
+        if _CONTROL_CHARS_RE.search(output):
+            raise GateSynthesisError(
+                f"entry {i}: 'output' contains control characters "
+                "(only \\n and \\t are allowed — it is printed raw)"
+            )
 
         duration = entry.get("duration_s", 0.0)
-        if (
-            isinstance(duration, bool)
-            or not isinstance(duration, (int, float))
-            or duration < 0
-        ):
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
             raise GateSynthesisError(
                 f"entry {i}: 'duration_s' must be a non-negative number"
+            )
+        try:
+            duration = float(duration)
+        except OverflowError:
+            raise GateSynthesisError(
+                f"entry {i}: 'duration_s' out of range"
+            ) from None
+        if not math.isfinite(duration) or not 0 <= duration <= MAX_DURATION_S:
+            raise GateSynthesisError(
+                f"entry {i}: 'duration_s' must be a finite number in "
+                f"[0, {MAX_DURATION_S}]"
             )
 
         results.append(
@@ -168,12 +204,17 @@ def _load_results_file(raw: str, project_path: Path) -> list["verify_gates.GateR
         candidate = project_path / candidate
     try:
         real = candidate.resolve()
-        project_real = project_path.resolve()
+        run_dir_real = (project_path / ".claude" / "run").resolve()
     except OSError as exc:  # pragma: no cover — platform-specific resolution errors
         raise GateSynthesisError(f"unresolvable path: {exc}") from exc
 
-    if not real.is_relative_to(project_real):
-        raise GateSynthesisError("results file must live inside the project path")
+    if not real.is_relative_to(run_dir_real):
+        # Containment is deliberately tighter than "inside the project":
+        # .claude/run/ is gitignored, so a committed artifact cannot be
+        # smuggled in as the handoff (security review, PR #100 finding 1).
+        raise GateSynthesisError(
+            "results file must live inside <project>/.claude/run/"
+        )
     if not real.is_file():
         raise GateSynthesisError("results path is not a regular file")
     try:
@@ -184,7 +225,9 @@ def _load_results_file(raw: str, project_path: Path) -> list["verify_gates.GateR
         payload = json.loads(real.read_text(encoding="utf-8"))
     except GateSynthesisError:
         raise
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+        # RecursionError: pathologically nested JSON must map into the
+        # module's own error contract, not escape to the caller.
         raise GateSynthesisError(f"unreadable or non-JSON results file: {exc}") from exc
 
     return synthesize_gate_results(payload)
@@ -193,15 +236,34 @@ def _load_results_file(raw: str, project_path: Path) -> list["verify_gates.GateR
 # ── telemetry (best-effort, silent no-op, never raises) ──────────────
 
 
+# Whitelist for the attacker-influenced run-id filename component.
+_RUN_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+# Attacker-derived text (e.g. GateSynthesisError messages quoting unknown
+# keys) is truncated rather than allowed to pad the event past the 4 KiB
+# cap — padding would silently drop the forensic record.
+_MAX_DETAIL_CHARS = 512
+
+
 def _emit_telemetry(project_path: Path, event_type: str, payload: dict) -> None:
-    """Append one schema-conformant event line; silent no-op when unconfigured."""
+    """Append one schema-conformant event line; silent no-op when unconfigured.
+
+    Hardened as an untrusted-path write: run-id is whitelist-validated, the
+    runs dir realpath must stay inside the project, the event file is opened
+    ``O_NOFOLLOW`` so a pre-planted symlink cannot redirect the append.
+    """
     try:
         run_id = os.environ.get(RUN_ID_ENV, "").strip()
-        if not run_id or "/" in run_id or "\\" in run_id or run_id.startswith("."):
+        if not _RUN_ID_RE.fullmatch(run_id):
             return
-        runs_dir = Path(project_path) / ".claude" / "runs"
+        runs_dir = project_path / ".claude" / "runs"
         if not runs_dir.is_dir():
             return
+        if not runs_dir.resolve().is_relative_to(project_path.resolve()):
+            return
+        detail = payload.get("detail")
+        if isinstance(detail, str) and len(detail) > _MAX_DETAIL_CHARS:
+            payload = {**payload, "detail": detail[:_MAX_DETAIL_CHARS] + "…[truncated]"}
         event = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type,
@@ -213,7 +275,7 @@ def _emit_telemetry(project_path: Path, event_type: str, payload: dict) -> None:
             return
         fd = os.open(
             runs_dir / f"{run_id}.jsonl",
-            os.O_APPEND | os.O_CREAT | os.O_WRONLY,
+            os.O_APPEND | os.O_CREAT | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0),
             0o644,
         )
         try:
