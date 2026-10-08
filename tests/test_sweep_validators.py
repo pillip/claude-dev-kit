@@ -440,6 +440,41 @@ class TestHollowTests:
         assert "adds two numbers" in out  # hollow block named by title
         assert "handles zero" not in out  # asserting block not named
 
+    def test_js_commented_out_expect_is_hollow(self, testdir, capsys):
+        # Gate-bypass class (review PR #101): a commented-out assertion must
+        # not vouch for the block (mutation replaces the ACTUAL assertion).
+        _mutate(
+            testdir / "sample.test.ts",
+            "expect(sum(1, 2)).toEqual(3);",
+            "sum(1, 2); // expect(sum(1, 2)).toEqual(3); TODO re-enable",
+        )
+        rc = vht.main(["--tests-dir", str(testdir)])
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "adds two numbers" in out  # hollow block named
+        assert "handles zero" not in out  # asserting block not named
+
+    def test_js_block_commented_expect_is_hollow(self, testdir, capsys):
+        _mutate(
+            testdir / "sample.test.ts",
+            "expect(sum(1, 2)).toEqual(3);",
+            "sum(1, 2); /* expect(sum(1, 2)).toEqual(3); */",
+        )
+        rc = vht.main(["--tests-dir", str(testdir)])
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "adds two numbers" in out
+
+    def test_js_url_in_string_is_not_a_comment(self, testdir):
+        # Guard the guard: https:// inside a string must not blank the
+        # line's real assertion (the (?<!:) lookbehind on line comments).
+        _mutate(
+            testdir / "sample.test.ts",
+            "expect(sum(0, 0)).toBe(0);",
+            'const u = "https://example.com"; expect(sum(0, 0)).toBe(0);',
+        )
+        assert vht.main(["--tests-dir", str(testdir)]) == 0
+
     def test_test_file_without_test_functions_is_hollow(self, testdir, capsys):
         (testdir / "test_empty.py").write_text(
             "def helper():\n    return 1\n", encoding="utf-8"

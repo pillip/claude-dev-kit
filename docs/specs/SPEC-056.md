@@ -63,7 +63,7 @@ Validator contracts (binding for ISSUE-057/060 wiring):
 
 - `signature-move` takes the class name as an argument rather than parsing it from prose — the caller (ISSUE-057 checkpoint wiring) remains the source of the name; a hallucinated class name still fails deterministically because the class must exist in CSS and on every screen.
 - The AI Tell registry covers only the mechanically decidable subset (7 tell ids at introduction); judgment tells remain in skill prose until someone proves a deterministic predicate for them. The registry is data, extensible without CLI changes.
-- The JS hollow-test check is a segment heuristic (text between consecutive `it(`/`test(` occurrences), not a parser — matching the existing testgen predicate's grep semantics; Python gets the stronger AST treatment because stdlib provides it for free.
+- The JS hollow-test check is a segment heuristic (text between consecutive `it(`/`test(` occurrences), not a parser — matching the existing testgen predicate's grep semantics; Python gets the stronger AST treatment because stdlib provides it for free. Review hardening (PR #101): JS comments (`//`, `/* */`) are blanked before matching, so a commented-out `expect()` can no longer vouch for a test; string-literal contexts remain unparsed (accepted residual heuristic).
 - Web-HTML prototypes only for design sweeps (mobile RN/desktop trees differ structurally); ISSUE-057 may pass `--project-path`/future flags when those trees get wired.
 
 ## Migration

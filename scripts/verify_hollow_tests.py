@@ -14,7 +14,10 @@ a script with exit codes:
   JS/TS   every `it(` / `test(` block must contain `expect(` / `.toBe` /
           `.toEqual`. Blocks are delimited by consecutive it()/test() call
           sites (segment heuristic mirroring the prose predicate's grep
-          semantics, not a full JS parser).
+          semantics, not a full JS parser). JS comments (`//` line and
+          `/* */` block) are blanked before matching, so a commented-out
+          assertion can never vouch for a test (review hardening, PR #101);
+          string-literal contexts are NOT parsed - still a heuristic.
 
 A test file with ZERO test functions/blocks is itself hollow, and an empty
 input set never passes (AC: no vacuous pass).
@@ -46,6 +49,27 @@ _SKIP_DIRS = {"__pycache__", "node_modules", ".git"}
 
 JS_TEST_CALL = re.compile(r"""\b(?:it|test)\s*\(\s*(['"`])(.*?)\1""", re.S)
 JS_ASSERT_HINT = re.compile(r"\bexpect\s*\(|\.toBe\b|\.toEqual\b")
+
+_JS_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+# `//` line comments; the (?<!:) lookbehind keeps URL schemes inside string
+# literals (https://..., wss://...) from being treated as comment openers.
+_JS_LINE_COMMENT = re.compile(r"(?<!:)//[^\n]*")
+
+
+def _blank(match: re.Match) -> str:
+    """Replace a comment with spaces, preserving newlines and offsets."""
+    return re.sub(r"[^\n]", " ", match.group(0))
+
+
+def strip_js_comments(text: str) -> str:
+    """Blank /* */ and // comments so commented-out assertions never count.
+
+    Gate-bypass class found in review of PR #101: `// expect(x).toBe(1)`
+    satisfied JS_ASSERT_HINT on the raw source. Blanking preserves line
+    structure and character offsets, so test-title extraction and segment
+    boundaries are unaffected.
+    """
+    return _JS_LINE_COMMENT.sub(_blank, _JS_BLOCK_COMMENT.sub(_blank, text))
 
 
 # ── Python analysis (AST) ───────────────────────────────────────────
@@ -106,7 +130,7 @@ def analyze_python(path: Path) -> tuple[int, list[dict]]:
 
 def analyze_js(path: Path) -> tuple[int, list[dict]]:
     """Return (test_block_count, hollow_entries) for one JS/TS test file."""
-    src = path.read_text(encoding="utf-8")
+    src = strip_js_comments(path.read_text(encoding="utf-8"))
     matches = list(JS_TEST_CALL.finditer(src))
     if not matches:
         return 0, [
