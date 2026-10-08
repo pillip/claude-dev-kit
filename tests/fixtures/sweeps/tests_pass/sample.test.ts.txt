@@ -1,0 +1,20 @@
+// Pinned PASS fixture for scripts/verify_hollow_tests.py (SPEC-056).
+// Every it()/test() block carries an expect assertion.
+// Stored with a .txt suffix so repo tooling (autotest hook, JS runners)
+// never treats it as a runnable test; tests rename it to sample.test.ts
+// inside tmp_path before invoking the validator.
+import { describe, it, expect, test } from "vitest";
+
+function sum(a: number, b: number): number {
+  return a + b;
+}
+
+describe("sum", () => {
+  it("adds two numbers", () => {
+    expect(sum(1, 2)).toEqual(3);
+  });
+
+  test("handles zero", () => {
+    expect(sum(0, 0)).toBe(0);
+  });
+});

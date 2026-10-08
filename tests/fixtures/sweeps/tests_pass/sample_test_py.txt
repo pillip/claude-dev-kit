@@ -1,0 +1,36 @@
+"""Pinned PASS fixture for scripts/verify_hollow_tests.py (SPEC-056).
+
+Every test function here carries at least one assertion mechanism from the
+testgen predicate (assert / pytest.raises / mock). Stored with a .txt
+suffix so neither pytest collection nor the kit's own test-file checks
+ever treat this input data as a real test; tests rename it to
+test_sample.py inside tmp_path before invoking the validator.
+"""
+
+import pytest
+from unittest.mock import Mock
+
+
+def add(a, b):
+    return a + b
+
+
+def test_addition():
+    result = add(2, 3)
+    assert result == 5
+
+
+def test_raises_on_bad_input():
+    with pytest.raises(ValueError):
+        int("not-a-number")
+
+
+def test_delegates_via_mock():
+    collaborator = Mock()
+    collaborator("payload")
+    collaborator.assert_called_once()
+
+
+class TestGrouped:
+    def test_method_asserts(self):
+        assert add(1, 1) == 2
