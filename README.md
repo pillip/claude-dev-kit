@@ -3,28 +3,44 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)](https://python.org)
 
-Turn a PRD into shipped code. **Specialized engineering agents and skills** handle the entire development lifecycle — from PRD to code review to deployment — so you can focus on what to build, not how.
+Turn a PRD into shipped code you can trust without re-reading it. claude-kit is a **verification & delegation control plane** for Claude Code — it delegates work to the strongest runtime capability available, then makes the result trustworthy: deterministic gates, separate-context auditors, and provenance contracts around every artifact.
 
 ## Why claude-kit?
 
-**Positioning: trustworthy code in collaboration → AI dev team control plane.** The kit's bet is that AI productivity is bottlenecked not by the model but by what surrounds it — concurrency, state, guardrails, decision capture, learning. Adding more agents doesn't close that gap; structuring the work does.
+**Positioning: verification & delegation control plane.** The kit's bet is that AI productivity is bottlenecked not by the model but by trust. As frontier models get stronger, "can the model do it" stops being the question — "can you merge what it did without re-reading all of it" remains. Teaching the model *how* to work depreciates with every model release; verifying *what* it produced does not. So the kit delegates work to the strongest runtime capability available and concentrates on what survives model progress:
 
-Claude Code is powerful on its own, but without structure it produces inconsistent results — skipped tests, forgotten reviews, PRs that drift from requirements. claude-kit solves this by giving Claude Code **a repeatable process**:
+- **Runtime delegation**: when Claude Code ships a capability that does the job better (`/deep-research`, `/code-review`, `/security-review`), the kit probes for it and delegates instead of re-implementing it in prompts. Today: `/review`, `/brainstorm`, `/bizanalysis`. Flagged next: test execution (SPEC-019).
+- **Verification layer**: results pass deterministic gates (checkpoint scripts, schema validators) — and where an LLM step could silently distort output, a refute-first auditor running in a **separate context** from the generator verifies it before anything is saved.
+- **Durable artifacts as contracts**: `issues.md`, SPECs, and `sprint_state.md` are the interface between sessions, people, and models — append-only registries, schema-validated, lock-guarded for concurrent writes.
+- **Structured pipeline**: every issue goes through spec (when required) → implement → review → ship, enforced structurally by the sprint state machine — not by instructions the model could skip.
+- **Decision capture**: non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / measurable Trade-offs / Decision / Rollback — validated by script before it counts.
+- **Automatic feedback loops**: review findings create follow-up issues, test failures trigger root-cause analysis, preventable patterns become native-memory lessons recalled in later sessions.
+- **Zero configuration**: install the plugin and all agents/skills/hooks/gates are ready.
 
-- **Structured pipeline**: Every issue goes through spec (when required) → implement → review → ship. No shortcuts, no skipped phases.
-- **Specialized agents**: Instead of one generalist prompt, each agent handles what it's best at — an architect designs the system, a reviewer audits security, a QA designer writes test plans, a design-auditor critiques the system, a separate ui-reviewer critiques the implementation.
-- **Decision capture**: Non-trivial issues require a SPEC (`/spec` → `docs/specs/SPEC-NNN.md`) — Problem / Options ≥2 / Trade-offs / Decision / Rollback. Sprint mode auto-runs it; non-sprint mode HOLDs for review.
-- **Automatic feedback loops**: Review findings create follow-up issues. Test failures trigger root-cause analysis. Shipped code gets test gap detection. Nothing falls through the cracks.
-- **Resumable state**: Sprint progress is checkpointed to `sprint_state.md`. Crash or timeout? Just re-run `/sprint` to pick up where you left off.
-- **Zero configuration**: Install the plugin and all agents/skills/hooks are ready.
+In short: claude-kit doesn't try to make Claude Code smarter — it makes Claude Code's output **trustworthy and auditable at merge time**.
 
-In short: claude-kit turns Claude Code from a smart assistant into a **development team that follows engineering best practices**.
+## Architecture — the delegation idiom
+
+The kit's core pattern (SPEC-018/019), applied to every capability the runtime can own:
+
+```
+probe → delegate → synthesize → audit → degrade
+```
+
+1. **Probe** — `scripts/has_skill.py` checks whether the runtime exposes the capability (`/deep-research`, `/code-review`, `/security-review`). Runtime built-ins leave no filesystem trace, so "unknown" means attempt-and-degrade — never silently skip.
+2. **Delegate** — the runtime skill does the work it does best; the kit stops re-implementing it in prompts.
+3. **Synthesize** — a deterministic script (`synthesize_from_deep_research.py`, `synthesize_review_notes.py`) maps the runtime's output into the kit's fixed artifact contracts: findings never dropped, severities copied verbatim, uncovered sections rendered as a literal "no data" line instead of filled in.
+4. **Audit** — where an LLM step could silently distort results, a refute-first auditor in a separate context (`research-auditor`, `synthesizer-auditor`) verifies the output against upstream — verbatim quotes, no scope changes, no silent drops — and a non-ok verdict **blocks the save**. Where the merge step is fully deterministic (`synthesize_review_notes.py`), unit tests own that guarantee instead.
+5. **Degrade** — when the runtime capability is absent, a kit-internal fallback (source capture + claim validation, the degraded reviewer dimensions) keeps the artifact contract intact, and the run is telemetry-tagged as degraded.
+
+Coverage today: `/review`, `/brainstorm`, `/bizanalysis`. Flagged next: test execution (SPEC-019). The criterion for everything else — what stays prompt, what becomes a contract, what becomes a deterministic check — is the three-bucket classification in `docs/evolution_audit.md` (SPEC-055).
 
 ## Overview
 
 claude-kit takes a PRD (Product Requirements Document) as input and orchestrates AI agents to support the entire development lifecycle — from requirements analysis to code review and deployment.
 
 **Core Principles:**
+- **Platform-first**: never re-implement what a Claude Code runtime capability does better — probe and delegate (see the delegation idiom above)
 - **GitHub-first**: Issues and PRs are the single source of truth
 - **1 Issue = 1 PR**: Each issue maps to exactly one pull request
 - **`issues.md` as SSOT**: Progress and completion are tracked by Status in this file
@@ -310,7 +326,7 @@ Adding a "team layer" would raise the onboarding cost (more concepts to learn, m
 /brainstorm [idea description]
 ```
 
-Starts a Socratic dialogue to help you explore a vague idea, define the problem space, and converge on a concrete direction. Uses web research to investigate the existing landscape and competitors. Output: `docs/brainstorm_notes.md`.
+Starts a Socratic dialogue to help you explore a vague idea, define the problem space, and converge on a concrete direction. The Existing Landscape section is research-gated per the delegation idiom: delegated to runtime `/deep-research` when available (degraded path: local source snapshots + verbatim-quote validation), rendered by a deterministic synthesizer, and audited refute-first before saving — no landscape claims from training-data memory. Output: `docs/brainstorm_notes.md`.
 
 ### Business Analysis — Validate business viability
 
@@ -318,7 +334,7 @@ Starts a Socratic dialogue to help you explore a vague idea, define the problem 
 /bizanalysis [idea description]
 ```
 
-Conducts a structured business analysis: market research, competitive landscape, SWOT analysis, and Go/Pivot/No-Go recommendation. Reads `docs/brainstorm_notes.md` if it exists for context. Output: `docs/business_analysis.md`.
+Conducts a structured business analysis: market research, competitive landscape, SWOT analysis, and Go/Pivot/No-Go recommendation. Market, competitive, pricing, and risk dimensions follow the delegation idiom — runtime `/deep-research` when available, degraded capture+validate path otherwise; every quantitative claim carries a `Source:` line backed by a verbatim quote, and a separate-context auditor blocks the save on dropped or distorted claims. Sections without evidence render a literal "no data" line instead of a paraphrase. Reads `docs/brainstorm_notes.md` if it exists for context. Output: `docs/business_analysis.md`.
 
 ### PRD — Co-write a PRD interactively
 
@@ -439,7 +455,7 @@ Writes a tech spec to `docs/specs/SPEC-NNN.md` capturing the decision behind a n
 /review ISSUE-001
 ```
 
-Performs a senior code review with an integrated security audit. Checks correctness, maintainability, and complexity alongside OWASP Top 10 vulnerabilities, dependency CVEs, and hardcoded secrets. Outputs `docs/review_notes.md` with **Code Review** and **Security Findings** sections. Applies only minimal fixes; larger changes are proposed as follow-up issues.
+Runs the delegation idiom end to end: the correctness pass is delegated to runtime `/code-review` and the security pass to `/security-review` when available (degraded path: the kit's reviewer agent per dimension), then kit-distinctive checks layer on top — minimality/over-engineering, Figma fidelity gates, UI review, design audit, and accessibility audit. A deterministic synthesizer merges everything into `docs/review_notes/<ISSUE>.md` with **Code Review** and **Security Findings** sections, severities preserved verbatim, findings never dropped — it is the SSOT consumed by `/ship` and `/sprint`, never edited by hand. Applies only minimal fixes; larger changes are proposed as follow-up issues.
 
 ### Ship — Deploy
 
@@ -550,7 +566,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 ## Roadmap
 
-The next layer the kit is building: **AI dev team control plane** — telemetry → eval → cumulative learning memory. Each issue ships as its own SPEC + PR; no dates committed.
+The roadmap serves the verification & delegation story (SPEC-055). Telemetry → eval → cumulative learning memory are the **measurement arm** of the control plane — how the kit proves its gates work and learns new ones. Alongside them: expanding the delegation idiom to the next flagged capability (test execution, SPEC-019) and promoting prose checkpoints into deterministic gates (`docs/evolution_audit.md` roadmap). Each issue ships as its own SPEC + PR; no dates committed.
 
 - **ISSUE-001 — Run telemetry**: every agent invocation, tool call, and phase emits a JSONL trace event so lead time, retry rate, and finding density can be measured without touching agent prompts.
 - **ISSUE-002 — Workflow eval gate**: LLM-as-judge scoring of `review_notes.md` against the PR diff. Non-blocking advisory at first; data feeds future thresholds.

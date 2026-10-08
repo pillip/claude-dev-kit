@@ -1,5 +1,8 @@
 # Evolution Audit — 표면적 전수 분류 (2026-10-08)
 
+> **Status**: evidence snapshot for SPEC-055 (kept-surface criterion). Classifications reflect the
+> surface as of 2026-10-08; later audits may revise them with the same evidence discipline.
+
 > 질문: "프론티어 모델이 좋아질수록 이 하네스가 중요할까?"
 > 답: 가치는 사라지지 않고 **이동**한다. 이 문서는 kit의 전체 표면적(skill 23, agent 32, script 37, hook 10)을
 > 그 이동 방향 기준으로 세 버킷에 분류하고, 전환 로드맵을 제안한다.
