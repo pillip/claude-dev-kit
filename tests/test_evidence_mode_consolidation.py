@@ -14,7 +14,7 @@ siblings behind an explicit evidence-mode sentinel (the literal prompt line
 
 Golden fixtures under tests/fixtures/evidence_mode/ were captured from the
 PRE-merge templates (greenfield agents + scan twins, which the merge deletes)
-— see regen.py in the fixture directory.
+— see tests/fixtures/evidence_mode/README.md.
 
 Parser notes (review lesson: hand-rolled parsers mirroring an oracle must
 match edge cases): the Output Structure templates are fenced code blocks that
@@ -67,7 +67,7 @@ _HEADING_RE = re.compile(r"^#{1,6} ")
 
 
 # ---------------------------------------------------------------------------
-# Fence-aware markdown helpers (shared with tests/fixtures/evidence_mode/regen.py)
+# Fence-aware markdown helpers (extraction rule documented in tests/fixtures/evidence_mode/README.md)
 # ---------------------------------------------------------------------------
 
 
