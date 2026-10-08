@@ -38,8 +38,9 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
    {{DESIGN_PHILOSOPHY}}
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify Phase 1 outputs: `docs/ux_spec.md` exists, PRD was read, interview answers (or auto-derived/reused constraints) are recorded.
-> If any required input is missing: STOP and report to user.
+> Run: `{{CHECKPOINT_CMD}} --skill mobile-uiux --phase context`
+> Verifies `docs/ux_spec.md` exists. Also self-verify: PRD was read, interview answers (or auto-derived/reused constraints) are recorded.
+> If exit code ≠ 0 or any required input is missing: STOP and report to user.
 
 ### Phase 2 — Design Philosophy (conditional — CRITICAL before any code)
 6) Check if `docs/design_philosophy.md` already exists:
@@ -174,9 +175,10 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 16-a) **Accessibility labels (REQUIRED)**: Ensure `copy_guide.md` includes `accessibilityLabel` for EVERY interactive element (buttons, toggles, list items, navigation items, form inputs). Also include state-change announcement strings for VoiceOver/TalkBack (e.g., "Run completed", "Run unchecked"). This is mandatory per NFR accessibility requirements.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_system_mobile.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, and `docs/copy_guide.md` all exist.
-> Cross-check: every component in wireframes has a definition in design_system_mobile.md.
-> If any output is missing: STOP and generate it before proceeding.
+> Run: `{{CHECKPOINT_CMD}} --skill mobile-uiux --phase system`
+> Verifies `docs/design_system_mobile.md` (or `docs/design_system_mobile.extracted.md` in extend mode), `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, and `docs/copy_guide.md` all exist.
+> Cross-check (model-side): every component in wireframes has a definition in design_system_mobile.md.
+> If exit code ≠ 0 or the cross-check fails: STOP and generate/fix it before proceeding.
 
 ### Phase 5 — React Native Prototype
 16) Create the `prototype-mobile/` directory structure:

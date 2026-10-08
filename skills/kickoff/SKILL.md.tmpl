@@ -3,7 +3,7 @@ name: kickoff
 description: Generates requirements/UX spec/architecture/data model/issues/test plan from a PRD. Runs 6 subagents in sequence.
 argument-hint: '[PRD.md path]'
 disable-model-invocation: true
-allowed-tools: Task, Read, Glob, Grep, Write, Edit
+allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(python3 scripts/*), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 {{PREAMBLE}}
@@ -25,8 +25,9 @@ Regardless of PRD length, always generate a summary with the following structure
 When passing context to subsequent subagents: include both the original PRD and `docs/prd_digest.md`.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/prd_digest.md` exists and contains all required sections (Goals, Target User, Must-have Features, Key NFRs, Scope Boundaries).
-> If the file is missing or any section is empty: STOP and regenerate before proceeding.
+> Run: `{{CHECKPOINT_CMD}} --skill kickoff --phase prd-digest`
+> Verifies `docs/prd_digest.md` exists and contains all required sections (Goals, Target User, Must-have Features, Key NFRs, Scope Boundaries).
+> If exit code ≠ 0: STOP and regenerate before proceeding. The script checks presence, not depth — also self-check that no section is empty.
 
 ### Phase 2 — Run Subagents (dependency-aware, parallel where possible)
 
@@ -36,8 +37,9 @@ When passing context to subsequent subagents: include both the original PRD and 
 - Verify output exists before proceeding
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/requirements.md` exists and contains Goals, User Stories, and NFRs sections.
-> If missing or incomplete: STOP and retry the requirement-analyst subagent before proceeding.
+> Run: `{{CHECKPOINT_CMD}} --skill kickoff --phase requirements`
+> Verifies `docs/requirements.md` exists and contains Goals, User Stories, and NFRs sections.
+> If exit code ≠ 0: STOP and retry the requirement-analyst subagent before proceeding.
 
 **Step 2 & 3 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message:**
 Both agents depend on requirements but NOT on each other. Run them in parallel to save ~5-8 minutes.
@@ -54,10 +56,9 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 **After both Task calls return**, verify both outputs exist before proceeding.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify both `docs/ux_spec.md` and `docs/architecture.md` exist.
-> - `docs/ux_spec.md` must contain Key Flows and screen definitions.
-> - `docs/architecture.md` must contain tech stack and module design.
-> If either file is missing or empty: STOP and retry the failed subagent before proceeding.
+> Run: `{{CHECKPOINT_CMD}} --skill kickoff --phase ux-architecture`
+> Verifies both `docs/ux_spec.md` (Key Flows + screen definitions) and `docs/architecture.md` (tech stack + module design) exist.
+> If exit code ≠ 0: STOP and retry the failed subagent before proceeding.
 
 **Step 4: data-modeler → `docs/data_model.md`**
 - Context to pass: PRD + `docs/prd_digest.md` + `docs/requirements.md` + `docs/ux_spec.md` + `docs/architecture.md`
@@ -65,8 +66,9 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 - Verify output exists before proceeding
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/data_model.md` exists and contains schema definitions with tables, columns, and types.
-> If missing or incomplete: STOP and retry the data-modeler subagent before proceeding.
+> Run: `{{CHECKPOINT_CMD}} --skill kickoff --phase data-model`
+> Verifies `docs/data_model.md` exists with a Schema section. Self-check the schema has tables, columns, and types (the script checks presence, not depth).
+> If exit code ≠ 0: STOP and retry the data-modeler subagent before proceeding.
 
 **Step 5 & 6 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message (no dependency between them):**
 
@@ -82,10 +84,9 @@ Both agents depend on requirements but NOT on each other. Run them in parallel t
 **After both Task calls return**, verify both outputs exist before proceeding to Phase 3.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify both `issues.md` and `docs/test_plan.md` exist.
-> - `issues.md` must contain at least one `### ISSUE-` block with AC and metadata fields.
-> - `docs/test_plan.md` must contain Strategy and Critical Flows sections.
-> If either file is missing or empty: STOP and retry the failed subagent before proceeding.
+> Run: `{{CHECKPOINT_CMD}} --skill kickoff --phase planning`
+> Verifies `issues.md` contains at least one `### ISSUE-` block with AC and metadata fields, and `docs/test_plan.md` contains Strategy and Critical Flows sections.
+> If exit code ≠ 0: STOP and retry the failed subagent before proceeding.
 
 ### Phase 3 — Supporting Documents
 4) Create/update `docs/README.md`:

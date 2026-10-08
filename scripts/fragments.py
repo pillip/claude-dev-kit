@@ -103,6 +103,8 @@ Ask the user the following questions to anchor the design direction.
 
 _CHECKPOINT_TEMPLATE = """\
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill {skill} --phase philosophy`
+> The script verifies presence: the file, (a)'s Signature Move, (b), and the `literal_quote:` field. If exit code ≠ 0: STOP, fix, re-run. Depth stays model-side — self-verify below (ISSUE-057).
 > Verify `docs/design_philosophy.md` exists with:
 > (a) a **Signature Move** that is numeric/token-specific (not prose-only);
 > (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line; AND
@@ -291,7 +293,8 @@ def design_philosophy_checkpoint(skill_name: str) -> str:
     """Resolve the {{DESIGN_PHILOSOPHY_CHECKPOINT}} token."""
     _require_uiux_skill(skill_name)
     return _CHECKPOINT_TEMPLATE.format(
-        glyph_extra="/shortcut" if skill_name == "desktop-uiux" else ""
+        skill=skill_name,
+        glyph_extra="/shortcut" if skill_name == "desktop-uiux" else "",
     )
 
 

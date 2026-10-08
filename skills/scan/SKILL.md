@@ -36,10 +36,7 @@ Run these checks silently at the start. Use results to adapt behavior:
    - Prompt: "You are the codebase-scanner agent. Analyze the codebase at [scan root]. Follow your agent guidelines precisely."
    - Pass: scan root path, list of existing docs
    - The agent returns a structured scan_context (do NOT write it to disk — it is an internal intermediate artifact).
-
-> **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify the scan_context contains all required sections: Project Identity, Architecture, Inferred Requirements, Quality Assessment.
-> If any section is missing or empty: STOP and retry the codebase-scanner agent before proceeding.
+7) Verify the returned scan_context contains all required sections: Project Identity, Architecture, Inferred Requirements, Quality Assessment. If any section is missing or empty, retry the codebase-scanner agent before proceeding. (scan_context is an in-memory artifact by design — no script checkpoint can back this verification; the first scripted gate is Phase 1.5's prd-digest below. ISSUE-057/SPEC-057.)
 
 ### Phase 1.5 — PRD Digest
 Using the scan_context and README (if present), generate `docs/prd_digest.md`:
@@ -52,8 +49,9 @@ Using the scan_context and README (if present), generate `docs/prd_digest.md`:
 All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[INFERRED]` (code-only).
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/prd_digest.md` exists and contains all required sections (Goals, Target User, Must-have Features, Key NFRs, Scope Boundaries).
-> If the file is missing or any section is empty: STOP and regenerate before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill scan --phase prd-digest`
+> Verifies `docs/prd_digest.md` exists and contains all required sections (Goals, Target User, Must-have Features, Key NFRs, Scope Boundaries).
+> If exit code ≠ 0: STOP and regenerate before proceeding. The script checks presence, not depth — also self-check that no section is empty.
 
 ### Phase 2 — Run Subagents (dependency-aware, parallel where possible)
 
@@ -63,8 +61,9 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 - Verify output exists before proceeding
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/requirements.md` exists and contains Goals, Functional Requirements, and NFRs sections.
-> If missing or incomplete: STOP and retry the scan-analyst agent before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill scan --phase requirements`
+> Verifies `docs/requirements.md` exists and contains Goals, Functional Requirements, and NFRs sections.
+> If exit code ≠ 0: STOP and retry the scan-analyst agent before proceeding.
 
 **Step 2 & 3 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message:**
 
@@ -80,8 +79,9 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 **After both/all Task calls return**, verify outputs exist before proceeding.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/architecture.md` exists and contains Tech Stack and Modules sections.
-> If missing or empty: STOP and retry the scan-architect agent before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill scan --phase architecture`
+> Verifies `docs/architecture.md` exists and contains Tech Stack and Modules sections.
+> If exit code ≠ 0: STOP and retry the scan-architect agent before proceeding.
 
 **Step 4 (Conditional): scan-data-modeler → `docs/data_model.md`**
 - Only invoke if scan_context detected database usage (ORM models, migrations, schema files, or database config).
@@ -90,8 +90,9 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 - If no database detected, skip this agent silently and note in STATUS.md.
 
 > **CHECKPOINT — CONDITIONAL**
-> If data-modeler was invoked: verify `docs/data_model.md` exists and contains Schema section.
-> If skipped: no checkpoint needed.
+> Run: `bash scripts/checkpoint.sh --skill scan --phase data-model`
+> If database usage was detected: verifies `docs/data_model.md` exists with a Schema section. If no database was detected, the script reports SKIP and exits 0 — no action needed.
+> If exit code ≠ 0: STOP and retry the scan-data-modeler agent before proceeding.
 
 **Step 5: scan-qa-designer → `docs/test_plan.md`**
 - Context to pass: scan_context + `docs/prd_digest.md` + `docs/requirements.md` + `docs/architecture.md` + `docs/data_model.md` (if exists)
@@ -99,8 +100,9 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 - Verify output exists before proceeding
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/test_plan.md` exists and contains Current State Assessment and Risk Matrix sections.
-> If missing or incomplete: STOP and retry the scan-qa-designer agent before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill scan --phase test-plan`
+> Verifies `docs/test_plan.md` exists and contains Current State Assessment and Risk Matrix sections.
+> If exit code ≠ 0: STOP and retry the scan-qa-designer agent before proceeding.
 
 **Step 6: scan-planner → `issues.md`**
 - Context to pass: scan_context + `docs/prd_digest.md` + `docs/requirements.md` + `docs/architecture.md` + `docs/data_model.md` (if exists) + `docs/test_plan.md`
@@ -109,8 +111,9 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 - Verify output exists before proceeding
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `issues.md` exists and contains at least one ISSUE entry with Evidence field.
-> If missing or incomplete: STOP and retry the scan-planner agent before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill scan --phase issues`
+> Verifies `issues.md` exists and contains at least one ISSUE entry with an Evidence field.
+> If exit code ≠ 0: STOP and retry the scan-planner agent before proceeding.
 
 ### Phase 3 — STATUS.md Generation
 Create/update `STATUS.md` with:

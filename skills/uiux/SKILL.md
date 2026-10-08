@@ -140,8 +140,9 @@ Run these checks silently at the start. Use results to adapt behavior:
    - If rejected, re-offer the interview questions or accept corrections.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify Phase 1 outputs: `docs/ux_spec.md` exists, PRD was read, interview answers (or auto-derived constraints) are recorded.
-> If any required input is missing: STOP and report to user.
+> Run: `bash scripts/checkpoint.sh --skill uiux --phase context`
+> Verifies `docs/ux_spec.md` exists. Also self-verify: PRD was read, interview answers (or auto-derived constraints) are recorded.
+> If exit code ≠ 0 or any required input is missing: STOP and report to user.
 
 ### Phase 2 — Design Philosophy (CRITICAL — before any code)
 6) Analyze the product's identity from PRD and UX spec:
@@ -212,6 +213,8 @@ Run these checks silently at the start. Use results to adapt behavior:
    - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill uiux --phase philosophy`
+> The script verifies presence: the file, (a)'s Signature Move, (b), and the `literal_quote:` field. If exit code ≠ 0: STOP, fix, re-run. Depth stays model-side — self-verify below (ISSUE-057).
 > Verify `docs/design_philosophy.md` exists with:
 > (a) a **Signature Move** that is numeric/token-specific (not prose-only);
 > (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line; AND
@@ -267,9 +270,10 @@ Run these checks silently at the start. Use results to adapt behavior:
     - This step MUST complete before Phase 5 so the prototype uses real copy, not placeholder text.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_system.md`, `docs/wireframes.md`, `docs/interactions.md`, and `docs/copy_guide.md` all exist.
-> Cross-check: every component in wireframes has a definition in design_system.md.
-> If any output is missing: STOP and generate it before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill uiux --phase system`
+> Verifies `docs/design_system.md` (or `docs/design_system.extracted.md` in extend mode), `docs/wireframes.md`, `docs/interactions.md`, and `docs/copy_guide.md` all exist.
+> Cross-check (model-side): every component in wireframes has a definition in design_system.md.
+> If exit code ≠ 0 or the cross-check fails: STOP and generate/fix it before proceeding.
 
 ### Phase 5A — Pilot Screen Gate (catches AI slop before full generation)
 13) Ensure `prototype/` and `prototype/screens/` directories exist.

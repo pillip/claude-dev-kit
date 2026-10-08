@@ -1691,10 +1691,217 @@ def verify_generic_validate(issue_id: str, **_) -> bool:
     return True
 
 
-# ── uiux / mobile-uiux verifiers ─────────────────────────────────────
+# ── Orchestration-doc helpers (ISSUE-057) ───────────────────────────
+#
+# Presence-level verification for kickoff / scan / uiux-family phases.
+# These mirror what the skills' prose CHECKPOINT blocks assert (artifact
+# existence + required-section presence) — depth checks (section quality,
+# cross-document consistency) stay model-side by design (SPEC-057).
 
 
-def verify_uiux_context(issue_id: str) -> bool:
+def _require_doc_terms(root: Path, rel: str, terms: tuple[str, ...]) -> bool:
+    """File exists under root and contains each required term (case-insensitive).
+
+    Prints a FAIL line naming the missing file or the missing term(s).
+    Term matching is deliberately substring-based, not heading-anchored:
+    subagent output formats are not pinned, and the prose checkpoints these
+    mirror only assert that the sections are "contained".
+    """
+    path = root / rel
+    if not path.exists():
+        print(f"FAIL: {rel} not found")
+        return False
+    content = path.read_text(encoding="utf-8", errors="replace").lower()
+    missing = [t for t in terms if t.lower() not in content]
+    if missing:
+        print(f"FAIL: {rel} missing required section(s): {', '.join(missing)}")
+        return False
+    return True
+
+
+# ── kickoff verifiers (ISSUE-057) ────────────────────────────────────
+
+
+_PRD_DIGEST_SECTIONS = (
+    "Goals", "Target User", "Must-have Features", "Key NFRs", "Scope Boundaries",
+)
+
+
+def verify_orch_prd_digest(issue_id: str, **_) -> bool:
+    """kickoff/scan Phase 1.5: prd_digest.md exists with all required sections."""
+    if not _require_doc_terms(_repo_root(), "docs/prd_digest.md", _PRD_DIGEST_SECTIONS):
+        return False
+    print("PASS: docs/prd_digest.md exists with all required sections")
+    return True
+
+
+def verify_kickoff_requirements(issue_id: str, **_) -> bool:
+    """kickoff Step 1: requirements.md with Goals, User Stories, NFRs."""
+    if not _require_doc_terms(
+        _repo_root(), "docs/requirements.md", ("Goals", "User Stories", "NFR")
+    ):
+        return False
+    print("PASS: docs/requirements.md exists with Goals, User Stories, NFRs")
+    return True
+
+
+def verify_kickoff_ux_architecture(issue_id: str, **_) -> bool:
+    """kickoff Steps 2&3: ux_spec.md (flows + screens) and architecture.md (stack + modules)."""
+    root = _repo_root()
+    ok = _require_doc_terms(root, "docs/ux_spec.md", ("Flow", "Screen"))
+    ok = _require_doc_terms(root, "docs/architecture.md", ("Tech Stack", "Module")) and ok
+    if ok:
+        print("PASS: docs/ux_spec.md and docs/architecture.md exist with required sections")
+    return ok
+
+
+def verify_kickoff_data_model(issue_id: str, **_) -> bool:
+    """kickoff Step 4: data_model.md exists with a Schema section."""
+    if not _require_doc_terms(_repo_root(), "docs/data_model.md", ("Schema",)):
+        return False
+    print("PASS: docs/data_model.md exists with a Schema section")
+    return True
+
+
+def _issues_md_ok(root: Path, *, require_evidence: bool) -> bool:
+    """issues.md has >=1 ``### ISSUE-`` block with the expected fields."""
+    path = root / "issues.md"
+    if not path.exists():
+        print("FAIL: issues.md not found")
+        return False
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"^### ISSUE-\d+", text, re.MULTILINE):
+        print("FAIL: issues.md contains no `### ISSUE-` blocks")
+        return False
+    if require_evidence:
+        if not re.search(r"Evidence:", text):
+            print("FAIL: issues.md has ISSUE blocks but no Evidence: field (scan contract)")
+            return False
+        return True
+    if not re.search(r"^- Priority:", text, re.MULTILINE):
+        print("FAIL: issues.md ISSUE blocks missing metadata fields (no `- Priority:` found)")
+        return False
+    if not re.search(r"\bAC\b|Acceptance Criteria", text):
+        print("FAIL: issues.md ISSUE blocks missing AC (no `AC` / `Acceptance Criteria` found)")
+        return False
+    return True
+
+
+def verify_kickoff_planning(issue_id: str, **_) -> bool:
+    """kickoff Steps 5&6: issues.md (>=1 issue with AC + metadata) and test_plan.md."""
+    root = _repo_root()
+    ok = _issues_md_ok(root, require_evidence=False)
+    ok = _require_doc_terms(
+        root, "docs/test_plan.md", ("Strategy", "Critical Flows")
+    ) and ok
+    if ok:
+        print("PASS: issues.md and docs/test_plan.md exist with required content")
+    return ok
+
+
+# ── scan verifiers (ISSUE-057) ───────────────────────────────────────
+
+
+def verify_scan_requirements(issue_id: str, **_) -> bool:
+    """scan Step 1: requirements.md with Goals, Functional Requirements, NFRs."""
+    if not _require_doc_terms(
+        _repo_root(), "docs/requirements.md", ("Goals", "Functional Requirements", "NFR")
+    ):
+        return False
+    print("PASS: docs/requirements.md exists with Goals, Functional Requirements, NFRs")
+    return True
+
+
+def verify_scan_architecture(issue_id: str, **_) -> bool:
+    """scan Steps 2&3: architecture.md with Tech Stack and Modules sections."""
+    if not _require_doc_terms(
+        _repo_root(), "docs/architecture.md", ("Tech Stack", "Module")
+    ):
+        return False
+    print("PASS: docs/architecture.md exists with Tech Stack and Modules")
+    return True
+
+
+# Database-usage indicators for scan's conditional data-model phase.
+# Deliberately a cheap, deterministic heuristic: dependency manifests and
+# migration/schema artifacts. A DB used through an undetected driver yields
+# SKIP instead of FAIL — the skip line names the heuristic so the gap is
+# visible in logs (SPEC-057 trade-off).
+_DB_INDICATOR_DIRS = ("migrations", "alembic", "prisma")
+_DB_INDICATOR_FILES = ("alembic.ini", "schema.prisma", "prisma/schema.prisma")
+_DB_MANIFESTS = ("pyproject.toml", "requirements.txt", "package.json")
+_DB_DEPENDENCY_PATTERN = re.compile(
+    r"sqlalchemy|alembic|psycopg|sqlmodel|peewee|tortoise|asyncpg|aiosqlite"
+    r"|pymongo|django|prisma|typeorm|sequelize|mongoose|knex|drizzle"
+    r"|better-sqlite3|mysql2?\b",
+    re.IGNORECASE,
+)
+
+
+def _scan_detects_db(root: Path) -> bool:
+    """Detect database usage from manifests and migration/schema artifacts."""
+    for d in _DB_INDICATOR_DIRS:
+        if (root / d).is_dir():
+            return True
+    for f in _DB_INDICATOR_FILES:
+        if (root / f).exists():
+            return True
+    for m in _DB_MANIFESTS:
+        path = root / m
+        if path.exists():
+            try:
+                if _DB_DEPENDENCY_PATTERN.search(path.read_text(encoding="utf-8", errors="replace")):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def verify_scan_data_model(issue_id: str, **_) -> bool:
+    """scan Step 4 (conditional): data_model.md required only when DB detected.
+
+    - data_model.md present  → verify it has a Schema section.
+    - absent + DB indicators → FAIL naming the missing doc.
+    - absent + no indicators → SKIP (exit 0), matching the skill's conditional
+      contract ("if no database detected, skip this agent silently").
+    """
+    root = _repo_root()
+    dm = root / "docs" / "data_model.md"
+    if dm.exists():
+        if not _require_doc_terms(root, "docs/data_model.md", ("Schema",)):
+            return False
+        print("PASS: docs/data_model.md exists with a Schema section")
+        return True
+    if _scan_detects_db(root):
+        print("FAIL: database usage detected (manifest/migration indicators) but docs/data_model.md not found")
+        print("  Run the scan-data-modeler agent to generate it.")
+        return False
+    print("SKIP: no database usage detected (manifest/migration heuristic) — data-model checkpoint skipped")
+    return True
+
+
+def verify_scan_test_plan(issue_id: str, **_) -> bool:
+    """scan Step 5: test_plan.md with Current State Assessment and Risk Matrix."""
+    if not _require_doc_terms(
+        _repo_root(), "docs/test_plan.md", ("Current State Assessment", "Risk Matrix")
+    ):
+        return False
+    print("PASS: docs/test_plan.md exists with Current State Assessment and Risk Matrix")
+    return True
+
+
+def verify_scan_issues(issue_id: str, **_) -> bool:
+    """scan Step 6: issues.md with >=1 ISSUE entry carrying an Evidence field."""
+    if not _issues_md_ok(_repo_root(), require_evidence=True):
+        return False
+    print("PASS: issues.md exists with ISSUE entries carrying Evidence fields")
+    return True
+
+
+# ── uiux / mobile-uiux / desktop-uiux verifiers ──────────────────────
+
+
+def verify_uiux_context(issue_id: str, **_) -> bool:
     """Verify Phase 1 context: ux_spec.md exists."""
     root = _repo_root()
     ux_spec = root / "docs" / "ux_spec.md"
@@ -1705,49 +1912,88 @@ def verify_uiux_context(issue_id: str) -> bool:
     return True
 
 
-def verify_uiux_philosophy(issue_id: str) -> bool:
-    """Verify Phase 2: design_philosophy.md exists with Decision Matrix."""
+def verify_uiux_philosophy(issue_id: str, **_) -> bool:
+    """Verify Phase 2: design_philosophy.md mirrors the fragment checkpoint.
+
+    Presence-level mirror of the shared {{DESIGN_PHILOSOPHY_CHECKPOINT}}
+    fragment (ISSUE-057): (a) a Signature Move section, (b) a Reference
+    Anchors section OR an explicit "Reference Anchors skipped" line, and
+    (c) a ``literal_quote:`` field when Reference Anchors is present.
+    Depth (numeric specificity, 2–3 cue count, image citations) stays
+    model-side until the ISSUE-056 sweeps are wired in (ISSUE-060).
+    """
     root = _repo_root()
     phil = root / "docs" / "design_philosophy.md"
     if not phil.exists():
-        print(f"FAIL: docs/design_philosophy.md not found")
+        print("FAIL: docs/design_philosophy.md not found")
         return False
-    content = phil.read_text(encoding="utf-8")
-    if "Decision Matrix" not in content:
-        print("FAIL: design_philosophy.md missing Decision Matrix section")
+    content = phil.read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"signature move", content, re.IGNORECASE):
+        print("FAIL: design_philosophy.md missing Signature Move")
         return False
-    print("OK: design_philosophy.md exists with Decision Matrix")
+    if re.search(r"reference anchors?\s+skipped", content, re.IGNORECASE):
+        print("OK: design_philosophy.md has Signature Move; Reference Anchors explicitly skipped")
+        return True
+    if not re.search(r"reference anchors", content, re.IGNORECASE):
+        print(
+            "FAIL: design_philosophy.md missing Reference Anchors section "
+            "(or an explicit 'Reference Anchors skipped' line)"
+        )
+        return False
+    if "literal_quote:" not in content:
+        print("FAIL: design_philosophy.md Reference Anchors present but literal_quote: field missing")
+        return False
+    print("OK: design_philosophy.md has Signature Move, Reference Anchors, literal_quote")
     return True
 
 
-def verify_uiux_system(issue_id: str) -> bool:
+def _verify_design_system_docs(system_doc: str, other_docs: tuple[str, ...], label: str) -> bool:
+    """System-phase artifact check with the extend-mode alternate.
+
+    The uiux-family extend mode (SPEC-054, "write alongside") may legitimately
+    produce ``<system_doc base>.extracted.md`` instead of the canonical system
+    doc — either satisfies the artifact requirement.
+    """
+    root = _repo_root()
+    ok = True
+    extracted = system_doc.replace(".md", ".extracted.md")
+    if not (root / "docs" / system_doc).exists() and not (root / "docs" / extracted).exists():
+        print(f"FAIL: docs/{system_doc} not found (extend-mode alternate docs/{extracted} also absent)")
+        ok = False
+    for name in other_docs:
+        if not (root / "docs" / name).exists():
+            print(f"FAIL: docs/{name} not found")
+            ok = False
+    if ok:
+        print(f"OK: all {label} design docs exist")
+    return ok
+
+
+def verify_uiux_system(issue_id: str, **_) -> bool:
     """Verify Phase 4 (web): all design docs exist."""
-    root = _repo_root()
-    required = ["design_system.md", "wireframes.md", "interactions.md", "copy_guide.md"]
-    ok = True
-    for name in required:
-        path = root / "docs" / name
-        if not path.exists():
-            print(f"FAIL: docs/{name} not found")
-            ok = False
-    if ok:
-        print("OK: all web design docs exist")
-    return ok
+    return _verify_design_system_docs(
+        "design_system.md",
+        ("wireframes.md", "interactions.md", "copy_guide.md"),
+        "web",
+    )
 
 
-def verify_mobile_uiux_system(issue_id: str) -> bool:
+def verify_mobile_uiux_system(issue_id: str, **_) -> bool:
     """Verify Phase 4 (mobile): all mobile design docs exist."""
-    root = _repo_root()
-    required = ["design_system_mobile.md", "wireframes_mobile.md", "interactions_mobile.md", "copy_guide.md"]
-    ok = True
-    for name in required:
-        path = root / "docs" / name
-        if not path.exists():
-            print(f"FAIL: docs/{name} not found")
-            ok = False
-    if ok:
-        print("OK: all mobile design docs exist")
-    return ok
+    return _verify_design_system_docs(
+        "design_system_mobile.md",
+        ("wireframes_mobile.md", "interactions_mobile.md", "copy_guide.md"),
+        "mobile",
+    )
+
+
+def verify_desktop_uiux_system(issue_id: str, **_) -> bool:
+    """Verify Phase 4 (desktop): all desktop design docs exist."""
+    return _verify_design_system_docs(
+        "design_system_desktop.md",
+        ("wireframes_desktop.md", "interactions_desktop.md", "copy_guide.md"),
+        "desktop",
+    )
 
 
 # ── Registry ─────────────────────────────────────────────────────────
@@ -1795,12 +2041,26 @@ VERIFIERS = {
     ("testgen", "worktree"): verify_generic_worktree,
     ("testgen", "test"): verify_generic_test,
     ("testgen", "push"): verify_generic_push,
+    ("kickoff", "prd-digest"): verify_orch_prd_digest,
+    ("kickoff", "requirements"): verify_kickoff_requirements,
+    ("kickoff", "ux-architecture"): verify_kickoff_ux_architecture,
+    ("kickoff", "data-model"): verify_kickoff_data_model,
+    ("kickoff", "planning"): verify_kickoff_planning,
+    ("scan", "prd-digest"): verify_orch_prd_digest,
+    ("scan", "requirements"): verify_scan_requirements,
+    ("scan", "architecture"): verify_scan_architecture,
+    ("scan", "data-model"): verify_scan_data_model,
+    ("scan", "test-plan"): verify_scan_test_plan,
+    ("scan", "issues"): verify_scan_issues,
     ("uiux", "context"): verify_uiux_context,
     ("uiux", "philosophy"): verify_uiux_philosophy,
     ("uiux", "system"): verify_uiux_system,
     ("mobile-uiux", "context"): verify_uiux_context,
     ("mobile-uiux", "philosophy"): verify_uiux_philosophy,
     ("mobile-uiux", "system"): verify_mobile_uiux_system,
+    ("desktop-uiux", "context"): verify_uiux_context,
+    ("desktop-uiux", "philosophy"): verify_uiux_philosophy,
+    ("desktop-uiux", "system"): verify_desktop_uiux_system,
 }
 
 
@@ -1843,9 +2103,14 @@ ADVISORY_PHASES = {
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Verify skill phase checkpoint")
-    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate", "testgen", "uiux", "mobile-uiux"])
+    parser.add_argument("--skill", required=True, choices=["implement", "review", "ship", "diagnose", "refactor", "devops", "migrate", "testgen", "kickoff", "scan", "uiux", "mobile-uiux", "desktop-uiux"])
     parser.add_argument("--phase", required=True)
-    parser.add_argument("--issue", required=True, help="Issue ID (e.g. ISSUE-001)")
+    parser.add_argument(
+        "--issue",
+        default="-",
+        help="Issue ID (e.g. ISSUE-001). Optional for orchestration/design "
+        "skills (kickoff/scan/uiux family) whose phases have no issue context.",
+    )
 
     try:
         args = parser.parse_args(argv)

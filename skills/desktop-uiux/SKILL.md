@@ -149,8 +149,9 @@ Run these checks silently at the start. Use results to adapt behavior:
    - If rejected, re-offer the interview questions or accept corrections.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify Phase 1 outputs: `docs/ux_spec.md` exists, PRD was read, interview answers (or auto-derived/reused constraints) are recorded.
-> If any required input is missing: STOP and report to user.
+> Run: `bash scripts/checkpoint.sh --skill desktop-uiux --phase context`
+> Verifies `docs/ux_spec.md` exists. Also self-verify: PRD was read, interview answers (or auto-derived/reused constraints) are recorded.
+> If exit code ≠ 0 or any required input is missing: STOP and report to user.
 
 ### Phase 2 — Design Philosophy (conditional — CRITICAL before any code)
 6) Check if `docs/design_philosophy.md` already exists:
@@ -223,6 +224,8 @@ Run these checks silently at the start. Use results to adapt behavior:
     - If rejected, iterate on the direction.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill desktop-uiux --phase philosophy`
+> The script verifies presence: the file, (a)'s Signature Move, (b), and the `literal_quote:` field. If exit code ≠ 0: STOP, fix, re-run. Depth stays model-side — self-verify below (ISSUE-057).
 > Verify `docs/design_philosophy.md` exists with:
 > (a) a **Signature Move** that is numeric/token-specific (not prose-only);
 > (b) either a populated **Reference Anchors** section OR an explicit "Reference Anchors skipped (no image input)" line; AND
@@ -301,9 +304,10 @@ Run these checks silently at the start. Use results to adapt behavior:
 16-a) **Accessibility labels (REQUIRED)**: Ensure `copy_guide.md` includes `aria-label` for EVERY interactive element (buttons, inputs, menus, panels, dialogs). Also include keyboard shortcut announcements for screen readers.
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
-> Verify `docs/design_system_desktop.md`, `docs/wireframes_desktop.md`, `docs/interactions_desktop.md`, and `docs/copy_guide.md` all exist.
-> Cross-check: every component in wireframes has a definition in design_system_desktop.md.
-> If any output is missing: STOP and generate it before proceeding.
+> Run: `bash scripts/checkpoint.sh --skill desktop-uiux --phase system`
+> Verifies `docs/design_system_desktop.md` (or `docs/design_system_desktop.extracted.md` in extend mode), `docs/wireframes_desktop.md`, `docs/interactions_desktop.md`, and `docs/copy_guide.md` all exist.
+> Cross-check (model-side): every component in wireframes has a definition in design_system_desktop.md.
+> If exit code ≠ 0 or the cross-check fails: STOP and generate/fix it before proceeding.
 
 ### Phase 5 — Electron Prototype
 16) Create the `prototype-desktop/` directory structure:
