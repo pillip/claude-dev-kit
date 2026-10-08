@@ -1,0 +1,23 @@
+:root {
+  --ink-navy: #1F3A5F;
+  --paper: #F7F4EC;
+}
+
+/* signature move: offset ledger rule */
+.signature-ledger-rule {
+  box-shadow: -6px 12px 0 var(--ink-navy);
+}
+
+.frame {
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
+.card {
+  border: 1px solid var(--ink-navy);
+  padding: 24px;
+}
+
+.order-id {
+  font-family: "IBM Plex Mono", monospace;
+}

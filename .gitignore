@@ -46,3 +46,7 @@ build/
 figma-export/
 figma-export-backup/
 prototype/
+# Pinned test fixtures for the SPEC-056 sweep validators are data, not a
+# generated prototype — re-include them (dir first, then contents).
+!tests/fixtures/sweeps/proto_pass/prototype/
+!tests/fixtures/sweeps/proto_pass/prototype/**
