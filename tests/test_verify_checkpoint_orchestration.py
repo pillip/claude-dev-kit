@@ -513,6 +513,22 @@ class TestRegistryAndCli:
         rc = vc.main(["--skill", "scan", "--phase", "issues"])
         assert rc == 1
 
+    @pytest.mark.parametrize(
+        "skill,phase", [("implement", "figma"), ("ship", "cleanup"), ("review", "test")]
+    )
+    def test_main_still_requires_issue_for_issue_scoped_skills(
+        self, monkeypatch, skill, phase
+    ):
+        # Pre-ISSUE-057 contract: omitting --issue for the 8 issue-scoped
+        # skills was an argparse usage error (exit 2). The optional default
+        # must not reach their verifiers — guard fires BEFORE dispatch.
+        def _boom(issue_id, **_):  # pragma: no cover - must never run
+            raise AssertionError("verifier dispatched despite missing --issue")
+
+        monkeypatch.setitem(vc.VERIFIERS, (skill, phase), _boom)
+        rc = vc.main(["--skill", skill, "--phase", phase])
+        assert rc == 2
+
 
 # ── AC-2: generated SKILL.md checkpoint blocks carry invocations ─────
 

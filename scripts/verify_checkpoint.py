@@ -2099,6 +2099,14 @@ ADVISORY_PHASES = {
     ("testgen", "push"),
 }
 
+# Skills whose phases run without an issue context (ISSUE-057): their
+# verifiers ignore issue_id entirely. Every other skill is issue-scoped and
+# must keep the pre-ISSUE-057 contract that omitting --issue is a loud
+# usage error — otherwise the "-" sentinel reaches issue-scoped verifiers
+# and flips blocking gates to confusing fail-open behavior (e.g.
+# implement/figma auto-passes, generic test runs in the wrong directory).
+ISSUELESS_SKILLS = {"kickoff", "scan", "uiux", "mobile-uiux", "desktop-uiux"}
+
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
@@ -2115,6 +2123,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
     except SystemExit:
+        return 2
+
+    if args.issue == "-" and args.skill not in ISSUELESS_SKILLS:
+        print(
+            f"ERROR: --issue is required for skill '{args.skill}' "
+            "(only kickoff/scan/uiux-family phases run without an issue)",
+            file=sys.stderr,
+        )
         return 2
 
     key = (args.skill, args.phase)
