@@ -388,12 +388,20 @@ class TestAllSubcommand:
         assert rc == 1
         assert QUOTE in out
 
-    def test_all_without_class_skips_signature_move_loudly(self, proto, capsys):
-        rc = vds.main(["all", "--project-path", str(proto)])
-        out = capsys.readouterr().out
-        assert rc == 0
+    def test_all_without_class_fails_closed_naming_signature_move(self, proto, capsys):
+        # ISSUE-063 AC-3 (supersedes the fail-open "skips loudly" pin):
+        # `all` without --class must exit non-zero — never a silent 0 with
+        # the Signature Move sweep unenforced — and name the sweep. Both
+        # a returned usage error and an argparse SystemExit(2) are
+        # acceptable fail-closed shapes.
+        try:
+            rc = vds.main(["all", "--project-path", str(proto)])
+        except SystemExit as exc:
+            rc = exc.code
+        captured = capsys.readouterr()
+        out = captured.out + captured.err
+        assert rc in (1, 2), f"fail-open: `all` without --class exited {rc}\n{out}"
         assert "signature-move" in out
-        assert "skip" in out.lower()
 
 
 # ════════════════════════════════════════════════════════════════════
