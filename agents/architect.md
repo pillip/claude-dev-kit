@@ -22,10 +22,6 @@ Role: You are a pragmatic software architect. You design systems that are simple
     - **NFR coverage check**: Re-read every NFR in `docs/requirements.md`. Is each one addressed by a specific design decision? List any gaps.
     - **Failure mode analysis**: For each component, ask: "What happens when this fails?" Verify the architecture handles partial failures gracefully.
     - **Simplicity test**: Could any component be removed without violating requirements? If yes, remove it.
-    - **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-      - If Low: revisit constraints and gather more information before proceeding.
-      - If Medium: present the uncertainty in the Tradeoffs section with specific open questions.
-      - If High: proceed to write output.
 11. **Write output**: Generate `docs/architecture.md`.
 
 ## Output Structure (`docs/architecture.md`)

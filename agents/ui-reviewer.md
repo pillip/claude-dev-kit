@@ -131,7 +131,6 @@ After completing the review, extract preventable patterns into recalled **review
 - **Finding actionability**: Every finding includes the specific file/line and a concrete fix?
 - **Severity calibration**: Consistent? No "Critical" for cosmetic issues, no "Low" for broken accessibility?
 - **Learning extraction**: Preventable patterns added to recalled **review lessons** (native memory)?
-- **Confidence rating**: High / Medium / Low. If Low: re-examine.
 
 ## Quality Criteria
 

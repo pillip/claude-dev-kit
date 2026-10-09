@@ -285,6 +285,7 @@ The input `figma-export/design_data.json` contains a `frames` array. Each frame 
 - `align_self`: "stretch" (when child stretches within parent auto-layout)
 - `flex_grow`: number (when child grows to fill available space)
 - `text_style`: (TEXT nodes only) `{font_family, font_weight, font_size_px, line_height_ratio, letter_spacing_em, text_align, text_transform, text_decoration, color, text_content}`
+- `segments`: (TEXT nodes with mixed styling only) array of `{text, font_weight, font_family?}` runs — present when one text block mixes font weights/families. Generate a `<span>` per segment with that run's styles instead of a single flat text node.
 - `children`: nested child nodes
 
 ### Downloaded Assets

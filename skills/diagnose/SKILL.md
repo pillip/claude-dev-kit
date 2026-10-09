@@ -70,16 +70,6 @@ Steps:
 3) If a file path is provided, read it. If an error message is provided, use Grep to locate the source.
 4) Trace the execution path from the error backward to identify the root cause.
 5) Form 1–3 ranked hypotheses and verify each by reading relevant code.
-5.5) **Self-Review (MANDATORY)**:
-   - Re-read the root cause hypothesis and the proposed fix.
-   - Trace backward from the fix: does it address the root cause, or just a symptom?
-   - Actively search for evidence that contradicts the hypothesis.
-   - Check all callers/consumers of the modified code for unintended side effects.
-   - List 3+ edge cases and verify the fix handles them.
-   - Rate confidence (High/Medium/Low).
-     - Low → gather more info, do NOT proceed.
-     - Medium → present uncertainty to user with specific questions.
-     - High → proceed to step 6.
 6) Present the confirmed root cause and a minimal fix to the user.
 7) After user approval, apply the fix.
 8) Run `pytest` to confirm no regressions. Suggest a regression test if none exists.
@@ -151,13 +141,7 @@ These are registry files managed only on main. Always use `bash scripts/registry
 
 ## Guidelines
 - Never guess-and-patch. Always confirm the root cause before proposing a fix.
-- Keep fixes minimal — do not refactor surrounding code.
-- Always write a regression test that fails before the fix and passes after.
+- One bug per PR. Keep fixes minimal — do not refactor surrounding code or fix unrelated bugs in the same change.
+- Always write a regression test that fails before the fix and passes after. Never "fix" by suppressing errors (bare `except`, empty `catch`).
 - Present hypotheses ranked by likelihood — let the user help narrow down if needed.
 - Document the chain of causation in the GH Issue body for future reference.
-
-## Execution Principles (absorbed from the diagnostician persona — ISSUE-034)
-- Trace backward from the error to the **root cause** before proposing any fix — symptom suppression creates new bugs.
-- One bug per PR; do not refactor surrounding code or fix unrelated bugs in the same change.
-- Write a **regression test that fails before the fix and passes after**. Never "fix" by suppressing errors (bare `except`, empty `catch`).
-- If multiple causes are possible, present them ranked by likelihood and ask before applying a fix. Document the causation chain in the issue body.
