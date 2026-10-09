@@ -312,15 +312,7 @@ def test_team_lead_has_checkpoint_enforcement_protocol():
     )
 
 
-# ── Test 14: brainstormer agent and brainstorm skill ─────────────────
-
-
-def test_brainstormer_agent_exists_and_has_required_frontmatter():
-    path = AGENT_DIR / "brainstormer.md"
-    assert path.exists(), "agents/brainstormer.md not found"
-    fm = _parse_frontmatter(path)
-    missing = AGENT_REQUIRED_KEYS - fm.keys()
-    assert not missing, f"brainstormer.md missing frontmatter keys: {missing}"
+# ── Test 14: brainstorm skill ────────────────────────────────────────
 
 
 def test_brainstorm_skill_exists_and_has_required_frontmatter():
@@ -410,11 +402,11 @@ def test_diagnose_skill_has_self_review():
 @pytest.mark.parametrize(
     "agent_name",
     ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-     "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
+     "business-analyst", "copywriter", "devops", "documenter",
      "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-         "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
+         "business-analyst", "copywriter", "devops", "documenter",
          "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
@@ -433,11 +425,11 @@ def test_agent_has_self_review(agent_name):
 @pytest.mark.parametrize(
     "agent_name",
     ["devops",
-     "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
+     "architect", "business-analyst", "copywriter", "data-modeler",
      "documenter", "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
     ids=["devops",
-         "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
+         "architect", "business-analyst", "copywriter", "data-modeler",
          "documenter", "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )

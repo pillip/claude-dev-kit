@@ -22,7 +22,6 @@ KIT_ROOT = Path(__file__).resolve().parents[1]
 SCOPED_FILES = [
     KIT_ROOT / "skills" / "brainstorm" / "SKILL.md.tmpl",
     KIT_ROOT / "skills" / "bizanalysis" / "SKILL.md.tmpl",
-    KIT_ROOT / "agents" / "brainstormer.md",
     KIT_ROOT / "agents" / "business-analyst.md",
 ]
 
@@ -46,17 +45,6 @@ class TestNoWebFetchInScopedFiles:
             f"{path} still references WebFetch. SPEC-018 removed free-form "
             "WebFetch claim extraction from /bizanalysis. See "
             "docs/specs/SPEC-018.md."
-        )
-
-    def test_no_webfetch_in_brainstormer_agent(self):
-        path = KIT_ROOT / "agents" / "brainstormer.md"
-        assert path.is_file()
-        text = path.read_text(encoding="utf-8")
-        assert "WebFetch" not in text, (
-            f"{path} still references WebFetch. SPEC-018 Migration step 5 "
-            "drops WebSearch/WebFetch from this agent's tools — without it "
-            "the skill-level delegation gate is bypassable via direct Task "
-            "invocation."
         )
 
     def test_no_webfetch_in_business_analyst_agent(self):
