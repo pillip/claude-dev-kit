@@ -183,3 +183,69 @@ class TestDocumenterDissolved:
             assert "bash scripts/registry_edit.sh STATUS.md -- bash -c" in text, (
                 f"{label} lost the registry wrapper guidance around step 3.5"
             )
+
+
+# ── copywriter → uiux-triplet Phase 4.5 inline contract ──────────────
+
+
+UIUX_SKILLS = ["uiux", "mobile-uiux", "desktop-uiux"]
+
+
+class TestCopywriterDissolved:
+    def test_agent_file_removed(self):
+        assert not (AGENT_DIR / "copywriter.md").exists(), (
+            "agents/copywriter.md still exists — SPEC-062 dissolves it into "
+            "the uiux-triplet Phase 4.5 inline contract"
+        )
+
+    @pytest.mark.parametrize("skill", UIUX_SKILLS)
+    def test_phase_4_5_carries_inline_copy_contract(self, skill):
+        for label, text in _skill_texts(skill).items():
+            # Present on main@776ac73 in each file's Phase 4.5 — must be gone.
+            assert "copywriter" not in text, (
+                f"{label} still invokes the deleted copywriter roster agent"
+            )
+            assert "appears in the copy inventory" in text, (
+                f"{label} lost the per-screen coverage contract line"
+            )
+            assert "empty, loading, error, and success states" in text, (
+                f"{label} lost the per-state coverage contract line"
+            )
+            assert "one-concept-one-word" in text, (
+                f"{label} lost the glossary one-concept-one-word rule"
+            )
+            assert "[what happened] + [what to do]" in text, (
+                f"{label} lost the error copy formula"
+            )
+            assert "design_philosophy" in text, (
+                f"{label} lost the voice-derivation contract line"
+            )
+
+    @pytest.mark.parametrize("skill", UIUX_SKILLS)
+    def test_phase_4_5_surroundings_survive(self, skill):
+        # The rewrite must not take the neighbouring enforcement blocks with it.
+        for label, text in _skill_texts(skill).items():
+            assert "Banned copy tells" in text, (
+                f"{label} lost the banned-copy-tells block"
+            )
+            assert "MUST complete before Phase 5" in text, (
+                f"{label} lost the Phase 5 ordering requirement"
+            )
+
+    def test_mobile_desktop_adaptation_branches_survive(self):
+        # The "If exists → append adaptations" branches never invoked the
+        # agent and must stay as-is, as must the 16-a a11y-label requirements.
+        for label, text in _skill_texts("mobile-uiux").items():
+            assert "## Mobile Adaptations" in text, (
+                f"{label} lost the Mobile Adaptations append branch"
+            )
+            assert "accessibilityLabel" in text, (
+                f"{label} lost the 16-a accessibilityLabel requirement"
+            )
+        for label, text in _skill_texts("desktop-uiux").items():
+            assert "## Desktop Adaptations" in text, (
+                f"{label} lost the Desktop Adaptations append branch"
+            )
+            assert "aria-label" in text, (
+                f"{label} lost the 16-a aria-label requirement"
+            )

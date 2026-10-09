@@ -399,11 +399,9 @@ def test_diagnose_skill_has_self_review():
 @pytest.mark.parametrize(
     "agent_name",
     ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-     "copywriter",
      "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-         "copywriter",
          "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
@@ -421,10 +419,10 @@ def test_agent_has_self_review(agent_name):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["architect", "copywriter", "data-modeler",
+    ["architect", "data-modeler",
      "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
-    ids=["architect", "copywriter", "data-modeler",
+    ids=["architect", "data-modeler",
          "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )
@@ -466,8 +464,8 @@ def test_new_template_exists_and_has_headers(name, headers):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["data-modeler", "copywriter", "mobile-uiux-developer"],
-    ids=["data-modeler", "copywriter", "mobile-uiux-developer"],
+    ["data-modeler", "mobile-uiux-developer"],
+    ids=["data-modeler", "mobile-uiux-developer"],
 )
 def test_additional_agent_exists_and_has_required_frontmatter(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"

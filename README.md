@@ -536,7 +536,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `mobile-uiux-developer` | xhigh | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `desktop-uiux-developer` | xhigh | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `copywriter` | medium | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
 | `figma-converter` | medium | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
 | `architect` | xhigh | Design software architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | xhigh | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
