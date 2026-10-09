@@ -394,11 +394,11 @@ def test_diagnose_skill_has_self_review():
 @pytest.mark.parametrize(
     "agent_name",
     ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-     "copywriter", "devops", "documenter",
+     "copywriter", "documenter",
      "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-         "copywriter", "devops", "documenter",
+         "copywriter", "documenter",
          "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
@@ -416,12 +416,10 @@ def test_agent_has_self_review(agent_name):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["devops",
-     "architect", "copywriter", "data-modeler",
+    ["architect", "copywriter", "data-modeler",
      "documenter", "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
-    ids=["devops",
-         "architect", "copywriter", "data-modeler",
+    ids=["architect", "copywriter", "data-modeler",
          "documenter", "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )

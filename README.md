@@ -553,7 +553,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `research-auditor` | medium | Separate-context refute-first audit of degraded-path research claims against captured source snapshots | Read, Grep |
 | `synthesizer-auditor` | medium | Separate-context refute-first audit that /deep-research claims survive into rendered kit output unaltered | Read, Grep |
 | `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
-| `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 | `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
 | `design-scanner` | medium | Extract the design system a codebase already ships — tokens, scales, Signature Move — with file:line provenance | Read, Glob, Grep |
 | `scan-analyst` | low | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |

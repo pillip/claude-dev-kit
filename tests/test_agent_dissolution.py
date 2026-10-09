@@ -101,3 +101,42 @@ class TestBusinessAnalystDissolved:
             "synthesize_from_deep_research.py still cites the deleted "
             "agents/business-analyst.md"
         )
+
+
+# ── devops agent → /devops skill ─────────────────────────────────────
+
+
+class TestDevopsAgentDissolved:
+    def test_agent_file_removed(self):
+        assert not (AGENT_DIR / "devops.md").exists(), (
+            "agents/devops.md still exists — SPEC-062 dissolves it into the "
+            "/devops skill contract"
+        )
+
+    def test_sprint_dispatch_routes_to_devops_skill_not_agent(self):
+        for label, text in _skill_texts("sprint").items():
+            assert (
+                "| Infrastructure/CI/CD | (run the devops skill) "
+                "| skills/devops/SKILL.md |"
+            ) in text, f"{label} missing the no-agent devops dispatch row"
+            # Agent-dispatch cell, present on main@776ac73 (tmpl line 155).
+            assert "| devops |" not in text, (
+                f"{label} still dispatches to the deleted devops agent"
+            )
+            assert '"deploy" → the devops skill' in text, (
+                f"{label} 'How to determine' should route to the devops skill"
+            )
+            # Present on main@776ac73 (tmpl line 164).
+            assert '"deploy" → devops' not in text, (
+                f"{label} 'How to determine' still routes to the devops agent"
+            )
+
+    def test_devops_skill_absorbs_pr_check_duration_guideline(self):
+        # The one agent invariant the skill Guidelines did not already carry.
+        for label, text in _skill_texts("devops").items():
+            assert "under ~10 minutes" in text, (
+                f"{label} missing the absorbed PR-check CI duration guideline"
+            )
+            assert "caching and parallelism" in text, (
+                f"{label} missing the caching/parallelism optimization clause"
+            )
