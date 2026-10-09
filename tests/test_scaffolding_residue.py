@@ -16,8 +16,10 @@ Three A-bucket deletion classes from the SPEC-055 evolution audit
 3. /implement's inline figma-converter prompt — the ~50-line duplicated
    prompt body in step 2a item 4 is replaced by a reference contract;
    `agents/figma-converter.md` is the single source. Content that lived
-   ONLY in the inline prompt (the `text_style.segments` mixed-font-weight
-   → `<span>` instruction) moved into the agent file.
+   ONLY in the inline prompt (the node-level `segments` mixed-font-weight
+   → `<span>` instruction; the old prompt misnamed it
+   `text_style.segments`, but `scripts/figma_fetch.py` emits it at node
+   level) moved into the agent file.
 
 Occurrence-whitelist convention (ISSUE-040/042 lessons): allowed files
 are enumerated and asserted to STILL contain the pattern so the list
@@ -101,6 +103,18 @@ def test_confidence_rating_only_in_uiux_whitelist():
         f"whitelisted files no longer contain the pattern — remove them "
         f"from CONFIDENCE_WHITELIST: {rotted}"
     )
+    # The ritual's third habitat was a skill (diagnose step 5.5), so the
+    # sweep must cover skills too. No skill is whitelisted — the uiux
+    # exception set is agents-only.
+    skill_hits = [
+        str(p.relative_to(ROOT))
+        for p in _skill_files()
+        if CONFIDENCE_MARKER in p.read_text(encoding="utf-8")
+    ]
+    assert skill_hits == [], (
+        f"confidence-rating ritual (deleted in ISSUE-059 per SPEC-010) "
+        f"found in skills (no skill is whitelisted): {skill_hits}"
+    )
 
 
 def test_diagnose_cognitive_checklist_deleted_invariants_survive():
@@ -130,6 +144,7 @@ def test_absorbed_invariants_survive_as_contract_lines():
             "after each step",
             "rollback plan",
             "never assume backward compatibility",
+            "deprecated API usage",
         ],
     }
     for skill, needles in pins.items():
@@ -160,12 +175,14 @@ def test_implement_figma_section_is_reference_contract():
 
 
 def test_figma_converter_agent_owns_segments_instruction():
-    # The mixed-font-weight `text_style.segments` → <span> instruction
+    # The mixed-font-weight node-level `segments` → <span> instruction
     # previously lived ONLY in /implement's inline prompt. Single source
-    # means the agent file wins — it must own it now.
+    # means the agent file wins — it must own it now. (figma_fetch.py
+    # emits `segments` at node level; the old inline prompt's
+    # `text_style.segments` path was a schema error.)
     content = (AGENTS_DIR / "figma-converter.md").read_text(encoding="utf-8")
     assert "segments" in content, (
-        "agents/figma-converter.md lost the text_style.segments "
+        "agents/figma-converter.md lost the node-level segments "
         "(mixed font-weight spans) instruction moved in ISSUE-059"
     )
     assert "<span>" in content
