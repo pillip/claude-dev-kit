@@ -55,7 +55,10 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 
 ### Phase 2 — Run Subagents (dependency-aware, parallel where possible)
 
-**Step 1: scan-analyst → `docs/requirements.md`**
+The five domain agents below are the shared /kickoff agents running in **evidence mode**: each Task prompt MUST contain the literal line `Mode: evidence` (see Subagent Invocation Pattern).
+
+**Step 1: requirement-analyst (evidence mode) → `docs/requirements.md`**
+- Task prompt MUST contain the literal line `Mode: evidence` plus "You are the requirement-analyst agent"
 - Context to pass: Full scan_context + `docs/prd_digest.md` content + README content (if exists)
 - Agent produces: Goals, user stories with confidence tags, FRs, NFRs — all with `[CONFIRMED]`/`[INFERRED]` tags and source file references
 - Verify output exists before proceeding
@@ -63,11 +66,12 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill scan --phase requirements`
 > Verifies `docs/requirements.md` exists and contains Goals, Functional Requirements, and NFRs sections.
-> If exit code ≠ 0: STOP and retry the scan-analyst agent before proceeding.
+> If exit code ≠ 0: STOP and retry the requirement-analyst agent (evidence mode) before proceeding.
 
 **Step 2 & 3 — MUST invoke both subagents simultaneously via two parallel Task tool calls in a single message:**
 
-**scan-architect → `docs/architecture.md`**
+**architect (evidence mode) → `docs/architecture.md`**
+- Task prompt MUST contain the literal line `Mode: evidence` plus "You are the architect agent"
 - Context to pass: scan_context + `docs/prd_digest.md` + `docs/requirements.md`
 - Agent produces: As-is architecture with tech stack, modules, data model, API design — all with confidence tags and file references
 
@@ -81,10 +85,11 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill scan --phase architecture`
 > Verifies `docs/architecture.md` exists and contains Tech Stack and Modules sections.
-> If exit code ≠ 0: STOP and retry the scan-architect agent before proceeding.
+> If exit code ≠ 0: STOP and retry the architect agent (evidence mode) before proceeding.
 
-**Step 4 (Conditional): scan-data-modeler → `docs/data_model.md`**
+**Step 4 (Conditional): data-modeler (evidence mode) → `docs/data_model.md`**
 - Only invoke if scan_context detected database usage (ORM models, migrations, schema files, or database config).
+- Task prompt MUST contain the literal line `Mode: evidence` plus "You are the data-modeler agent"
 - Context to pass: scan_context + `docs/prd_digest.md` + `docs/requirements.md` + `docs/architecture.md`
 - Agent produces: Schema extraction, indexes, migrations, access patterns — all with source file references
 - If no database detected, skip this agent silently and note in STATUS.md.
@@ -92,9 +97,10 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 > **CHECKPOINT — CONDITIONAL**
 > Run: `bash scripts/checkpoint.sh --skill scan --phase data-model`
 > If database usage was detected: verifies `docs/data_model.md` exists with a Schema section. If no database was detected, the script reports SKIP and exits 0 — no action needed.
-> If exit code ≠ 0: STOP and retry the scan-data-modeler agent before proceeding.
+> If exit code ≠ 0: STOP and retry the data-modeler agent (evidence mode) before proceeding.
 
-**Step 5: scan-qa-designer → `docs/test_plan.md`**
+**Step 5: qa-designer (evidence mode) → `docs/test_plan.md`**
+- Task prompt MUST contain the literal line `Mode: evidence` plus "You are the qa-designer agent"
 - Context to pass: scan_context + `docs/prd_digest.md` + `docs/requirements.md` + `docs/architecture.md` + `docs/data_model.md` (if exists)
 - Agent produces: Test inventory, coverage gaps, risk matrix, improvement plan
 - Verify output exists before proceeding
@@ -102,18 +108,19 @@ All items should carry confidence tags: `[CONFIRMED]` (documented/tested) or `[I
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill scan --phase test-plan`
 > Verifies `docs/test_plan.md` exists and contains Current State Assessment and Risk Matrix sections.
-> If exit code ≠ 0: STOP and retry the scan-qa-designer agent before proceeding.
+> If exit code ≠ 0: STOP and retry the qa-designer agent (evidence mode) before proceeding.
 
-**Step 6: scan-planner → `issues.md`**
+**Step 6: planner (evidence mode) → `issues.md`**
+- Task prompt MUST contain the literal line `Mode: evidence` plus "You are the planner agent"
 - Context to pass: scan_context + `docs/prd_digest.md` + `docs/requirements.md` + `docs/architecture.md` + `docs/data_model.md` (if exists) + `docs/test_plan.md`
 - Agent produces: Improvement issues derived from scan observations (test gaps, tech debt, schema issues, risk items)
-- Must run after scan-qa-designer (uses Coverage Gaps and Risk Matrix from test_plan.md)
+- Must run after the qa-designer step (uses Coverage Gaps and Risk Matrix from test_plan.md)
 - Verify output exists before proceeding
 
 > **CHECKPOINT — MANDATORY — NEVER SKIP**
 > Run: `bash scripts/checkpoint.sh --skill scan --phase issues`
 > Verifies `issues.md` exists and contains at least one ISSUE entry with an Evidence field.
-> If exit code ≠ 0: STOP and retry the scan-planner agent before proceeding.
+> If exit code ≠ 0: STOP and retry the planner agent (evidence mode) before proceeding.
 
 ### Phase 3 — STATUS.md Generation
 Create/update `STATUS.md` with:
@@ -138,7 +145,7 @@ Create/update `STATUS.md` with:
    - `STATUS.md` (always)
 2) Validate `issues.md`:
    - Run `scripts/validate_issues.py issues.md` if the script exists
-   - If validation fails: retry scan-planner once with error feedback
+   - If validation fails: retry the planner agent (evidence mode) once with error feedback
    - Cross-document check: verify PRD-Ref values in issues reference valid FR-NNN/NFR-NNN from `docs/requirements.md`
 3) Report summary to the user:
    - Number of FRs/NFRs identified (confirmed vs inferred)
@@ -164,7 +171,8 @@ If `--audit` flag is present:
 ## Subagent Invocation Pattern
 
 When invoking each subagent via the Task tool:
-- Include the agent name in the prompt (e.g., "You are the scan-analyst agent")
+- Every Phase 2 Task prompt to one of the five dual-mode agents (requirement-analyst, architect, data-modeler, qa-designer, planner) MUST contain the literal line `Mode: evidence`. The mode comes ONLY from this calling skill — the agents never infer it from context, so a missing sentinel silently produces greenfield output.
+- Include the agent name in the prompt (e.g., "You are the requirement-analyst agent")
 - Pass the full content of input documents — do NOT just pass file paths
 - Specify the exact output file path
 - Include: "Write your output to `docs/<file>.md`. Follow your agent guidelines precisely."
@@ -186,7 +194,7 @@ When invoking each subagent via the Task tool:
 
 ## Guidelines
 - The dependency order is critical: scan_context → prd_digest → requirements → (architecture + optional UX in parallel) → optional data_model → test_plan → issues.
-- **scan-architect + ux-designer (if applicable) MUST be invoked in parallel**: Both only need requirements and have no dependency on each other.
+- **architect (evidence mode) + ux-designer (if applicable) MUST be invoked in parallel**: Both only need requirements and have no dependency on each other.
 - Each subagent should receive ALL prior outputs as context for maximum coherence.
 - Do NOT modify subagent outputs after they are written — each agent owns its document.
 - Confidence tagging is mandatory for all scan-generated documents. This distinguishes scan output from kickoff output.
