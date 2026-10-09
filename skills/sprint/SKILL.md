@@ -213,7 +213,7 @@ Team-lead uses this table to determine which agent(s) to dispatch per issue:
 | General backend/logic | developer | skills/implement/SKILL.md |
 | UI/frontend (web) | uiux-developer | skills/implement/SKILL.md + UI context |
 | UI/frontend (mobile) | mobile-uiux-developer | skills/implement/SKILL.md + mobile context |
-| Infrastructure/CI/CD | devops | skills/devops/SKILL.md |
+| Infrastructure/CI/CD | (run the devops skill) | skills/devops/SKILL.md |
 | Bug fix | (run the diagnose skill) | skills/diagnose/SKILL.md |
 | Refactoring | (run the refactor skill) | skills/refactor/SKILL.md |
 | DB migration | (run the migrate skill) | skills/migrate/SKILL.md |
@@ -222,7 +222,7 @@ Team-lead uses this table to determine which agent(s) to dispatch per issue:
 | UI implementation completed | reviewer + ui-reviewer | skills/review/SKILL.md |
 | Reviewed and approved | (ship steps) | skills/ship/SKILL.md |
 
-**How to determine**: Read the issue's title, Track field, and Implementation Notes. Keywords like "UI", "screen", "component" → UI agent. "Dockerfile", "CI", "deploy" → devops. "migrate", "schema change" → migrator.
+**How to determine**: Read the issue's title, Track field, and Implementation Notes. Keywords like "UI", "screen", "component" → UI agent. "Dockerfile", "CI", "deploy" → the devops skill. "migrate", "schema change" → migrator.
 
 ## Pipeline Phase Tracking
 

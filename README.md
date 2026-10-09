@@ -531,14 +531,11 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 | Agent | Effort | Role | Tools |
 |-------|-------|------|-------|
-| `brainstormer` | high | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit |
-| `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | medium | Extract requirements from PRD; evidence mode (/scan) reverse-engineers them from code and tests | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `mobile-uiux-developer` | xhigh | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `desktop-uiux-developer` | xhigh | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `copywriter` | medium | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
 | `figma-converter` | medium | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
 | `architect` | xhigh | Design software architecture; evidence mode (/scan) documents the as-is architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | xhigh | Design schemas, indexes, migrations, query patterns; evidence mode (/scan) extracts the as-is schema | Read, Glob, Grep, Write, Edit |
@@ -554,8 +551,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Write, Edit, Bash |
 | `research-auditor` | medium | Separate-context refute-first audit of degraded-path research claims against captured source snapshots | Read, Grep |
 | `synthesizer-auditor` | medium | Separate-context refute-first audit that /deep-research claims survive into rendered kit output unaltered | Read, Grep |
-| `documenter` | low | Maintain documentation | Read, Glob, Grep, Write, Edit |
-| `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 | `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
 | `design-scanner` | medium | Extract the design system a codebase already ships — tokens, scales, Signature Move — with file:line provenance | Read, Glob, Grep |
 

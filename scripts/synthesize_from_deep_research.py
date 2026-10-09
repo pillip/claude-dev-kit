@@ -57,9 +57,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Kit's fixed bizanalysis section order, per agents/business-analyst.md
-# Output Format. The synthesizer rejects unknown section names so that
-# /deep-research's prose can't accidentally introduce new sections.
+# Kit's fixed bizanalysis section order, per skills/bizanalysis/SKILL.md.tmpl
+# (canonical five-section save step). The synthesizer rejects unknown
+# section names so that /deep-research's prose can't accidentally
+# introduce new sections.
 BIZANALYSIS_SECTIONS: list[str] = [
     "Executive Summary",
     "Market Analysis",

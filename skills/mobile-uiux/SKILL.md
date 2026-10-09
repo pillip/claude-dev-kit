@@ -280,9 +280,17 @@ Run these checks silently at the start. Use results to adapt behavior:
         - Offline state messaging
         - Haptic-paired feedback copy (e.g., success messages that pair with success haptic)
       - If mobile section exists: review and update if needed.
-    - **If not exists**: Run the **copywriter** agent to generate `docs/copy_guide.md`:
+    - **If not exists**: Use the Task tool to launch a copy subagent (separate context) that generates `docs/copy_guide.md`:
       - Input: `docs/ux_spec.md`, `docs/design_philosophy.md`, `docs/wireframes_mobile.md`, `docs/interactions_mobile.md`, PRD
-      - Output: Voice & tone definition, copy inventory per screen, patterns, glossary, mobile adaptations section
+      - Subagent toolset: Read, Glob, Grep, Write, Edit only — the copy subagent must not run Bash or fetch web content (preserves the dissolved roster agent's tool grant).
+      - Pass any recalled review lessons about recurring copy issues into the subagent prompt.
+      - Inline contract for the subagent — `docs/copy_guide.md` must satisfy all of:
+        - Per-screen coverage: every screen in `docs/wireframes_mobile.md` appears in the copy inventory — cross-check the wireframes screen list before saving.
+        - Per-state coverage: every screen has copy for the empty, loading, error, and success states, plus confirmations/toasts where `docs/interactions_mobile.md` defines them.
+        - Voice & tone derived from `docs/design_philosophy.md`.
+        - Glossary with the one-concept-one-word rule — no synonyms for the same domain concept.
+        - Error copy formula: [what happened] + [what to do].
+        - Include a mobile adaptations section (shorter labels, push notification, permission pre-prompt, offline, haptic-paired copy).
       - Include FULL CONTENT of input documents in the subagent prompt.
       - This step MUST complete before Phase 5 so the prototype uses real copy.
     - **Banned copy tells (enforce on every string)**: zero em-dashes (`—`/`–`) — use `-`, comma, period, or colon; no filler verbs (Elevate, Seamless, Unleash, Next-Gen, Revolutionize); no generic person names (John Doe) or startup-slop brand names (Acme, Nexus, SmartFlow); no fake-perfect numbers (`99.99%`, round `50%`) — use organic values. See "Specific AI Tells" in Anti-AI-Slop Rules.

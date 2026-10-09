@@ -312,15 +312,7 @@ def test_team_lead_has_checkpoint_enforcement_protocol():
     )
 
 
-# ── Test 14: brainstormer agent and brainstorm skill ─────────────────
-
-
-def test_brainstormer_agent_exists_and_has_required_frontmatter():
-    path = AGENT_DIR / "brainstormer.md"
-    assert path.exists(), "agents/brainstormer.md not found"
-    fm = _parse_frontmatter(path)
-    missing = AGENT_REQUIRED_KEYS - fm.keys()
-    assert not missing, f"brainstormer.md missing frontmatter keys: {missing}"
+# ── Test 14: brainstorm skill ────────────────────────────────────────
 
 
 def test_brainstorm_skill_exists_and_has_required_frontmatter():
@@ -339,15 +331,7 @@ def test_prd_skill_references_brainstorm_notes():
     )
 
 
-# ── Test 15: business-analyst agent and bizanalysis skill ──────────────
-
-
-def test_business_analyst_agent_exists_and_has_required_frontmatter():
-    path = AGENT_DIR / "business-analyst.md"
-    assert path.exists(), "agents/business-analyst.md not found"
-    fm = _parse_frontmatter(path)
-    missing = AGENT_REQUIRED_KEYS - fm.keys()
-    assert not missing, f"business-analyst.md missing frontmatter keys: {missing}"
+# ── Test 15: bizanalysis skill ───────────────────────────────────────
 
 
 def test_bizanalysis_skill_exists_and_has_required_frontmatter():
@@ -374,14 +358,19 @@ def test_brainstorm_skill_references_bizanalysis():
     )
 
 
-# ── Test 16: ship skill references documenter subagent ───────────────
+# ── Test 16: ship skill carries the absorbed documenter contract ─────
 
 
-def test_ship_skill_references_documenter():
+def test_ship_skill_carries_absorbed_documenter_contract():
+    # SPEC-062: the documenter roster agent dissolved into an inline
+    # contract on the ship step 3.5 subagent call.
     path = SKILL_DIR / "ship" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    assert "documenter" in content, (
-        "skills/ship/SKILL.md does not reference documenter subagent"
+    assert "no updates needed" in content, (
+        "skills/ship/SKILL.md lost the 'no updates needed' valid-outcome line"
+    )
+    assert "must exist in the codebase" in content, (
+        "skills/ship/SKILL.md lost the command/path-existence verification line"
     )
 
 
@@ -405,11 +394,9 @@ def test_diagnose_skill_carries_absorbed_diagnostician_principles():
 @pytest.mark.parametrize(
     "agent_name",
     ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-     "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
      "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-         "brainstormer", "business-analyst", "copywriter", "devops", "documenter",
          "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
@@ -427,13 +414,11 @@ def test_agent_has_self_review(agent_name):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["devops",
-     "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
-     "documenter", "mobile-uiux-developer", "qa-designer",
+    ["architect", "data-modeler",
+     "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
-    ids=["devops",
-         "architect", "brainstormer", "business-analyst", "copywriter", "data-modeler",
-         "documenter", "mobile-uiux-developer", "qa-designer",
+    ids=["architect", "data-modeler",
+         "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )
 def test_agent_references_review_lessons_extended(agent_name):
@@ -474,8 +459,8 @@ def test_new_template_exists_and_has_headers(name, headers):
 
 @pytest.mark.parametrize(
     "agent_name",
-    ["data-modeler", "copywriter", "mobile-uiux-developer"],
-    ids=["data-modeler", "copywriter", "mobile-uiux-developer"],
+    ["data-modeler", "mobile-uiux-developer"],
+    ids=["data-modeler", "mobile-uiux-developer"],
 )
 def test_additional_agent_exists_and_has_required_frontmatter(agent_name):
     path = AGENT_DIR / f"{agent_name}.md"
