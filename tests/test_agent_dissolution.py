@@ -63,3 +63,41 @@ class TestBrainstormerDissolved:
                 "Author Existing Landscape claims from training-data knowledge"
                 in text
             ), f"{label} lost the training-data NEVER"
+
+
+# ── business-analyst → /bizanalysis ──────────────────────────────────
+
+
+class TestBusinessAnalystDissolved:
+    def test_agent_file_removed(self):
+        assert not (AGENT_DIR / "business-analyst.md").exists(), (
+            "agents/business-analyst.md still exists — SPEC-062 dissolves it "
+            "into the /bizanalysis skill contract"
+        )
+
+    def test_bizanalysis_skill_retains_research_invariants(self):
+        # Regression pins for AC #1: no-data literal, single-source range
+        # rendering, and the canonical five-section order live in the skill.
+        for label, text in _skill_texts("bizanalysis").items():
+            assert NO_DATA_LITERAL in text, f"{label} lost the no-data literal"
+            assert "range: <low–high> [single-source]" in text, (
+                f"{label} lost the single-source range rendering rule"
+            )
+            assert (
+                "Executive Summary / Market Analysis / Competitive Landscape "
+                "/ Business Model / Risks & Mitigations"
+            ) in text, f"{label} lost the canonical five-section order"
+
+    def test_synthesizer_section_order_comment_repoints_to_skill(self):
+        src = (KIT_ROOT / "scripts" / "synthesize_from_deep_research.py").read_text(
+            encoding="utf-8"
+        )
+        assert "skills/bizanalysis/SKILL.md.tmpl" in src, (
+            "synthesize_from_deep_research.py section-order comment should "
+            "cite skills/bizanalysis/SKILL.md.tmpl as its authority"
+        )
+        # Present on main@776ac73 (line 60) — must be gone after dissolution.
+        assert "agents/business-analyst.md" not in src, (
+            "synthesize_from_deep_research.py still cites the deleted "
+            "agents/business-analyst.md"
+        )

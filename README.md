@@ -531,7 +531,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 
 | Agent | Effort | Role | Tools |
 |-------|-------|------|-------|
-| `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit |
 | `requirement-analyst` | medium | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |

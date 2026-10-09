@@ -331,15 +331,7 @@ def test_prd_skill_references_brainstorm_notes():
     )
 
 
-# ── Test 15: business-analyst agent and bizanalysis skill ──────────────
-
-
-def test_business_analyst_agent_exists_and_has_required_frontmatter():
-    path = AGENT_DIR / "business-analyst.md"
-    assert path.exists(), "agents/business-analyst.md not found"
-    fm = _parse_frontmatter(path)
-    missing = AGENT_REQUIRED_KEYS - fm.keys()
-    assert not missing, f"business-analyst.md missing frontmatter keys: {missing}"
+# ── Test 15: bizanalysis skill ───────────────────────────────────────
 
 
 def test_bizanalysis_skill_exists_and_has_required_frontmatter():
@@ -402,11 +394,11 @@ def test_diagnose_skill_has_self_review():
 @pytest.mark.parametrize(
     "agent_name",
     ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-     "business-analyst", "copywriter", "devops", "documenter",
+     "copywriter", "devops", "documenter",
      "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-         "business-analyst", "copywriter", "devops", "documenter",
+         "copywriter", "devops", "documenter",
          "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
@@ -425,11 +417,11 @@ def test_agent_has_self_review(agent_name):
 @pytest.mark.parametrize(
     "agent_name",
     ["devops",
-     "architect", "business-analyst", "copywriter", "data-modeler",
+     "architect", "copywriter", "data-modeler",
      "documenter", "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
     ids=["devops",
-         "architect", "business-analyst", "copywriter", "data-modeler",
+         "architect", "copywriter", "data-modeler",
          "documenter", "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )
