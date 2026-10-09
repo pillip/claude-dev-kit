@@ -87,15 +87,31 @@ class TestScanTemplate:
         assert "Phase 4" in content
 
     def test_subagent_references(self):
+        """ISSUE-061: /scan invokes the merged greenfield agents (with the
+        `Mode: evidence` sentinel); the retired scan twins disappear."""
         tmpl = self._find_scan_template()
         assert tmpl is not None
         content = process_template(tmpl)
+        # Dedicated scanner is outside the merge scope and stays wired in.
         assert "codebase-scanner" in content
-        assert "scan-analyst" in content
-        assert "scan-architect" in content
-        assert "scan-qa-designer" in content
-        assert "scan-data-modeler" in content
-        assert "scan-planner" in content
+        for merged in (
+            "requirement-analyst",
+            "architect",
+            "data-modeler",
+            "qa-designer",
+            "planner",
+        ):
+            assert merged in content, f"merged agent '{merged}' missing from scan SKILL"
+        for twin in (
+            "scan-analyst",
+            "scan-architect",
+            "scan-qa-designer",
+            "scan-data-modeler",
+            "scan-planner",
+        ):
+            assert twin not in content, (
+                f"retired twin '{twin}' still referenced in scan SKILL"
+            )
 
     def test_issues_md_in_output(self):
         tmpl = self._find_scan_template()
@@ -112,27 +128,17 @@ class TestScanTemplate:
 
 
 class TestScanAgentsExist:
-    """Verify all scan-related agent files exist."""
+    """Verify the scan-related agent files that survive ISSUE-061.
+
+    The five scan-* twins are retired by the consolidation — their absence
+    (and the merged Evidence Mode contract) is pinned in
+    tests/test_evidence_mode_consolidation.py.
+    """
 
     AGENTS_DIR = KIT_ROOT / "agents"
 
     def test_codebase_scanner_exists(self):
         assert (self.AGENTS_DIR / "codebase-scanner.md").is_file()
-
-    def test_scan_architect_exists(self):
-        assert (self.AGENTS_DIR / "scan-architect.md").is_file()
-
-    def test_scan_analyst_exists(self):
-        assert (self.AGENTS_DIR / "scan-analyst.md").is_file()
-
-    def test_scan_qa_designer_exists(self):
-        assert (self.AGENTS_DIR / "scan-qa-designer.md").is_file()
-
-    def test_scan_data_modeler_exists(self):
-        assert (self.AGENTS_DIR / "scan-data-modeler.md").is_file()
-
-    def test_scan_planner_exists(self):
-        assert (self.AGENTS_DIR / "scan-planner.md").is_file()
 
     def test_ux_designer_exists(self):
         assert (self.AGENTS_DIR / "ux-designer.md").is_file()

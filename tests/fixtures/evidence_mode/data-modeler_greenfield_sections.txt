@@ -1,0 +1,12 @@
+# Data Model
+## Storage Strategy
+## Access Patterns
+## Schema
+### Table/Collection: [name]
+## Indexes
+## Migrations
+## Seed Data
+## Query Patterns
+### [Pattern name]
+## Constraints & Validation
+## Scaling Notes

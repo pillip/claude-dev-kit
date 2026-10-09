@@ -495,13 +495,13 @@ Identifies code smells, proposes prioritized refactorings, and applies them one 
 /scan
 ```
 
-Analyzes an existing codebase (no PRD required) and generates planning documents by running 6 scan agents:
+Analyzes an existing codebase (no PRD required) and generates planning documents. The dedicated `codebase-scanner` builds the scan context, then the shared /kickoff domain agents run in **evidence mode** (selected by the literal `Mode: evidence` line in their prompts — never inferred from context):
 - `codebase-scanner` — 4-pass analysis (identity, architecture, requirements, quality)
-- `scan-analyst` → `docs/requirements.md` (CONFIRMED/INFERRED requirements)
-- `scan-architect` → `docs/architecture.md` (as-is architecture)
-- `scan-data-modeler` → `docs/data_model.md` (conditional, only if DB detected)
-- `scan-qa-designer` → `docs/test_plan.md` (coverage gaps, risk matrix)
-- `scan-planner` → `issues.md` (improvement issues from observations)
+- `requirement-analyst` → `docs/requirements.md` (CONFIRMED/INFERRED requirements)
+- `architect` → `docs/architecture.md` (as-is architecture)
+- `data-modeler` → `docs/data_model.md` (conditional, only if DB detected)
+- `qa-designer` → `docs/test_plan.md` (coverage gaps, risk matrix)
+- `planner` → `issues.md` (improvement issues from observations)
 
 Output is compatible with `/sprint` and `/implement` — scan a codebase, then start working on improvement issues immediately.
 
@@ -533,18 +533,18 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 |-------|-------|------|-------|
 | `brainstormer` | high | Interactive brainstorming facilitator | Read, Glob, Grep, Write, Edit |
 | `business-analyst` | high | Business viability analysis + market research | Read, Glob, Grep, Write, Edit |
-| `requirement-analyst` | medium | Extract requirements from PRD | Read, Glob, Grep, Write, Edit |
+| `requirement-analyst` | medium | Extract requirements from PRD; evidence mode (/scan) reverse-engineers them from code and tests | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
 | `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `mobile-uiux-developer` | xhigh | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `desktop-uiux-developer` | xhigh | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
 | `copywriter` | medium | Write all user-facing copy (labels, errors, CTAs) | Read, Glob, Grep, Write, Edit |
 | `figma-converter` | medium | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
-| `architect` | xhigh | Design software architecture | Read, Glob, Grep, Write, Edit |
-| `data-modeler` | xhigh | Design schemas, indexes, migrations, query patterns | Read, Glob, Grep, Write, Edit |
-| `planner` | xhigh | Break work into issues + convert review findings to issues | Read, Glob, Grep, Write, Edit |
+| `architect` | xhigh | Design software architecture; evidence mode (/scan) documents the as-is architecture | Read, Glob, Grep, Write, Edit |
+| `data-modeler` | xhigh | Design schemas, indexes, migrations, query patterns; evidence mode (/scan) extracts the as-is schema | Read, Glob, Grep, Write, Edit |
+| `planner` | xhigh | Break work into issues + convert review findings to issues; evidence mode (/scan) derives improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
 | `issue-writer` | medium | Natural language → issue creation + planning/design docs update | Read, Glob, Grep, Write, Edit, Bash |
-| `qa-designer` | high | Design test strategy and cases | Read, Glob, Grep, Write, Edit |
+| `qa-designer` | high | Design test strategy and cases; evidence mode (/scan) audits existing coverage and gaps | Read, Glob, Grep, Write, Edit |
 | `team-lead` | xhigh | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task |
 | `developer` | xhigh | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
 | `test-generator` | high | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
@@ -558,11 +558,6 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `devops` | medium | Set up CI/CD pipelines and deployment infra | Read, Glob, Grep, Write, Edit, Bash |
 | `codebase-scanner` | low | Analyze existing codebase in 4 passes (identity, architecture, requirements, quality) | Read, Glob, Grep |
 | `design-scanner` | medium | Extract the design system a codebase already ships — tokens, scales, Signature Move — with file:line provenance | Read, Glob, Grep |
-| `scan-analyst` | low | Reverse-engineer requirements from existing code and tests | Read, Glob, Grep, Write, Edit |
-| `scan-architect` | medium | Document as-is architecture from scan context | Read, Glob, Grep, Write, Edit |
-| `scan-data-modeler` | medium | Extract data models from ORM/migration/schema declarations | Read, Glob, Grep, Write, Edit |
-| `scan-qa-designer` | medium | Assess existing test coverage and identify gaps | Read, Glob, Grep, Write, Edit |
-| `scan-planner` | medium | Generate improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
 
 ## Roadmap
 
