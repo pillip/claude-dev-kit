@@ -18,27 +18,37 @@ model self-check can no longer pass the gate:
   ai-tell         occurrence-whitelist sweep of banned RENDERED patterns over
                   prototype/screens/*.html + prototype/styles.css. Comments
                   (HTML <!-- --> and CSS /* */) are blanked first - rendered-
-                  only semantics. Recorded Brief overrides are passed as
-                  --exempt TELL_ID (repeatable); each exemption is reported.
-                  Judgment tells (div-based fake product UI, three equal
-                  cards, ...) are NOT deterministically decidable and remain
-                  in skill prose.
-  all             runs the three sweeps against one prototype tree
-                  (signature-move only when --class is given; otherwise it is
-                  skipped loudly).
+                  only semantics. CSS mechanics tells (flex-calc-width) are
+                  matched at declaration level - whitespace/newlines collapse
+                  after comment blanking - so a declaration split across
+                  lines cannot evade the sweep; the violation reports the
+                  line where the declaration starts. Recorded Brief overrides
+                  are passed as --exempt TELL_ID (repeatable); each exemption
+                  is reported. Judgment tells (div-based fake product UI,
+                  three equal cards, ...) are NOT deterministically decidable
+                  and remain in skill prose.
+  all             runs the three sweeps against one prototype tree.
+                  --class NAME is REQUIRED: the signature-move sweep cannot
+                  be enforced without it, so `all` fails closed with a usage
+                  error (exit 2) instead of silently skipping the sweep.
+                  With --json, `all` emits exactly ONE top-level JSON object
+                  keyed by sweep (literal-quote / signature-move / ai-tell),
+                  each value in the per-sweep result shape; nothing but that
+                  document is written to stdout.
 
 No validator passes vacuously: an empty screen/target set is a violation.
 
 Exit codes (verify_* family convention):
   0 - pass
   1 - violations found (including vacuous/empty input)
-  2 - usage error (missing philosophy file, unknown --exempt id, no --class)
+  2 - usage error (missing philosophy file, unknown --exempt id, missing
+      --class for signature-move or all); usage errors print to stderr
 
 Usage:
     python3 scripts/verify_design_sweeps.py literal-quote  [--project-path P]
     python3 scripts/verify_design_sweeps.py signature-move --class NAME [--project-path P]
     python3 scripts/verify_design_sweeps.py ai-tell        [--project-path P] [--exempt ID ...]
-    python3 scripts/verify_design_sweeps.py all            [--class NAME] [--project-path P]
+    python3 scripts/verify_design_sweeps.py all            --class NAME [--project-path P]
 Options: --philosophy / --screens-dir / --css override the default paths;
 --json emits a machine-readable result.
 """
@@ -48,6 +58,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,6 +86,28 @@ def collapse_ws(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def collapse_ws_with_lines(text: str) -> tuple[str, list[int]]:
+    """collapse_ws plus a per-character map to 1-based source line numbers.
+
+    Lets declaration-level scans (DECLARATION_LEVEL_TELLS) report the line
+    where a matched declaration starts, even when it spans several lines.
+    """
+    chars: list[str] = []
+    lines: list[int] = []
+    lineno = 1
+    for ch in text:
+        if ch.isspace():
+            if not (chars and chars[-1] == " "):
+                chars.append(" ")
+                lines.append(lineno)
+            if ch == "\n":
+                lineno += 1
+        else:
+            chars.append(ch)
+            lines.append(lineno)
+    return "".join(chars), lines
+
+
 # ── literal-quote ───────────────────────────────────────────────────
 
 QUOTE_FIELD = re.compile(r'literal_quote:\s*"([^"]+)"')
@@ -82,10 +115,14 @@ SKIP_MARKER = re.compile(r"literal_quote:\s*\(skipped[^)\n]*\)")
 
 
 def run_literal_quote(
-    philosophy: Path, screens: list[Path], project: Path, json_out: bool
+    philosophy: Path,
+    screens: list[Path],
+    project: Path,
+    json_out: bool,
+    collect: dict | None = None,
 ) -> int:
     if not philosophy.exists():
-        print(f"ERROR: philosophy file not found: {philosophy}")
+        print(f"ERROR: philosophy file not found: {philosophy}", file=sys.stderr)
         return 2
 
     text = philosophy.read_text(encoding="utf-8")
@@ -94,7 +131,12 @@ def run_literal_quote(
     if not quotes:
         if SKIP_MARKER.search(text):
             result = {"sweep": "literal-quote", "status": "skip", "violations": []}
-            _emit(json_out, result, "literal-quote: SKIP (recorded marker: interview not run)")
+            _emit(
+                json_out,
+                result,
+                "literal-quote: SKIP (recorded marker: interview not run)",
+                collect,
+            )
             return 0
         result = {
             "sweep": "literal-quote",
@@ -108,6 +150,7 @@ def run_literal_quote(
             result,
             f'MISSING literal_quote field in {_rel(philosophy, project)} '
             "(expected literal_quote: \"<exact string>\" or the recorded skip marker)",
+            collect,
         )
         return 1
 
@@ -143,6 +186,7 @@ def run_literal_quote(
             json_out,
             {"sweep": "literal-quote", "status": "fail", "violations": violations},
             "\n".join(lines),
+            collect,
         )
         return 1
 
@@ -150,6 +194,7 @@ def run_literal_quote(
         json_out,
         {"sweep": "literal-quote", "status": "pass", "violations": []},
         f"literal-quote: PASS ({len(quotes)} quote(s) rendered verbatim)",
+        collect,
     )
     return 0
 
@@ -165,9 +210,10 @@ def run_signature_move(
     screens: list[Path],
     project: Path,
     json_out: bool,
+    collect: dict | None = None,
 ) -> int:
     if not class_name:
-        print("ERROR: --class <name> is required for signature-move")
+        print("ERROR: --class <name> is required for signature-move", file=sys.stderr)
         return 2
 
     violations: list[dict] = []
@@ -211,6 +257,7 @@ def run_signature_move(
             json_out,
             {"sweep": "signature-move", "status": "fail", "violations": violations},
             text,
+            collect,
         )
         return 1
 
@@ -218,6 +265,7 @@ def run_signature_move(
         json_out,
         {"sweep": "signature-move", "status": "pass", "violations": []},
         f"signature-move: PASS (.{class_name} defined and applied on all {len(screens)} screen(s))",
+        collect,
     )
     return 0
 
@@ -283,6 +331,13 @@ TELLS: tuple[Tell, ...] = (
 
 KNOWN_TELL_IDS = {t.tell_id for t in TELLS}
 
+# SPEC-056 contract 3: CSS mechanics patterns are matched after whitespace
+# normalization, at declaration level - a `width: calc(...)` split across
+# lines (or around a blanked comment) is the SAME declaration and must not
+# evade the sweep. These tell ids scan the whitespace-collapsed file text
+# instead of line-wise; the reported line is where the declaration starts.
+DECLARATION_LEVEL_TELLS = frozenset({"flex-calc-width"})
+
 
 def run_ai_tell(
     screens: list[Path],
@@ -290,12 +345,14 @@ def run_ai_tell(
     project: Path,
     exempt: list[str],
     json_out: bool,
+    collect: dict | None = None,
 ) -> int:
     unknown = sorted(set(exempt) - KNOWN_TELL_IDS)
     if unknown:
         print(
             f"ERROR: unknown --exempt tell id(s): {', '.join(unknown)} "
-            f"(known: {', '.join(sorted(KNOWN_TELL_IDS))})"
+            f"(known: {', '.join(sorted(KNOWN_TELL_IDS))})",
+            file=sys.stderr,
         )
         return 2
 
@@ -317,15 +374,19 @@ def run_ai_tell(
         )
 
     active = [t for t in TELLS if t.tell_id not in exemptions]
+    line_wise = [t for t in active if t.tell_id not in DECLARATION_LEVEL_TELLS]
+    declaration_level = [t for t in active if t.tell_id in DECLARATION_LEVEL_TELLS]
     for path, kind in targets:
         raw = path.read_text(encoding="utf-8")
         stripped = (
             strip_html_comments(raw) if kind == "html" else strip_css_comments(raw)
         )
-        for lineno, line in enumerate(stripped.splitlines(), 1):
-            for tell in active:
+        source_lines = stripped.splitlines()
+        hits: list[dict] = []
+        for lineno, line in enumerate(source_lines, 1):
+            for tell in line_wise:
                 if kind in tell.kinds and tell.pattern.search(line):
-                    violations.append(
+                    hits.append(
                         {
                             "file": _rel(path, project),
                             "line": lineno,
@@ -333,6 +394,22 @@ def run_ai_tell(
                             "snippet": line.strip()[:100],
                         }
                     )
+        collapsed, line_of = collapse_ws_with_lines(stripped)
+        for tell in declaration_level:
+            if kind not in tell.kinds:
+                continue
+            for match in tell.pattern.finditer(collapsed):
+                lineno = line_of[match.start()]
+                hits.append(
+                    {
+                        "file": _rel(path, project),
+                        "line": lineno,
+                        "tell_id": tell.tell_id,
+                        "snippet": source_lines[lineno - 1].strip()[:100],
+                    }
+                )
+        hits.sort(key=lambda v: v["line"])  # keep source order across both scans
+        violations.extend(hits)
 
     lines = [f"exempt: {e} (recorded Brief override)" for e in exemptions]
     lines += [
@@ -350,6 +427,7 @@ def run_ai_tell(
             "exemptions": exemptions,
         },
         "\n".join(lines),
+        collect,
     )
     return 1 if violations else 0
 
@@ -370,8 +448,18 @@ def _rel_dirname(screens: list[Path], project: Path) -> str:
     return "prototype/screens"
 
 
-def _emit(json_out: bool, payload: dict, text: str) -> None:
-    if json_out:
+def _emit(
+    json_out: bool, payload: dict, text: str, collect: dict | None = None
+) -> None:
+    """Print one sweep result, or store it when aggregating (`all --json`).
+
+    `collect` keeps `all --json` stdout to exactly ONE JSON document: each
+    sweep's payload is stored under its sweep id and main() prints the
+    aggregate once, instead of concatenating per-sweep objects.
+    """
+    if collect is not None:
+        collect[payload["sweep"]] = payload
+    elif json_out:
         print(json.dumps(payload, indent=2))
     else:
         print(text)
@@ -414,15 +502,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ai-tell":
         return run_ai_tell(screens, css_path, project, args.exempt, args.json_out)
 
-    # all
-    codes = [run_literal_quote(philosophy, screens, project, args.json_out)]
-    if args.class_name:
-        codes.append(
-            run_signature_move(args.class_name, css_path, screens, project, args.json_out)
+    # all: --class is required - without it the signature-move sweep cannot
+    # be enforced, and an unenforced sweep must fail closed, never exit 0.
+    if not args.class_name:
+        print(
+            "ERROR: `all` requires --class NAME: the signature-move sweep "
+            "cannot be enforced without it (fail-closed)",
+            file=sys.stderr,
         )
-    else:
-        print("signature-move: SKIPPED (no --class provided)")
-    codes.append(run_ai_tell(screens, css_path, project, args.exempt, args.json_out))
+        return 2
+    collect: dict[str, dict] | None = {} if args.json_out else None
+    codes = [
+        run_literal_quote(philosophy, screens, project, args.json_out, collect),
+        run_signature_move(
+            args.class_name, css_path, screens, project, args.json_out, collect
+        ),
+        run_ai_tell(screens, css_path, project, args.exempt, args.json_out, collect),
+    ]
+    if collect is not None:
+        print(json.dumps(collect, indent=2))
     if 2 in codes:
         return 2
     return 1 if 1 in codes else 0
