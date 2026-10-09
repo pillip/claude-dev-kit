@@ -14,8 +14,11 @@ Covers the dormant test-execution delegation layer:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -76,6 +79,32 @@ def _probe(monkeypatch, code: int, evidence: str = "stub"):
     mock = MagicMock(return_value=(code, evidence))
     monkeypatch.setattr(sgr.has_skill, "find_skill", mock)
     return mock
+
+
+# ISSUE-065 bound-API helpers: decide_gate_path now REQUIRES keyword-only
+# binding materials (binding_key / process_start). These helpers migrate the
+# pre-binding call sites without weakening any assertion: positive fixtures
+# get a valid HMAC sidecar + a process_start in the past (fresh by
+# construction); every expected (decision, results, reason) stays as-is.
+
+BINDING_KEY = b"\x42" * 32
+
+
+def _sign(path: Path, key: bytes = BINDING_KEY) -> Path:
+    """Write the provenance sidecar for ``path`` under ``key``."""
+    sig = Path(str(path) + ".sig")
+    digest = hmac.new(key, path.read_bytes(), hashlib.sha256).hexdigest()
+    sig.write_text(digest, encoding="utf-8")
+    return sig
+
+
+def _decide(project: Path, *, key: bytes = BINDING_KEY,
+            process_start: float | None = None):
+    """Call decide_gate_path through the bound API (fresh by default)."""
+    if process_start is None:
+        process_start = time.time() - 3600.0
+    return sgr.decide_gate_path(project, binding_key=key,
+                                process_start=process_start)
 
 
 # ── synthesis mapper: schema fidelity ────────────────────────────────
@@ -194,36 +223,35 @@ class TestDecideGatePath:
         path = _write_results(project, _valid_payload())
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
         probe = _probe(monkeypatch, 1)
-        decision, results, reason = sgr.decide_gate_path(project)
+        decision, results, reason = _decide(project)
         assert (decision, results, reason) == ("degraded", None, "skill_missing")
         probe.assert_called_once_with(sgr.RUNTIME_TEST_SKILL)
 
     def test_dormant_when_env_unset(self, project, monkeypatch):
         _probe(monkeypatch, 2)
-        decision, results, reason = sgr.decide_gate_path(project)
+        decision, results, reason = _decide(project)
         assert (decision, results, reason) == ("degraded", None, "capability_dormant")
 
     def test_dormant_when_env_empty_string(self, project, monkeypatch):
         _probe(monkeypatch, 2)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, "")
-        decision, results, reason = sgr.decide_gate_path(project)
+        decision, results, reason = _decide(project)
         assert (decision, results, reason) == ("degraded", None, "capability_dormant")
 
     @pytest.mark.parametrize("probe_code", [0, 2])
     def test_delegated_with_valid_results(self, project, monkeypatch, probe_code):
         path = _write_results(project, _valid_payload())
+        _sign(path)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
         _probe(monkeypatch, probe_code)
-        decision, results, reason = sgr.decide_gate_path(project)
+        decision, results, reason = _decide(project)
         assert decision == "delegated"
         assert reason == ""
         assert [asdict(r) for r in results] == _valid_payload()
 
     def test_nonexistent_project_path_is_safe(self, monkeypatch):
         _probe(monkeypatch, 2)
-        decision, results, reason = sgr.decide_gate_path(
-            Path("/nonexistent-kit-issue-058")
-        )
+        decision, results, reason = _decide(Path("/nonexistent-kit-issue-058"))
         assert decision == "degraded"
         assert results is None
 
@@ -234,7 +262,7 @@ class TestUntrustedResultsFile:
     def _decide(self, project, monkeypatch, env_value: str):
         _probe(monkeypatch, 2)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, env_value)
-        return sgr.decide_gate_path(project)
+        return _decide(project)  # module-level bound-API helper
 
     def test_nonexistent_file(self, project, monkeypatch):
         decision, results, reason = self._decide(
@@ -260,8 +288,14 @@ class TestUntrustedResultsFile:
         decision, results, reason = self._decide(project, monkeypatch, str(d))
         assert (decision, results, reason) == ("degraded", None, "invalid_results")
 
+    # The shape-violation fixtures below carry a VALID binding sidecar so
+    # they keep exercising the invalid_results contract — binding precedes
+    # parse, and the unsigned flavor is pinned as binding-rejected in
+    # tests/test_gate_binding.py (ISSUE-065).
+
     def test_non_json_content(self, project, monkeypatch):
         path = _write_results(project, "not json at all {")
+        _sign(path)
         decision, results, reason = self._decide(project, monkeypatch, str(path))
         assert (decision, results, reason) == ("degraded", None, "invalid_results")
 
@@ -269,11 +303,13 @@ class TestUntrustedResultsFile:
         path = _write_results(
             project, [{"gate": "unit", "status": "bogus", "blocking": True}]
         )
+        _sign(path)
         decision, results, reason = self._decide(project, monkeypatch, str(path))
         assert (decision, results, reason) == ("degraded", None, "invalid_results")
 
     def test_empty_array_in_file(self, project, monkeypatch):
         path = _write_results(project, [])
+        _sign(path)
         decision, results, reason = self._decide(project, monkeypatch, str(path))
         assert (decision, results, reason) == ("degraded", None, "invalid_results")
 
@@ -295,6 +331,7 @@ class TestUntrustedResultsFile:
         # RecursionError from json.loads maps into GateSynthesisError and
         # degrades — it must not escape the module's error contract.
         path = _write_results(project, "[" * 100_000 + "]" * 100_000)
+        _sign(path)
         decision, results, reason = self._decide(project, monkeypatch, str(path))
         assert (decision, results, reason) == ("degraded", None, "invalid_results")
 
@@ -321,7 +358,7 @@ class TestTelemetry:
         self._runs_dir(project)
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         _probe(monkeypatch, 1)
-        sgr.decide_gate_path(project)
+        _decide(project)
         events = self._events(project, "testrun")
         assert len(events) == 1
         event = events[0]
@@ -334,9 +371,10 @@ class TestTelemetry:
         self._runs_dir(project)
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         path = _write_results(project, _valid_payload())
+        _sign(path)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
         _probe(monkeypatch, 2)
-        sgr.decide_gate_path(project)
+        _decide(project)
         events = self._events(project, "testrun")
         assert len(events) == 1
         event = events[0]
@@ -351,7 +389,7 @@ class TestTelemetry:
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(project / "nope.json"))
         _probe(monkeypatch, 2)
-        sgr.decide_gate_path(project)
+        _decide(project)
         event = self._events(project, "testrun")[0]
         assert event["payload"]["reason"] == "invalid_results"
         assert sgr.GATE_RESULTS_ENV in json.dumps(event["payload"])
@@ -359,20 +397,20 @@ class TestTelemetry:
     def test_silent_noop_without_runs_dir(self, project, monkeypatch):
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         _probe(monkeypatch, 1)
-        sgr.decide_gate_path(project)  # must not raise
+        _decide(project)  # must not raise
         assert not (project / ".claude" / "runs").exists()
 
     def test_silent_noop_without_run_id(self, project, monkeypatch):
         runs = self._runs_dir(project)
         _probe(monkeypatch, 1)
-        sgr.decide_gate_path(project)  # must not raise
+        _decide(project)  # must not raise
         assert list(runs.iterdir()) == []
 
     def test_run_id_whitelist_rejects_odd_values(self, project, monkeypatch):
         runs = self._runs_dir(project)
         monkeypatch.setenv(sgr.RUN_ID_ENV, "bad id!")
         _probe(monkeypatch, 1)
-        sgr.decide_gate_path(project)  # must not raise
+        _decide(project)  # must not raise
         assert list(runs.iterdir()) == []
 
     def test_symlinked_event_file_not_followed(self, project, tmp_path, monkeypatch):
@@ -384,7 +422,7 @@ class TestTelemetry:
         (runs / "testrun.jsonl").symlink_to(target)
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         _probe(monkeypatch, 1)
-        sgr.decide_gate_path(project)  # must not raise
+        _decide(project)  # must not raise
         assert target.read_text(encoding="utf-8") == ""
 
     def test_symlinked_runs_dir_not_written(self, project, tmp_path, monkeypatch):
@@ -396,7 +434,7 @@ class TestTelemetry:
         (project / ".claude" / "runs").symlink_to(outside)
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         _probe(monkeypatch, 1)
-        sgr.decide_gate_path(project)  # must not raise
+        _decide(project)  # must not raise
         assert list(outside.iterdir()) == []
 
     def test_oversized_detail_truncated_not_dropped(self, project, monkeypatch):
