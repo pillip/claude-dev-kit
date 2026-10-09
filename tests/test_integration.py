@@ -358,14 +358,19 @@ def test_brainstorm_skill_references_bizanalysis():
     )
 
 
-# ── Test 16: ship skill references documenter subagent ───────────────
+# ── Test 16: ship skill carries the absorbed documenter contract ─────
 
 
-def test_ship_skill_references_documenter():
+def test_ship_skill_carries_absorbed_documenter_contract():
+    # SPEC-062: the documenter roster agent dissolved into an inline
+    # contract on the ship step 3.5 subagent call.
     path = SKILL_DIR / "ship" / "SKILL.md"
     content = path.read_text(encoding="utf-8")
-    assert "documenter" in content, (
-        "skills/ship/SKILL.md does not reference documenter subagent"
+    assert "no updates needed" in content, (
+        "skills/ship/SKILL.md lost the 'no updates needed' valid-outcome line"
+    )
+    assert "must exist in the codebase" in content, (
+        "skills/ship/SKILL.md lost the command/path-existence verification line"
     )
 
 
@@ -394,11 +399,11 @@ def test_diagnose_skill_has_self_review():
 @pytest.mark.parametrize(
     "agent_name",
     ["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-     "copywriter", "documenter",
+     "copywriter",
      "mobile-uiux-developer", "requirement-analyst",
      "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
     ids=["developer", "reviewer", "architect", "data-modeler", "planner", "qa-designer",
-         "copywriter", "documenter",
+         "copywriter",
          "mobile-uiux-developer", "requirement-analyst",
          "team-lead", "test-generator", "ui-reviewer", "uiux-developer", "ux-designer"],
 )
@@ -417,10 +422,10 @@ def test_agent_has_self_review(agent_name):
 @pytest.mark.parametrize(
     "agent_name",
     ["architect", "copywriter", "data-modeler",
-     "documenter", "mobile-uiux-developer", "qa-designer",
+     "mobile-uiux-developer", "qa-designer",
      "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
     ids=["architect", "copywriter", "data-modeler",
-         "documenter", "mobile-uiux-developer", "qa-designer",
+         "mobile-uiux-developer", "qa-designer",
          "requirement-analyst", "test-generator", "uiux-developer", "ux-designer"],
 )
 def test_agent_references_review_lessons_extended(agent_name):

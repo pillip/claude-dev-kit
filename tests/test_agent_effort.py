@@ -33,7 +33,7 @@ VALID_BY_MODEL = {
 HEAVY = {"architect", "developer", "reviewer",
          "planner", "desktop-uiux-developer", "mobile-uiux-developer", "uiux-developer"}
 LIGHT = {"scan-analyst", "scan-architect", "scan-data-modeler", "scan-qa-designer",
-         "documenter", "issue-writer", "requirement-analyst", "a11y-auditor",
+         "issue-writer", "requirement-analyst", "a11y-auditor",
          "codebase-scanner", "design-scanner"}
 
 

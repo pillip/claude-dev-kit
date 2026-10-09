@@ -64,12 +64,13 @@ Steps:
 
 3) Update docs/README.md; append CHANGELOG.md.
 
-3.5) Ask documenter subagent to review and update project documentation:
-   - Use the Task tool to launch a documenter subagent (agents/documenter.md).
+3.5) Review and update project documentation in a separate context:
+   - Use the Task tool to launch a general-purpose documentation subagent (keeps the docs side-quest out of the ship context).
    - Pass the PR diff summary, list of changed files, and existing docs/ contents as context.
-   - Documenter checks docs/ (README, runbook, troubleshooting, contributing) against the code changes.
-   - If docs are outdated or missing coverage for the changes: update them.
-   - If no doc updates needed: skip silently.
+   - Inline contract for the subagent:
+     - Scope strictly to docs affected by the PR diff. Do NOT rewrite or restructure unrelated documentation.
+     - Every command and file path the updated docs reference must exist in the codebase — verify before writing.
+     - "no updates needed" is a valid, expected outcome (e.g., internal refactors with no user-facing changes) — report it and exit.
 
    Update shared files via the registry wrapper:
    ```bash

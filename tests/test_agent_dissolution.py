@@ -140,3 +140,46 @@ class TestDevopsAgentDissolved:
             assert "caching and parallelism" in text, (
                 f"{label} missing the caching/parallelism optimization clause"
             )
+
+
+# ── documenter → /ship step 3.5 inline contract ──────────────────────
+
+
+class TestDocumenterDissolved:
+    def test_agent_file_removed(self):
+        assert not (AGENT_DIR / "documenter.md").exists(), (
+            "agents/documenter.md still exists — SPEC-062 dissolves it into "
+            "the /ship step 3.5 inline contract"
+        )
+
+    def test_ship_step_3_5_carries_inline_doc_contract(self):
+        for label, text in _skill_texts("ship").items():
+            assert "3.5)" in text, f"{label} lost ship step 3.5"
+            assert "affected by the PR diff" in text, (
+                f"{label} lost the diff-scoping contract line"
+            )
+            assert "must exist in the codebase" in text, (
+                f"{label} lost the command/path-existence verification line"
+            )
+            assert "no updates needed" in text, (
+                f"{label} lost the 'no updates needed' valid-outcome line"
+            )
+            # Both present on main@776ac73 (ship tmpl lines 19-20).
+            assert "agents/documenter.md" not in text, (
+                f"{label} still references the deleted agents/documenter.md"
+            )
+            assert "documenter subagent" not in text, (
+                f"{label} still launches the deleted documenter roster agent"
+            )
+
+    def test_ship_step_3_5_keeps_task_call_and_registry_wrapper(self):
+        # Context isolation survives dissolution: the Task launch stays, and
+        # the surrounding registry_edit guidance is untouched.
+        for label, text in _skill_texts("ship").items():
+            assert "Use the Task tool to launch" in text, (
+                f"{label} step 3.5 no longer launches a separate-context "
+                "subagent"
+            )
+            assert "bash scripts/registry_edit.sh STATUS.md -- bash -c" in text, (
+                f"{label} lost the registry wrapper guidance around step 3.5"
+            )
