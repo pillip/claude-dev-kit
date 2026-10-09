@@ -16,10 +16,35 @@ persist the results JSON, and set ``KIT_GATE_RESULTS_FILE`` for the
 checkpoint run.
 
 Decision table (``decide_gate_path``):
-    probe exit 1                        -> degraded, reason ``skill_missing``
-    probe exit 0/2, env unset/empty     -> degraded, reason ``capability_dormant``
-    probe exit 0/2, env set, bad file   -> degraded, reason ``invalid_results``
-    probe exit 0/2, env set, valid file -> delegated (synthesized GateResults)
+    probe exit 1                          -> degraded, reason ``skill_missing``
+    probe exit 0/2, env unset/empty       -> degraded, reason ``capability_dormant``
+    probe exit 0/2, env set, bad file     -> degraded, reason ``invalid_results``
+    probe exit 0/2, env set, binding fail -> degraded, reason ``binding-rejected``
+    probe exit 0/2, env set, valid+bound  -> delegated (synthesized GateResults)
+
+Binding layer (ISSUE-065, closing the ISSUE-058 review High finding —
+schema validation is not provenance):
+    - **Provenance**: the artifact must be accompanied by a sidecar at
+      ``<artifact> + ".sig"`` holding the lowercase-hex HMAC-SHA256 of the
+      artifact's raw bytes, keyed by a **per-run ephemeral in-process key**
+      (``generate_binding_key()`` = ``secrets.token_bytes(32)``). The key is
+      never persisted to the workspace and never read from the environment —
+      there is NO new env knob. A missing, unreadable, or mismatching sidecar
+      refuses the artifact (check name: ``mac``).
+    - **Freshness**: the artifact's ``st_mtime`` must be >= the invoking
+      checkpoint's process start (check name: ``stale``).
+    - **Consume-once**: a successful delegated ingest renames the artifact to
+      ``<artifact> + ".consumed"``; any later call targeting the same path —
+      including a byte-perfect replay — refuses (check name: ``consumed``,
+      checked BEFORE parse).
+    Binding materials are REQUIRED keyword-only parameters of
+    ``decide_gate_path`` with no defaults: unbound wiring cannot compile a
+    call, so binding — not env-var presence — is the enforced activation
+    precondition. Every binding refusal degrades toward running the real
+    gates with reason ``binding-rejected``, emits telemetry whose detail
+    names the failed check and ``KIT_GATE_RESULTS_FILE``, and prints ONE
+    loud stdout line doing the same. Schema violations keep the existing
+    ``invalid_results`` reason and never consume the artifact.
 
 The results artifact is **untrusted input**: option-shaped paths are
 rejected, the realpath must stay inside ``<project>/.claude/run/`` (the
@@ -50,10 +75,13 @@ Env knobs (documented here and in README's environment-variable list):
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import math
 import os
 import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,9 +129,38 @@ _SCRIPT_NAME = "synthesize_gate_results"
 # atomicity for small writes).
 _MAX_EVENT_BYTES = 4096
 
+# Untrusted-input size cap for the provenance sidecar: a hex HMAC-SHA256 is
+# 64 chars, so 1 KiB tolerates whitespace padding without admitting bulk.
+MAX_SIG_BYTES = 1024
+
+# The sidecar body is exactly one lowercase-hex HMAC-SHA256 digest
+# (surrounding whitespace tolerated via .strip() before matching).
+_HEX_SIG_RE = re.compile(r"[0-9a-f]{64}")
+
 
 class GateSynthesisError(ValueError):
     """Raised when a runtime results payload violates the ingestion contract."""
+
+
+class _BindingRejected(Exception):
+    """Raised when the handoff artifact fails provenance/freshness/consume-once
+    binding. ``check`` names the failed check: ``consumed``, ``mac``, or
+    ``stale``. Always degrades toward running the real gates."""
+
+    def __init__(self, check: str, message: str) -> None:
+        super().__init__(message)
+        self.check = check
+
+
+def generate_binding_key() -> bytes:
+    """Return a per-run ephemeral 32-byte binding key.
+
+    Sourced from the CSPRNG seam ``secrets.token_bytes(32)``. The key lives
+    only in the invoking process: it is never persisted to the workspace and
+    never read from the environment (no env knob exists for it by design —
+    a persisted or env-sourced key would make every past artifact replayable).
+    """
+    return secrets.token_bytes(32)
 
 
 # ── synthesis mapper (deterministic, unit-tested) ────────────────────
@@ -194,8 +251,46 @@ def synthesize_gate_results(payload: object) -> list["verify_gates.GateResult"]:
 # ── untrusted results-file loader ────────────────────────────────────
 
 
-def _load_results_file(raw: str, project_path: Path) -> list["verify_gates.GateResult"]:
-    """Validate and load the handoff artifact (untrusted input)."""
+def _read_sidecar(sig_path: Path, run_dir_real: Path) -> str | None:
+    """Read the provenance sidecar (untrusted input in the same
+    attacker-writable dir as the artifact).
+
+    Returns the lowercase-hex digest string, or ``None`` on ANY violation —
+    missing, symlinked outside ``.claude/run/``, not a regular file,
+    oversized, unreadable, or not exactly one hex HMAC-SHA256 digest
+    (surrounding whitespace tolerated). Every ``None`` becomes a ``mac``
+    refusal upstream: the failure direction is always toward the real gates.
+    """
+    try:
+        if not sig_path.resolve().is_relative_to(run_dir_real):
+            return None
+        if not sig_path.is_file():
+            return None
+        if sig_path.stat().st_size > MAX_SIG_BYTES:
+            return None
+        text = sig_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not _HEX_SIG_RE.fullmatch(text):
+        return None
+    return text
+
+
+def _load_results_file(
+    raw: str,
+    project_path: Path,
+    *,
+    binding_key: bytes,
+    process_start: float,
+) -> list["verify_gates.GateResult"]:
+    """Validate, authenticate, and consume the handoff artifact.
+
+    The artifact is untrusted input. Verification order: consume-once marker
+    (BEFORE parse) -> path/containment/regular-file/size -> raw bytes ->
+    MAC (provenance) -> freshness -> JSON parse + strict schema -> consume.
+    Raises :class:`_BindingRejected` on binding failures and
+    :class:`GateSynthesisError` on shape/path failures (which never consume).
+    """
     if raw.startswith("-"):
         raise GateSynthesisError("option-shaped path rejected")
 
@@ -208,6 +303,14 @@ def _load_results_file(raw: str, project_path: Path) -> list["verify_gates.GateR
     except OSError as exc:  # pragma: no cover — platform-specific resolution errors
         raise GateSynthesisError(f"unresolvable path: {exc}") from exc
 
+    # Consume-once comes first: an already-consumed path refuses before any
+    # parse or MAC work — a byte-perfect replay must never re-attest.
+    consumed_marker = Path(str(real) + ".consumed")
+    if consumed_marker.exists():
+        raise _BindingRejected(
+            "consumed", "artifact was already consumed by a previous gate run"
+        )
+
     if not real.is_relative_to(run_dir_real):
         # Containment is deliberately tighter than "inside the project":
         # .claude/run/ is gitignored, so a committed artifact cannot be
@@ -218,19 +321,62 @@ def _load_results_file(raw: str, project_path: Path) -> list["verify_gates.GateR
     if not real.is_file():
         raise GateSynthesisError("results path is not a regular file")
     try:
-        if real.stat().st_size > MAX_RESULTS_BYTES:
+        stat = real.stat()
+        if stat.st_size > MAX_RESULTS_BYTES:
             raise GateSynthesisError(
                 f"results file exceeds {MAX_RESULTS_BYTES} bytes"
             )
-        payload = json.loads(real.read_text(encoding="utf-8"))
+        data = real.read_bytes()
     except GateSynthesisError:
         raise
-    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+    except OSError as exc:
+        raise GateSynthesisError(f"unreadable results file: {exc}") from exc
+
+    # Provenance: the sidecar must authenticate the artifact's raw bytes
+    # under this run's ephemeral key. Missing/invalid sidecar == mismatch.
+    sig_path = Path(str(real) + ".sig")
+    expected = _read_sidecar(sig_path, run_dir_real)
+    if expected is None:
+        raise _BindingRejected(
+            "mac", "provenance sidecar (.sig) is missing or unreadable"
+        )
+    digest = hmac.new(binding_key, data, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(digest, expected):
+        raise _BindingRejected(
+            "mac", "provenance sidecar does not authenticate the artifact"
+        )
+
+    # Freshness: an artifact older than the invoking process is not evidence
+    # for this run (>= keeps the exact-boundary artifact fresh).
+    if stat.st_mtime < process_start:
+        raise _BindingRejected(
+            "stale", "artifact predates this checkpoint process"
+        )
+
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         # RecursionError: pathologically nested JSON must map into the
         # module's own error contract, not escape to the caller.
         raise GateSynthesisError(f"unreadable or non-JSON results file: {exc}") from exc
 
-    return synthesize_gate_results(payload)
+    results = synthesize_gate_results(payload)
+
+    # Consume-once: only a fully verified, successfully parsed artifact is
+    # consumed (schema refusals keep the artifact for forensics). If the
+    # rename fails the ingest must not count — one artifact, one attestation.
+    try:
+        os.replace(real, consumed_marker)
+    except OSError as exc:
+        raise _BindingRejected(
+            "consumed", f"could not mark the artifact consumed: {exc}"
+        ) from exc
+    try:
+        os.unlink(sig_path)
+    except OSError:
+        pass  # best-effort cleanup; the .consumed marker alone blocks replay
+
+    return results
 
 
 # ── telemetry (best-effort, silent no-op, never raises) ──────────────
@@ -292,13 +438,24 @@ def _emit_telemetry(project_path: Path, event_type: str, payload: dict) -> None:
 
 def decide_gate_path(
     project_path: Path,
+    *,
+    binding_key: bytes,
+    process_start: float,
 ) -> tuple[str, list["verify_gates.GateResult"] | None, str]:
     """Decide between the delegated and degraded gate paths.
+
+    ``binding_key`` (per-run ephemeral, see :func:`generate_binding_key`) and
+    ``process_start`` (the invoker's own process-start timestamp) are
+    REQUIRED keyword-only parameters with no defaults: wiring that cannot
+    supply binding materials cannot compile a call, so the delegated branch
+    is unreachable without provenance (the activation-blocked guard).
 
     Returns ``(decision, results, reason)`` where decision is ``"delegated"``
     (results is the synthesized GateResult list) or ``"degraded"`` (results is
     None; the caller runs ``verify_gates.run_applicable_gates`` unchanged).
-    Prints nothing — the degraded path must stay byte-identical on stdout.
+    Prints nothing on the dormant flavors (their stdout stays byte-identical
+    to the legacy path); a binding refusal prints ONE loud line naming the
+    failed check and the env knob.
     """
     pp = Path(project_path)
 
@@ -318,7 +475,26 @@ def decide_gate_path(
         return ("degraded", None, "capability_dormant")
 
     try:
-        results = _load_results_file(raw, pp)
+        results = _load_results_file(
+            raw, pp, binding_key=binding_key, process_start=process_start
+        )
+    except _BindingRejected as exc:
+        _emit_telemetry(
+            pp,
+            "gates_degraded_path_used",
+            {
+                "reason": "binding-rejected",
+                "detail": f"{exc.check}: {GATE_RESULTS_ENV} {exc}",
+            },
+        )
+        # A refused attestation is never silent (unlike the dormant flavors):
+        # one loud line naming the failed check and the env knob.
+        print(
+            f"  GATE BINDING REJECTED [{exc.check}]: {GATE_RESULTS_ENV} "
+            f"artifact refused by the {exc.check} check — running the real "
+            "gates instead"
+        )
+        return ("degraded", None, "binding-rejected")
     except GateSynthesisError as exc:
         _emit_telemetry(
             pp,
