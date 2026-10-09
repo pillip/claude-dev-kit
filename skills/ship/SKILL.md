@@ -66,8 +66,9 @@ Steps:
 
 3.5) Review and update project documentation in a separate context:
    - Use the Task tool to launch a general-purpose documentation subagent (keeps the docs side-quest out of the ship context).
-   - Pass the PR diff summary, list of changed files, and existing docs/ contents as context.
+   - Pass the PR diff summary, list of changed files, existing docs/ contents, and any recalled review lessons about recurring documentation issues as context.
    - Inline contract for the subagent:
+     - Toolset: Read, Glob, Grep, Write, Edit only — the subagent must not run Bash or fetch web content (preserves the dissolved roster agent's tool grant).
      - Scope strictly to docs affected by the PR diff. Do NOT rewrite or restructure unrelated documentation.
      - Every command and file path the updated docs reference must exist in the codebase — verify before writing.
      - "no updates needed" is a valid, expected outcome (e.g., internal refactors with no user-facing changes) — report it and exit.

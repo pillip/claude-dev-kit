@@ -57,8 +57,15 @@ class TestBrainstormerDissolved:
         # (SPEC-018 moved them into the skill) and must survive it.
         for label, text in _skill_texts("brainstorm").items():
             assert NO_DATA_LITERAL in text, f"{label} lost the no-data literal"
-            assert "has_skill.py" in text, f"{label} lost the runtime probe"
-            assert "deep-research" in text, f"{label} lost the primary path"
+            # Body-level pins: the frontmatter allowed-tools line also contains
+            # "has_skill.py" / "deep-research", so pin the step-5a strings that
+            # only exist in the routing body (review fix, PR #108).
+            assert "python3 scripts/has_skill.py deep-research" in text, (
+                f"{label} lost the runtime probe step"
+            )
+            assert "invoke `/deep-research`" in text, (
+                f"{label} lost the primary-path routing step"
+            )
             assert (
                 "Author Existing Landscape claims from training-data knowledge"
                 in text
@@ -164,6 +171,15 @@ class TestDocumenterDissolved:
             assert "no updates needed" in text, (
                 f"{label} lost the 'no updates needed' valid-outcome line"
             )
+            # Review fixes (PR #108): the dissolved documenter's tools:
+            # frontmatter and review-lessons consumption were enforced
+            # invariants too — the inline contract must carry both.
+            assert "must not run Bash or fetch web content" in text, (
+                f"{label} lost the subagent toolset restriction line"
+            )
+            assert "recalled review lessons" in text, (
+                f"{label} lost the review-lessons pass-through line"
+            )
             # Both present on main@776ac73 (ship tmpl lines 19-20).
             assert "agents/documenter.md" not in text, (
                 f"{label} still references the deleted agents/documenter.md"
@@ -219,6 +235,15 @@ class TestCopywriterDissolved:
             )
             assert "design_philosophy" in text, (
                 f"{label} lost the voice-derivation contract line"
+            )
+            # Review fixes (PR #108): the dissolved copywriter's tools:
+            # frontmatter and review-lessons consumption were enforced
+            # invariants too — the inline contract must carry both.
+            assert "must not run Bash or fetch web content" in text, (
+                f"{label} lost the subagent toolset restriction line"
+            )
+            assert "recalled review lessons" in text, (
+                f"{label} lost the review-lessons pass-through line"
             )
 
     @pytest.mark.parametrize("skill", UIUX_SKILLS)

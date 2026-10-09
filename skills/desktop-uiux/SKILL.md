@@ -297,6 +297,8 @@ Run these checks silently at the start. Use results to adapt behavior:
       - If desktop section exists: review and update if needed.
     - **If not exists**: Use the Task tool to launch a copy subagent (separate context) that generates `docs/copy_guide.md`:
       - Input: `docs/ux_spec.md`, `docs/design_philosophy.md`, `docs/wireframes_desktop.md`, `docs/interactions_desktop.md`, PRD
+      - Subagent toolset: Read, Glob, Grep, Write, Edit only — the copy subagent must not run Bash or fetch web content (preserves the dissolved roster agent's tool grant).
+      - Pass any recalled review lessons about recurring copy issues into the subagent prompt.
       - Inline contract for the subagent — `docs/copy_guide.md` must satisfy all of:
         - Per-screen coverage: every screen in `docs/wireframes_desktop.md` appears in the copy inventory — cross-check the wireframes screen list before saving.
         - Per-state coverage: every screen has copy for the empty, loading, error, and success states, plus confirmations/toasts where `docs/interactions_desktop.md` defines them.
