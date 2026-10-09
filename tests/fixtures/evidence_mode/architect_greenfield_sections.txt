@@ -1,0 +1,11 @@
+# Architecture
+## Overview
+## Tech Stack
+## Modules
+## Data Model
+## API Design
+## Background Jobs
+## Observability
+## Security
+## Deployment & Rollback
+## Tradeoffs

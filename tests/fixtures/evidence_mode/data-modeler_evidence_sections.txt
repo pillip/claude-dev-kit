@@ -1,0 +1,9 @@
+# Data Model
+## Storage Strategy
+## Access Patterns
+## Schema
+### Table/Collection: [name]
+## Indexes
+## Migrations
+## Seed Data
+## Observations

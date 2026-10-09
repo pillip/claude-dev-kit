@@ -1,0 +1,10 @@
+# Requirements
+## Goals (from PRD)
+## Primary User
+## User Stories (prioritized — Must → Should → Could)
+## Functional Requirements (FR-001, FR-002, ...)
+## Non-functional Requirements (NFR-001, NFR-002, ...)
+## Out of Scope
+## Assumptions
+## Risks (likelihood × impact)
+## Success Metrics (quantitative, measurable)

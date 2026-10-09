@@ -1,0 +1,11 @@
+# Requirements
+## Goals (from README / code analysis)
+## Primary User
+## User Stories (prioritized — Must → Should → Could)
+## Functional Requirements
+### [Feature Area]
+## Non-functional Requirements
+## Out of Scope
+## Assumptions
+## Risks
+## Coverage Summary

@@ -1899,7 +1899,7 @@ def verify_scan_data_model(issue_id: str, **_) -> bool:
         return True
     if _scan_detects_db(root):
         print("FAIL: database usage detected (manifest/migration indicators) but docs/data_model.md not found")
-        print("  Run the scan-data-modeler agent to generate it.")
+        print("  Run the data-modeler agent in evidence mode to generate it.")
         return False
     print("SKIP: no database usage detected (manifest/migration heuristic) — data-model checkpoint skipped")
     return True

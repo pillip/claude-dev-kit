@@ -32,8 +32,7 @@ VALID_BY_MODEL = {
 # Agents the ISSUE-015 scope names as heavy (deep reasoning) and light (extraction).
 HEAVY = {"architect", "developer", "reviewer",
          "planner", "desktop-uiux-developer", "mobile-uiux-developer", "uiux-developer"}
-LIGHT = {"scan-analyst", "scan-architect", "scan-data-modeler", "scan-qa-designer",
-         "issue-writer", "requirement-analyst", "a11y-auditor",
+LIGHT = {"issue-writer", "requirement-analyst", "a11y-auditor",
          "codebase-scanner", "design-scanner"}
 
 
