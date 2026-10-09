@@ -70,6 +70,7 @@ Steps:
 - Propose draft text for ambiguous areas and let the user correct it
 - Use the user's own words and terminology — don't impose PM jargon
 - Every user story follows "As a [role], I want [action] so that [benefit]"
+- Every user story's acceptance criteria are developer-verifiable without follow-up questions
 - Success metrics are quantitative: "50% reduction in X" not "improve X"
 
 ## Guidelines
@@ -77,8 +78,3 @@ Steps:
 - If the user says "that's enough" or similar, generate the best PRD possible with available information.
 - Mark thin sections with `<!-- TODO: flesh out -->` if the user wants to finalize early.
 - After saving, suggest next step: `/kickoff <path>` to generate planning documents.
-
-## Execution Principles (absorbed from the prd-writer persona — ISSUE-034)
-- Every PRD section present (Background, Goals, Target User, User Stories, FR, NFR, Out of Scope, Success Metrics, Technical Notes) or explicitly `<!-- TODO -->`-marked.
-- Every user story's acceptance criteria must be developer-verifiable without follow-up questions; Out of Scope must be explicit.
-- Do **not** invent requirements the user hasn't mentioned — ask. If the user says "that's enough", produce the best PRD from available info and TODO-mark thin sections.

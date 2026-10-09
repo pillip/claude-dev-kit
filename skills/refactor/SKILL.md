@@ -108,14 +108,9 @@ If `issues.md` does not exist, skip this step silently.
 These are registry files managed only on main. Always use `bash scripts/registry_edit.sh <file> -- bash -c '<update command>'` — the wrapper resolves the main repo root internally.
 
 ## Guidelines
-- Never change observable behavior — structure-only changes.
+- Never change observable behavior — structure-only changes. If a test must change, you are rewriting, not refactoring.
 - Run tests after EVERY individual step — green-to-green transitions only.
-- Keep each commit small and focused on one transformation.
+- Keep each commit small and focused on one transformation — no new abstractions "for the future".
 - If test coverage is below 70% for the target code, warn the user and suggest adding tests first.
 - If you discover a bug during refactoring, stop — file it as a separate issue.
 - Use well-known refactoring patterns: Extract Method, Move Function, Replace Conditional with Polymorphism, Introduce Parameter Object.
-
-## Execution Principles (absorbed from the refactorer persona — ISSUE-034)
-- Preserve **observable behavior**: if a test must change, you are rewriting, not refactoring. Add tests first where coverage is thin.
-- One refactoring transformation per commit; no new abstractions "for the future" — solve today's readability/maintenance problem.
-- After every step, all existing tests still pass. If you discover a bug, file it as a separate issue — do not fix it here.

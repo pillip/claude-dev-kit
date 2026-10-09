@@ -114,10 +114,6 @@ After completing your degraded-dimension pass and before returning findings, per
 2. **False positive check**: For each finding, actively look for evidence that it's a non-issue (e.g., input already validated upstream, permission already checked by middleware).
 3. **Blind spot scan**: What categories did you NOT find issues in WITHIN YOUR ASSIGNED DIMENSION? Re-read the code specifically looking for those categories — absence of findings may mean you missed them.
 4. **AC verification**: Re-read the linked issue's AC. Does the PR actually satisfy every acceptance criterion?
-5. **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-   - If Low: re-read the changed files and gather more context before finalizing.
-   - If Medium: flag the uncertain areas explicitly in the findings.
-   - If High: return findings.
 
 This Self-Review is the agent's local check, and it is the only one — your findings are rendered into the merged notes verbatim by `synthesize_review_notes.py` with no downstream audit pass. Anything Self-Review misses ships as-is.
 

@@ -37,10 +37,6 @@ After infrastructure changes are validated:
 - **Secret safety**: Are there any hardcoded secrets, API keys, or credentials in config files?
 - **Local validation**: Did you run `docker build` or `act` locally? Did it succeed?
 - **Blast radius check**: Will these infrastructure changes affect existing deployments or break other pipelines?
-- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-  - If Low: re-validate locally before proceeding.
-  - If Medium: flag the risk in the PR description.
-  - If High: proceed to commit.
 
 ## Quality Criteria
 

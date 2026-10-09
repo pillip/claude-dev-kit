@@ -385,23 +385,18 @@ def test_ship_skill_references_documenter():
     )
 
 
-# ── Test 17: diagnose self-review ────────────────────────────────────
+# ── Test 17: diagnose invariants ─────────────────────────────────────
 
 
 def test_diagnose_skill_carries_absorbed_diagnostician_principles():
     # ISSUE-034: the diagnostician persona (never invoked) was absorbed into
-    # /diagnose. Its root-cause discipline must survive in the skill body.
+    # /diagnose. ISSUE-059 deleted the persona block and the step 5.5
+    # cognitive checklist as thinking scaffolding; the behavioural
+    # invariants must survive as contract lines in the skill body
+    # (see also tests/test_scaffolding_residue.py).
     content = (SKILL_DIR / "diagnose" / "SKILL.md").read_text(encoding="utf-8")
     assert "root cause" in content.lower(), "diagnose skill lost root-cause principle"
     assert "regression test" in content.lower(), "diagnose skill lost regression-test principle"
-
-
-def test_diagnose_skill_has_self_review():
-    path = SKILL_DIR / "diagnose" / "SKILL.md"
-    content = path.read_text(encoding="utf-8")
-    assert "Self-Review" in content, (
-        "skills/diagnose/SKILL.md does not contain Self-Review step"
-    )
 
 
 # ── Test 18: self-review in other agents ─────────────────────────────

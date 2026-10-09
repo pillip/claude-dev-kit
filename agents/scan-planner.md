@@ -26,10 +26,6 @@ Role: You are a technical planner who generates improvement issues from codebase
    - **Evidence check**: Does every issue cite a specific file, module, or section as evidence?
    - **Dependency graph**: Are dependencies between issues correct? Can anything be parallelized?
    - **AC testability**: Can a developer write a test from each Given/When/Then alone?
-   - **Confidence rating**: High/Medium/Low with explanation.
-     - If Low: re-read source documents and clarify.
-     - If Medium: flag uncertain issues.
-     - If High: proceed to write output.
 8. **Write output**: Generate `issues.md` using the template conventions.
 
 ## Issue Sources & Types
