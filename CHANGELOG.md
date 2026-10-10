@@ -6,6 +6,37 @@ release tags are `claude-dev-kit--v<version>`.
 ## Unreleased
 
 ### Added
+- **Shared telemetry emitter that announces every skip and fallback**
+  (ISSUE-067, PR #123) — new `scripts/kit_telemetry.py` is the single home of
+  the ISSUE-058 writer hardening (run-id whitelist, realpath containment
+  checked *before* the `mkdir`, 512-char `payload["detail"]` truncation,
+  4096-byte event cap, `O_NOFOLLOW` append) and replaces the per-script
+  hand-rolled JSONL appenders. Python API
+  `emit_event(event_type, payload=None, *, script_name, project_path=None, issue_id=None) -> bool`;
+  CLI for skill-prompt call sites:
+  `python3 scripts/kit_telemetry.py --script <name> --event <type> [--payload '<json>'] [--issue-id ISSUE-NNN] [--project-path <dir>]`
+  (always exits 0 — telemetry is non-blocking). Every skip/fallback path now
+  prints one `[kit-telemetry]` stdout line naming its reason, so "no signal"
+  can no longer be read as "all clear": `KIT_RUN_ID` unset or failing the
+  `[A-Za-z0-9_-]{1,64}` whitelist writes the event under the explicit
+  `unattributed` run id with a top-level `run_id_fallback` field instead of
+  dropping it silently, and containment refusal, a non-regular target, and the
+  size cap each announce rather than no-op. `scripts/synthesize_gate_results.py`
+  is migrated off its private appender; the `brainstorm` and `bizanalysis`
+  skills' prompt call sites move to the CLI one-liner and their `allowed-tools`
+  gained `Bash(python3 scripts/kit_telemetry.py *)` (both grant kit scripts
+  per-script, so the new call sites previously matched no pattern). The
+  emit-site audit is recorded in `docs/telemetry_schema.md`'s new
+  **Emit-site inventory** section.
+  **Known gaps carried by follow-ups, not closed here:** **ISSUE-070** — the
+  containment check compares two values both derived from the caller-supplied
+  root, so it is structurally unfalsifiable for a non-symlinked root; a FIFO
+  planted at the predictable run path hangs `os.open`; and the docstring's
+  "NEVER raises" is false (reproduced by closing stdout). **ISSUE-071** —
+  `KIT_RUN_ID` has no producer anywhere in the kit, so the fallback
+  announcement currently fires on *every* run, which makes the genuinely
+  exceptional announcements background noise. See
+  `docs/review_notes/ISSUE-067.md`.
 - **Discovered issues enter the sprint queue's visibility automatically**
   (ISSUE-068, PR #121) — `scripts/sprint_queue.py next-action` auto-considers
   `issues.md` Board-registered `Status: backlog`, non-`Manual` issues that have

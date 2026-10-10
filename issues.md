@@ -97,7 +97,7 @@
 - [x] ISSUE-064: Harden verify_design_sweeps matcher edges — encoded/case tell variants, non-rendered quote placements, zero-screen vacuity, input containment _(track: platform, P2, 1d — ISSUE-056 review triage, adjacent Medium findings; depends on 063)_
 - [x] ISSUE-065: Add provenance, freshness, and consume-once binding to the KIT_GATE_RESULTS_FILE delegation handoff _(track: platform, P1, 1d — ISSUE-058 review triage, unresolved High finding in docs/review_notes/ISSUE-058.md; activation precondition per SPEC-058 Open Questions / test-plan GAP-058a; depends on 058)_
 - [ ] ISSUE-066: Make the SPEC-019 primary path reachable inside /sprint — runtime review skills are uninvokable from sub-task context _(track: platform, P1, 1.5d — 2026-10 sprint retro: all 6 sprint reviews ran degraded; the flagship idiom is interactive-only today)_
-- [ ] ISSUE-067: Silent-skip instrumentation must announce itself — unify the telemetry emitter and announce its fallback paths _(track: platform, P1, 1d — 2026-10 sprint retro, premise corrected 2026-10-10: the eval gate did not skip — PR #92 (2a93d09) had removed it before the sprint, so zero review_eval artifacts meant "component absent", which still proved no-signal reads as all-clear; telemetry emits remain inconsistent (hand-appended JSONL vs silent no-op))_
+- [x] ISSUE-067: Silent-skip instrumentation must announce itself — unify the telemetry emitter and announce its fallback paths _(track: platform, P1, 1d — 2026-10 sprint retro, premise corrected 2026-10-10: the eval gate did not skip — PR #92 (2a93d09) had removed it before the sprint, so zero review_eval artifacts meant "component absent", which still proved no-signal reads as all-clear; telemetry emits remain inconsistent (hand-appended JSONL vs silent no-op))_
 - [x] ISSUE-068: Discovered issues must enter the sprint queue's visibility automatically _(track: platform, P1, 0.5d — 2026-10 sprint retro: 063/064/065 were invisible to sprint_queue until the orchestrator hand-added Issue Progress rows)_
 
 ### Drop
@@ -3647,6 +3647,9 @@ A /sprint review runs the SPEC-019 primary path when the runtime capability exis
 
 > **Amended 2026-10-10** (team-lead pre-implement premise check, commit 2a93d09): evidence paragraph rewritten; Scope In item 1 and AC #1 re-targeted from the removed eval gate to instruments that exist today (the telemetry emit surface). Resurrecting the eval gate is explicitly out of scope — PR #92's deflation decision stands.
 
+<!-- ### ISSUE-067 SHIP NOTE -->
+> **Shipped 2026-10-11 (PR #123). All three ACs met; two unresolved High findings are carried by filed follow-ups, not closed here.** Review verdict PASS-with-fixes (3 findings fixed in-review, 0 Critical). Carried gaps: **ISSUE-070** — `emit_event`'s containment check compares two values both derived from the caller-supplied root, so it is structurally unfalsifiable for a non-symlinked root; a planted FIFO at the predictable run path hangs `os.open`; and the docstring's "NEVER raises" is false (reproduced by closing stdout). **ISSUE-071** — `KIT_RUN_ID` has no producer anywhere in the kit, so the fallback announcement fires on 100% of runs (observed live on this ship's own post-merge gate run), which is the shipped instrument re-creating the no-signal-reads-as-all-clear shape one level up. Neither gap blocks the capability this issue delivers.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -3656,7 +3659,7 @@ A /sprint review runs the SPEC-019 primary path when the runtime capability exis
 - PRD-Ref: none (kit self-development; sprint retro finding, premise corrected 2026-10-10; extends the ISSUE-001 telemetry surface — the ISSUE-002 eval gate it originally named was removed by PR #92)
 - Priority: P1
 - Estimate: 1d
-- Status: doing
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-067-silent-skip-instrumentation
 - GH-Issue: https://github.com/pillip/claude-dev-kit/issues/120
@@ -3677,9 +3680,9 @@ Every existing non-blocking instrument — today, the kit's telemetry emits — 
   - New telemetry dimensions or the deferred ISSUE-001 analytics scope.
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a kit script emitting through the shared helper, when one of the helper's skip/fallback paths triggers (`KIT_RUN_ID` absent; containment violation rejected), then the condition is announced with the named knob/reason in stdout and — where an event is still written — reflected in the event body; a silent no-op is no longer possible (mutation test both directions: force each path and assert the announcement; clean path asserts no announcement line).
-- [ ] Given any kit script emitting a telemetry event without `KIT_RUN_ID`, when it emits, then the event is written under the documented fallback instead of silently dropped, and the fallback is visible in the event body.
-- [ ] Given the emit-call-site audit, when it completes, then every site either uses the shared helper or carries a recorded justification — no hand-rolled appender remains unexamined.
+- [x] Given a kit script emitting through the shared helper, when one of the helper's skip/fallback paths triggers (`KIT_RUN_ID` absent; containment violation rejected), then the condition is announced with the named knob/reason in stdout and — where an event is still written — reflected in the event body; a silent no-op is no longer possible (mutation test both directions: force each path and assert the announcement; clean path asserts no announcement line).
+- [x] Given any kit script emitting a telemetry event without `KIT_RUN_ID`, when it emits, then the event is written under the documented fallback instead of silently dropped, and the fallback is visible in the event body.
+- [x] Given the emit-call-site audit, when it completes, then every site either uses the shared helper or carries a recorded justification — no hand-rolled appender remains unexamined.
 
 #### Implementation Notes
 - Premise correction (2026-10-10): the original "eval gate skipped silently on all 10 ships" evidence was wrong — PR #92 (commit 2a93d09) deleted the gate before the sprint. Do not reference or restore `scripts/eval_review.py`; the stale `scripts/__pycache__/` .pyc files are residue, not a live surface.
@@ -3688,9 +3691,9 @@ Every existing non-blocking instrument — today, the kit's telemetry emits — 
 - A rejected containment violation cannot carry its announcement in the event (nothing is written) — the stdout/stderr line is the only signal on that path; test it as such.
 
 #### Tests
-- [ ] Shared-emitter unit tests: with and without `KIT_RUN_ID` (fallback id present in the event body), containment violations rejected with a named-reason announcement, truncation preserved, O_NOFOLLOW honored.
-- [ ] Per-fallback-path mutation fixtures: force each skip/fallback cause and assert the announcement; clean-path fixture asserts no announcement line (hollow-pass guard).
-- [ ] Migration pins: each migrated call site emits a schema-identical event through the shared helper (fixture-pin at the delegation seam).
+- [x] Shared-emitter unit tests: with and without `KIT_RUN_ID` (fallback id present in the event body), containment violations rejected with a named-reason announcement, truncation preserved, O_NOFOLLOW honored.
+- [x] Per-fallback-path mutation fixtures: force each skip/fallback cause and assert the announcement; clean-path fixture asserts no announcement line (hollow-pass guard).
+- [x] Migration pins: each migrated call site emits a schema-identical event through the shared helper (fixture-pin at the delegation seam).
 
 #### Rollback
 `git revert` — announcements and the shared helper are additive; instruments stay non-blocking throughout.
