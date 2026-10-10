@@ -122,7 +122,7 @@ _Source: reviewer-degraded_
 
 - **[Low] [shrink] The untrusted-input matrix is run twice -- as unit calls and as CLI replays over the same value/layout sets**
   Evidence: ~20 of the pre-review tests are the duplicated leg. The degraded reviewer's full list totalled ~380 removable lines / ~40 of the 131 tests, including `test_ac7_accepted_value_direct_unit_call` (duplicate of `test_canonical_accepted_field_returns_num_and_no_detail`), `test_ac4_withheld_ids_stay_out_of_implement_ready_only` (strictly weaker than its list-equality sibling), `test_ac7_duplicate_honours_neither_value` (third copy of the duplicate case), and `test_generated_skill_opens_with_frontmatter_not_the_autogen_marker` (already pinned suite-wide by `tests/test_gen_skills.py`).
-  Fix: Not cut. The review ADDED 58 tests rather than removing any, every one of them killed by a mutation -- the pre-existing redundancy is cosmetic while the gaps it masked (the unpinned rejection cause, the missing in-flight coverage) were real. Deferred as cleanup.
+  Fix: Not cut. The review ADDED 59 tests (131 -> 190 in this file) rather than removing any, every one of them killed by a mutation -- the pre-existing redundancy is cosmetic while the gaps it masked (the unpinned rejection cause, the missing in-flight coverage) were real. Deferred as cleanup.
 
 - **[Low] Comment density matches the module's house style, not over-engineering**
   Evidence: Checked against the pre-existing `_ROSTER_ID_RE` and Board-status comment blocks on main. Explicitly NOT recommended for cutting: `_truncate_value` (one caller, now a named safety control for two distinct hazards) with tests depending on it.
