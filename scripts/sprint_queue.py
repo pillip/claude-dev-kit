@@ -86,30 +86,60 @@ def _parse_depends_on(raw: str) -> list[str]:
     return [dep.strip() for dep in re.findall(r"ISSUE-\d+", raw)]
 
 
+_ISSUE_PROGRESS_HEADING_RE = re.compile(r"^#{2,6}\s+Issue Progress\s*$")
+_ATX_HEADING_RE = re.compile(r"^#{1,6}\s")
+
+# The roster table is exactly: Issue | Status | Attempts | Last Error | Phase.
+ROSTER_COLUMN_COUNT = 5
+
+
+def _issue_progress_table_lines(text: str) -> list[str]:
+    """Return the contiguous table rows directly under the Issue Progress heading.
+
+    ISSUE-076: the boundary is the table's own end, NOT the next h2. Phase
+    executors write a `### Review outcomes` subsection table under Issue
+    Progress, and a next-h2 capture swallowed it — its 6-column rows were then
+    read as roster rows, with `cells[4]` ("High unresolved") taken as the Phase.
+    A GFM table ends at the first line that is not a table row, so terminate
+    there: blank line, prose, or a heading of any level.
+    """
+    lines = text.splitlines()
+    start = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if _ISSUE_PROGRESS_HEADING_RE.match(line.strip())
+        ),
+        None,
+    )
+    if start is None:
+        return []
+
+    table: list[str] = []
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            table.append(stripped)
+        elif table or _ATX_HEADING_RE.match(stripped):
+            # The table ended — or a heading was reached before it ever began,
+            # meaning this section carries no table at all.
+            break
+    return table
+
+
 def parse_sprint_table(text: str) -> list[dict[str, str]]:
     """Parse the Issue Progress table from sprint_state.md.
 
     Returns list of dicts with keys: issue, status, attempts, last_error, phase.
     """
-    # Locate the ## Issue Progress section
-    section_match = re.search(
-        r"## Issue Progress\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL
-    )
-    if not section_match:
-        return []
-
-    section = section_match.group(1)
-
-    # Extract table rows
     rows: list[dict[str, str]] = []
-    for line in section.splitlines():
-        line = line.strip()
-        if not line.startswith("|") or not line.endswith("|"):
-            continue
+    for line in _issue_progress_table_lines(text):
         cells = [c.strip() for c in line.strip("|").split("|")]
-        # Skip header and separator rows
-        if len(cells) < 5:
+        # Off-shape rows are skipped, never index-read (they stay inside the
+        # table, so a stray wide row does not truncate the roster).
+        if len(cells) != ROSTER_COLUMN_COUNT:
             continue
+        # Skip header and separator rows
         if cells[0].lower() in ("issue", "") or cells[0].startswith("-"):
             continue
         if all(c.replace("-", "").strip() == "" for c in cells):

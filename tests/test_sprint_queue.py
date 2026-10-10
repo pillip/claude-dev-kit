@@ -1,7 +1,11 @@
 """Unit tests for scripts/sprint_queue.py."""
 
 import json
+import re
 import subprocess
+from pathlib import Path
+
+import pytest
 
 import scripts.sprint_queue as sq
 from scripts.sprint_queue import (
@@ -1373,3 +1377,401 @@ class TestDiscoveryNeverStarvesStuckEscalation:
         assert out["action"] == "PIPELINE"
         assert out["targets"] == ["ISSUE-101"]
         assert "unrostered" not in out
+
+
+# ── ISSUE-076: Issue Progress section scoping ────────────────────────
+#
+# `parse_sprint_table` must read EXACTLY the Issue Progress table. The pre-fix
+# capture (`r"## Issue Progress\s*\n(.*?)(?=\n## |\Z)"`) terminated only on an
+# h2 heading, so a phase executor's `### Review outcomes` h3 subsection table
+# fell inside it — and because that table has 6 columns while the row guard was
+# `len(cells) < 5`, `cells[4]` read the "High unresolved" cell as the Phase.
+#
+# Target contract (copied from the document structure, not approximated):
+#   1. find `## Issue Progress`;
+#   2. scan forward for the first pipe row — a heading of ANY level reached
+#      first ends the section with no table;
+#   3. consume CONTIGUOUS pipe rows only;
+#   4. terminate at the first non-pipe-row line (blank, prose, or any heading);
+#   5. a row whose cell count is not exactly 5 is skipped, never index-read.
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sprint_state"
+
+# The exact phantom Phase values the live 2026-10-11 incident produced from the
+# `### Review outcomes` table's "High unresolved" column.
+PHANTOM_PHASES = ("2", "0 (6 medium, 8 low)")
+
+# Legitimate Phase vocabulary, derived from the module's own constants rather
+# than a hand-copied literal list so it cannot drift from the pipeline.
+LEGIT_PHASES = (
+    set(sq.ACTION_END_PHASE.values()) | set(sq.IN_FLIGHT_PHASES) | {"backlog"}
+)
+
+ROSTER_ID_SHAPE = re.compile(r"^ISSUE-\d+$")
+
+# Real sprint_state docs that carry a roster. Pinned to the repo root via the
+# test file's own location (never the CWD). The selection predicate is a pure
+# presence check — it deliberately does NOT mirror the parser's boundary logic,
+# so it cannot mask a boundary regression.
+_ROSTER_LINE = re.compile(r"^\|\s*ISSUE-\d+\s*\|", re.MULTILINE)
+REAL_SPRINT_STATE_DOCS = sorted(
+    path
+    for path in (REPO_ROOT / "docs").glob("sprint_state*.md")
+    if "## Issue Progress" in (text := path.read_text(encoding="utf-8"))
+    and _ROSTER_LINE.search(text)
+)
+
+
+def _fixture_text(name: str) -> str:
+    """Read a frozen sprint_state fixture.
+
+    Deliberately NO skip/importorskip fallback: a missing fixture must fail
+    loudly, because a silent skip here is a hollow pass.
+    """
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def _sprint_state(issue_progress_body: str, *, trailer: str = "## Escalations\n") -> str:
+    """Build a sprint_state.md with a verbatim `## Issue Progress` body.
+
+    Unlike `_make_sprint_state`, the body is passed through byte-for-byte so a
+    test can place prose, subsection headings, blank lines, and off-shape rows
+    exactly where a real phase executor would write them.
+    """
+    return (
+        "# Sprint State\n\n"
+        "## Meta\n"
+        "- Started: 2026-10-10\n"
+        "- Status: running\n\n"
+        "## Issue Progress\n"
+        f"{issue_progress_body}"
+        f"{trailer}"
+    )
+
+
+ROSTER_HEADER = (
+    "| Issue | Status | Attempts | Last Error | Phase |\n"
+    "|-------|--------|----------|------------|-------|\n"
+)
+
+
+class TestFixtureReplayOfTheLiveFalseNegative:
+    """AC-1 — the real 2026-10-11 file must validate as shipped.
+
+    The frozen fixture is a byte-identical copy of the sprint_state.md a phase
+    executor wrote while closing ISSUE-066..068 (see the fixture README). Pre-fix
+    it yielded 6 rows — the 3 real `shipped` rows followed by 3 phantoms whose
+    Phase came from the h3 table — and the phantoms, arriving last, overwrote the
+    real rows in `validate_transitions`' `phase_by_issue` lookup.
+    """
+
+    FIXTURE = "issue_progress_with_h3_subsection.md"
+    TARGETS = ["ISSUE-066", "ISSUE-067", "ISSUE-068"]
+
+    def test_parses_exactly_the_three_roster_rows(self):
+        rows = sq.parse_sprint_table(_fixture_text(self.FIXTURE))
+        assert len(rows) == 3
+        assert [r["issue"] for r in rows] == self.TARGETS
+        assert [r["phase"] for r in rows] == ["shipped", "shipped", "shipped"]
+        assert [r["status"] for r in rows] == ["done", "done", "done"]
+
+    def test_no_row_carries_a_phantom_phase(self):
+        """The load-bearing assertion: the h3 table's cells never become a Phase."""
+        rows = sq.parse_sprint_table(_fixture_text(self.FIXTURE))
+        phases = [r["phase"] for r in rows]
+        for phantom in PHANTOM_PHASES:
+            assert phantom not in phases, phases
+        # And no row at all may be sourced from the 6-column h3 table.
+        assert all(r["status"] == "done" for r in rows), rows
+        assert not [r for r in rows if r["status"].startswith("#")], rows
+
+    def test_every_row_has_a_legitimate_phase(self):
+        """The exact Phase vocabulary is pinned HERE, not on the live docs.
+
+        This fixture is frozen by contract (see the fixture README), so pinning
+        its vocabulary generates no future maintenance — whereas the mutable
+        `docs/sprint_state*.md` records would fail the moment an executor wrote
+        any new wording into a Phase cell.
+        """
+        rows = sq.parse_sprint_table(_fixture_text(self.FIXTURE))
+        assert rows, "frozen fixture parsed to zero rows"
+        for row in rows:
+            assert row["phase"] in LEGIT_PHASES, row
+
+    def test_ship_validation_reports_valid(self):
+        rows = sq.parse_sprint_table(_fixture_text(self.FIXTURE))
+        result = validate_transitions(rows, "SHIP", self.TARGETS)
+        assert result["valid"] is True
+        assert result["stuck"] == []
+        assert result["errors"] == []
+        assert result["transitioned"] == self.TARGETS
+
+    def test_validate_cli_exits_zero_on_the_real_file(self, capsys):
+        """End-to-end through the actual consumer the orchestrator ran."""
+        exit_code = main([
+            "validate",
+            "--sprint-state", str(FIXTURES / self.FIXTURE),
+            "--action", "SHIP",
+            "--targets", ",".join(self.TARGETS),
+        ])
+        out = json.loads(capsys.readouterr().out)
+        assert out["valid"] is True, out
+        assert out["stuck"] == [], out
+        assert out["errors"] == [], out
+        assert out["transitioned"] == self.TARGETS, out
+        assert exit_code == 0
+
+
+class TestWatermarkIsolationFromSubsectionTables:
+    """AC-2 — phantom IDs in an h3 subsection must not reach the watermark.
+
+    `augment_roster_from_board` derives its mid-sprint watermark from
+    `max(rostered ids)`. A phantom `ISSUE-900` row lifted out of a subsection
+    table pushes the watermark to 900, which silently vanishes every real
+    mid-range Board candidate — no target, no `unrostered`, no `stranded`.
+    """
+
+    REVIEW_OUTCOMES_H3 = (
+        "\n"
+        "### Review outcomes\n"
+        "| Issue | PR | Verdict | Crit | High unresolved | Review commit |\n"
+        "|-------|----|---------|------|-----------------|---------------|\n"
+        "| ISSUE-900 | #999 | PASS | 0 | 2 | c9bc35b |\n"
+        "\n"
+    )
+
+    def _state(self, subsection: str) -> str:
+        return _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            + subsection
+        )
+
+    def test_phantom_h3_id_does_not_raise_the_watermark(self):
+        rows = sq.parse_sprint_table(self._state(self.REVIEW_OUTCOMES_H3))
+        meta = {
+            "ISSUE-100": _board_meta(status="done"),
+            # Mid-range: above the real roster max (100), below the phantom (900).
+            "ISSUE-500": _board_meta(status="backlog"),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        # Pre-fix the watermark was 900, so the real candidate vanished.
+        assert unrostered == ["ISSUE-500"]
+        assert "ISSUE-500" in [r["issue"] for r in augmented]
+
+    def test_phantom_h3_id_is_in_no_row_and_no_queue(self):
+        state = self._state(self.REVIEW_OUTCOMES_H3)
+        rows = sq.parse_sprint_table(state)
+        assert "ISSUE-900" not in [r["issue"] for r in rows], rows
+        meta = {
+            "ISSUE-100": _board_meta(status="done"),
+            "ISSUE-500": _board_meta(status="backlog"),
+        }
+        augmented, _ = sq.augment_roster_from_board(rows, meta)
+        assert "ISSUE-900" not in [r["issue"] for r in augmented], augmented
+        queues = compute_queues(augmented, meta)
+        assert all("ISSUE-900" not in members for members in queues.values()), queues
+
+    def test_five_column_subsection_table_never_enters_a_queue(self):
+        """Non-vacuous queue pin: a roster-SHAPED subsection row is still excluded.
+
+        Pre-fix this landed `ISSUE-900` in `implement_ready` — the engine would
+        have dispatched work off a record table.
+        """
+        state = self._state(
+            "\n"
+            "### Carried-over candidates\n"
+            + ROSTER_HEADER
+            + "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [r["issue"] for r in rows] == ["ISSUE-100"], rows
+        meta = {
+            "ISSUE-100": _board_meta(status="done"),
+            "ISSUE-900": _board_meta(status="backlog"),
+        }
+        queues = compute_queues(rows, meta)
+        assert queues["implement_ready"] == [], queues
+        assert all("ISSUE-900" not in members for members in queues.values()), queues
+
+
+class TestColumnShapeGuard:
+    """AC-3 — the 5-column roster shape is required, asserted in BOTH directions.
+
+    The old `if len(cells) < 5: continue` admitted 6+ columns, so a wider row was
+    index-read at `cells[4]`. Tightening it risks the opposite failure (a
+    legitimate row no longer parsing), so both halves are pinned here.
+    """
+
+    MIXED_TABLE = _sprint_state(
+        ROSTER_HEADER
+        + "| ISSUE-100 | done | 1 | - | shipped |\n"
+        # 6 columns, otherwise valid roster shape — cells[4] is NOT the Phase.
+        + "| ISSUE-200 | done | 1 | - | 0 (6 Medium, 8 Low) | c9bc35b |\n"
+        # 4 columns — pins the surviving half of the legacy `< 5` guard.
+        + "| ISSUE-300 | active | 0 | - |\n"
+        + "| ISSUE-400 | active | 1 | - | reviewed |\n"
+    )
+
+    def test_six_column_row_is_skipped_not_index_read(self):
+        rows = sq.parse_sprint_table(self.MIXED_TABLE)
+        assert "ISSUE-200" not in [r["issue"] for r in rows], rows
+        # The specific mechanism: the 5th-of-6 cell must never become a phase.
+        assert "0 (6 medium, 8 low)" not in [r["phase"] for r in rows], rows
+
+    def test_four_column_row_is_skipped(self):
+        rows = sq.parse_sprint_table(self.MIXED_TABLE)
+        assert "ISSUE-300" not in [r["issue"] for r in rows], rows
+
+    def test_legitimate_five_column_rows_in_the_same_table_still_parse(self):
+        """The over-tightening direction: off-shape rows must not kill the table."""
+        rows = sq.parse_sprint_table(self.MIXED_TABLE)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "shipped"),
+            ("ISSUE-400", "reviewed"),
+        ]
+
+
+class TestIssueProgressBoundaryCompleteness:
+    """AC-4 — the table's own end is the boundary, in both directions.
+
+    The new terminator must be strictly tighter than the legacy next-h2 one
+    WITHOUT dropping anything the legacy capture accepted.
+    """
+
+    def test_blank_line_terminates_the_table(self):
+        """A roster-shaped row after a blank line is no longer in the table."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n"
+            "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "reviewed")
+        ]
+
+    def test_h3_heading_terminates_the_table(self):
+        """An h3 reached with no intervening blank line also ends the table."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "### Review outcomes\n"
+            "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "reviewed")
+        ]
+
+    def test_h2_heading_still_terminates_the_table(self):
+        """Legacy boundary pin: the stricter terminator must not regress this."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "## Other Section\n"
+            "| ISSUE-900 | active | 0 | - | backlog |\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "reviewed")
+        ]
+
+    def test_prose_between_the_heading_and_the_table_still_parses(self):
+        """Legacy tolerance pin: the table may be preceded by a prose line."""
+        state = _sprint_state(
+            "Rostered this iteration (ascending ID order):\n"
+            "\n"
+            + ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "reviewed")
+        ]
+
+    def test_h3_subsection_without_a_table_still_yields_the_real_rows(self):
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n"
+            "### Review outcomes\n",
+            trailer="",
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "reviewed")
+        ]
+
+    def test_heading_before_any_table_yields_no_rows(self):
+        """Contract step 2: a heading reached first means the section has no table."""
+        state = _sprint_state(
+            "### Review outcomes\n"
+            "| ISSUE-900 | active | 0 | - | backlog |\n",
+            trailer="",
+        )
+        assert sq.parse_sprint_table(state) == []
+
+    def test_missing_section_and_empty_table_still_return_empty(self):
+        """Preserved public behaviour, re-pinned next to the new boundary."""
+        assert sq.parse_sprint_table("# Sprint State\n## Meta\n- Status: running\n") == []
+        assert sq.parse_sprint_table(_sprint_state(ROSTER_HEADER)) == []
+
+
+class TestRealSprintStateDocsStillParse:
+    """AC-4 — every real sprint_state doc in the repo keeps parsing cleanly.
+
+    Review lesson 8: this change tightens the input contract, so the risk is a
+    legitimate row no longer parsing. These replay the committed docs rather than
+    fixtures, and assert parser behaviour only — never the docs' accuracy.
+
+    The assertions are therefore split by the mutability of what is read. These
+    docs are RECORDS the orchestrator rewrites — `docs/sprint_state.md` on every
+    phase transition, and the `archive-*` set grows each sprint — so they get only
+    mutation-proof structural invariants: roster ID shape, and ID uniqueness
+    (a roster is keyed by issue, so a duplicate silently overwrites a real row in
+    `validate_transitions`' `phase_by_issue` — the live incident's exact
+    mechanism). The exact Phase vocabulary is pinned on the frozen fixture in
+    `TestFixtureReplayOfTheLiveFalseNegative` instead: a future executor writing
+    `blocked` or `shipped (finalized)` into a Phase cell is a record's wording,
+    not a parser defect, and must not fail this suite on an unrelated branch.
+    """
+
+    def test_glob_found_real_sprint_state_docs(self):
+        """Guard against a silently empty parametrization (a hollow pass)."""
+        assert len(REAL_SPRINT_STATE_DOCS) > 0, (
+            f"no roster-carrying docs/sprint_state*.md under {REPO_ROOT}"
+        )
+
+    def test_at_least_one_real_doc_yields_parsed_rows(self):
+        """Suite-wide anti-vacuity guard — deliberately NOT per-doc.
+
+        `_ROSTER_LINE` is an un-scoped presence check, so a future
+        `sprint_state.md` with an empty roster table but an ISSUE-row in some
+        subsection table would be selected and then correctly parse to zero rows.
+        Per-doc emptiness is not a defect; suite-wide emptiness is.
+        """
+        assert any(
+            sq.parse_sprint_table(path.read_text(encoding="utf-8"))
+            for path in REAL_SPRINT_STATE_DOCS
+        ), "no roster-carrying doc yielded a single parsed row"
+
+    @pytest.mark.parametrize(
+        "doc_path", REAL_SPRINT_STATE_DOCS, ids=lambda p: p.name
+    )
+    def test_doc_yields_only_roster_shaped_rows(self, doc_path):
+        rows = sq.parse_sprint_table(doc_path.read_text(encoding="utf-8"))
+        for row in rows:
+            assert ROSTER_ID_SHAPE.match(row["issue"]), (doc_path.name, row)
+        ids = [row["issue"] for row in rows]
+        assert len(ids) == len(set(ids)), (
+            f"{doc_path.name}: duplicate roster IDs "
+            f"{sorted({i for i in ids if ids.count(i) > 1})} — rows captured from "
+            "outside the Issue Progress table"
+        )
