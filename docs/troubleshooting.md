@@ -29,6 +29,11 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 - **Cause**: The `gh pr view` merge-state probe in `scripts/sprint_queue.py` is timeout-bounded so a stuck `gh` never blocks the frequently-run queue
 - **Solution**: `KIT_SPRINT_QUEUE_GH_TIMEOUT` defaults to `10` seconds; on timeout the probe degrades to a phase-only decision. Override the bound by exporting `KIT_SPRINT_QUEUE_GH_TIMEOUT=<seconds>`.
 
+### Problem: Sprint queue emits `SHIP` instead of `FINALIZE` with a "refusing PR ref" warning
+- **Symptom**: a reviewed issue whose PR is already merged is still queued as `SHIP` (not `FINALIZE`), and stderr carries `Warning: refusing PR ref '...' read from the issues.md 'PR:' field`
+- **Cause**: the `PR:` value in `issues.md` is not one of the three accepted forms, so the ISSUE-073 whitelist refuses to hand a ref it cannot prove safe to `gh` — most often a **compound** value such as `#122 https://github.com/<owner>/<repo>/pull/122` (two of which exist in this repo's own Board)
+- **Solution**: normalize the `PR:` field to a single accepted form — `123`, `#123`, or the full `https://github.com/<owner>/<repo>/pull/123` URL. The refusal is fail-safe, not a blocker: the ship path still runs and the real `gh pr merge` surfaces the true state.
+
 ## Sprint Queue Visibility
 
 ### Problem: Sprint reports DONE while `issues.md` still has backlog issues
