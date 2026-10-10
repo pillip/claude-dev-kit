@@ -6,7 +6,9 @@ Covers the dormant test-execution delegation layer:
   invalid_results / delegated),
 - untrusted-results hardening (the KIT_GATE_RESULTS_FILE artifact is untrusted
   input: every violation degrades toward running the real gates),
-- schema-conformant best-effort telemetry (silent no-op when unconfigured),
+- schema-conformant best-effort telemetry through the shared emitter
+  (ISSUE-067: unconfigured KIT_RUN_ID falls back to the announced
+  ``unattributed`` run id instead of a silent no-op),
 - the verify_checkpoint._run_verify_gates wiring seam (degraded path is
   byte-identical to the legacy verify_gates path; delegated path never calls
   verify_gates; a crashing delegation layer still falls back).
@@ -30,6 +32,7 @@ import pytest
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import kit_telemetry as kt  # noqa: E402
 import synthesize_gate_results as sgr  # noqa: E402
 import verify_gates as vg  # noqa: E402
 import verify_checkpoint as vc  # noqa: E402
@@ -394,28 +397,55 @@ class TestTelemetry:
         assert event["payload"]["reason"] == "invalid_results"
         assert sgr.GATE_RESULTS_ENV in json.dumps(event["payload"])
 
-    def test_silent_noop_without_runs_dir(self, project, monkeypatch):
+    def test_missing_runs_dir_auto_created_and_silent(
+        self, project, monkeypatch, capsys
+    ):
+        # ISSUE-067: dir absence is no longer a silent-skip path — the shared
+        # emitter auto-creates .claude/runs/ and writes, with NO announcement
+        # on the clean (valid run id) path.
         monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         _probe(monkeypatch, 1)
         _decide(project)  # must not raise
-        assert not (project / ".claude" / "runs").exists()
+        event = self._events(project, "testrun")[0]
+        assert event["payload"]["reason"] == "skill_missing"
+        assert capsys.readouterr().out == ""
 
-    def test_silent_noop_without_run_id(self, project, monkeypatch):
-        runs = self._runs_dir(project)
+    def test_missing_run_id_falls_back_to_unattributed(
+        self, project, monkeypatch, capsys
+    ):
+        # ISSUE-067: KIT_RUN_ID unset is no longer a silent drop — the event
+        # lands under the explicit 'unattributed' run id with the fallback
+        # visible in the event body, and stdout announces the named knob.
+        self._runs_dir(project)
         _probe(monkeypatch, 1)
         _decide(project)  # must not raise
-        assert list(runs.iterdir()) == []
+        event = self._events(project, "unattributed")[0]
+        assert event["payload"]["reason"] == "skill_missing"
+        assert event["run_id_fallback"] == "KIT_RUN_ID unset"
+        out = capsys.readouterr().out
+        assert "[kit-telemetry]" in out
+        assert "KIT_RUN_ID" in out
 
-    def test_run_id_whitelist_rejects_odd_values(self, project, monkeypatch):
+    def test_invalid_run_id_falls_back_to_unattributed(
+        self, project, monkeypatch, capsys
+    ):
+        # The whitelist still rejects odd values as filenames — but the event
+        # now survives under 'unattributed' instead of being dropped.
         runs = self._runs_dir(project)
         monkeypatch.setenv(sgr.RUN_ID_ENV, "bad id!")
         _probe(monkeypatch, 1)
         _decide(project)  # must not raise
-        assert list(runs.iterdir()) == []
+        assert [p.name for p in runs.iterdir()] == ["unattributed.jsonl"]
+        event = self._events(project, "unattributed")[0]
+        assert "invalid" in event["run_id_fallback"]
+        assert "KIT_RUN_ID" in capsys.readouterr().out
 
-    def test_symlinked_event_file_not_followed(self, project, tmp_path, monkeypatch):
+    def test_symlinked_event_file_not_followed(
+        self, project, tmp_path, monkeypatch, capsys
+    ):
         # A pre-planted symlink at the event path must not redirect the
-        # append outside the project (O_NOFOLLOW).
+        # append outside the project (O_NOFOLLOW) — and the refused write is
+        # announced (ISSUE-067), no longer silent.
         runs = self._runs_dir(project)
         target = tmp_path / "outside-target"
         target.write_text("", encoding="utf-8")
@@ -424,10 +454,14 @@ class TestTelemetry:
         _probe(monkeypatch, 1)
         _decide(project)  # must not raise
         assert target.read_text(encoding="utf-8") == ""
+        assert "write failed" in capsys.readouterr().out
 
-    def test_symlinked_runs_dir_not_written(self, project, tmp_path, monkeypatch):
+    def test_symlinked_runs_dir_not_written(
+        self, project, tmp_path, monkeypatch, capsys
+    ):
         # .claude/runs symlinked outside the project → realpath containment
-        # fails → silent no-op, nothing lands at the symlink target.
+        # fails → nothing lands at the symlink target, and the rejection is
+        # announced with its named reason (ISSUE-067), no longer silent.
         outside = tmp_path / "outside-runs"
         outside.mkdir()
         (project / ".claude").mkdir()
@@ -436,6 +470,7 @@ class TestTelemetry:
         _probe(monkeypatch, 1)
         _decide(project)  # must not raise
         assert list(outside.iterdir()) == []
+        assert "containment" in capsys.readouterr().out
 
     def test_oversized_detail_truncated_not_dropped(self, project, monkeypatch):
         # Attacker-padded detail must not suppress the forensic event via
@@ -450,7 +485,7 @@ class TestTelemetry:
         event = self._events(project, "testrun")[0]
         assert event["payload"]["reason"] == "invalid_results"
         assert event["payload"]["detail"].endswith("…[truncated]")
-        assert len(event["payload"]["detail"]) <= sgr._MAX_DETAIL_CHARS + len(
+        assert len(event["payload"]["detail"]) <= kt._MAX_DETAIL_CHARS + len(
             "…[truncated]"
         )
 
@@ -509,7 +544,10 @@ class TestRunVerifyGatesWiring:
         self, project, monkeypatch, capsys
     ):
         # AC-1: with the delegation layer dormant, stdout is byte-identical to
-        # the pre-ISSUE-058 verify_gates path.
+        # the pre-ISSUE-058 verify_gates path. A valid run id keeps the shared
+        # emitter on its clean, silent path (ISSUE-067) so the pin keeps its
+        # original meaning.
+        monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
         with patch.object(vg, "run_applicable_gates", return_value=_fixture_results()):
             vc._run_verify_gates(str(project), blocking=False)
         assert capsys.readouterr().out == EXPECTED_LEGACY_STDOUT

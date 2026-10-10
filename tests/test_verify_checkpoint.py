@@ -1174,9 +1174,15 @@ def _make_gate_result(gate: str, status: str, blocking: bool = True) -> vg.GateR
 
 
 class TestRunVerifyGates:
-    """Tests for _run_verify_gates() — gate integration helper."""
+    """Tests for _run_verify_gates() — gate integration helper.
 
-    def test_returns_false_when_import_fails_and_blocking(self, monkeypatch):
+    Project paths are pinned to the tmp_path fixture root (not a literal
+    /tmp path): since ISSUE-067 the delegation consult's telemetry emitter
+    auto-creates <project>/.claude/runs/, so a shared literal path would
+    leak writes onto the host filesystem.
+    """
+
+    def test_returns_false_when_import_fails_and_blocking(self, monkeypatch, tmp_path):
         """If verify_gates can't be imported and blocking=True, FAIL."""
         import builtins
         original_import = builtins.__import__
@@ -1187,9 +1193,9 @@ class TestRunVerifyGates:
             return original_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fail_import)
-        assert vc._run_verify_gates("/tmp/fake", blocking=True) is False
+        assert vc._run_verify_gates(str(tmp_path), blocking=True) is False
 
-    def test_returns_true_when_import_fails_and_non_blocking(self, monkeypatch):
+    def test_returns_true_when_import_fails_and_non_blocking(self, monkeypatch, tmp_path):
         """If verify_gates can't be imported and blocking=False, pass."""
         import builtins
         original_import = builtins.__import__
@@ -1200,55 +1206,55 @@ class TestRunVerifyGates:
             return original_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fail_import)
-        assert vc._run_verify_gates("/tmp/fake", blocking=False) is True
+        assert vc._run_verify_gates(str(tmp_path), blocking=False) is True
 
-    def test_returns_true_when_no_gates(self):
+    def test_returns_true_when_no_gates(self, tmp_path):
         """Empty results → pass."""
         with patch.object(vg, "run_applicable_gates", return_value=[]):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+            assert vc._run_verify_gates(str(tmp_path), blocking=True) is True
 
-    def test_non_blocking_returns_true_on_gate_failure(self):
+    def test_non_blocking_returns_true_on_gate_failure(self, tmp_path):
         """Non-blocking mode: gate failure is a warning, returns True."""
         results = [_make_gate_result("e2e-web", "fail", blocking=True)]
         with patch.object(vg, "run_applicable_gates", return_value=results):
-            assert vc._run_verify_gates("/tmp/fake", blocking=False) is True
+            assert vc._run_verify_gates(str(tmp_path), blocking=False) is True
 
-    def test_blocking_returns_false_on_gate_failure(self):
+    def test_blocking_returns_false_on_gate_failure(self, tmp_path):
         """Blocking mode: gate failure returns False."""
         results = [_make_gate_result("e2e-web", "fail", blocking=True)]
         with patch.object(vg, "run_applicable_gates", return_value=results):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is False
+            assert vc._run_verify_gates(str(tmp_path), blocking=True) is False
 
-    def test_blocking_returns_true_when_all_pass(self):
+    def test_blocking_returns_true_when_all_pass(self, tmp_path):
         """All gates pass → True regardless of blocking mode."""
         results = [
             _make_gate_result("unit", "pass"),
             _make_gate_result("e2e-web", "pass"),
         ]
         with patch.object(vg, "run_applicable_gates", return_value=results):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+            assert vc._run_verify_gates(str(tmp_path), blocking=True) is True
 
-    def test_skip_gates_dont_block(self):
+    def test_skip_gates_dont_block(self, tmp_path):
         """Skipped gates should not cause failures."""
         results = [_make_gate_result("e2e-mobile", "skip", blocking=True)]
         with patch.object(vg, "run_applicable_gates", return_value=results):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+            assert vc._run_verify_gates(str(tmp_path), blocking=True) is True
 
-    def test_non_blocking_gate_failure_doesnt_block(self):
+    def test_non_blocking_gate_failure_doesnt_block(self, tmp_path):
         """A non-blocking gate failure shouldn't block even in blocking mode."""
         results = [_make_gate_result("load", "fail", blocking=False)]
         with patch.object(vg, "run_applicable_gates", return_value=results):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is True
+            assert vc._run_verify_gates(str(tmp_path), blocking=True) is True
 
-    def test_exception_in_gates_returns_false_when_blocking(self):
+    def test_exception_in_gates_returns_false_when_blocking(self, tmp_path):
         """Unexpected exception in gates + blocking=True → FAIL."""
         with patch.object(vg, "run_applicable_gates", side_effect=RuntimeError("boom")):
-            assert vc._run_verify_gates("/tmp/fake", blocking=True) is False
+            assert vc._run_verify_gates(str(tmp_path), blocking=True) is False
 
-    def test_exception_in_gates_returns_true_when_non_blocking(self):
+    def test_exception_in_gates_returns_true_when_non_blocking(self, tmp_path):
         """Unexpected exception in gates + blocking=False → pass."""
         with patch.object(vg, "run_applicable_gates", side_effect=RuntimeError("boom")):
-            assert vc._run_verify_gates("/tmp/fake", blocking=False) is True
+            assert vc._run_verify_gates(str(tmp_path), blocking=False) is True
 
 
 class TestVerifyGatesIntegration:

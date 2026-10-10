@@ -5,6 +5,37 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+### Added
+- **Discovered issues enter the sprint queue's visibility automatically**
+  (ISSUE-068, PR #121) — `scripts/sprint_queue.py next-action` auto-considers
+  `issues.md` Board-registered `Status: backlog`, non-`Manual` issues that have
+  **no row** in the `docs/sprint_state.md` Issue Progress table, so work
+  registered mid-sprint can no longer be invisible to the loop. Scoping: an
+  issue qualifies only if its numeric ID is strictly above the watermark (the
+  max numeric ID among rostered `ISSUE-<digits>` cells); no rostered rows means
+  no synthesis, preserving the legacy empty-table `DONE` path. New `next-action`
+  JSON fields: `unrostered` (the surfaced IDs) and, when the action would
+  otherwise be `DONE`, `stranded` plus an explicit warning appended to `reason`
+  — a sprint cannot close silently over actionable Board work. With no such
+  issues present the output is byte-identical to the previous behavior, and
+  rostered rows keep table-only dependency resolution unchanged (the
+  Board-resolved dependency loosening is scoped to synthesized rows only).
+  Synthesized IDs are withheld from `implement_ready` while anything is
+  in-flight, so discovery cannot pre-empt the `STUCK` escalation — a
+  synthesized row rebuilds `attempts: "0"` every call, so that starvation would
+  have had no terminating counter. Roster-ID parsing is deliberately bounded
+  (`ISSUE-(\d{1,9})`): an unbounded `\d+` handed to `int()` raises an uncaught
+  `ValueError` past CPython 3.11's `sys.int_max_str_digits` cap, which would
+  replace the sprint engine's JSON with a traceback.
+  **Known gap — ships with AC-1 and AC-3 unmet:** the watermark is re-derived
+  from the *mutable* Issue Progress table while the queue orders
+  `implement_ready` by priority rather than ID, so once a higher-ID discovered
+  issue is rostered a lower-ID sibling drops below the new watermark and
+  vanishes — no target, no `unrostered`, no `stranded`. Reproduced on this
+  issue's own motivating 063/064/065 case (`next-action` returns a bare `DONE`).
+  **ISSUE-069 carries AC-1 and AC-3**; see `docs/review_notes/ISSUE-068.md` and
+  `docs/test_plan.md` GAP-068a/GAP-068b.
+
 ## 0.7.0 — 2026-10-10
 
 The SPEC-055 repositioning release: the kit's surface is reorganized around

@@ -96,4 +96,37 @@ The deciding line is Option C's "+1 module + ~15 tests; -2 wasted inline attempt
 
 - [ ] When the activation trigger fires (runtime exposes sub-task skill invocation), should /sprint also delegate the research path (/brainstorm, /bizanalysis — explicitly out of scope here) through the same context-decision module? — owner: design, by: the feature-matrix row that confirms the capability.
 - [ ] Should `review_context.py decide` also subsume the interactive path's probe entirely (deleting the step-3.1 mention of exit codes) or keep the exit-code explanation as doc prose? — owner: implementation taste at PR time; the contract above only requires the decide call to be the single decision point.
-- [ ] Once ISSUE-067's shared emitter lands, should the `emit` subcommand migrate to a thin alias of that helper's CLI (if it grows one) instead of an in-module seam? — owner: 066 ship-time rebase, by: ISSUE-066 ship.
+- [x] Once ISSUE-067's shared emitter lands, should the `emit` subcommand migrate to a thin alias of that helper's CLI (if it grows one) instead of an in-module seam? — **Resolved at ISSUE-066 ship (2026-10-11): deferred to ISSUE-075, not done here.** ISSUE-067 shipped the seam (`scripts/kit_telemetry.py::emit_event`) but deliberately replaced silent-skip with announce-and-write-unattributed semantics, so the swap is not the one-body substitution this spec assumed: two of this module's tests pin the opposite contract, `emit_event`'s documented "NEVER raises" is currently false, and ISSUE-070 is already rewriting its containment and raise contracts. `review_context.py` therefore keeps its own hardened appender for now — recorded as duplication debt (not a hardening regression; review verified per-control equivalence with two controls stronger) in `docs/telemetry_schema.md`'s Emit-site inventory.
+
+## Correction entered at ship time (2026-10-11) — the dormant landing's stated cause was wrong
+
+The Decision above is unchanged: Option C still ships, and the hardening copy
+it delivers is equivalent-or-stronger, so landing it regresses nothing. But the
+**reason** this spec gave for rejecting Option D does not survive review, and
+leaving the wrong rationale inside an accepted spec would make the next reader
+re-derive a false constraint.
+
+- **What this spec claimed:** no mechanism can make the SPEC-019 primary path
+  execute from the sub-task review context on today's runtime — i.e. a
+  categorical runtime limitation.
+- **What review established:** the conclusion is **confounded**. Inside a Task
+  sub-agent, the *sub-agent's* `tools:` frontmatter wins over the skill's
+  `allowed-tools`. `skills/review/SKILL.md` does grant `SlashCommand`, but
+  neither `agents/reviewer.md` nor `agents/team-lead.md` grants `SlashCommand`
+  or `Skill` — **no kit agent does**. Meanwhile a general-purpose Task
+  sub-agent with full tool access *does* receive a `Skill` tool listing both
+  review skills (observed from inside a sub-task during the ISSUE-066 review).
+  So the absence this spec measured was partly **the kit's own configuration**,
+  not a property of the runtime. This is review lesson "allowed-tools grants
+  must map to real call sites" pointing at the kit's own agent roster.
+- **Consequence for the activation trigger:** it is narrower and nearer than
+  this spec assumed. **ISSUE-072 is the activation trigger for this module** —
+  it adds the verified sub-agent skill-invocation row to
+  `docs/cc_feature_matrix.md` *first* (the ISSUE-014 verify-before-relying
+  rule) and then grants the tool on the review path if the probe confirms
+  support. The `decide` contract needs no change for that: a context where the
+  tool is present already routes to `delegated`.
+- **What stays true:** the `context-unreachable` vs `capability-absent` reason
+  split, the decide-once contract, and the no-inline-attempt behavior are all
+  still correct and mutation-pinned. Only the Option D rejection *rationale* is
+  corrected here, not the decision.

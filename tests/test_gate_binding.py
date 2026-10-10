@@ -137,6 +137,17 @@ def _runs_dir(project: Path) -> Path:
     return d
 
 
+def _clean_telemetry(project: Path, monkeypatch) -> None:
+    """Pin the shared emitter (ISSUE-067) to its clean, silent path.
+
+    conftest.py delenvs KIT_RUN_ID suite-wide, so every emit would otherwise
+    announce the unattributed fallback on stdout — setting a valid run id
+    keeps the ONE-loud-line stdout pins meaning exactly what they always
+    meant (and doubles as the clean-path no-announcement guard)."""
+    _runs_dir(project)
+    monkeypatch.setenv(sgr.RUN_ID_ENV, "testrun")
+
+
 def _events(project: Path, run_id: str = "testrun") -> list[dict]:
     path = project / ".claude" / "runs" / f"{run_id}.jsonl"
     assert path.is_file(), f"expected telemetry file at {path}"
@@ -226,6 +237,7 @@ class TestProvenanceMac:
     """A schema-valid artifact without authentic provenance is forged."""
 
     def _setenv(self, project, monkeypatch, path):
+        _clean_telemetry(project, monkeypatch)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
         tgd._probe(monkeypatch, 2)
 
@@ -288,7 +300,8 @@ class TestProvenanceMac:
         """AC-1 positive fixture (mutation pair for every mac refusal): the
         SAME artifact with a correct HMAC-SHA256 sidecar under the same key
         delegates with the synthesized GateResults — and the module itself
-        prints nothing on success (the consumer owns the marker)."""
+        prints nothing on success (the consumer owns the marker; the clean
+        telemetry path adds no announcement — ISSUE-067 mutation guard)."""
         path = _bound_artifact(project, KEY)
         self._setenv(project, monkeypatch, path)
         decision, results, reason = _decide(project)
@@ -305,6 +318,7 @@ class TestFreshness:
     """A validly MACed artifact from a previous run is stale, not evidence."""
 
     def _setenv(self, project, monkeypatch, path):
+        _clean_telemetry(project, monkeypatch)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
         tgd._probe(monkeypatch, 2)
 
@@ -368,6 +382,7 @@ class TestConsumeOnce:
     """One artifact attests at most one run — replay refuses."""
 
     def _setenv(self, project, monkeypatch, path):
+        _clean_telemetry(project, monkeypatch)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
         tgd._probe(monkeypatch, 2)
 
@@ -471,29 +486,40 @@ class TestSchemaViolationsStayInvalidResults:
         assert (decision, results, reason) == ("degraded", None, "invalid_results")
 
 
-# ── dormant paths stay silent through the bound API ──────────────────
+# ── dormant paths print no GATE output through the bound API ─────────
 
 
-class TestDormantPathsStaySilent:
-    """The dormant degraded flavors print NOTHING — the existing
-    byte-identity pins in test_gate_delegation.py must keep holding once the
-    bound signature lands."""
+class TestDormantPathsPrintNoGateOutput:
+    """The dormant degraded flavors print no GATE-decision output — their
+    decision/reason tuples are unchanged. Since ISSUE-067 the shared
+    telemetry emitter announces its KIT_RUN_ID fallback (conftest delenvs
+    the knob suite-wide), so stdout contains ONLY that [kit-telemetry] line
+    and the event lands in unattributed.jsonl with run_id_fallback set."""
 
-    def test_skill_missing_prints_nothing(self, project, monkeypatch, capsys):
+    def _assert_only_telemetry_fallback(self, project: Path, out: str) -> None:
+        lines = out.splitlines()
+        assert len(lines) == 1, f"expected only the telemetry fallback line: {out!r}"
+        assert lines[0].startswith("[kit-telemetry]")
+        assert "KIT_RUN_ID" in lines[0], "the announcement must name the knob"
+        assert "GATE" not in out, "dormant flavors must print no gate output"
+        [event] = _events(project, "unattributed")
+        assert event["run_id_fallback"] == "KIT_RUN_ID unset"
+
+    def test_skill_missing_prints_no_gate_output(self, project, monkeypatch, capsys):
         tgd._probe(monkeypatch, 1)
         decision, results, reason = _decide(project)
         assert (decision, results, reason) == ("degraded", None, "skill_missing")
-        assert capsys.readouterr().out == ""
+        self._assert_only_telemetry_fallback(project, capsys.readouterr().out)
 
-    def test_capability_dormant_prints_nothing_and_reason_unchanged(
+    def test_capability_dormant_reason_unchanged_no_gate_output(
         self, project, monkeypatch, capsys
     ):
         """Dormant-path regression guard: env unset → reason stays
-        capability_dormant, zero stdout, through the new bound signature."""
+        capability_dormant; only the telemetry fallback line is printed."""
         tgd._probe(monkeypatch, 2)
         decision, results, reason = _decide(project)
         assert (decision, results, reason) == ("degraded", None, "capability_dormant")
-        assert capsys.readouterr().out == ""
+        self._assert_only_telemetry_fallback(project, capsys.readouterr().out)
 
 
 # ── telemetry ────────────────────────────────────────────────────────
@@ -584,6 +610,7 @@ class TestConsumerWiringBinding:
         byte-identical to the pre-binding delegated pin — marker + all four
         statuses through the renderer — and the verify_gates seam is NEVER
         called."""
+        _clean_telemetry(project, monkeypatch)
         path = tgd._write_results(project, _delegated_pin_payload())
         _sign(path, KEY)
         monkeypatch.setenv(sgr.GATE_RESULTS_ENV, str(path))
@@ -604,6 +631,7 @@ class TestConsumerWiringBinding:
         result equals the capability-dormant degraded run — the verify_gates
         seam runs exactly once in both; only the loud refusal line (naming
         mac + KIT_GATE_RESULTS_FILE) differs on stdout."""
+        _clean_telemetry(project, monkeypatch)
         tgd._probe(monkeypatch, 2)
         monkeypatch.setattr(sgr, "generate_binding_key", lambda: KEY)
         monkeypatch.setattr(vc, "_GATE_PROCESS_START", time.time() - 3600.0)

@@ -33,7 +33,7 @@
 | `research_triangulation_single`      | bizanalysis         | `section: str`                                            | TAM/SAM/SOM rendered as `range … [single-source]`. |
 | `research_audit_finding`             | brainstorm, bizanalysis | `verdict: str, finding_count: int`                       | Degraded-path research-auditor summary. |
 
-### ISSUE-019 — review delegation (script-side emitter: `scripts/review_context.py`, ISSUE-066)
+### ISSUE-019 — review delegation (emit call site: `scripts/review_context.py`, ISSUE-066)
 
 | Event type                          | Owner skill | Payload fields                          | Notes |
 |-------------------------------------|-------------|-----------------------------------------|-------|
@@ -41,12 +41,18 @@
 | `review_delegated_to_security_review`| review      | `pr_number: int | str`                  | Emitted when runtime `/security-review` is invoked. |
 | `review_degraded_path_used`          | review      | `dimension: "code" | "security", reason: "capability-absent" | "context-unreachable" | "inline-attempt-failed"` | One emission per degraded dimension. `reason` was added by ISSUE-066 — pre-066 lines without it are valid legacy. |
 
-> ISSUE-066: `scripts/review_context.py` is the script-side emitter and the
-> single emit seam for all three review delegation events. Its `decide`
-> subcommand emits the decide-time `review_degraded_path_used` events
-> (reasons `capability-absent` / `context-unreachable`, ONCE per degraded
-> dimension per review run); its `emit` subcommand is the prose-side call
-> site for the delegated events and the `inline-attempt-failed` degradation.
+> ISSUE-066: `scripts/review_context.py` is the review path's single emit
+> CALL SITE for all three review delegation events. Its `decide` subcommand
+> emits the decide-time `review_degraded_path_used` events (reasons
+> `capability-absent` / `context-unreachable`, ONCE per degraded dimension
+> per review run); its `emit` subcommand is the prose-side call site for the
+> delegated events and the `inline-attempt-failed` degradation.
+>
+> The shared emit SEAM is `scripts/kit_telemetry.py` (ISSUE-067) — that title
+> moved there when ISSUE-067 landed. `review_context.py` still carries its own
+> private hardened appender instead of calling the shared seam; the migration
+> is **ISSUE-075**, deliberately deferred (see the Emit-site inventory row for
+> why).
 
 ### ISSUE-058 — test-execution gate delegation (dormant until the runtime capability ships)
 
@@ -70,14 +76,41 @@ Until ISSUE-001 lands its collector, events should be appended to
 `.claude/runs/<run-id>.jsonl` (project-side, gitignored) using `O_APPEND`
 with payloads kept under 4 KB to preserve POSIX atomicity. Each event line
 must validate against this schema; future ingestion replays these files
-under the ISSUE-001 pipeline. Script-side emitters (e.g.
-`scripts/synthesize_gate_results.py`) resolve the run-id from the
-`KIT_RUN_ID` env var; unset — or no `.claude/runs/` directory — means
-emission is a silent no-op.
+under the ISSUE-001 pipeline. The shared emitter
+(`scripts/kit_telemetry.py`, ISSUE-067) resolves the run-id from the
+`KIT_RUN_ID` env var and auto-creates `.claude/runs/`; an unset or invalid
+run-id means the event is written under the explicit `unattributed` run id
+with a top-level `run_id_fallback` field naming the condition, plus one
+`[kit-telemetry]` stdout announcement naming the knob — never a silent
+no-op.
 
-When the kit's telemetry pipeline is unconfigured (no `.claude/runs/`
-directory, no run-id available), event emission is a silent no-op — never
-fail the parent skill on a telemetry write error.
+Every remaining skip path announces its named reason on stdout (containment
+violation, serialized event past the 4 KB cap, write failure). A rejected
+containment violation writes nothing anywhere, so the stdout line is its
+only signal. Telemetry stays non-blocking: never fail the parent skill on a
+telemetry write error (unchanged).
+
+## Emit-site inventory (ISSUE-067)
+
+Audit of every telemetry emit call site: each site uses the shared emitter
+(`scripts/kit_telemetry.py`) or carries a recorded justification — no
+hand-rolled appender remains unexamined.
+
+| Site | Mechanism | Status / justification |
+|------|-----------|------------------------|
+| `scripts/synthesize_gate_results.py` | `kit_telemetry.emit_event` (thin `_emit_telemetry` delegation) | Migrated to the shared helper. |
+| `skills/review/SKILL.md.tmpl` delegation/degraded emits | `python3 scripts/review_context.py decide` / `emit` (ISSUE-066) | Superseded the shared-emitter CLI one-liners: ISSUE-066 shipped immediately after this audit and moved the review emits out of prose into `review_context.py`, which owns the decide-once contract. The prose no longer calls `kit_telemetry.py` directly. |
+| `scripts/review_context.py` | own hardened `_emit_event` appender | **NOT YET migrated — ISSUE-075.** Per-control equivalence with `kit_telemetry.emit_event` was verified at review time, with two controls *stronger* (all-string-value truncation rather than `detail`-only; coercion inside the `try` so it never raises) — so this is duplication debt, not a hardening regression. Migration was deferred at ISSUE-066's ship because `emit_event`'s containment and "NEVER raises" contracts are themselves being rewritten by ISSUE-070, and two ISSUE-066 tests pin the opposite (pre-announcement) contract. |
+| `skills/bizanalysis/SKILL.md.tmpl` research emits | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
+| `skills/brainstorm/SKILL.md.tmpl` degraded emit | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
+| `scripts/spec_gate.py` | printed JSON decision object + the skill's stdout "telemetry-style" bypass line per SPEC-007 | JUSTIFIED, not migrated: no JSONL appender exists there — adding one is new scope (minimality). |
+| `project/.claude/hooks/agent_state.py` | hook-trace appender to `.claude/run/events.jsonl` | JUSTIFIED: separate ISSUE-001 shape-only hook-trace stream with its own contract; ISSUE-001 analytics scope is explicitly Out. |
+| `/ship` skill, `scripts/checkpoint.sh` / `verify_checkpoint.py` | — | JUSTIFIED: no emit call sites exist today (audited; nothing to migrate). |
+| `scripts/trace_query.py` | — | Consumer, not an emitter. |
+
+Events cataloged above without a live emit instruction (e.g.
+`synthesis_*`, `research_quote_*`) have no call site to migrate; when a
+skill gains one, it must use the shared emitter CLI.
 
 ## Updating this doc
 

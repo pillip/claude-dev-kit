@@ -39,6 +39,12 @@
 - [x] ISSUE-051: De-conflict the parallel-review docs/.review scratch path _(track: platform, P3, 0.5d — sprint discovered, iter5/6/7)_
 - [x] ISSUE-052: Make sprint_queue crash-recovery aware of already-merged PRs _(track: platform, P2, 1d — sprint discovered, iter7/8)_
 - [x] ISSUE-053: Document the KIT_ALLOW_BROWSER_INSTALL + KIT_SPRINT_QUEUE_GH_TIMEOUT env knobs _(track: platform, P3, 0.5d — sprint 2 discovered, iter1/2)_
+- [ ] ISSUE-069: Pin the sprint roster boundary at sprint start — stop the watermark ratchet from re-hiding and auto-dispatching Board issues _(track: platform, P1, 1.5d — ISSUE-068 review triage, 2 unresolved High (GAP-068a/b); depends on 068)_
+- [ ] ISSUE-070: Contain the telemetry emitter's write target and make its no-raise/no-hang contract true _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High + 2 same-module Medium; depends on 067)_
+- [ ] ISSUE-071: Give KIT_RUN_ID a producer or stop announcing its absence on every run _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High: the fallback announcement fires on 100% of runs; depends on 067)_
+- [ ] ISSUE-072: Verify sub-agent skill invocation in the feature matrix and grant it on the review path if supported _(track: platform, P1, 0.5d — ISSUE-066 review triage: the kit's own agent `tools:` frontmatter confounds SPEC-066's categorical conclusion; depends on 066)_
+- [ ] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
+- [ ] ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it _(track: platform, P1, 0.5d — iter-1 review triage: team-lead is forbidden to write issues.md and planner is told to use flock_edit.sh but has no Bash, so the contract resolves as a silently unlocked write that still succeeds; mirror of ISSUE-072; depends on none)_
 
 ### Doing
 
@@ -91,8 +97,8 @@
 - [x] ISSUE-064: Harden verify_design_sweeps matcher edges — encoded/case tell variants, non-rendered quote placements, zero-screen vacuity, input containment _(track: platform, P2, 1d — ISSUE-056 review triage, adjacent Medium findings; depends on 063)_
 - [x] ISSUE-065: Add provenance, freshness, and consume-once binding to the KIT_GATE_RESULTS_FILE delegation handoff _(track: platform, P1, 1d — ISSUE-058 review triage, unresolved High finding in docs/review_notes/ISSUE-058.md; activation precondition per SPEC-058 Open Questions / test-plan GAP-058a; depends on 058)_
 - [ ] ISSUE-066: Make the SPEC-019 primary path reachable inside /sprint — runtime review skills are uninvokable from sub-task context _(track: platform, P1, 1.5d — 2026-10 sprint retro: all 6 sprint reviews ran degraded; the flagship idiom is interactive-only today)_
-- [ ] ISSUE-067: Silent-skip instrumentation must announce itself — unify the event emitter and surface eval-gate skips _(track: platform, P1, 1d — 2026-10 sprint retro: eval gate skipped silently on all 10 ships (zero review_eval artifacts); telemetry emits inconsistent (hand-appended JSONL vs silent no-op))_
-- [ ] ISSUE-068: Discovered issues must enter the sprint queue's visibility automatically _(track: platform, P1, 0.5d — 2026-10 sprint retro: 063/064/065 were invisible to sprint_queue until the orchestrator hand-added Issue Progress rows)_
+- [ ] ISSUE-067: Silent-skip instrumentation must announce itself — unify the telemetry emitter and announce its fallback paths _(track: platform, P1, 1d — 2026-10 sprint retro, premise corrected 2026-10-10: the eval gate did not skip — PR #92 (2a93d09) had removed it before the sprint, so zero review_eval artifacts meant "component absent", which still proved no-signal reads as all-clear; telemetry emits remain inconsistent (hand-appended JSONL vs silent no-op))_
+- [x] ISSUE-068: Discovered issues must enter the sprint queue's visibility automatically _(track: platform, P1, 0.5d — 2026-10 sprint retro: 063/064/065 were invisible to sprint_queue until the orchestrator hand-added Issue Progress rows)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -3593,15 +3599,15 @@ The design-sweep matchers detect the recorded evasion/false-pass variants and re
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-066.md
 - PRD-Ref: none (kit self-development; sprint retro finding; extends SPEC-019)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: doing
 - Owner:
 - Branch: issue/ISSUE-066-sprint-primary-path-delegation
-- GH-Issue:
-- PR:
+- GH-Issue: #119 https://github.com/pillip/claude-dev-kit/issues/119
+- PR: #122 https://github.com/pillip/claude-dev-kit/pull/122
 - Depends-On: none
 
 #### Goal
@@ -3635,9 +3641,11 @@ A /sprint review runs the SPEC-019 primary path when the runtime capability exis
 
 ---
 
-### ISSUE-067: Silent-skip instrumentation must announce itself — unify the event emitter and surface eval-gate skips
+### ISSUE-067: Silent-skip instrumentation must announce itself — unify the telemetry emitter and announce its fallback paths
 
-> 2026-10 sprint retrospective, two instances of one failure shape — instrumentation that silently does nothing: (1) the ISSUE-002 eval gate (`scripts/eval_review.py`, /ship step 8, non-blocking) skipped silently on ALL 10 ships this sprint — zero `docs/review_eval_*.md` artifacts exist, and no ship report mentioned the skip or its reason (CLI absent? notes path mismatch? sub-task env?); (2) telemetry emission is inconsistent — ISSUE-065's review `review_degraded_path_used` event was a silent no-op (no shared emitter, `KIT_RUN_ID` unset in sub-task env) while ISSUE-063's sub-task hand-appended JSONL events. A gate that can skip without saying so reads as "covered" when it did not run — the exact hole the kit's own validators exist to close (SPEC-056's no-vacuous-pass rule, applied to the kit's own instrumentation).
+> 2026-10 sprint retrospective, corrected 2026-10-10. Original reading: two instances of instrumentation silently doing nothing — (1) the ISSUE-002 eval gate skipping on all 10 ships, (2) inconsistent telemetry emission. Instance (1) was mis-attributed: the eval gate (`scripts/eval_review.py`, rubric template, tests, /ship step 8 wiring) was deleted wholesale by PR #92 (commit 2a93d09 — "all 8 review_eval_*.md outputs it produced were never committed") before the 0.6.0 release and therefore before the SPEC-055 sprint. Zero `docs/review_eval_*.md` artifacts means "component removed by design", not "silent skip" — current `skills/ship/SKILL.md` has no eval step; only stale `scripts/__pycache__/` .pyc residue remains. The mis-reading itself is the strongest evidence for the thesis: an instrument's absence produced no signal, and for a full retro cycle that no-signal was confusable with "live gate silently skipping". Instance (2) stands unchanged: ISSUE-065's review `review_degraded_path_used` event was a silent no-op (no shared emitter, `KIT_RUN_ID` unset in sub-task env) while ISSUE-063's sub-task hand-appended JSONL events. An instrument that can no-op without saying so reads as "covered" when it did not run — SPEC-056's no-vacuous-pass rule, applied to the kit's own instrumentation.
+
+> **Amended 2026-10-10** (team-lead pre-implement premise check, commit 2a93d09): evidence paragraph rewritten; Scope In item 1 and AC #1 re-targeted from the removed eval gate to instruments that exist today (the telemetry emit surface). Resurrecting the eval gate is explicitly out of scope — PR #92's deflation decision stands.
 
 - Track: platform
 - UI: false
@@ -3645,40 +3653,44 @@ A /sprint review runs the SPEC-019 primary path when the runtime capability exis
 - Manual: false
 - Spec-Required: false
 - Spec: none
-- PRD-Ref: none (kit self-development; sprint retro finding; extends ISSUE-002's eval gate and the ISSUE-001 telemetry surface)
+- PRD-Ref: none (kit self-development; sprint retro finding, premise corrected 2026-10-10; extends the ISSUE-001 telemetry surface — the ISSUE-002 eval gate it originally named was removed by PR #92)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: doing
 - Owner:
 - Branch: issue/ISSUE-067-silent-skip-instrumentation
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/120
+- PR: https://github.com/pillip/claude-dev-kit/pull/123
 - Depends-On: none
 
 #### Goal
-Every non-blocking instrument (eval gate, telemetry emits) either runs or announces its skip with a reason — in stdout where the phase report can see it and as a structured event — so "no signal" can no longer be confused with "all clear".
+Every existing non-blocking instrument — today, the kit's telemetry emits — either runs or announces its skip/fallback with a named reason (the knob or condition in the message), in stdout where the phase report can see it and in the event body where one is written, so "no signal" can no longer be confused with "all clear".
 
 #### Scope (In/Out)
 - In:
-  - `eval_review.py` degraded-mode skips print a one-line reason (named knob/dependency per the review lesson: print the remediation in the failure message) and the /ship step records skip-vs-ran in its phase output; the ship checkpoint surfaces the eval verdict or the skip reason.
-  - One shared emit helper for kit scripts (append JSONL under `.claude/run/` honoring the existing writer hardening — O_NOFOLLOW, containment, truncation): hand-rolled per-script emitters and silent no-ops both migrate to it. Absent `KIT_RUN_ID` gets a documented fallback (generate-and-print, or an explicit `unattributed` run id) instead of dropping the event.
-  - Audit the existing emit call sites (review/bizanalysis/brainstorm delegation tags, ship, checkpoint) for the same silent-drop shape.
+  - One shared emit helper for kit scripts (append JSONL under `.claude/run/` honoring the existing writer hardening — O_NOFOLLOW, dir containment, truncation per ISSUE-058): hand-rolled per-script emitters and silent no-ops both migrate to it.
+  - The helper's own skip/fallback paths each announce instead of silently no-op'ing: absent `KIT_RUN_ID` → documented fallback (generate-and-print, or an explicit `unattributed` run id) with the fallback visible in the event body; containment-violation rejection → named-reason announcement (nothing written outside `.claude/run/`).
+  - Audit the existing emit call sites (review/bizanalysis/brainstorm delegation tags, ship, checkpoint) for the same silent-drop shape: every site uses the shared helper or carries a recorded justification.
 - Out:
-  - Making the eval gate blocking (stays advisory; ISSUE-002's design stands).
+  - Resurrecting the ISSUE-002 eval gate (removed by design in PR #92 / commit 2a93d09 — the deflation principle stands; do not re-add self-referential machinery no user hits).
+  - Making any instrument blocking (emits stay advisory/non-blocking).
   - New telemetry dimensions or the deferred ISSUE-001 analytics scope.
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a /ship run where the eval gate cannot run, when the ship phase completes, then its output contains the skip line with the concrete reason and remediation, and a structured skip event exists — a silent skip is no longer possible (mutation test: force each skip cause, assert the announcement).
+- [ ] Given a kit script emitting through the shared helper, when one of the helper's skip/fallback paths triggers (`KIT_RUN_ID` absent; containment violation rejected), then the condition is announced with the named knob/reason in stdout and — where an event is still written — reflected in the event body; a silent no-op is no longer possible (mutation test both directions: force each path and assert the announcement; clean path asserts no announcement line).
 - [ ] Given any kit script emitting a telemetry event without `KIT_RUN_ID`, when it emits, then the event is written under the documented fallback instead of silently dropped, and the fallback is visible in the event body.
 - [ ] Given the emit-call-site audit, when it completes, then every site either uses the shared helper or carries a recorded justification — no hand-rolled appender remains unexamined.
 
 #### Implementation Notes
-- Evidence: zero `docs/review_eval_*.md` after 10 ships (2026-10 sprint); iteration 4 report "065's `review_degraded_path_used` telemetry was a silent no-op while 063's sub-task hand-appended JSONL events".
-- Review lessons: print the knob name in the failure message it remediates; workspace-writable event files follow the ISSUE-058 writer hardening; mutation-test announcements in both directions (skip → announced; ran → no skip line).
+- Premise correction (2026-10-10): the original "eval gate skipped silently on all 10 ships" evidence was wrong — PR #92 (commit 2a93d09) deleted the gate before the sprint. Do not reference or restore `scripts/eval_review.py`; the stale `scripts/__pycache__/` .pyc files are residue, not a live surface.
+- Surviving evidence: iteration 4 report "065's `review_degraded_path_used` telemetry was a silent no-op while 063's sub-task hand-appended JSONL events".
+- Review lessons: print the knob name in the failure message it remediates (the `KIT_RUN_ID` fallback and containment-rejection messages must name the condition); workspace-writable event files follow the ISSUE-058 writer hardening; mutation-test announcements in both directions (fallback → announced; clean emit → no announcement line).
+- A rejected containment violation cannot carry its announcement in the event (nothing is written) — the stdout/stderr line is the only signal on that path; test it as such.
 
 #### Tests
-- [ ] Per-skip-cause mutation fixtures for eval_review (CLI absent, notes missing, judge error) asserting the announcement line + structured event.
-- [ ] Shared-emitter unit tests: with and without KIT_RUN_ID, containment violations rejected, truncation preserved.
+- [ ] Shared-emitter unit tests: with and without `KIT_RUN_ID` (fallback id present in the event body), containment violations rejected with a named-reason announcement, truncation preserved, O_NOFOLLOW honored.
+- [ ] Per-fallback-path mutation fixtures: force each skip/fallback cause and assert the announcement; clean-path fixture asserts no announcement line (hollow-pass guard).
+- [ ] Migration pins: each migrated call site emits a schema-identical event through the shared helper (fixture-pin at the delegation seam).
 
 #### Rollback
 `git revert` — announcements and the shared helper are additive; instruments stay non-blocking throughout.
@@ -3689,6 +3701,9 @@ Every non-blocking instrument (eval gate, telemetry emits) either runs or announ
 
 > 2026-10 sprint retrospective: ISSUE-063/064/065 were created mid-sprint by the planner (correctly registered in issues.md Board + Detail) but `sprint_queue.py next-action` never surfaced them — the queue's roster is the sprint_state Issue Progress table, and nothing added rows for the new issues. The orchestrator noticed by cross-reading the Board and hand-added three rows; without that, the sprint would have reported DONE with two P1 review follow-ups (one an unresolved-High security precondition) silently stranded in backlog. State-contract gap between the planner's registration surface (issues.md) and the queue's visibility surface (sprint_state.md).
 
+<!-- ### ISSUE-068 SHIP NOTE -->
+> **Shipped 2026-10-11 (PR #121) with UNMET acceptance criteria — AC-1 and AC-3 FAIL.** `augment_roster_from_board` re-derives `watermark = max(rostered_nums)` from the **mutable** sprint_state Issue Progress table while `compute_queues`/`choose_action` order `implement_ready` by **priority, not ID**, so the control re-hides what it surfaced. Replayed on this issue's own motivating case (063/064/065 with the two P1s rostered and 064 still `backlog`): `next-action` returns a bare `DONE`. AC-2 holds only for IDs **above** the watermark. Merged regardless because the rostered-row engine is byte-identical to main (independently verified on the live sprint files) and the PR carries two confirmed High fixes — the huge-ID `int()` crash via CPython's `sys.int_max_str_digits` cap, and discovery starving the STUCK escalation with no terminating counter. **ISSUE-069 carries AC-1 and AC-3; the goal of this issue is NOT reached.** The AC checkboxes below stay unchecked deliberately.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -3698,11 +3713,11 @@ Every non-blocking instrument (eval gate, telemetry emits) either runs or announ
 - PRD-Ref: none (kit self-development; sprint retro finding; extends ISSUE-052's queue semantics)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-068-discovered-issue-queue-visibility
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/118
+- PR: https://github.com/pillip/claude-dev-kit/pull/121
 - Depends-On: none
 
 #### Goal
@@ -3732,3 +3747,374 @@ An issue registered in issues.md during a running sprint becomes visible to `spr
 
 #### Rollback
 `git revert` — queue/validate changes are self-contained; the manual row-surgery workaround remains documented in the sprint recovery log.
+
+---
+
+### ISSUE-069: Pin the sprint roster boundary at sprint start — stop the watermark ratchet from re-hiding and auto-dispatching Board issues
+
+> ISSUE-068 review triage (2026-10-10; docs/review_notes/ISSUE-068.md + docs/test_plan.md GAP-068a/GAP-068b, PR #121): the discovered-issue visibility control ISSUE-068 added has one mechanism with two High-severity harms. `scripts/sprint_queue.py::augment_roster_from_board` re-derives `watermark = max(rostered_nums)` from the **mutable** sprint_state Issue Progress table on every invocation, while `compute_queues`/`choose_action` order `implement_ready` by **priority, not ID**. **Harm A — the control re-hides what it surfaced**: once a higher-ID discovered issue is rostered, a lower-ID sibling drops below the new watermark and vanishes entirely — no target, no `unrostered` annotation, no `stranded` warning. Replayed on ISSUE-068's own motivating case: with ISSUE-063 and ISSUE-065 rostered (the two P1s dispatched first) and ISSUE-064 still `Status: backlog` with its dependency Board-done, `next-action` returns a bare `DONE` — ISSUE-068's AC-1 and AC-3 failing in exactly the scenario it was filed for. The same shape appears whenever priority inverts ID order (a P0 ISSUE-070 dispatched before a P1 ISSUE-069, independently verified). **Harm B — above-boundary pre-existing backlog is auto-TARGETED, not merely flagged**: the watermark excludes only IDs *below* the roster max, so a sprint deliberately scoped on older debt auto-pulls everything newer into `implement_ready` and drives it through implement -> review -> `gh pr merge`. Verified: roster ISSUE-010..011 with 040/055/066-068 open -> main returns `DONE`, the branch returns `PIPELINE` on three out-of-scope issues. ISSUE-068's AC-1 only requires *flagging*, so autonomous *targeting* of unscoped work is a choice, not a requirement. Every existing CLI test is a single invocation against a hand-written roster whose max is also the global max, so the suite is structurally blind to both harms.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-068 review triage, GAP-068a + GAP-068b; review lessons "Workspace-persisted state consumed by auto-running hooks is untrusted input — validate on read" and "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class" — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-068
+
+#### Goal
+`sprint_queue.py` computes Board visibility against a boundary pinned **once at sprint start**, so an issue surfaced in one iteration stays surfaced in the next, and issues newer than a deliberately-scoped roster are flagged without being dispatched.
+
+#### Scope (In/Out)
+- In:
+  - Persist the boundary: a `- Roster-Watermark: ISSUE-<max rostered ID at sprint start>` line in the sprint_state `## Meta` block — field added to `templates/sprint_state.md`, written by the orchestrator at sprint creation per an instruction in `skills/sprint/SKILL.md.tmpl` step 1 (the skill is **AUTO-GENERATED** — edit the `.tmpl` and regenerate with `python3 scripts/gen_skills.py`; never hand-edit `skills/sprint/SKILL.md`).
+  - `augment_roster_from_board` reads the pinned value instead of re-deriving `max(rostered_nums)`; absent or unusable value -> falls back to today's derivation with the fallback named in `reason` (backward compatibility for sprints already in flight).
+  - Treat the parsed value as **untrusted workspace input**: canonical-ID fullmatch with a bounded digit count, range sanity against the live Board, duplicate/mis-cased/decorated `## Meta` field variants rejected -> fallback, never a crash and never a silently emptied `unrostered_ids` (the GAP-068h "one bad ID disables the whole control" shape).
+  - Dispatch scoping for Harm B: rows synthesized from the Board **above** the pinned boundary are surfaced in `unrostered` but are NOT placed into `implement_ready` unless an explicit opt-in knob is set; the knob gets one line of docs in the owning module docstring and in `skills/sprint/SKILL.md.tmpl` (env-knob lesson).
+  - A **two-iteration replay** test harness: invoke `next-action`, apply the resulting roster mutation to the fixture state, invoke again, assert on the second result. This harness is the structural gap — single-invocation tests cannot catch either harm.
+- Out:
+  - Phase ordering, FINALIZE semantics, the IRON LAW, or any other part of the ISSUE-052 contract.
+  - The remaining ISSUE-068 review Mediums recorded as GAP-068c..GAP-068j (row-creation contract for synthesized targets, `stranded` consumer/exit class, `Manual` parse fail-open, fence-blind issue split, raw-roster-cell identity, `gh pr view` positional-ref injection) — triaged separately; do not absorb them here.
+  - Renaming the `unrostered` / `stranded` JSON keys the sprint skill and team-lead read.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a sprint whose `## Meta` pins `Roster-Watermark: ISSUE-062` and whose roster has since grown to include ISSUE-063 and ISSUE-065, when `next-action` runs with ISSUE-064 still `backlog` and its dependency Board-done, then ISSUE-064 is surfaced in `unrostered` and named in `reason` — not the bare `DONE` today's re-derived watermark returns.
+- [ ] Given any sprint fixture replayed across two consecutive invocations where the first invocation's targets are marked rostered before the second runs, when the second invocation runs, then every issue the first invocation surfaced is still surfaced or targeted by the second — visibility is monotonic within a sprint, and the test fails if the pinned boundary is reverted to the `max()` derivation.
+- [ ] Given a priority-inverted pair in one sprint (a P0 whose ID is higher than an open P1's, so priority order inverts ID order), when `next-action` runs after the P0 has been rostered, then the lower-ID P1 is still surfaced — the harm is fixed as a class, not only for the 063/064/065 shape.
+- [ ] Given a roster whose pinned boundary is ISSUE-011 while five higher-ID Board issues are open (the reviewer's verified fixture: 040/055/066-068), when `next-action` runs without the dispatch opt-in, then those newer issues appear in `unrostered` and no action targets them — out-of-scope work is flagged, never auto-driven through implement -> review -> merge.
+- [ ] Given the same roster with the dispatch opt-in explicitly set, when `next-action` runs, then the above-boundary issues ARE targeted and the opt-in knob's name appears in the emitted `reason`, so the broadened scope is visible in the sprint log rather than inferred.
+- [ ] Given a sprint_state `## Meta` with no `Roster-Watermark` line, when `next-action` runs, then behaviour matches the current `max(rostered_nums)` derivation (the TC-068i legacy byte-pins still pass) except for one named fallback note.
+- [ ] Given a `Roster-Watermark` value that is malformed, decorated (`**ISSUE-101**`, `ISSUE-101 (retry)`), out of the live ID range, or duplicated in `## Meta`, when the queue reads it, then the value is rejected with the rejection named in output and the derivation falls back — mutation-tested per variant, in both directions (bad value -> rejected + fallback, good value -> honoured).
+
+#### Implementation Notes
+- Provenance (branch files not yet on main — cite by content): docs/review_notes/ISSUE-068.md Highs, mirrored as `docs/test_plan.md` GAP-068a (watermark ratchet) and GAP-068b (above-watermark auto-targeting). Both name this exact candidate fix; GAP-068h names the pinned `## Meta` boundary as its remedy too, so it is closed incidentally.
+- Files: `scripts/sprint_queue.py` (`augment_roster_from_board` boundary read + validation; `compute_queues`/`choose_action` dispatch scoping), `templates/sprint_state.md` (`## Meta` field), `skills/sprint/SKILL.md.tmpl` (sprint-start write instruction; regenerate via `python3 scripts/gen_skills.py` — the AUTO-GEN header must stay **below** the frontmatter per ISSUE-035's byte-0 rule), `tests/test_sprint_queue*.py` (two-iteration harness).
+- No minimal in-file alternative exists for Harm A: the sprint-start boundary is simply not recoverable from mutable state. The opt-in dispatch gate alone fixes Harm B but not Harm A, so land the pinned boundary and use the gate for scoping.
+- Review lesson (untrusted workspace input): the `## Meta` block is a workspace-writable file the queue reads back and acts on — validate at read time, treat any violation as "fall back + announce", never as data. Parse the field by collecting **all** occurrences and matching the name case-insensitively (ISSUE-042 duplicate-key pattern), since a duplicate benign-first field is exactly how this control would silently loosen.
+- Review lesson (contract relaxation scoped to the new caller class): the legacy exact-table path must keep its pinned failure modes — add the backward-compat fixtures alongside, and keep TC-068d/TC-068i green unmodified.
+
+#### Tests
+- [ ] Two-iteration replay of the 063/064/065 case: iteration 1 surfaces/targets 063+065, the fixture is mutated to roster them, iteration 2 still surfaces 064 (the test that fails on main's derivation).
+- [ ] Priority-inversion replay (P0 above a P1) across two iterations.
+- [ ] Harm B pair: pinned boundary ISSUE-011 with newer issues open -> flagged, never targeted without the opt-in; with the opt-in -> targeted plus the knob named in `reason`.
+- [ ] Backward compatibility: `## Meta` without the field -> output equals the legacy derivation (TC-068i byte-pins intact).
+- [ ] Untrusted-input matrix: malformed / decorated / out-of-range / duplicated / mis-cased field variants each rejected with a named reason and a fallback, asserted per variant plus a positive control.
+
+#### Rollback
+`git revert` — the boundary field is additive in `templates/sprint_state.md` and read with a fallback, so a revert returns to today's derivation without invalidating any sprint_state file already carrying the field (the field becomes an ignored comment-like line). Regenerate skills after the revert (`python3 scripts/gen_skills.py`) so `skills/sprint/SKILL.md` matches its `.tmpl`.
+
+---
+
+### ISSUE-070: Contain the telemetry emitter's write target and make its no-raise/no-hang contract true
+
+> ISSUE-067 review triage (2026-10-10; PR #123): one unresolved High plus two same-module Mediums, all in `scripts/kit_telemetry.py::emit_event`. **High — containment cannot fail**: `emit_event` accepts `project_path`, does `mkdir(parents=True, exist_ok=True)` under it, then appends; the containment check compares two values **both derived from the attacker-supplied root**, so for a non-symlinked root it is structurally unfalsifiable. The review's partial fix (refuse when the project root is not an existing directory) closed only the non-existent-path case — the reviewer re-tested and appending into any existing writable directory still works (`~` and `~/.ssh` demonstrated). Closing it needs a **scope decision** between ISSUE-067's AC-1 ("auto-create, never silently skip") and ISSUE-058's containment invariant ("only ever write inside the kit project"); that decision is this issue. **Medium — a planted FIFO hangs the gate**: the target path `.claude/runs/<run-id>.jsonl` is predictable, and a FIFO planted there blocks `os.open` forever (exit 124). Unlike a raised exception, a hang is not caught by `verify_checkpoint.py`'s wrapper, so it stalls a gate checkpoint. **Medium — the documented contract is false**: the docstring says the helper "NEVER raises", reproduced false by closing stdout (`ValueError: I/O operation on closed file`), where main's pre-extraction emitter returned cleanly. This lands on a deadline: ISSUE-066 is explicitly instructed to adopt this helper at its ship-time rebase and to trust that contract. No FIFO / hardlink / device-node / TOCTOU / stdout-closed test exists anywhere in `tests/`.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-067 review triage — unresolved High + 2 Mediums in the same module; review lesson "Workspace-persisted state consumed by auto-running hooks is untrusted input — validate on read", write-side corollary from the ISSUE-058 review — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-067
+
+#### Goal
+`emit_event` writes only inside the kit project it was invoked for, cannot be made to hang by anything planted at its target path, and either honours the "never raises" contract its docstring advertises or stops advertising it.
+
+#### Scope (In/Out)
+- In:
+  - Make the scope decision and record it in the PR: either `project_path` stops being the containment root (the root is derived independently — `bash scripts/worktree.sh root` / `CLAUDE_PROJECT_DIR` — and a caller-supplied path outside it is refused with a named reason), or auto-create is dropped for non-kit roots. Either way the containment check must compare the resolved target against a root the caller did not supply, so the check is falsifiable.
+  - Non-regular-file hardening at the open: refuse FIFOs, device nodes and multiply-linked files (e.g. `O_NONBLOCK` on the open, or `fstat` after `O_NOFOLLOW` with an `S_ISREG` + link-count check) with a named-reason announcement instead of blocking — keeping the existing `O_NOFOLLOW`, dir containment and truncation behaviour from ISSUE-058/067 intact.
+  - Make the contract true or true-by-wording: either widen the catch set so "NEVER raises" actually holds (closed streams -> `ValueError`, `OSError`, and `RecursionError`, which is not a `ValueError`), or narrow the docstring to name the raising conditions and pin a handler at every call site. Pick one; pin the chosen contract in tests so ISSUE-066's adopt-at-rebase instruction rests on a tested promise.
+- Out:
+  - The `KIT_RUN_ID` producer / fallback-noise decision (ISSUE-071) — same module, different defect, separate PR.
+  - Making emits blocking, or adding telemetry dimensions.
+  - Re-deriving the event schema: the clean-path event body stays byte-schema-identical to what ISSUE-067 ships.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `emit_event` called with a `project_path` outside the kit project that is an existing writable directory (`~`, `~/.ssh`), when it runs, then nothing is created or appended anywhere under that path, the refusal is announced with the named reason, and the same call against the real kit root succeeds — the containment check is proven falsifiable in both directions.
+- [ ] Given a FIFO planted at the resolved `.claude/runs/<run-id>.jsonl` target (and, as separate cases, a symlink and a non-regular device node), when `emit_event` runs, then it returns within the test's timeout with the refusal announced and nothing written through the planted node; removing the non-regular-file guard makes this test hang/time out rather than merely assert differently.
+- [ ] Given stdout closed by the caller, when `emit_event` runs, then the behaviour matches the module's documented contract — returns without raising if the docstring claims "never raises", or raises exactly the documented exception with a pinned call-site handler if the docstring is narrowed — and the test asserts the chosen contract, not both.
+- [ ] Given a normal kit-rooted invocation on the clean path, when `emit_event` runs, then the appended event is schema-identical to ISSUE-067's shipped shape and no refusal or announcement line is printed (hollow-pass guard: the hardening must not make the happy path chatty).
+
+#### Implementation Notes
+- Provenance (branch files not yet on main — cite by content): ISSUE-067 review, High "containment compares two attacker-derived values; appending into any existing writable dir still works after the partial fix (`~`, `~/.ssh` demonstrated)"; Mediums "planted FIFO at the predictable run path hangs `os.open` (exit 124), and a hang is not caught by `verify_checkpoint.py`'s wrapper" and "docstring claims NEVER raises; closing stdout raises `ValueError`".
+- Files: `scripts/kit_telemetry.py` (containment root derivation, open hardening, contract), its call sites audited by ISSUE-067, and `tests/` (no FIFO / hardlink / device-node / TOCTOU / stdout-closed coverage exists today — this issue creates that family).
+- A hang is strictly worse than an exception here because the only wrapper that would have caught it catches exceptions, not stalls: write the FIFO test so the guard's removal is observable as a timeout (bounded `subprocess` timeout or `pytest-timeout`), per the hard-coded-timeout lesson's "handle 124 as a distinct outcome" rule.
+- Review lesson (write-side untrusted-input corollary, ISSUE-058): `O_NOFOLLOW` on the open, realpath-contain the target dir, whitelist attacker-influenced name components, truncate attacker-derived payload text rather than dropping the event. This issue adds the missing leg: the containment root itself must not be attacker-supplied.
+- Review lesson (forgeable-attestation lesson, point 6): run every `exists()`/`stat` probe of a caller-derived path **after** containment — a pre-containment probe whose refusal reason diverges observably is a filesystem-existence oracle. Keep refusal reasons uniform across the two classes or document the divergence.
+
+#### Tests
+- [ ] Containment mutation pair: outside-root existing writable dir -> nothing written + named refusal; real kit root -> event appended.
+- [ ] Planted-node family: FIFO (timeout-bounded), symlink, device node, multiply-linked regular file — each refused with a named reason; guard-removal mutation makes the FIFO case hang.
+- [ ] Contract test for the chosen no-raise/narrowed-docstring decision, with stdout closed; plus a call-site pin if the docstring is narrowed.
+- [ ] Clean-path pin: schema-identical event, zero announcement lines.
+- [ ] TOCTOU: target replaced with a non-regular node between the containment check and the open -> refused, not written.
+
+#### Rollback
+`git revert` — the hardening is additive inside `emit_event` and emits stay non-blocking either way, so a revert restores ISSUE-067's shipped emitter. If the docstring was narrowed rather than the catch set widened, revert the call-site handlers in the same commit so the contract and its consumers never disagree.
+
+---
+
+### ISSUE-071: Give KIT_RUN_ID a producer or stop announcing its absence on every run
+
+> ISSUE-067 review triage (2026-10-10; PR #123), unresolved High: `KIT_RUN_ID` has **no producer**, so ISSUE-067's fallback announcement fires on 100% of runs and re-creates the failure mode it was built to fix, one level up. Verified: nothing in the kit *sets* the knob (grepped `scripts/ project/ skills/ agents/ templates/ hooks.json settings.snippet.json .github/`), and nothing *reads* `.claude/runs/*.jsonl` on any default path (`scripts/trace_query.py` reads the different `.claude/run/events.jsonl` stream). Net effect: every gate checkpoint in every project prints one `[kit-telemetry] fallback: KIT_RUN_ID unset ...` line and appends to a file no code consumes. A line emitted on every single run carries zero information, so the genuinely exceptional announcements ISSUE-067 added become background noise — against ISSUE-067's own Goal ("'no signal' can no longer be confused with 'all clear'" requires that signal be scarce).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-067 review triage, unresolved High; review lesson "New env-var knobs need one line of docs at introduction time" — the knob's producer and consumer are the other half of that lesson — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-067
+
+#### Goal
+A default gate-checkpoint run produces no telemetry fallback announcement, because either `KIT_RUN_ID` has a real producer or the unset-knob path is no longer announced per emit on stdout — leaving the exceptional announcements scarce enough to mean something.
+
+#### Scope (In/Out)
+- In:
+  - Pick ONE resolution and record it in the PR: (a) **give the knob a producer** — ISSUE-067's own named alternative: generate a run id once per session (the existing once-per-session surface is `session_start.py`; the existing per-project state dir is `.claude/run/`) and export/print it so emits attribute to it; or (b) **demote the always-on path** — the unset-knob notice becomes at-most-once-per-process and/or stderr, while genuinely exceptional announcements (containment refusal, non-regular target, truncation) stay on stdout where the phase report sees them.
+  - Either way the always-on stdout line stops: the announcement budget on a clean default run is zero lines.
+  - Preserve ISSUE-067's no-silent-no-op property: under (b) the fallback stays visible **in the event body**, which is the durable record; the stdout channel is reserved for conditions a human should act on.
+  - Decide and record the fate of the written stream: either a kit script reads `.claude/runs/*.jsonl` on a default path (named in the PR), or the stream is unified with the already-consumed `.claude/run/events.jsonl` that `trace_query.py` queries. A write-only artifact must not be the only thing this instrument produces.
+- Out:
+  - The containment / FIFO / no-raise defects in the same module (ISSUE-070).
+  - New telemetry dimensions or the deferred ISSUE-001 analytics scope.
+  - Making emits blocking.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a default project with no kit env knobs set, when a gate checkpoint runs and emits telemetry, then stdout contains zero `KIT_RUN_ID`-unset fallback lines, while forcing an exceptional condition (containment refusal) in the same fixture still prints its announcement — scarcity is asserted alongside retained signal.
+- [ ] Given 20 emits within one process and `KIT_RUN_ID` unset, when they run, then at most one unset-knob notice is produced in total across the process (zero if resolution (a) supplies an id), and a per-emit notice fails the test.
+- [ ] Given resolution (a), when a session starts, then a run id is produced once and subsequent emits in that session carry it in the event body; given resolution (b), when an emit falls back, then the fallback marker is still present in the event body — the ISSUE-067 "an instrument never no-ops silently" property is asserted under whichever branch ships.
+- [ ] Given the stream written after this issue, when the recorded decision is applied, then either a named kit script reads it on a default path or it is unified with `.claude/run/events.jsonl`, and a test pins that the path written is the path read — no write-only artifact survives.
+
+#### Implementation Notes
+- Provenance (branch files not yet on main — cite by content): ISSUE-067 review High "`KIT_RUN_ID` has no producer, so the fallback announcement fires on 100% of runs"; producer grep covered `scripts/ project/ skills/ agents/ templates/ hooks.json settings.snippet.json .github/`; consumer grep confirmed `trace_query.py` reads `.claude/run/events.jsonl`, a different stream from `.claude/runs/<run-id>.jsonl`.
+- Files: `scripts/kit_telemetry.py` (announcement policy / id resolution), `project/hooks/session_start.py` + `hooks.json` + `settings.snippet.json` if resolution (a) is chosen (both hook surfaces must stay in sync — ISSUE-032 precedent), `scripts/trace_query.py` if the streams are unified.
+- Resolution (a) is the stronger fix but touches two hook surfaces and the session contract; resolution (b) is contained to one module. Either satisfies the Goal — the PR must state which and why, so the decision is auditable later.
+- Review lesson (env-var knobs): whichever resolution lands, `KIT_RUN_ID` gets one line in the owning module docstring and one in the most relevant user-facing doc, and any surviving message names the knob it remediates.
+- Parallelism note: ISSUE-070 edits the same module (containment, open hardening, raise contract) but a disjoint defect — no dependency either way; whichever lands second rebases on the first. Do not absorb the other's scope to avoid a rebase.
+- Deflation check (PR #92 precedent): the point of this issue is behavioural — stdout noise on every gate checkpoint in every project, plus writes to an unread file. If the honest resolution is that neither a producer nor a consumer is worth building, then the correct outcome is to remove the stream and the announcement rather than to document the drift; record that as the decision and close the issue on the removal.
+
+#### Tests
+- [ ] Clean default run: zero fallback lines on stdout; forced containment refusal in the same fixture still announces (mutation pair, both directions).
+- [ ] Repeat-emit budget: 20 emits with the knob unset -> at most one notice; reverting to per-emit announcement fails the test.
+- [ ] Branch-specific pin: (a) session-produced id appears in the event body of subsequent emits; (b) fallback marker present in the event body with no stdout line.
+- [ ] Path-identity pin: the path written by the emitter is the path the named consumer reads (or the unified `.claude/run/events.jsonl`), asserted from the production constants rather than a re-typed literal.
+
+#### Rollback
+`git revert` — under resolution (b) the change is a message-policy diff inside one module; under (a) revert the hook-surface edits together with the emitter change so the id's producer and consumer never disagree. Emits stay non-blocking throughout, so neither direction can break a gate.
+
+---
+
+### ISSUE-072: Verify sub-agent skill invocation in the feature matrix and grant it on the review path if supported
+
+> ISSUE-066 review triage (2026-10-10; PR #122), reviewer-rated Medium but filed at P1 because it is the activation trigger for a dormant ~360-line module and the highest-leverage finding of this batch. **The kit's own agent `tools:` frontmatter is a cause of the SPEC-019 primary path being unreachable — the absence SPEC-066 measured was partly the kit's own configuration, not a runtime limitation.** Independently confirmed by team-lead: `skills/review/SKILL.md` DOES grant `SlashCommand` in `allowed-tools`; but when `/review` runs inside a Task sub-agent the **sub-agent's `tools:` frontmatter wins**, and neither `agents/reviewer.md` (`tools: Read, Glob, Grep, Edit, Bash, Write`) nor `agents/team-lead.md` (`tools: Read, Glob, Grep, Write, Edit, Bash, Task`) grants `SlashCommand` or `Skill` — **no kit agent does**. Meanwhile a general-purpose Task sub-agent with full tool access **does** receive a `Skill` tool listing both review skills; the ISSUE-066 reviewer observed exactly this from inside its own sub-task. `docs/cc_feature_matrix.md` has **no** verified sub-agent skill-invocation row (confirmed), so SPEC-066's activation trigger remains correctly gated on the ISSUE-014 "verify in the matrix first" rule — and SPEC-066's categorical conclusion ("no mechanism can make the primary path execute from the sub-task review context on today's runtime") is **confounded**: the grant was never present during the observation.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-066.md (existing, lands with PR #122 — this issue tests its activation trigger and records the result; no new spec: a verification plus a two-line grant is not a design)
+- PRD-Ref: none (kit self-development; ISSUE-066 review triage; ISSUE-014 "verify in the feature matrix before relying" rule; review lesson "allowed-tools grants in skill frontmatter must map to actual call sites" — general form of this finding — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-066
+
+#### Goal
+`docs/cc_feature_matrix.md` carries a locally-verified row for skill/slash-command invocation from Task sub-agent context, and the review path either carries the grant that activates SPEC-066's primary path or carries a recorded refutation that justifies the dormant landing.
+
+#### Scope (In/Out)
+- In:
+  - Probe and record the matrix row per the ISSUE-014 rule: does a Task sub-agent expose a `Skill` / `SlashCommand` tool, and does the sub-agent's `tools:` frontmatter override the invoked skill's `allowed-tools`? The row states Status, a `local` verification note naming the probe and date, and the consumer issues.
+  - If supported: add the grant on the review path only (`agents/reviewer.md`, `agents/team-lead.md`, plus their `.tmpl` sources if generated — regenerate via `python3 scripts/gen_skills.py` where applicable) and confirm `review_context.decide` returns `delegated` from inside a sub-task review, activating SPEC-066's primary path with zero further kit change (its stated activation property).
+  - If not supported: record the refutation in the matrix row and append it to SPEC-066, so the dormant landing rests on a measurement rather than an unmeasured assumption.
+  - Grant hygiene either way: the grant is added only where a real call site consumes it, and no symmetry grants ride along.
+- Out:
+  - Changing review dimensions, the synthesizer contract, or the degraded reviewer path (SPEC-019/066 scope stands).
+  - Granting `Skill`/`SlashCommand` to any agent outside the review path.
+  - The research delegation path (/brainstorm, /bizanalysis) — it follows whatever this measurement establishes, later.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the probe has run, when `docs/cc_feature_matrix.md` is read, then it contains a row for "skill / slash-command invocation from Task sub-agent context" with a Status, a `local` verification note naming the probe and its date, and ISSUE-066/072 as consumers — the ISSUE-014 rule is satisfied before any grant lands.
+- [ ] Given the probe shows a sub-agent CAN invoke skills, when the grant is added to the review-path agents and `/review` runs inside a Task sub-agent, then `review_context.decide` returns `delegated` and runtime findings reach `synthesize_review_notes.py` — evidenced by a live run recorded in the PR, not by a unit fixture alone.
+- [ ] Given the probe shows a sub-agent CANNOT invoke skills, when the issue closes, then the refutation is recorded in the matrix row and appended to SPEC-066, no grant is added, and a guard test pins that no review-path agent carries an unusable `SlashCommand`/`Skill` grant.
+- [ ] Given a grant landed under branch 2, when the grant-hygiene test runs, then every granted tool form has a real call site on the review path and deleting that call site fails the test — the allowed-tools-maps-to-call-sites lesson, applied in the direction this finding exposes (a missing grant that silently disables a path, not an unused grant that widens one).
+
+#### Implementation Notes
+- Provenance (branch files not yet on main — cite by content): ISSUE-066 review Medium plus team-lead's independent confirmation of the three facts — `skills/review/SKILL.md` line 6 grants `SlashCommand`; `agents/reviewer.md` line 4 is `tools: Read, Glob, Grep, Edit, Bash, Write` and `agents/team-lead.md` line 4 is `tools: Read, Glob, Grep, Write, Edit, Bash, Task`; `docs/cc_feature_matrix.md` has no sub-agent skill-invocation row (the matrix stops at row 9).
+- Sequence matters: the matrix row comes FIRST. Adding the grant before the row would be exactly the ISSUE-014 violation the kit's own rule exists to prevent, and the row is the deliverable that survives even if the grant turns out to be impossible.
+- Plugin-shipped agents support `tools:`/`disallowedTools:`/`skills:` per matrix row 6 — check whether the `skills:` field, rather than a `SlashCommand` grant, is the supported mechanism; the probe should distinguish them, because they imply different grant text.
+- This refutes a categorical SPEC claim, so the probe transcript (or a reproducible recipe) belongs in the PR: SPEC-066's conclusion is the thing being corrected, and a later reader needs the evidence, not the verdict.
+- Review lesson (grants map to call sites): the general form covers both directions — an unused grant widens privilege, a missing grant silently disables a documented path and gets mis-attributed to the runtime. Note the second direction in the lesson when this closes.
+
+#### Tests
+- [ ] Matrix-row presence/shape guard: the new row exists with a non-empty Status and a `local` verification note (the row is the ISSUE-014 artifact and must not be droppable silently).
+- [ ] Branch 2 (supported): `review_context.decide` returns `delegated` for a sub-task context fixture once the grant is present, and `capability-absent`/`context-unreachable` when it is not — mutation-paired on the grant's presence.
+- [ ] Branch 3 (refuted): guard test asserting no review-path agent frontmatter carries a `SlashCommand`/`Skill` grant, with the matrix row and SPEC-066 appendix as the recorded justification.
+- [ ] Grant-hygiene pin: each granted tool form on the review path maps to a real call site; deleting the call site fails.
+
+#### Rollback
+`git revert` — the matrix row and SPEC-066 appendix are additive records, and the grant is two frontmatter tokens. Reverting the grant returns the review path to the degraded-always behaviour SPEC-066 lands with, which is the fallback either way; keep the matrix row even on a revert, since the measurement stays true independently of whether the kit chooses to use it.
+
+---
+
+### ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict
+
+> GAP-068j (docs/test_plan.md, ISSUE-068 review 2026-10-10 / PR #121; **pre-existing from ISSUE-052, live on main today**, hence its own issue rather than a finding against PR #121). The Board `PR:` field value flows into `gh pr view` as a **bare positional** at `scripts/sprint_queue.py:228`, so a value like `PR: --repo attacker/evil` is consumed by `gh` as a **flag**, not a PR reference. A `MERGED` answer sourced from the attacker-chosen repo makes `classify_ship_ready` emit **FINALIZE** instead of SHIP, and `ship_merge_decision` return `skip` through the same poisoned ref — so an **unmerged PR is finalized as `shipped`** and the sprint records as done work that was never merged. Reviewer-reproduced with a logging fake `gh` on the **live rostered** `reviewed` path (`GH-INVOKED: pr view --repo attacker/evil --json state,mergedAt`); ISSUE-068's synthesized rows provably cannot reach it (zero invocations), which is why this is not a PR #121 finding. The injection is reachable from two sources: the Board field via `classify_ship_ready`, and the **model-chosen** `ship-merge-decision --pr` CLI argument the ship skill passes (`cmd_ship_merge_decision`, line 626). This is the same leading-dash class that review lesson "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class" names at point (3), and whose sibling instance ISSUE-057's SEC-3 already fixed.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; GAP-068j from the ISSUE-068 / PR #121 review; review lesson "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class" point (3), leading-dash class — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A Board- or CLI-supplied PR reference can never be re-interpreted as a `gh` flag: `_gh_pr_merge_state` refuses option-shaped and non-conforming refs **before** invoking `gh`, passes `--` ahead of the ref, and an unmerged PR therefore can no longer be finalized as `shipped`.
+
+#### Scope (In/Out)
+- In:
+  - Validate the ref inside `_gh_pr_merge_state` — the **chokepoint both callers share** — before the `runner(...)` call: a `fullmatch` whitelist of the forms the field actually carries (`\d{1,9}`, `#\d{1,9}`, `https://github\.com/[\w.-]{1,64}/[\w.-]{1,64}/pull/\d{1,9}`), with bounded digit/segment runs rather than `\d+`. Anything option-shaped or non-conforming returns `None` (indeterminate) with a warning naming the rejected value **and the `PR:` field it came from**, and never raises — the existing never-raises contract from ISSUE-052 is preserved.
+  - Pass `--` as an argument separator at the call site so a value can never be re-interpreted as a flag, which requires moving `--json state,mergedAt` **ahead** of the separator: `["gh", "pr", "view", "--json", "state,mergedAt", "--", ref]`.
+  - **Sibling sweep of `scripts/sprint_queue.py`, recorded result: exactly ONE subprocess/`gh` call site exists in the file** (line 228; grep-verified across `"gh"`, `subprocess.`, `runner(`), so there are no sibling positional-ref invocations in this module to fix. What the sweep does find is two *entry points* feeding that one site — `classify_ship_ready` (Board `PR:`, line 286) and `cmd_ship_merge_decision` (`args.pr`, line 626) — both covered by guarding at the chokepoint rather than at the Board-parse site.
+  - Update the argv fixture pin in `tests/test_sprint_queue.py` and add the injection / accept-form / mutation tests below.
+- Out:
+  - `scripts/verify_checkpoint.py`'s five `gh` call sites: they read the **same** Board `PR:` field but extract through `re.search(r"(\d+)\s*$", pr_field)` in `_extract_pr_number` (line 200), i.e. trailing digits only, so they are structurally immune. Verified, no change needed — recorded here so the absence is auditable.
+  - ISSUE-069's watermark/dispatch scope and the remaining GAP-068c..GAP-068i Mediums.
+  - Hardening `gh pr merge` in the ship skill, and any change to FINALIZE/SHIP semantics, the `--no-check-merged` flag, or the IRON LAW.
+  - Broadening the whitelist to `gh`'s branch-name ref form — unattested in every live `PR:` value, so excluding it is a deliberate narrowing, not an oversight.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a rostered `reviewed` issue whose Board `PR:` value is `--repo attacker/evil`, when `next-action` runs with a logging fake supplied as `runner`, then the fake records zero invocations, the probe degrades to indeterminate, the emitted action is `SHIP` rather than `FINALIZE`, and the warning text names both the rejected value and the `PR:` field it was read from.
+- [ ] Given the same option-shaped value passed through the model-chosen CLI path as `sprint_queue.py ship-merge-decision --pr '--repo attacker/evil'`, when the command runs, then the decision is `merge` with zero `gh` invocations, proving the guard sits at the `_gh_pr_merge_state` chokepoint and not only at the Board-parse site.
+- [ ] Given the three ref forms the probe must keep accepting (a bare `123` as its own tests use, a `#123` as the historical Board rows carry, and a full `https://github.com/<owner>/<repo>/pull/123` URL as every recent row carries), when `_gh_pr_merge_state` runs against a fake runner answering `MERGED`, then each still resolves to `merged` with the ref string reaching the argv unchanged, and `classify_ship_ready` still emits `FINALIZE` for each exactly as on main.
+- [ ] Given the two compound values the live Board already carries (`#108 https://github.com/pillip/claude-dev-kit/pull/108` and the same shape for PR 122), when the probe runs on them, then the outcome matches the handling explicitly recorded in the PR — refused-as-indeterminate, which reproduces today's observable result since `gh` cannot parse a two-token ref, unless the PR records a normalization decision instead — and the test asserts the branch that shipped by name.
+- [ ] Given the validation helper deleted or weakened to a pass-through, when the injection test re-runs, then it fails with the fake recording the `--repo attacker/evil` invocation, so the guard is proven load-bearing rather than merely present.
+- [ ] Given the argv the probe builds, when the argv pin asserts it, then the pinned list is `["gh", "pr", "view", "--json", "state,mergedAt", "--", "<ref>"]` with every flag ahead of the `--` separator and the ref last, and the fixture's old `PR-REF` placeholder is replaced by a ref the validator accepts.
+
+#### Implementation Notes
+- Provenance: `docs/test_plan.md` GAP-068j, whose named candidate is "validate the ref against `#?\d+|https://github\.com/[\w.-]+/[\w.-]+/pull/\d+` and insert `--` before it". This issue bounds that pattern's quantifiers and places it at the chokepoint.
+- Files: `scripts/sprint_queue.py` (`_gh_pr_merge_state`, lines 209-233 — the guard plus the argv reorder; the callers `classify_ship_ready` 272-297 and `ship_merge_decision` 300-322 need no edit if the guard sits at the chokepoint), `tests/test_sprint_queue.py` (`TestGhPrMergeState`, the `_runner` argv-recording fixture at ~515, and `test_argv_is_fixed_and_shell_free` at 563-566).
+- **Precedent to cite in the PR:** ISSUE-057's SEC-3 (`docs/review_notes/ISSUE-057.md:41-43`) fixed the sibling instance of this exact class — the `-` sentinel reaching `_find_worktree_path`, whose compiled `\-(?:-|/|$)` could match an unrelated worktree — by **rejecting the option-shaped value before any downstream consumer ran**, not by sanitizing inside it. Same shape, same remedy.
+- The existing argv pin passes the placeholder `"PR-REF"`, which a strict whitelist rejects. Update the fixture to a legitimate ref; do **not** loosen the validator to keep the old placeholder green — that is precisely how review lesson 8's fail-open direction gets reintroduced.
+- Tests that inject `merge_state_fn=` replace the probe and so bypass the guard by design (see `TestShipMergeDecision`, which passes `"pull/1"`). Drive the injection and mutation tests through `runner=` instead, so they traverse the production code path (mock-at-the-delegation-seam lesson); leave the `merge_state_fn` doubles alone.
+- Census first (review lesson 8 sub-class): every non-empty `PR:` value in the live file is one of three shapes — bare `#N` (the historical rows), a full `https://github.com/.../pull/N` URL (every recent row), and two compound `#N <url>` values (ISSUE-062/PR #108, ISSUE-066/PR #122). No bare-number-without-`#` value is live today, though `_gh_pr_merge_state`'s own tests use one, so it stays in the whitelist.
+- Fail-safe direction is already attested: a refusal yields `None` -> `classify_ship_ready` keeps the issue on `still_ship` -> `ship_merge_decision` returns `merge` -> the real `gh pr merge` surfaces the truth. That is the same observable mode the existing `--no-check-merged` flag produces, so the refusal path is not a novel behaviour. Normalizing a compound value instead would move it toward FINALIZE (the unsafe direction) and therefore needs explicit justification in the PR if chosen.
+- `--` must come **after** the flags: `gh`'s cobra parser treats everything following `--` as positional. Verify against the installed `gh` (`gh pr view --json state,mergedAt -- 121`) and record the version in the PR; if the installed `gh` does not honour the separator, the validation remains the load-bearing control and the separator's status is recorded rather than assumed.
+- Bound the digit runs (`\d{1,9}`, not `\d+`) and the URL's owner/repo segments — same family as ISSUE-068's `_ROSTER_ID_RE` fix and the widened-window quantifier lesson, since the pattern runs over text the kit does not author.
+- Run the AC-5 mutation matrix with `PYTHONDONTWRITEBYTECODE=1` and validate the harness with one known-killing mutant before trusting any SURVIVED verdict (bytecode-cache lesson) — that AC is a mutation verdict, so the harness is part of the evidence.
+
+#### Tests
+- [ ] Injection pin (Board path): `PR: --repo attacker/evil` on a rostered `reviewed` issue -> zero recorded `gh` invocations, action `SHIP` not `FINALIZE`, warning naming the `PR:` field.
+- [ ] Injection pin (CLI path): `ship-merge-decision --pr '--repo attacker/evil'` -> `merge`, zero invocations.
+- [ ] Accept-form matrix: bare `123`, `#123`, full URL -> `merged` under a `MERGED` fake with the ref unchanged in argv, plus `classify_ship_ready` -> `FINALIZE` for each.
+- [ ] Compound-value pin for the two live Board values, asserting the recorded branch by name.
+- [ ] Mutation pair: guard removed -> the injection test fails with the invocation recorded; guard present -> the accept-form matrix stays green.
+- [ ] Argv pin: `["gh", "pr", "view", "--json", "state,mergedAt", "--", "121"]` — flags before `--`, ref last.
+- [ ] Degradation unchanged: empty ref, non-zero exit, `OSError`, `TimeoutExpired`, unparseable JSON, and valid-but-non-object JSON all still return `None` without raising, so the new early return does not regress the ISSUE-052 contract.
+
+#### Rollback
+`git revert` — the change is one validation helper plus an argv reorder inside `_gh_pr_merge_state`, with no schema, output-key, or phase-semantics surface. Note that a revert **restores a live argument injection**, so it must be paired with disabling the probe (`next-action --no-check-merged`, which forces phase-only SHIP) until the guard is re-landed; reverting the argv pin alone is not sufficient.
+
+---
+
+### ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it
+
+> Sprint iter-1 review triage (2026-10-10). The kit's registry-lock contract is **unsatisfiable by any actor as written**, attested at four sites: `agents/team-lead.md:165` ("All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER edits issues.md directly", reinforced at :18 "Delegate all issues.md changes to planner agent" and :252 "Edit issues.md directly — always delegate to planner agent"); `agents/planner.md:126-127`, the planner's own Append Mode, which says to append to `issues.md` via `flock_edit.sh` and update `STATUS.md` via `flock_edit.sh`; and `agents/planner.md:4`, `tools: Read, Glob, Grep, Write, Edit` — **no Bash**. Team-lead is forbidden to write the registry; planner is instructed to take the lock but cannot invoke it. The contract therefore resolves one of two ways: as a **silently unlocked write** (planner uses `Edit`, the lock is never taken, the write **succeeds**, and nothing errors anywhere — the dangerous resolution), or as a Bash-capable caller running the wrapper over planner-prepared content (done manually five times during this triage — safe but undocumented). **This is a product defect, not doc drift:** concurrent `issues.md` writes can clobber each other and lose registry data, in exactly the parallel-sprint scenario the kit is built for. Not theoretical — during this review phase two concurrent review sub-tasks appended to `docs/test_plan.md` and one observed the file had grown underneath it mid-run, so the flock demonstrably earns its keep on the path that *does* take it. Note the asymmetry: `scripts/preambles.py:85-93` injects the `registry_edit.sh` pattern into **skill** preambles, which run where Bash exists, so the instruction is satisfiable there. The gap is specific to the **agent** layer — which is also the layer the team-lead contract routes every `issues.md` write through. Mirror of review lesson 9 and of its sibling ISSUE-072: ISSUE-072 is the *missing grant silently disables a documented path* direction; this is the *missing grant silently removes a safety guarantee while the operation still succeeds* direction, which is strictly harder to notice because there is no failure to attribute.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; sprint iter-1 review triage 2026-10-10; review lesson "allowed-tools grants in skill frontmatter must map to actual call sites" — native memory review-lessons.md — in its inverse direction; sibling ISSUE-072)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Whichever actor the contract instructs to write `issues.md` under the lock can actually invoke the lock, and no agent is instructed to write `issues.md` with a toolset that can only produce an unlocked write.
+
+#### Scope (In/Out)
+- In:
+  - **Pick fix 2 and record why.** Change both contracts so the planner *prepares* the registry edit and the invoking skill / team-lead commits it under the lock, keeping the planner Bash-free. Concretely: `agents/planner.md:126-127` instructs the planner to emit the prepared Board line + detail block (or an apply script) as its output rather than to invoke `flock_edit.sh`; `agents/team-lead.md:165` (and :18, :252) states that team-lead never *authors* `issues.md` content — planner does — but **does** commit planner-prepared content via `bash scripts/registry_edit.sh issues.md -- ...`, which its `tools:` line already permits (`Bash` is granted at `agents/team-lead.md:4`).
+  - **Why not fix 1** (grant the planner `Bash(bash scripts/flock_edit.sh:*)` + `Bash(bash scripts/registry_edit.sh:*)` and nothing else): both wrappers execute an arbitrary command supplied after `--` — `flock_edit.sh` runs `"$@"` at lines 29 and 83, `registry_edit.sh` ends in `exec bash "$KIT_ROOT/scripts/flock_edit.sh" "$ROOT/$FILE" "$@"` at line 30, and the documented call form is literally `-- bash -c '<update command>'`. A prefix-scoped grant on these wrappers is therefore **arbitrary code execution wearing a narrow-looking prefix**: it satisfies the letter of the grants-map-to-call-sites lesson while voiding its intent, and it hands a planning agent full shell. Fix 1 becomes defensible only alongside a new non-exec'ing, content-only wrapper (e.g. one that takes a prepared-content file and appends it under the lock, with no command argument) — that is a design, not a 0.5d contract reconciliation, so it is recorded here as the follow-up path if fix 2's handoff proves awkward.
+  - A guard test that reads agent frontmatter and contract text together, so the two can never drift apart again silently.
+  - **Reconcile the `STATUS.md` half of `agents/planner.md:126-127`:** `STATUS.md` **does not exist in this repo** and per the current sprint contract must not be created, so that instruction is stale on its own terms, independent of the Bash gap. Remove it, or scope it explicitly to projects that already carry a `STATUS.md`.
+- Out:
+  - Changing `flock_edit.sh` / `registry_edit.sh` behaviour, the locking algorithm, or the stale-lock threshold.
+  - Building the content-only wrapper that fix 1 would require.
+  - The `STATUS.md` references outside the planner's instruction — `agents/team-lead.md:119` ("Update STATUS.md: Reflect progress (via flock_edit.sh)") and `:211`, plus the usage examples at `scripts/preambles.py:87` and `scripts/registry_edit.sh:10`. Audited and recorded here so the absence is auditable; :119 is the one closest to being in scope and may be folded in if the same edit touches it, but the file-existence question is a separate decision from the actor-capability one.
+  - `CHANGELOG.md` and any other registry file's write path.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the reconciled contracts, when each agent file that instructs a write to `issues.md` is read together with its own `tools:` frontmatter, then the actor named as taking the lock has a toolset that can invoke `scripts/registry_edit.sh` or `scripts/flock_edit.sh`, and the guard test derives both halves by parsing the files rather than from a hand-maintained constant.
+- [ ] Given the full set of kit agents, when the guard test scans for any instruction to modify `issues.md`, then no agent is instructed to write it while holding only `Write`/`Edit`, so no silently-unlocked write path is instructed anywhere in the agent layer.
+- [ ] Given the fix reverted to its pre-fix text, that is `agents/planner.md` carrying both the "append via `flock_edit.sh`" instruction and `tools: Read, Glob, Grep, Write, Edit`, when the guard test re-runs, then it fails and names `agents/planner.md` plus the missing invocation capability, proving the test is load-bearing rather than merely present.
+- [ ] Given fix 2 as the recorded choice, when `agents/planner.md` frontmatter is read, then its `tools:` line contains no `Bash` entry in any form, so the reconciliation adds zero privilege to the planner.
+- [ ] Given a future decision to adopt fix 1 instead, when the planner's grants are read, then every granted form is prefix-scoped to a specific wrapper with no blanket `Bash`, each maps to a real call site in the planner's own Append Mode steps, and the arbitrary-command objection recorded in Scope is answered in the PR.
+- [ ] Given `agents/planner.md`'s reconciled Append Mode and the fact that no `STATUS.md` exists in this repo, when the text is read, then the `STATUS.md` step is removed or explicitly scoped to projects that already carry one, and a test asserts that no kit agent instructs creating `STATUS.md` in this repo.
+
+#### Implementation Notes
+- Files: `agents/planner.md` (frontmatter line 4; Append Mode steps 5-6 at lines 126-127), `agents/team-lead.md` (lines 18, 165, 252, and 119 if the `STATUS.md` reconciliation is folded in), plus their `.tmpl` sources if these agents are generated — check and regenerate via `python3 scripts/gen_skills.py` rather than hand-editing a generated artifact, and verify the `.tmpl`/output pair does not re-diverge.
+- The guard test is the deliverable that survives either fix choice. Shape it as: for each `agents/*.md`, parse `tools:` from frontmatter; if the body instructs an `issues.md` modification, assert the instructed actor's capability. Keep the instruction-detection an **occurrence whitelist** (the specific sentences, cited by file and content) rather than a phrasing blacklist — the absence-guard lesson from ISSUE-040: a blacklist passes hollowly the moment someone rewords the sentence.
+- Mutation-test the guard per AC-3 with `PYTHONDONTWRITEBYTECODE=1`, and validate the harness with one known-killing mutant before trusting any SURVIVED verdict (bytecode-cache lesson). AC-3 is a mutation verdict, so the harness is part of the evidence.
+- Cite ISSUE-072 as the sibling in the PR and note both directions when the review lesson is next updated: an unused grant widens privilege; a missing grant either silently disables a documented path (ISSUE-072) or silently removes a safety guarantee while the operation still succeeds (this issue). The second is the worse failure mode precisely because the write returns success.
+- The handoff is the real design question in fix 2: planner output is text in a transcript, and the committing actor has to get it into the file byte-exactly. What worked manually five times today was planner-authored idempotent apply scripts, each guarded to no-op if its `### ISSUE-NNN:` anchor was already present, run by a Bash-capable caller under `registry_edit.sh`. Document that as the prescribed handoff shape, including the idempotence guard, since an apply script re-run without a guard is itself a duplicate-registry-entry bug.
+- Do not "fix" this by relaxing the team-lead prohibition into a direct `Edit` — that is the silently-unlocked resolution promoted to policy, and it is the specific outcome this issue exists to close off.
+
+#### Tests
+- [ ] Capability pin: for every agent instructed to write `issues.md`, the instructed lock-taker's parsed `tools:` can invoke `registry_edit.sh`/`flock_edit.sh`.
+- [ ] No-unlocked-write-instructed pin: no agent is instructed to modify `issues.md` with only `Write`/`Edit` available.
+- [ ] Mutation pair: pre-fix planner text plus Bash-free `tools:` fails the guard naming `agents/planner.md`; post-fix text passes.
+- [ ] Planner-privilege pin (fix 2): `agents/planner.md` `tools:` contains no `Bash` entry.
+- [ ] `STATUS.md` staleness pin: no kit agent instructs creating `STATUS.md`, and the planner's Append Mode no longer references it unconditionally.
+- [ ] Template-parity check: if `agents/*.tmpl` sources exist for planner/team-lead, the generated output matches after `gen_skills.py`.
+
+#### Rollback
+`git revert` — the change is contract text in two agent files plus one guard test, with no script, schema, or runtime surface. A revert restores the unsatisfiable contract and therefore re-opens the silently-unlocked write, so pair it with the interim rule that every `issues.md` write goes through a Bash-capable caller running `registry_edit.sh` over planner-prepared content (the practice this triage already followed) until the reconciliation re-lands.

@@ -29,6 +29,18 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 - **Cause**: The `gh pr view` merge-state probe in `scripts/sprint_queue.py` is timeout-bounded so a stuck `gh` never blocks the frequently-run queue
 - **Solution**: `KIT_SPRINT_QUEUE_GH_TIMEOUT` defaults to `10` seconds; on timeout the probe degrades to a phase-only decision. Override the bound by exporting `KIT_SPRINT_QUEUE_GH_TIMEOUT=<seconds>`.
 
+## Sprint Queue Visibility
+
+### Problem: Sprint reports DONE while `issues.md` still has backlog issues
+- **Symptom**: `scripts/sprint_queue.py next-action` prints `"action": "DONE"` together with a `"stranded": ["ISSUE-NNN", ...]` list and a warning appended to `reason`
+- **Cause**: those issues are registered in `issues.md` with `Status: backlog` but have no row in the `docs/sprint_state.md` Issue Progress table, and the queue could not dispatch them — normally an unresolved `Depends-On`. The `stranded` list names the issues, not the cause, and a blocker can itself be an issue the queue does not list (see the next entry). The action stays `DONE` and the exit code stays `1`, exactly as for a clean sprint, so the `stranded` key and the `reason` warning are the only signal
+- **Solution**: resolve the blocking dependency, or add rows for the issue **and its blocker** to the Issue Progress table (column order `Issue | Status | Attempts | Last Error | Phase`, with `backlog` in the Phase cell) and re-run `/sprint`
+
+### Problem: A newly filed issue is never picked up by the sprint queue
+- **Symptom**: an `issues.md` issue with `Status: backlog` is neither dispatched nor listed in `next-action`'s `unrostered` field
+- **Cause**: an issue with no Issue Progress row is auto-considered only when its number is **above** the highest `ISSUE-NNN` already in that table, `Manual` is not `true`, and `Status` is exactly `backlog` — an annotated value such as `backlog (blocked on vendor)` is deliberately not admitted, so the queue fails closed rather than dispatching something a human gated. The boundary is re-derived from the table on every run, so rostering a higher-ID issue first drops its lower-ID siblings below it
+- **Solution**: add a row for the issue to the Issue Progress table — a rostered issue is always considered, whatever its number. Keep `Status:` to the bare `backlog` keyword and put qualifiers elsewhere in the issue body, and roster newly discovered issues in ascending ID order
+
 ## GitHub Authentication
 
 ### Problem: `gh auth status` fails

@@ -27,15 +27,36 @@ the prose-side ``emit`` subcommand accepts for ``review_degraded_path_used``
 (a ``delegated`` dimension whose inline invocation failed anyway —
 probe-exit-2 ambiguity).
 
-**Single emit seam**: ``_emit_event`` is the ONE function through which every
-review delegation event is appended (``decide`` for decide-time degradations,
-``emit`` for the prose-side events). ISSUE-067's shared telemetry helper
-replaces this one function body at ISSUE-066's ship-time rebase — do not add
-a second emission call site. It mirrors the hardened best-effort append
-contract proven in ``synthesize_gate_results._emit_telemetry``
-(docs/telemetry_schema.md): run-id whitelist, runs-dir realpath containment,
+**Single emit call site**: ``_emit_event`` is the ONE function through which
+every review delegation event is appended (``decide`` for decide-time
+degradations, ``emit`` for the prose-side events) — do not add a second
+emission call site. It implements the hardened best-effort append contract of
+docs/telemetry_schema.md: run-id whitelist, runs-dir realpath containment,
 ``O_NOFOLLOW`` append, 4096-byte event cap with long-string truncation,
 never raises, silent no-op when unconfigured.
+
+Migration status (ship-time decision, 2026-10-11): the kit's shared emit SEAM
+is now ``scripts/kit_telemetry.py::emit_event`` (ISSUE-067, landed just before
+this module). This body was NOT swapped onto it, and the migration is tracked
+as **ISSUE-075**. Rationale for deferring rather than doing it here: (1)
+``emit_event``'s containment check and its documented "NEVER raises" contract
+are both being rewritten by ISSUE-070 — the latter is currently *false*
+(reproducible by closing stdout), whereas this function's blanket
+``except Exception`` makes the guarantee hold today, so adopting now would
+trade a working promise for a known-broken one inside the review gate;
+(2) ISSUE-067
+deliberately replaced silent-skip with announce-and-write-unattributed
+semantics, so two tests here pin the opposite contract
+(``test_unset_run_id_is_silent_noop_exit_0``, ``test_invalid_run_id_refused``)
+and would have to be rewritten to assert the inverse in the same commit that
+resolves a merge — not a change to make unreviewed. When ISSUE-075 runs, the
+API is ``emit_event(event_type, payload=None, *, script_name, project_path,
+issue_id)``: ``script_name`` is required keyword-only, ``issue_id`` is a
+TOP-LEVEL event field (this module's ``--issue``), ``reason`` stays inside
+``payload``, ``project_path`` must be passed explicitly (it defaults to
+``Path.cwd()``), only ``payload["detail"]`` is truncated there — so preserve
+this module's stronger all-string-value truncation at the call site — and
+``False`` is a skip, not an error.
 
 Env knobs (no new ones — ``KIT_RUN_ID`` is pre-documented in README and
 docs/telemetry_schema.md):
