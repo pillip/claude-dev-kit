@@ -3125,7 +3125,7 @@ The four sweeps run as scripts with exit codes, callable from `checkpoint.sh` ph
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: docs/specs/SPEC-057.md (lands with PR #102)
+- Spec: docs/specs/SPEC-057.md
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 2)
 - Priority: P1
 - Estimate: 1.5d
