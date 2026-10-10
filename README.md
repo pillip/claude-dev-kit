@@ -350,7 +350,7 @@ Starts an interactive conversation to help you create or update a PRD. If the fi
 /kickoff PRD.md
 ```
 
-Reads the PRD and runs 6 subagents to generate planning documents:
+Reads the PRD and runs a team of subagents to generate planning documents:
 - `requirement-analyst` → `docs/requirements.md`
 - `ux-designer` → `docs/ux_spec.md`
 - `architect` → `docs/architecture.md`

@@ -126,10 +126,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
       - **MUST include**: Window chrome spec (title bar, traffic lights/window controls, frameless vs custom)
     - **Keyboard shortcuts tokens**: Cmd/Ctrl modifier mapping per platform (`darwin`→Cmd, `win32`/`linux`→Ctrl)
     - **Window chrome**: Title bar customization (frameless or custom titlebar), traffic light / window control integration, draggable regions
-    - **Motion tokens**: Duration (micro 60-100ms to large 300-500ms, max 700ms), easing curves, transition types. Faster and more restrained than web — desktop is efficiency-first.
-      - **GPU-composited only**: All motion tokens MUST target `transform`, `opacity`, or `filter`. NEVER animate layout properties (`width`, `height`, `top`, `left`).
-      - **`will-change` budget**: Max 5 concurrent elements with `will-change`. Overuse creates GPU memory pressure. Apply on interaction start, remove on end.
-      - **SplitPane resize strategy**: Prefer CSS flexbox/grid `fr` units over JS-driven width changes. If JS-driven, throttle via `requestAnimationFrame`.
+    - **Motion tokens**: Duration, easing curves, transition types. Faster and more restrained than web — desktop is efficiency-first. All motion tokens target `transform`, `opacity`, or `filter` (the mechanics sweep owns violations).
     - **Dark/Light mode**: `nativeTheme` integration, system preference detection, manual override
     - **Platform tokens**: `darwin`/`win32`/`linux` keys for platform-specific values (fonts, shortcuts, window chrome, file paths)
     - All values expressed as TypeScript objects AND CSS custom properties
@@ -161,7 +158,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
     - Window interactions: resize behavior (min/max constraints, content reflow), snap zones, multi-monitor support
     - System tray integration: icon, tooltip, context menu, notification badge
     - State management: loading (skeleton/spinner), empty, error (with retry), permission prompts
-    - App launch choreography (cold start): splash window (lightweight BrowserWindow) → main window create → skeleton UI → data hydration → interactive. Target: under 3 seconds to interactive.
+    - App launch choreography (cold start): splash window (lightweight BrowserWindow) → main window create → skeleton UI → data hydration → interactive.
     - Background task lifecycle: system tray persistence, graceful shutdown, auto-update flow
     - Accessibility: screen reader support, keyboard-only navigation, high contrast mode, reduced motion
 
@@ -241,7 +238,6 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
       - `@types/react`, `@types/react-dom` — type definitions
       - `electron-vite` or `vite-plugin-electron` — Electron + Vite integration
     - Scripts: `dev` (development with hot reload), `build` (production build), `preview` (preview build)
-    - **Bundle optimization**: Configure Vite to externalize Electron built-in modules (`electron`, `path`, `fs`). Use `build.rollupOptions.output.manualChunks` to split vendor libraries (react, react-dom) from app code.
     - After generating package.json, run: `cd prototype-desktop && npm install` to install dependencies
 17-a) Generate `prototype-desktop/tsconfig.json`:
     - Strict mode enabled
@@ -252,17 +248,14 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
     - Standard Electron gitignore: node_modules, dist, dist-electron, out, .vite, *.log
 17-c) Generate `prototype-desktop/electron/main.ts`:
     - BrowserWindow creation with appropriate defaults (width, height, webPreferences)
+    - **Security contract (no depreciation trigger — the security review dimension owns violations)**: `webPreferences` MUST set `contextIsolation: true` and `nodeIntegration: false`. The renderer reaches the main process ONLY through the contextBridge-typed IPC exposed by `preload.ts` — main/preload/renderer separation is mandatory.
     - Preload script path configuration
     - App lifecycle (ready, window-all-closed, activate)
     - Menu bar setup (platform-aware: darwin vs win32/linux)
     - Optional: system tray setup if specified in wireframes
-    - **Cold start optimization**: Show a lightweight splash BrowserWindow immediately on `ready`, then create the main window in background. Swap when renderer is ready (`did-finish-load`).
-    - **Main process hygiene**: NEVER run heavy I/O (file read, DB query, network) on the main process event loop. Offload to `utilityProcess` (Electron 22+) or Node worker_threads.
-    - `backgroundThrottling: false` only for windows that need real-time updates; leave default (`true`) for auxiliary windows to save resources.
 17-d) Generate `prototype-desktop/electron/preload.ts`:
-    - contextBridge.exposeInMainWorld for IPC
+    - contextBridge.exposeInMainWorld for IPC — the ONLY bridge between renderer and main
     - Type-safe API exposure
-    - **Preload weight**: Keep preload script minimal — only expose IPC bridge functions. Heavy logic belongs in the renderer bundle.
 17-e) Generate `prototype-desktop/index.html`:
     - Minimal HTML shell for Vite + React entry
 18) Generate `prototype-desktop/src/theme/`:
@@ -287,36 +280,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
       - Ensure the Electron `main.ts` and `preload.ts` from step 17-c/17-d are wired so `npm run dev` launches the pilot view.
       - Do NOT generate the remaining screens or the full router yet.
     - **Step 2.5 — PILOT GATE — observe → critique → specificity → auto-correct → user HOLD**
-      Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This block routes critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting.
-      Desktop pilots run live in Electron (`npm run dev`). If Playwright + Electron is installed, screenshot the rendered window for the critique inputs. Otherwise critique runs against pilot `.tsx` source (degraded mode) — record `pilot_degraded: no_playwright_electron` in the critique log.
-
-      - **Step 2.5.0 — Neutral observation** (mandatory; BEFORE judgment).
-        For each pilot, write 5 plain factual statements about what renders (screenshot) or what the source would render (degraded).
-        **Banned vocabulary**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
-        Save to `prototype-desktop/src/screens/<pilot>.observations.md`.
-
-      - **Step 2.5.1 — Separate-context critique** (mandatory). Invoke `design-auditor` via the Task tool. **Do NOT inline-critique in the generator's context.**
-        Pass:
-          - the pilot screenshot path (if available) AND the pilot `.tsx` path
-          - `prototype-desktop/src/screens/<pilot>.observations.md`
-          - `docs/design_philosophy.md`
-          - `docs/design_system_desktop.md`
-        Ask for a 6-axis 1–5 score (Philosophy / Hierarchy / Execution / Specificity / Restraint / Variety), one cited evidence per axis referencing observation indices, and a list of slop signals.
-        Where ui-reviewer's scope applies (state coverage, copy usage), invoke `ui-reviewer` separately. Disjoint scopes (ISSUE-013) — surface both outputs.
-        Save the structured output to `prototype-desktop/src/screens/<pilot>.critique.md`.
-
-      - **Step 2.5.2 — Specificity check** (mandatory). Ask design-auditor:
-        *"Name 3 details visible in this pilot that ONLY make sense for THIS specific product / domain / user. Generic UI primitives don't count. Domain content does count (real entity names, the literal_quote from Reference Anchors, brand-specific shortcuts/units). Fewer than 3 → FAIL."*
-        The literal_quote (from ISSUE-012) counts as exactly **1** of the 3.
-
-      - **Step 2.5.3 — Auto-correction cycle** (hard cap N=3). If any score < 3, specificity FAIL, or slop signals fire:
-        1. Identify the patch layer (philosophy / system / layout / pilot only).
-        2. Apply the patch.
-        3. Re-observe → re-critique → re-specificity.
-        4. Increment cycle counter. Append to `prototype-desktop/src/screens/<pilot>.cycles.log`:
-           `cycle N: layer=<L> change="<summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
-        5. **Hard stop at N=3.** After cycle 3, freeze and surface to the user with the full history.
-        Record final scores at the top of the pilot stylesheet/screen file: `/* pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 specificity=PASS */`.
+      {{PILOT_GATE}}
 
     - **Step 3 — PILOT GATE — present and HOLD for user**:
       - Tell the user how to run:
@@ -346,27 +310,21 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
     - Implements all states: default, loading (skeleton), empty, error
     - Uses actual copy from `docs/copy_guide.md`
     - Keyboard shortcut bindings per screen
-    - **Code splitting**: Secondary screens and heavy panels (settings, inspector) MUST use `React.lazy` + `Suspense` to avoid loading everything upfront
     - **Signature Move per-screen check**: every screen must reference the Signature Move's reusable primitive at least once.
 21) Replace the temporary App.tsx from step 19.5 with the full `prototype-desktop/src/App.tsx`:
     - Router setup (react-router or custom)
     - Theme provider (dark/light mode with system preference detection)
     - Keyboard shortcut global handler
     - Window chrome / custom title bar integration
-    - **IPC pattern**: All renderer→main IPC calls go through a single typed API layer (from preload). Batch rapid-fire calls (e.g., window resize events) with debounce/throttle. NEVER send large objects over IPC — use references or chunked transfer.
-    - **Memory cleanup**: Register cleanup in `useEffect` returns for event listeners, IPC subscriptions, and timers. Use `AbortController` for fetch calls.
+    - **IPC contract**: all renderer→main IPC calls go through the single contextBridge-typed API layer from preload (the step 17-c security contract) — no scattered `ipcRenderer` access.
 22) Generate `prototype-desktop/src/main.tsx`:
     - React DOM entry point
     - Root render with StrictMode
 
 ### Phase 5.5 — Prototype Verification (REQUIRED before presenting to user)
-23) **Electron project setup check**:
-    - `package.json` has correct scripts (`dev`, `build`)
-    - `electron/main.ts` exists with proper BrowserWindow setup
-    - `electron/preload.ts` exists with contextBridge
-    - `index.html` exists as renderer entry
-    - `tsconfig.json` exists with strict mode
-    - `.gitignore` exists
+23) **Prototype boot gate (contract — replaces the former perf/IPC/bundle checklists)**:
+    - `package.json` has `dev`/`build` scripts; `electron/main.ts` (with the step 17-c security contract), `electron/preload.ts` (contextBridge), `index.html`, `tsconfig.json`, and `.gitignore` exist.
+    - Run `cd prototype-desktop && npm run dev` — the app **must launch** to an interactive window before presenting. The boot is the gate: fix whatever it surfaces (main/preload wiring, Vite config, dependencies) until it launches — a pin the boot gate catches is fixed, never re-documented as a checklist line.
 24) **Token compliance check**:
     - Scan all files in `src/screens/` and `src/components/` for hardcoded style values
     - Every color, spacing, font size, border radius, and shadow MUST use imports from `src/theme/`
@@ -382,48 +340,8 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
     - Every interactive component MUST be keyboard-accessible (tab focus, enter/space activation)
     - Command Palette (Cmd+K / Ctrl+K) MUST be implemented if specified in design system
     - At least 5 keyboard shortcuts from `docs/interactions_desktop.md` MUST be functional
-27.3) **Contrast sweep** (CRITICAL — catches the failures that ship most):
-    - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
-    - Fail on any of: **button text ≈ button fill** (text within ~5% lightness of fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark panel** (background lightness < 50%) that did not flip its text colour (ink-on-ink). Most-missed: text in a panel that switched `background` but inherited `color`; muted text on a tinted surface.
-    - List failing pairs as `file:selector`, fix, and re-check before proceeding.
-27.4) **Slop-proof mechanics sweep** (deterministic — grep `.css`/theme/screens):
-    - Flag and fix: `transition: all` / `transition-all`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0`; all-caps display with `line-height` < 1.0.
-    - Confirm present: `overflow-x: clip` on `html`+`body`; input/select fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Anti-AI-Slop "CSS mechanics (renderer)".
-    - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
-    - List violations as `file:line`, fix, and re-sweep.
-27.5) **Signature Move check**:
-    - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
-    - The Signature Move must be implemented as a reusable component/class/CSS-custom-property primitive under `src/components/` or `src/theme/`.
-    - Every `.tsx` file in `src/screens/` (including the pilots) must reference that reusable Signature Move primitive at least once.
-    - If any check fails: list violations, fix, and re-verify before proceeding.
-27.6) **Literal quote verbatim render check** (skip if Phase 1.5 was explicitly skipped):
-    - Read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors.
-    - Grep `src/screens/*.tsx` for the literal string. The string MUST appear verbatim in at least one screen file (inside a string literal, NOT inside a comment).
-    - If absent: name the screens that would naturally host it (per the anchor's "where it appears" hint), inject the quote into that screen, and re-grep. Do not skip by widening the search.
-    - Example: `literal_quote: "⌘K"` MUST appear as the literal characters `⌘K` — not `Cmd+K`, not interpolated from a variable, not inside `{/* */}`.
-28) **Performance check**:
-    - List/table item components MUST use `React.memo`
-    - Event handlers passed to memoized children MUST use `useCallback`
-    - Large data sets MUST use virtualization (e.g., react-window or tanstack-virtual)
-    - Secondary screens/panels MUST use `React.lazy` + `Suspense` for code splitting
-    - Animations MUST only use GPU-composited properties (`transform`, `opacity`, `filter`) — never animate `width`, `height`, `top`, `left`
-    - `will-change` MUST NOT be applied to more than 5 elements simultaneously (excessive use increases memory)
-    - CSS `contain: layout style paint` SHOULD be applied to independently-updating panels (sidebar, content, detail)
-    - SplitPane resize MUST use `requestAnimationFrame` throttle or CSS-based resize (flexbox/grid) — never unthrottled mousemove
-29) **IPC & memory check**:
-    - Main process MUST NOT contain synchronous file I/O or heavy computation
-    - Preload script MUST be lightweight — only IPC bridge, no business logic
-    - Rapid IPC calls (resize, scroll, drag) MUST be debounced/throttled
-    - All `useEffect` hooks MUST return cleanup functions for event listeners, IPC subscriptions, and timers
-    - Multi-window: auxiliary BrowserWindows MUST set `backgroundThrottling: true` (default) unless real-time updates are required
-30) **Bundle size check**:
-    - Renderer bundle SHOULD be under 500KB gzip (excluding node_modules externalized by Vite)
-    - Vendor chunk (react, react-dom) MUST be split from app code via `manualChunks`
-    - Electron built-in modules (`electron`, `path`, `fs`) MUST be externalized, not bundled
-30.5) **AI Tell sweep** (CRITICAL):
-    - Sweep every `.tsx`/`.css` file in `src/screens/`, `src/components/`, and theme/style files for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, decorative version labels, `<div>`-based fake product UI, decorative status dots, locale/time strips.
-    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
+27.5) **Design verification sweeps** (model-executed contract sweeps):
+{{DESIGN_SWEEPS}}
 
 ### Phase 6 — Review & Iterate
 31) Present deliverables summary to the user:
@@ -487,42 +405,7 @@ These rules prevent Claude from converging on generic, forgettable desktop defau
 - Context menus that match OS conventions while expressing app personality
 - Desktop-appropriate component sizing: smaller click targets (24-32px), denser spacing, more visible information
 
-**Specific AI Tells (hard bans — sweep every screen before presenting).**
-Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one.
-
-*Content & data:*
-- Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
-- Fake-perfect numbers (`99.99%`, round `50%`, `1,234,567`) → organic messy values (`47.2%`, `+1 (312) 847-1928`).
-- Filler verbs ("Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionize") → concrete verbs only.
-- **Em-dash (`—`) and en-dash-as-separator (`–`): zero tolerance** in all visible text (titles, labels, menu items, body, empty/error copy). Use a regular hyphen `-`, comma, period, colon, or line break. The single most-violated tell.
-
-*Fake product UI:*
-- NEVER fake a product surface out of styled `<div>` rectangles (fake chart, fake terminal, fake data table) to fill a welcome/empty screen. Use a real screenshot, generated image, real component, or skip it.
-- No fake version footers / sync stamps (`v0.6.2-rc.1`, `last sync 4s ago`) as decoration (a real app-version readout in About/status bar is fine).
-
-*Decorative meta:*
-- No section-number eyebrows (`001 · Capabilities`) or `01 / 4` pagination labels — name the topic in plain language.
-- No version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) as decoration unless the brief is explicitly a launch/preview.
-- No decorative status dots before every list row/tab/badge (only for real semantic state, sparingly).
-- No locale/time/weather strips (`Lisbon 14:23 · 18°C`) or mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`) as chrome.
-- Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
-
-*Typography & interaction tells:*
-- **No italic headings.** `font-style: italic` on `h1`–`h6` / display / wordmark / `<em>` inside a heading is a top tell. Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
-- No celebratory success toast for an action whose effect is already visible (silent success; reserve toasts for failures and invisible/background effects).
-- Tooltip delays differ by input: hover delays 800–1000ms, keyboard focus shows at 0ms (never equal).
-- Auto-rotating content (carousel, banner, ticker) must pause on hover AND focus (WCAG 2.2.2).
-
-*CSS mechanics (renderer) — deterministic, all mandatory:*
-- Multi-column / split-pane layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
-- Selector-specificity collisions: a pane/section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Pane-to-pane `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
-- `overflow-x: clip` on BOTH `html` and `body` (use `clip`, not `hidden` — preserves descendant `sticky`/`fixed`); no horizontal scroll at any window width down to 320px.
-- Any grid track holding an image uses `minmax(0, 1fr)`, never bare `1fr`.
-- Display headers set `overflow-wrap: anywhere; min-width: 0`; all-caps display type uses `line-height ≥ 1.0`.
-- At most ONE `position: sticky; top: 0` (the top chrome/toolbar); other sticky elements offset to `top: var(--banner-height)` with a lower z-index than the toolbar.
-- Flex rows mixing height-different children set `align-items: center`.
-- No `transition: all` / `transition-all` — name properties. Focus rings appear instantly (no `transition` on `outline`) and use `outline`, never `border`. Reserve overshoot easings for drag/physical interactions only.
-- Input/select 8-state rules: constant `border-width` across states (change `outline`/`box-shadow`/`border-color`); `outline`-based focus ring; input height == adjacent button height; reserve helper/error slot with `min-height: 1lh`; disabled = `opacity` + `cursor: not-allowed` + `disabled`/`aria-disabled` (never opacity alone).
+{{AI_TELLS}}
 
 ## Guidelines
 - **Electron + React + TypeScript first**: Prototype targets Electron with Vite for fast development. Main/renderer process separation is mandatory.
