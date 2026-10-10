@@ -6,11 +6,13 @@ a script with exit codes:
 
   Python  every `def test_*` function (module or class level, found via
           `ast`) must contain at least one assertion mechanism: an `assert`
-          statement, a `raises(...)` usage (pytest.raises), a mock reference
-          (any identifier containing "mock", or an attribute starting with
-          "assert" such as `m.assert_called_once()` / `self.assertEqual`),
-          or a `fail(...)` call. AST-based: the word "assert" inside a
-          string literal never counts.
+          statement, a `raises(...)` usage (pytest.raises), an attribute
+          starting with "assert" (`m.assert_called_once()` /
+          `self.assertEqual`), or a `fail(...)` call. A bare mock-named
+          identifier does NOT count (ISSUE-064: a mock fixture used without
+          assertion is hollow); mock usage vouches only via its .assert_*
+          calls. AST-based: the word "assert" inside a string literal never
+          counts.
   JS/TS   every `it(` / `test(` block must contain `expect(` / `.toBe` /
           `.toEqual`. Blocks are delimited by consecutive it()/test() call
           sites (segment heuristic mirroring the prose predicate's grep
@@ -86,11 +88,12 @@ def _py_function_asserts(fn: ast.AST) -> bool:
             attr = node.attr
             if attr.startswith("assert") or attr in ("raises", "fail"):
                 return True
-            if "mock" in attr.lower():
-                return True
-        if isinstance(node, ast.Name):
-            if node.id == "raises" or "mock" in node.id.lower():
-                return True
+        # ISSUE-064 F2: a bare mock-named identifier/attribute is NOT an
+        # assertion mechanism (ISSUE-037 hollow-pass class - a mock fixture
+        # touched without asserting vouched for the test). Mock usage counts
+        # only via the .assert_* attribute rule above.
+        if isinstance(node, ast.Name) and node.id == "raises":
+            return True
     return False
 
 
@@ -115,7 +118,7 @@ def analyze_python(path: Path) -> tuple[int, list[dict]]:
                     {
                         "file": str(path),
                         "test": node.name,
-                        "reason": "no assert/mock/raises",
+                        "reason": "no assert/raises/assert_*/fail",
                     }
                 )
     if counted == 0 and not hollow:

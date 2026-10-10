@@ -13,6 +13,12 @@ assertions are paired with absence assertions). AC-4: no validator may
 pass vacuously on an empty input set.
 
 Exit-code contract (verify_* family): 0 pass / 1 violations / 2 usage error.
+
+ISSUE-064 (matcher hardening) adds six finding-scoped classes at the bottom
+(F1-F6, provenance docs/review_notes/ISSUE-056.md + ISSUE-063.md): every
+evasion gets a mutation pair — evasion present -> non-zero naming the
+finding; evasion removed -> pass — plus scope pins so the hardening cannot
+flip legitimate passes.
 """
 
 from __future__ import annotations
@@ -571,3 +577,526 @@ class TestCliContract:
         bad = self._run_cli("verify_hollow_tests.py", "--tests-dir", str(testdir))
         assert bad.returncode == 1
         assert "test_addition" in bad.stdout
+
+
+# ════════════════════════════════════════════════════════════════════
+# ISSUE-064: matcher hardening (F1-F6)
+#
+# Provenance: docs/review_notes/ISSUE-056.md (five adjacent Mediums) and
+# docs/review_notes/ISSUE-063.md (folded first finding). Convention: each
+# finding gets a mutation pair with the ACTUAL probe strings — evasion
+# present -> non-zero naming the finding; evasion removed -> 0 — plus
+# scope pins so the hardening cannot flip legitimate passes (zero
+# contract loosening; the proto_pass golden pins must keep passing).
+# ════════════════════════════════════════════════════════════════════
+
+# Load-bearing pass-fixture anchors the ISSUE-064 mutations replace.
+H1_ANCHOR = "<h1>Open ledgers</h1>"
+CSS_ANCHOR = "border: 1px solid var(--ink-navy);"
+RENDERED_QUOTE_SPAN = '<span class="mono">47.2-A</span>'
+# Distinctive content of the out-of-tree file in the F5 containment tests:
+# proving it appears NOWHERE in output proves the file was never read.
+OUTSIDE_MARKER = "OUT-OF-TREE-MARKER-9f3c"
+
+
+class TestAiTellEntityAndCaseNormalization:
+    """F1: HTML entities decode (html.unescape, AFTER comment stripping,
+    per-line in the line-wise scan) and all tell matching case-folds."""
+
+    def _run(self, proto: Path, *extra: str) -> int:
+        return vds.main(["ai-tell", "--project-path", str(proto), *extra])
+
+    @pytest.mark.parametrize("entity", ["&mdash;", "&#8212;", "&#x2014;"])
+    def test_entity_encoded_em_dash_fails_then_removed_passes(
+        self, proto, entity, capsys
+    ):
+        screen = proto / "prototype/screens/home.html"
+        probe = f"<h1>Fast {entity} reliable</h1>"
+        _mutate(screen, H1_ANCHOR, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, f"entity-encoded em-dash {entity} evaded the sweep:\n{out}"
+        assert "em-dash" in out  # names the tell, identically to the literal form
+        assert "home.html" in out
+
+        _mutate(screen, probe, H1_ANCHOR)  # reverse direction
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "em-dash" not in out
+
+    def test_uppercase_100vh_fails_then_removed_passes(self, proto, capsys):
+        css = proto / "prototype/styles.css"
+        _mutate(css, "min-height: 100dvh;", "height: 100VH;")
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, f"case-variant 100VH evaded the sweep:\n{out}"
+        assert "100vh" in out  # names the tell id
+        assert "styles.css" in out
+
+        _mutate(css, "height: 100VH;", "min-height: 100dvh;")
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "100vh" not in out
+
+    def test_uppercase_calc_width_fails_then_removed_passes(self, proto, capsys):
+        css = proto / "prototype/styles.css"
+        _mutate(css, CSS_ANCHOR, "WIDTH: CALC(33% - 1rem);")
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, f"case-variant CALC() evaded the sweep:\n{out}"
+        assert "flex-calc-width" in out
+        assert "styles.css" in out
+
+        _mutate(css, "WIDTH: CALC(33% - 1rem);", CSS_ANCHOR)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "flex-calc-width" not in out
+
+    def test_uppercase_generic_name_fails_then_removed_passes(self, proto, capsys):
+        # JOHN DOE: case variant of a currently case-sensitive tell.
+        screen = proto / "prototype/screens/home.html"
+        _mutate(screen, "Open ledgers", "JOHN DOE ledgers")
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, f"case-variant JOHN DOE evaded the sweep:\n{out}"
+        assert "generic-name" in out
+        assert "home.html" in out
+
+        _mutate(screen, "JOHN DOE ledgers", "Open ledgers")
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "generic-name" not in out
+
+    def test_entity_encoded_comment_markers_are_rendered_text(self, proto, capsys):
+        # Decode AFTER comment stripping: &lt;!-- renders as literal text,
+        # so it must NOT become a strippable comment — the entity-encoded
+        # em-dash between the entity-encoded markers IS rendered.
+        screen = proto / "prototype/screens/home.html"
+        probe = "<h1>Example: &lt;!-- draft &mdash; note --&gt;</h1>"
+        _mutate(screen, H1_ANCHOR, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            "em-dash inside an entity-encoded (rendered) comment was not "
+            f"flagged — decode must run AFTER comment stripping:\n{out}"
+        )
+        assert "em-dash" in out
+
+        _mutate(screen, probe, H1_ANCHOR)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "em-dash" not in out
+
+    def test_benign_amp_entity_not_flagged(self, proto, capsys):
+        # Negative pin: entity decoding must not invent violations.
+        _mutate(
+            proto / "prototype/screens/home.html",
+            H1_ANCHOR,
+            "<h1>Ledgers &amp; orders</h1>",
+        )
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "ai-tell: PASS" in out
+
+    def test_em_dash_entity_inside_real_html_comment_not_flagged(self, proto, capsys):
+        # Negative pin: comments are stripped BEFORE decoding, so an
+        # entity-encoded em-dash inside a real <!-- --> is never rendered.
+        _mutate(
+            proto / "prototype/screens/home.html",
+            "</body>",
+            "<!-- draft &mdash; internal -->\n</body>",
+        )
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "em-dash" not in out
+
+    def test_entity_decode_keeps_reported_line_numbers_exact(self, proto, capsys):
+        # Per-line decode in the line-wise scan: a &NewLine;-style entity on
+        # an earlier line must not shift the line reported for a violation.
+        screen = proto / "prototype/screens/home.html"
+        _mutate(
+            screen,
+            "<p>3 ledgers reconciled this week. Next close: Friday 18:40.</p>",
+            "<p>3 ledgers&NewLine;reconciled.</p>\n      <p>Fast &mdash; reliable</p>",
+        )
+        source = screen.read_text(encoding="utf-8").splitlines()
+        expected_line = next(
+            i for i, line in enumerate(source, 1) if "&mdash;" in line
+        )
+        rc = self._run(proto, "--json")
+        payload = json.loads(capsys.readouterr().out)
+        assert rc == 1, payload
+        hits = [v for v in payload["violations"] if v["tell_id"] == "em-dash"]
+        assert hits, payload["violations"]
+        assert hits[0]["file"] == "prototype/screens/home.html"
+        assert hits[0]["line"] == expected_line
+
+
+class TestHollowMockNameRule:
+    """F2: a bare name/attribute merely containing "mock" is not an
+    assertion mechanism; mock tests still count via assert_* attributes."""
+
+    HOLLOW_REPROS = {
+        "mock-name-assigned": (
+            "def test_loads_data():\n"
+            '    mock_data = {"a": 1}\n'
+            "    print(mock_data)\n"
+        ),
+        "mock-fixture-param-unasserted": (
+            "def test_x(mock_db):\n    mock_db.start()\n"
+        ),
+        "mock-name-trivial": "def test_trivial():\n    mocked = None\n",
+    }
+    HOLLOW_NAMES = {
+        "mock-name-assigned": "test_loads_data",
+        "mock-fixture-param-unasserted": "test_x",
+        "mock-name-trivial": "test_trivial",
+    }
+
+    # Legitimate mock usage: counts via the untouched attr.startswith
+    # ("assert") rule, exactly how the pinned tests_pass fixture passes.
+    LEGIT_MOCK_TEST = (
+        "from unittest.mock import Mock\n"
+        "\n"
+        "\n"
+        "def test_mock_asserts_delegation():\n"
+        "    m = Mock()\n"
+        '    m("x")\n'
+        "    m.assert_called_once()\n"
+    )
+
+    @pytest.mark.parametrize("key", sorted(HOLLOW_REPROS))
+    def test_bare_mock_name_does_not_vouch(self, tmp_path, key, capsys):
+        f = tmp_path / "test_mock_rule.py"
+        f.write_text(
+            self.HOLLOW_REPROS[key] + "\n\n" + self.LEGIT_MOCK_TEST,
+            encoding="utf-8",
+        )
+        rc = vht.main([str(f)])
+        out = capsys.readouterr().out
+        assert rc == 1, f"mock-anywhere-in-name false pass ({key}):\n{out}"
+        assert self.HOLLOW_NAMES[key] in out  # names the hollow test function
+        assert "test_mock_asserts_delegation" not in out  # legit test not named
+
+    def test_mock_with_assert_attribute_still_passes(self, tmp_path, capsys):
+        # Scope pin: ONLY the bare mock-name rule is dropped — a mock test
+        # asserting via m.assert_called_once() keeps passing.
+        f = tmp_path / "test_mock_rule.py"
+        f.write_text(self.LEGIT_MOCK_TEST, encoding="utf-8")
+        rc = vht.main([str(f)])
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "HOLLOW" not in out
+
+
+class TestLiteralQuoteNonRenderedPlacements:
+    """F3: <script> element bodies and data-* attribute VALUES are blanked
+    before the quote search — exactly those two surfaces, nothing more."""
+
+    def _run(self, proto: Path) -> int:
+        return vds.main(["literal-quote", "--project-path", str(proto)])
+
+    def test_quote_only_in_data_attribute_fails_then_rendered_restores(
+        self, proto, capsys
+    ):
+        screen = proto / "prototype/screens/order-detail.html"
+        probe = '<span class="mono" data-note="47.2-A">(redacted)</span>'
+        _mutate(screen, RENDERED_QUOTE_SPAN, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            f"quote only in a data-* attribute satisfied literal-quote:\n{out}"
+        )
+        assert QUOTE in out  # names the quote as not rendered
+
+        _mutate(screen, probe, RENDERED_QUOTE_SPAN)  # reverse direction
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "MISSING" not in out
+
+    def test_quote_only_in_script_block_fails_then_rendered_restores(
+        self, proto, capsys
+    ):
+        screen = proto / "prototype/screens/order-detail.html"
+        probe = "<script>// 47.2-A</script>"
+        _mutate(screen, RENDERED_QUOTE_SPAN, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            f"quote only in a <script> body satisfied literal-quote:\n{out}"
+        )
+        assert QUOTE in out
+
+        _mutate(screen, probe, RENDERED_QUOTE_SPAN)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "MISSING" not in out
+
+    def test_quote_in_unterminated_script_block_fails_then_rendered_restores(
+        self, proto, capsys
+    ):
+        # Review fix (ISSUE-064): an UNCLOSED <script> is script data to
+        # EOF per the HTML parser — the body must be blanked even without
+        # a closing tag, or omitting one close tag bypasses F3 entirely.
+        screen = proto / "prototype/screens/order-detail.html"
+        probe = "<script>// 47.2-A"  # no closing tag, deliberately
+        _mutate(screen, RENDERED_QUOTE_SPAN, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            f"quote only in an UNTERMINATED <script> body satisfied "
+            f"literal-quote:\n{out}"
+        )
+        assert QUOTE in out
+
+        _mutate(screen, probe, RENDERED_QUOTE_SPAN)  # reverse direction
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "MISSING" not in out
+
+    def test_quote_in_alt_attribute_still_satisfies(self, proto, capsys):
+        # Scope pin: other attributes (alt/aria-label text) stay accepted
+        # rendered surfaces — only data-* values are blanked.
+        _mutate(
+            proto / "prototype/screens/order-detail.html",
+            RENDERED_QUOTE_SPAN,
+            '<img alt="47.2-A" src="order.png">',
+        )
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "MISSING" not in out
+
+    def test_quote_in_style_block_still_satisfies(self, proto, capsys):
+        # Scope pin: <style> bodies are NOT blanked by this finding.
+        _mutate(
+            proto / "prototype/screens/order-detail.html",
+            RENDERED_QUOTE_SPAN,
+            '<style>.order-id::after { content: "47.2-A"; }</style>',
+        )
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "MISSING" not in out
+
+
+class TestAiTellZeroScreenVacuity:
+    """F4: an empty screens list is a violation in run_ai_tell, independent
+    of styles.css presence (no vacuous half-pass)."""
+
+    def test_zero_screens_with_css_present_fails_reporting_empty_input(
+        self, proto, capsys
+    ):
+        for f in (proto / "prototype/screens").glob("*.html"):
+            f.unlink()
+        assert (proto / "prototype/styles.css").is_file()  # css half IS present
+        rc = vds.main(["ai-tell", "--project-path", str(proto)])
+        out = capsys.readouterr().out
+        assert rc == 1, f"vacuous half-pass: ai-tell exited {rc} with zero screens\n{out}"
+        assert "screen" in out.lower()  # reports the empty input set
+        assert "PASS" not in out
+
+    def test_zero_screens_with_css_present_json_keeps_violation_key_shape(
+        self, proto, capsys
+    ):
+        for f in (proto / "prototype/screens").glob("*.html"):
+            f.unlink()
+        rc = vds.main(["ai-tell", "--project-path", str(proto), "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert rc == 1, payload
+        assert payload["status"] == "fail"
+        assert payload["violations"], payload
+        for v in payload["violations"]:
+            # Existing violation key shape, unchanged by the hardening.
+            assert set(v) == {"file", "line", "tell_id", "snippet"}, v
+
+
+class TestInputContainment:
+    """F5: any file the script would read whose resolve() falls outside
+    every sanctioned root (resolved --project-path + explicitly passed
+    --philosophy/--screens-dir/--css) is never read; the run fails closed
+    as a usage error (exit 2, ERROR line on stderr, no JSON)."""
+
+    CONTAINMENT_MSG = "resolves outside the project tree"
+
+    def _run_cli(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "verify_design_sweeps.py"), *args],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(REPO_ROOT),
+        )
+
+    @pytest.fixture()
+    def outside_dir(self, tmp_path: Path) -> Path:
+        """Directory OUTSIDE the proto project tree (sibling of tmp_path/proj)
+        holding an .html with a distinctive marker string and an em-dash tell."""
+        outside = tmp_path / "outside_tree"
+        outside.mkdir()
+        (outside / "evil.html").write_text(
+            f"<p>{OUTSIDE_MARKER} — leaked</p>\n", encoding="utf-8"
+        )
+        return outside
+
+    def _symlink_screens_outside(
+        self, proto: Path, outside_dir: Path
+    ) -> tuple[Path, Path]:
+        screens = proto / "prototype" / "screens"
+        parked = proto / "prototype" / "screens_parked"
+        screens.rename(parked)
+        screens.symlink_to(outside_dir, target_is_directory=True)
+        return screens, parked
+
+    def test_symlinked_screens_outside_tree_fails_closed_then_removed_passes(
+        self, proto, outside_dir
+    ):
+        screens, parked = self._symlink_screens_outside(proto, outside_dir)
+        cp = self._run_cli("ai-tell", "--project-path", str(proto))
+        assert cp.returncode == 2, (
+            f"out-of-tree symlinked screens dir was scanned (exit {cp.returncode}, "
+            f"want usage error 2)\n{cp.stdout}{cp.stderr}"
+        )
+        assert "ERROR" in cp.stderr
+        assert self.CONTAINMENT_MSG in cp.stderr
+        # Names the resolved-outside path (the containment decision).
+        assert str(outside_dir.resolve()) in cp.stderr
+        # The out-of-tree file was NEVER read: its content appears nowhere.
+        assert OUTSIDE_MARKER not in cp.stdout + cp.stderr
+
+        # Removing the symlink restores normal behavior.
+        screens.unlink()
+        parked.rename(screens)
+        ok = self._run_cli("ai-tell", "--project-path", str(proto))
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+
+    def test_all_with_outside_symlink_fails_closed(self, proto, outside_dir):
+        self._symlink_screens_outside(proto, outside_dir)
+        cp = self._run_cli("all", "--class", SIG_CLASS, "--project-path", str(proto))
+        assert cp.returncode == 2, (
+            f"`all` scanned an out-of-tree symlink (exit {cp.returncode})\n"
+            f"{cp.stdout}{cp.stderr}"
+        )
+        assert self.CONTAINMENT_MSG in cp.stderr
+        assert OUTSIDE_MARKER not in cp.stdout + cp.stderr
+
+    def test_containment_usage_error_emits_no_json(self, proto, outside_dir):
+        # Exit-2 convention (existing precedent): ERROR on stderr, NO JSON.
+        self._symlink_screens_outside(proto, outside_dir)
+        cp = self._run_cli("ai-tell", "--project-path", str(proto), "--json")
+        assert cp.returncode == 2, cp.stdout + cp.stderr
+        assert cp.stdout == ""
+        assert self.CONTAINMENT_MSG in cp.stderr
+
+    def test_symlink_resolving_inside_tree_is_scanned_not_rejected(self, proto):
+        # Resolved-to-resolved comparison: an in-tree symlink must neither
+        # false-trip containment (macOS /tmp -> /private/tmp class) nor be
+        # silently skipped.
+        real = proto / "prototype" / "real.html"
+        real.write_text(
+            (proto / "prototype" / "screens" / "home.html").read_text(
+                encoding="utf-8"
+            ),
+            encoding="utf-8",
+        )
+        link = proto / "prototype" / "screens" / "link.html"
+        link.symlink_to(Path("..") / "real.html")
+
+        ok = self._run_cli("ai-tell", "--project-path", str(proto))
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+        assert self.CONTAINMENT_MSG not in ok.stderr  # no false positive
+
+        # ...and the linked file is genuinely swept, not silently skipped:
+        _mutate(real, H1_ANCHOR, "<h1>Open — ledgers</h1>")
+        bad = self._run_cli("ai-tell", "--project-path", str(proto))
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "em-dash" in bad.stdout
+
+    def test_explicit_screens_dir_outside_project_is_sanctioned(
+        self, proto, outside_dir
+    ):
+        # Sanctioned roots include explicitly passed targets: pointing
+        # --screens-dir outside the project is the caller's decision and
+        # must keep scanning normally (evil.html carries an em-dash tell).
+        cp = self._run_cli(
+            "ai-tell", "--project-path", str(proto), "--screens-dir", str(outside_dir)
+        )
+        assert cp.returncode == 1, cp.stdout + cp.stderr
+        assert "em-dash" in cp.stdout
+        assert self.CONTAINMENT_MSG not in cp.stderr
+
+
+class TestAiTellHtmlDeclarationCssCommentBlanking:
+    """F6 (folded from ISSUE-063 review): the declaration-level scan on
+    HTML targets blanks CSS comments first — scoped to that pass ONLY."""
+
+    INLINE_STYLE_PROBE = '<div style="width: /* cols */ calc(33% - 1rem)">Open ledgers</div>'
+    STYLE_BLOCK_PROBE = "<style>.col { width: /* c */ calc(33% - 1rem); }</style>"
+
+    def _run(self, proto: Path) -> int:
+        return vds.main(["ai-tell", "--project-path", str(proto)])
+
+    def test_inline_style_comment_interleaved_calc_fails_then_removed_passes(
+        self, proto, capsys
+    ):
+        screen = proto / "prototype/screens/home.html"
+        _mutate(screen, H1_ANCHOR, self.INLINE_STYLE_PROBE)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            f"comment-interleaved inline-style calc evaded the sweep:\n{out}"
+        )
+        assert "flex-calc-width" in out
+        assert "home.html" in out
+
+        _mutate(screen, self.INLINE_STYLE_PROBE, H1_ANCHOR)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "flex-calc-width" not in out
+
+    def test_style_block_comment_interleaved_calc_fails_then_removed_passes(
+        self, proto, capsys
+    ):
+        screen = proto / "prototype/screens/home.html"
+        probe = self.STYLE_BLOCK_PROBE + "\n      " + H1_ANCHOR
+        _mutate(screen, H1_ANCHOR, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            f"comment-interleaved <style> block calc evaded the sweep:\n{out}"
+        )
+        assert "flex-calc-width" in out
+        assert "home.html" in out
+
+        _mutate(screen, probe, H1_ANCHOR)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "flex-calc-width" not in out
+
+    def test_em_dash_between_literal_comment_markers_in_body_text_still_flagged(
+        self, proto, capsys
+    ):
+        # Semantics pin: CSS-comment blanking is scoped to the declaration-
+        # level pass ONLY — rendered body text between literal /* */ keeps
+        # line-wise rendered-text semantics, so the em-dash stays flagged.
+        _mutate(
+            proto / "prototype/screens/home.html",
+            H1_ANCHOR,
+            "<h1>note /* — */ aside</h1>",
+        )
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert "em-dash" in out

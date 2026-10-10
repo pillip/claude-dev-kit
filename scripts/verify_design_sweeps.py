@@ -7,7 +7,11 @@ model self-check can no longer pass the gate:
 
   literal-quote   the exact characters of every `literal_quote: "<string>"`
                   field in docs/design_philosophy.md appear in at least one
-                  prototype/screens/*.html OUTSIDE HTML comments. Matching is
+                  prototype/screens/*.html as RENDERED text: outside HTML
+                  comments, <script> element bodies, and data-* attribute
+                  values (ISSUE-064 - those surfaces are blanked before the
+                  search; other attribute text such as alt stays accepted).
+                  Matching is
                   whitespace-insensitive (runs of whitespace collapse to one
                   space on both sides) - the only permitted normalization; no
                   substring widening. The explicit skip marker
@@ -18,11 +22,19 @@ model self-check can no longer pass the gate:
   ai-tell         occurrence-whitelist sweep of banned RENDERED patterns over
                   prototype/screens/*.html + prototype/styles.css. Comments
                   (HTML <!-- --> and CSS /* */) are blanked first - rendered-
-                  only semantics. CSS mechanics tells (flex-calc-width) are
+                  only semantics. HTML entities are decoded (html.unescape)
+                  AFTER comment stripping, per line, and tell matching is
+                  case-insensitive - encoded or case-varied tells are
+                  detected like literal ones (ISSUE-064). CSS mechanics tells (flex-calc-width) are
                   matched at declaration level - whitespace/newlines collapse
                   after comment blanking - so a declaration split across
                   lines cannot evade the sweep; the violation reports the
-                  line where the declaration starts. Recorded Brief overrides
+                  line where the declaration starts. On HTML targets the
+                  declaration-level pass ALSO blanks CSS /* */ comments
+                  (inline style="" and <style> contexts mirror the browser's
+                  CSS parsing; ISSUE-064) - scoped to that pass only, so
+                  literal /* */ in rendered body text keeps line-wise
+                  rendered-text semantics. Recorded Brief overrides
                   are passed as --exempt TELL_ID (repeatable); each exemption
                   is reported. Judgment tells (div-based fake product UI,
                   three equal cards, ...) are NOT deterministically decidable
@@ -42,7 +54,8 @@ Exit codes (verify_* family convention):
   0 - pass
   1 - violations found (including vacuous/empty input)
   2 - usage error (missing philosophy file, unknown --exempt id, missing
-      --class for signature-move or all); usage errors print to stderr
+      --class for signature-move or all, input resolving outside the
+      project tree - ISSUE-064 containment); usage errors print to stderr
 
 Usage:
     python3 scripts/verify_design_sweeps.py literal-quote  [--project-path P]
@@ -56,6 +69,7 @@ Options: --philosophy / --screens-dir / --css override the default paths;
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -113,6 +127,25 @@ def collapse_ws_with_lines(text: str) -> tuple[str, list[int]]:
 QUOTE_FIELD = re.compile(r'literal_quote:\s*"([^"]+)"')
 SKIP_MARKER = re.compile(r"literal_quote:\s*\(skipped[^)\n]*\)")
 
+# ISSUE-064 F3: quote characters placed in a <script> element body or a
+# data-* attribute value are not rendered text and must not satisfy the
+# sweep. Exactly these two surfaces are blanked (newline-preserving, like
+# comments); other attribute text (alt, aria-label) and <style> bodies
+# stay accepted rendered surfaces. An UNTERMINATED <script> blanks to
+# end-of-input (`|\Z` terminator), mirroring the HTML parser's
+# script-data-to-EOF rule — nothing after it renders (ISSUE-064 review).
+_SCRIPT_BODY = re.compile(r"(<script\b[^>]*>)(.*?)(?=</script\b|\Z)", re.S | re.I)
+_DATA_ATTR_VALUE = re.compile(r"""(\bdata-[\w-]+\s*=\s*)("[^"]*"|'[^']*')""", re.I)
+
+
+def blank_non_rendered(html_text: str) -> str:
+    blanked = _SCRIPT_BODY.sub(
+        lambda m: m.group(1) + re.sub(r"[^\n]", " ", m.group(2)), html_text
+    )
+    return _DATA_ATTR_VALUE.sub(
+        lambda m: m.group(1) + re.sub(r"[^\n]", " ", m.group(2)), blanked
+    )
+
 
 def run_literal_quote(
     philosophy: Path,
@@ -159,7 +192,9 @@ def run_literal_quote(
         violations.append({"quote": None, "reason": "no screen files found"})
     else:
         haystacks = {
-            s: collapse_ws(strip_html_comments(s.read_text(encoding="utf-8")))
+            s: collapse_ws(
+                blank_non_rendered(strip_html_comments(s.read_text(encoding="utf-8")))
+            )
             for s in screens
         }
         for quote in quotes:
@@ -293,19 +328,19 @@ TELLS: tuple[Tell, ...] = (
     ),
     Tell(
         "100vh",
-        re.compile(r"\b100vh\b"),
+        re.compile(r"\b100vh\b", re.I),
         ("html", "css"),
         "100vh full-height (use min-height: 100dvh)",
     ),
     Tell(
         "flex-calc-width",
-        re.compile(r"width\s*:\s*calc\(\s*[^)]*%"),
+        re.compile(r"width\s*:\s*calc\(\s*[^)]*%", re.I),
         ("html", "css"),
         "flex percentage column math (use CSS Grid)",
     ),
     Tell(
         "generic-name",
-        re.compile(r"\b(?:John Doe|Jane Doe|Sarah Chan|Acme|Nexus|SmartFlow|Cloudly)\b"),
+        re.compile(r"\b(?:John Doe|Jane Doe|Sarah Chan|Acme|Nexus|SmartFlow|Cloudly)\b", re.I),
         ("html",),
         "generic person/brand name",
     ),
@@ -363,13 +398,18 @@ def run_ai_tell(
     violations: list[dict] = []
     exemptions = sorted(set(exempt))
 
-    if not targets:
+    # ISSUE-064 F4: an empty screens set is a violation regardless of the
+    # stylesheet's presence - the no-vacuous-pass AC applies uniformly,
+    # never half-passed on the css half alone. (`targets` can only be
+    # empty when `screens` is, so this subsumes the old all-targets check
+    # without double-reporting when both halves are missing.)
+    if not screens:
         violations.append(
             {
-                "file": _rel(css_path, project),
+                "file": _rel_dirname(screens, project),
                 "line": 0,
                 "tell_id": "empty-input",
-                "snippet": "no sweep target files found (screens + stylesheet)",
+                "snippet": "no screen files found (empty input set never passes)",
             }
         )
 
@@ -384,6 +424,12 @@ def run_ai_tell(
         source_lines = stripped.splitlines()
         hits: list[dict] = []
         for lineno, line in enumerate(source_lines, 1):
+            if kind == "html":
+                # ISSUE-064 F1: decode entities AFTER comment stripping and
+                # per line - entity-encoded tells (&mdash;) are rendered text,
+                # entity-encoded <!-- markers never become strippable comments,
+                # and a decoded &NewLine; cannot shift reported line numbers.
+                line = html.unescape(line)
             for tell in line_wise:
                 if kind in tell.kinds and tell.pattern.search(line):
                     hits.append(
@@ -394,7 +440,13 @@ def run_ai_tell(
                             "snippet": line.strip()[:100],
                         }
                     )
-        collapsed, line_of = collapse_ws_with_lines(stripped)
+        # ISSUE-064 F6 (folded ISSUE-063 Medium): the declaration-level scan
+        # mirrors the browser's CSS parsing, so on HTML targets CSS comments
+        # (inline style="" / <style> contexts) are blanked for THIS pass
+        # only - a comment interleaved inside the declaration cannot split
+        # it. The line-wise scan above keeps rendered-text semantics.
+        decl_text = strip_css_comments(stripped) if kind == "html" else stripped
+        collapsed, line_of = collapse_ws_with_lines(decl_text)
         for tell in declaration_level:
             if kind not in tell.kinds:
                 continue
@@ -494,6 +546,36 @@ def main(argv: list[str] | None = None) -> int:
     screens_dir = Path(args.screens_dir) if args.screens_dir else project / "prototype" / "screens"
     css_path = Path(args.css) if args.css else project / "prototype" / "styles.css"
     screens = _discover_screens(screens_dir)
+
+    # ISSUE-064 F5: input containment. Every file the sweep would read must
+    # resolve inside a sanctioned root: the resolved project path plus any
+    # explicitly passed override (--philosophy/--screens-dir/--css are the
+    # caller's decision). A path escaping every root (e.g. via a symlink)
+    # fails closed as a usage error BEFORE the file is read; resolved-to-
+    # resolved comparison, so in-tree symlinks never false-trip.
+    roots = [project.resolve()]
+    roots += [
+        Path(override).resolve()
+        for override in (args.philosophy, args.screens_dir, args.css)
+        if override
+    ]
+    would_read = {
+        "literal-quote": [philosophy, *screens],
+        "signature-move": [css_path, *screens],
+        "ai-tell": [css_path, *screens],
+        "all": [philosophy, css_path, *screens],
+    }[args.command]
+    for target in would_read:
+        resolved = target.resolve()
+        if not any(resolved.is_relative_to(root) for root in roots):
+            print(
+                f"ERROR: {target} resolves outside the project tree "
+                f"({resolved} is under none of the sanctioned roots); pass "
+                "the path explicitly (--philosophy/--screens-dir/--css) to "
+                "sanction it",
+                file=sys.stderr,
+            )
+            return 2
 
     if args.command == "literal-quote":
         return run_literal_quote(philosophy, screens, project, args.json_out)
