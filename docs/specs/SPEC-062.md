@@ -1,7 +1,7 @@
 # SPEC-062: Dissolve the five A-bucket conversational agents into their skill contracts
 
 > Linked Issue: ISSUE-062
-> Status: `draft`
+> Status: `accepted`
 > Date: 2026-10-09
 > Author: pillip + Claude
 

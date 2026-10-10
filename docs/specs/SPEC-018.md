@@ -1,7 +1,7 @@
 # SPEC-018: Research grounding hardening — delegate to `/deep-research` + thin synthesis guard
 
 > Linked Issue: ISSUE-018
-> Status: `draft`
+> Status: `accepted`
 > Date: 2026-06-18
 > Author: claude-dev-kit
 

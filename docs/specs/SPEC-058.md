@@ -1,7 +1,7 @@
 # SPEC-058: Delegation idiom expansion — test execution (dormant delegation behind a probe + deterministic gate-result synthesis)
 
 > Linked Issue: ISSUE-058
-> Status: `draft`
+> Status: `accepted`
 > Date: 2026-10-09
 > Author: claude-dev-kit
 

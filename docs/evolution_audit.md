@@ -2,6 +2,15 @@
 
 > **Status**: evidence snapshot for SPEC-055 (kept-surface criterion). Classifications reflect the
 > surface as of 2026-10-08; later audits may revise them with the same evidence discipline.
+>
+> **Delta (2026-10-10, post-SPEC-055 sprint)**: roadmap items 2–6 executed as ISSUE-056..065
+> (all shipped). Line counts and the 32-agent roster above are HISTORICAL — the roster is now 22
+> (scan-family consolidated behind evidence mode, five A-bucket agents dissolved), the four
+> model-executed sweeps are scripts (`verify_design_sweeps.py`, `verify_hollow_tests.py`), the five
+> zero-checkpoint skills carry `verify_checkpoint.py` phases, and the uiux triplet is converted to
+> contract + gates per SPEC-060's keep-list. Open successors: ISSUE-066 (sprint-context primary
+> path), ISSUE-067 (silent-skip instrumentation), ISSUE-068 (discovered-issue queue visibility).
+> The next audit of this kind should start from the current tree, not this snapshot.
 
 > 질문: "프론티어 모델이 좋아질수록 이 하네스가 중요할까?"
 > 답: 가치는 사라지지 않고 **이동**한다. 이 문서는 kit의 전체 표면적(skill 23, agent 32, script 37, hook 10)을
