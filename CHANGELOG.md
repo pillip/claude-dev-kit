@@ -6,6 +6,42 @@ release tags are `claude-dev-kit--v<version>`.
 ## Unreleased
 
 ### Added
+- **Review execution context is decided once, with degradations reason-tagged**
+  (ISSUE-066, PR #122) — new `scripts/review_context.py` replaces `/review`
+  step 3.1's per-dimension `has_skill.py` probe-and-maybe-retry with a single
+  `decide` call that resolves both dimensions at once and emits the decision.
+  Degradations are now distinguishable: `capability-absent` (the runtime review
+  skill genuinely does not exist) vs `context-unreachable` (it exists but no
+  skill-invocation tool is present in this context — every /sprint review), so
+  the skill stops burning an attempt-then-degrade detour per dimension per
+  issue. `review_degraded_path_used` gains a `reason` payload field; pre-066
+  lines without it stay valid legacy. An `emit` subcommand is the prose-side
+  call site for the delegated events and the `inline-attempt-failed`
+  degradation. Per-control equivalence of its hardened writer against the
+  ISSUE-058 baseline was verified at review, with two controls *stronger*
+  (all-string-value truncation rather than `detail`-only, and coercion inside
+  the `try`). Bundled spec: `docs/specs/SPEC-066.md`.
+  **Dormant landing — the primary path still does not execute inside /sprint,
+  and SPEC-066's stated reason for that was WRONG.** The spec claimed a
+  categorical runtime limitation; review established the conclusion is
+  **confounded**: inside a Task sub-agent the *sub-agent's* `tools:`
+  frontmatter wins over the skill's `allowed-tools`, and although
+  `skills/review/SKILL.md` grants `SlashCommand`, neither `agents/reviewer.md`
+  nor `agents/team-lead.md` grants `SlashCommand` or `Skill` — no kit agent
+  does — while a general-purpose Task sub-agent with full tool access *does*
+  receive a `Skill` tool listing both review skills. SPEC-066 measured the
+  kit's own configuration, not the runtime; the correction is recorded in that
+  spec's Open Questions. **ISSUE-072 is the activation trigger for this
+  module** (verify the sub-agent skill-invocation row in
+  `docs/cc_feature_matrix.md` first, per the ISSUE-014 rule, then grant on the
+  review path) and is what closes this issue's AC-1, which ships unmet.
+  **Ship-time reconciliations:** the `skills/review/SKILL.md{,.tmpl}` same-hunk
+  conflict with ISSUE-067 was resolved in favour of the decide-once structure —
+  ISSUE-067's three `kit_telemetry.py --script review` one-liners were dropped
+  as superseded (its `brainstorm`/`bizanalysis` one-liners are untouched) — and
+  the `kit_telemetry` adoption SPEC-066 assumed turned out not to be a one-body
+  swap, so it is deferred to **ISSUE-075** and recorded in
+  `docs/telemetry_schema.md`'s Emit-site inventory rather than left implied.
 - **Shared telemetry emitter that announces every skip and fallback**
   (ISSUE-067, PR #123) — new `scripts/kit_telemetry.py` is the single home of
   the ISSUE-058 writer hardening (run-id whitelist, realpath containment

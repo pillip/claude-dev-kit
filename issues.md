@@ -96,7 +96,7 @@
 - [x] ISSUE-063: Fix verify_design_sweeps SPEC-056 contract deviations — multi-line CSS evasion, concatenated `all --json`, fail-open `all` without `--class` _(track: platform, P1, 0.5d — ISSUE-056 review triage, docs/review_notes/ISSUE-056.md; depends on 056)_
 - [x] ISSUE-064: Harden verify_design_sweeps matcher edges — encoded/case tell variants, non-rendered quote placements, zero-screen vacuity, input containment _(track: platform, P2, 1d — ISSUE-056 review triage, adjacent Medium findings; depends on 063)_
 - [x] ISSUE-065: Add provenance, freshness, and consume-once binding to the KIT_GATE_RESULTS_FILE delegation handoff _(track: platform, P1, 1d — ISSUE-058 review triage, unresolved High finding in docs/review_notes/ISSUE-058.md; activation precondition per SPEC-058 Open Questions / test-plan GAP-058a; depends on 058)_
-- [ ] ISSUE-066: Make the SPEC-019 primary path reachable inside /sprint — runtime review skills are uninvokable from sub-task context _(track: platform, P1, 1.5d — 2026-10 sprint retro: all 6 sprint reviews ran degraded; the flagship idiom is interactive-only today)_
+- [x] ISSUE-066: Make the SPEC-019 primary path reachable inside /sprint — runtime review skills are uninvokable from sub-task context _(track: platform, P1, 1.5d — 2026-10 sprint retro: all 6 sprint reviews ran degraded; the flagship idiom is interactive-only today)_
 - [x] ISSUE-067: Silent-skip instrumentation must announce itself — unify the telemetry emitter and announce its fallback paths _(track: platform, P1, 1d — 2026-10 sprint retro, premise corrected 2026-10-10: the eval gate did not skip — PR #92 (2a93d09) had removed it before the sprint, so zero review_eval artifacts meant "component absent", which still proved no-signal reads as all-clear; telemetry emits remain inconsistent (hand-appended JSONL vs silent no-op))_
 - [x] ISSUE-068: Discovered issues must enter the sprint queue's visibility automatically _(track: platform, P1, 0.5d — 2026-10 sprint retro: 063/064/065 were invisible to sprint_queue until the orchestrator hand-added Issue Progress rows)_
 
@@ -3594,6 +3594,13 @@ The design-sweep matchers detect the recorded evasion/false-pass variants and re
 
 > 2026-10 sprint retrospective: all 6 review runs across the SPEC-055 sprint executed the DEGRADED path despite `has_skill.py` probes returning 2 (attempt) — runtime slash-skills (`/code-review`, `/security-review`) are not invokable from sub-task (Task tool) context, where every /sprint review actually runs. The flagship probe → delegate → synthesize → audit → degrade idiom (SPEC-019) is therefore interactive-only today: the kit's main loop never exercises its primary path. The degraded reviewer held up (0 unresolved Critical/High across 10 ships), but the architecture story and the dominant execution path disagree, and every sprint burns the attempt-then-degrade detour per dimension per issue.
 
+<!-- ### ISSUE-066 SHIP NOTE -->
+> **Shipped 2026-10-11 (PR #122). Review verdict PASS, 0 Critical / 0 High. AC-2 and AC-3 are met and mutation-pinned; AC-1 is met only in its dormant-landing form and its live-execution clause is NOT satisfied — the checkbox stays unchecked.** SPEC-066 deliberately took the dormant-landing branch (its Option C): the decision module, the `capability-absent` vs `context-unreachable` reason split, and the documented activation trigger all land, but the SPEC-019 primary path still does not execute inside /sprint today, so AC-1's "verified in a live sprint iteration" clause is outstanding.
+> 
+> **The review CORRECTED the stated cause of that dormancy, and the correction narrows the work left.** SPEC-066 claimed a categorical runtime limitation (no mechanism can reach the primary path from sub-task context). That conclusion is **confounded**: inside a Task sub-agent the *sub-agent's* `tools:` frontmatter wins over the skill's `allowed-tools`, and while `skills/review/SKILL.md` does grant `SlashCommand`, neither `agents/reviewer.md` nor `agents/team-lead.md` grants `SlashCommand` or `Skill` — no kit agent does. A general-purpose Task sub-agent with full tool access *does* receive a `Skill` tool listing both review skills. So SPEC-066 measured the kit's own configuration, not the runtime. The correction is appended to SPEC-066's Open Questions rather than left wrong inside an accepted spec. **ISSUE-072 is the activation trigger for this module** (verify the sub-agent skill-invocation row in `docs/cc_feature_matrix.md` first per the ISSUE-014 rule, then grant on the review path) — and it is what closes AC-1.
+> 
+> Shipping regresses nothing: the review gave a per-control equivalence verdict on this module's hardened writer and found two controls **stronger** than the baseline. Two ship-time reconciliations are recorded rather than hidden: the `skills/review/SKILL.md{,.tmpl}` same-hunk conflict with ISSUE-067 was resolved in favor of the decide-once structure (ISSUE-067's three `--script review` one-liners dropped as superseded; its brainstorm/bizanalysis one-liners untouched), and the `kit_telemetry` adoption SPEC-066 assumed turned out NOT to be a one-body swap, so it is deferred to **ISSUE-075** — see `docs/telemetry_schema.md`'s Emit-site inventory.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -3603,7 +3610,7 @@ The design-sweep matchers detect the recorded evasion/false-pass variants and re
 - PRD-Ref: none (kit self-development; sprint retro finding; extends SPEC-019)
 - Priority: P1
 - Estimate: 1.5d
-- Status: doing
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-066-sprint-primary-path-delegation
 - GH-Issue: #119 https://github.com/pillip/claude-dev-kit/issues/119
@@ -3624,8 +3631,8 @@ A /sprint review runs the SPEC-019 primary path when the runtime capability exis
 
 #### Acceptance Criteria (DoD)
 - [ ] Given a /sprint review iteration in a session where the runtime review skills are available, when the review phase runs, then the primary path executes (runtime findings reach `synthesize_review_notes.py`) and telemetry records the delegated tag — verified in a live sprint iteration, not only unit fixtures.
-- [ ] Given a session where the capability is genuinely absent, when the review phase runs, then the degraded path executes unchanged and telemetry records `capability-absent`.
-- [ ] Given a sub-task context that cannot reach the runtime skills under the chosen design, when the review phase runs, then the detour is not silently retried per dimension — the context decision is made once and recorded as `context-unreachable`.
+- [x] Given a session where the capability is genuinely absent, when the review phase runs, then the degraded path executes unchanged and telemetry records `capability-absent`.
+- [x] Given a sub-task context that cannot reach the runtime skills under the chosen design, when the review phase runs, then the detour is not silently retried per dimension — the context decision is made once and recorded as `context-unreachable`.
 
 #### Implementation Notes
 - Sprint-retro evidence: iteration 4 review report ("both reviews ran the degraded path despite probes returning 2 — runtime slash-skills uninvokable from sub-task context"); same pattern in iterations 1, 2, 9.
@@ -3633,8 +3640,8 @@ A /sprint review runs the SPEC-019 primary path when the runtime capability exis
 - Handoff artifacts, if any, follow the ISSUE-065 precedent: provenance-bound, fresh, consume-once — never bare env-var trust.
 
 #### Tests
-- [ ] Probe/context-detection unit tests for the three telemetry outcomes (delegated / capability-absent / context-unreachable).
-- [ ] If an artifact handoff lands: binding tests mirroring tests/test_gate_binding.py's mutation pairs.
+- [x] Probe/context-detection unit tests for the three telemetry outcomes (delegated / capability-absent / context-unreachable).
+- [x] If an artifact handoff lands: binding tests mirroring tests/test_gate_binding.py's mutation pairs.
 
 #### Rollback
 `git revert` — the degraded path is never modified, so reverting restores today's degraded-always sprint behaviour.
