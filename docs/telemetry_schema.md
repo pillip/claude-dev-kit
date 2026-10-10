@@ -33,13 +33,20 @@
 | `research_triangulation_single`      | bizanalysis         | `section: str`                                            | TAM/SAM/SOM rendered as `range … [single-source]`. |
 | `research_audit_finding`             | brainstorm, bizanalysis | `verdict: str, finding_count: int`                       | Degraded-path research-auditor summary. |
 
-### ISSUE-019 — review delegation (placeholders pending implementation)
+### ISSUE-019 — review delegation (script-side emitter: `scripts/review_context.py`, ISSUE-066)
 
 | Event type                          | Owner skill | Payload fields                          | Notes |
 |-------------------------------------|-------------|-----------------------------------------|-------|
 | `review_delegated_to_code_review`    | review      | `pr_number: int | str`                  | Emitted when runtime `/code-review` is invoked. |
 | `review_delegated_to_security_review`| review      | `pr_number: int | str`                  | Emitted when runtime `/security-review` is invoked. |
-| `review_degraded_path_used`          | review      | `dimension: "code" | "security"`        | One emission per missing dimension. |
+| `review_degraded_path_used`          | review      | `dimension: "code" | "security", reason: "capability-absent" | "context-unreachable" | "inline-attempt-failed"` | One emission per degraded dimension. `reason` was added by ISSUE-066 — pre-066 lines without it are valid legacy. |
+
+> ISSUE-066: `scripts/review_context.py` is the script-side emitter and the
+> single emit seam for all three review delegation events. Its `decide`
+> subcommand emits the decide-time `review_degraded_path_used` events
+> (reasons `capability-absent` / `context-unreachable`, ONCE per degraded
+> dimension per review run); its `emit` subcommand is the prose-side call
+> site for the delegated events and the `inline-attempt-failed` degradation.
 
 ### ISSUE-058 — test-execution gate delegation (dormant until the runtime capability ships)
 
