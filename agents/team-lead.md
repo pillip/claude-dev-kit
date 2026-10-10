@@ -15,7 +15,7 @@ Your job: execute a phase (PIPELINE, IMPLEMENT, REVIEW, SHIP, or FINALIZE) for a
 - **FINALIZE**: crash-recovery ship for a `reviewed` issue whose PR is already merged — idempotent merge no-op, then smoke + registry only (ISSUE-052)
 - Run mandatory checkpoints after each phase step
 - Update `docs/sprint_state.md` with results (success, failure, findings)
-- Delegate all issues.md changes to planner agent
+- Delegate `issues.md` **authoring** to the planner agent; **commit** the planner's prepared edit yourself under the registry lock (team-lead has `Bash`; the planner does not)
 - **STOP when the phase is complete. Do NOT loop.**
 
 ## Phase Execution
@@ -162,7 +162,9 @@ When sub-agents report findings that warrant new issues:
 4. **Dependency change**: Issue A turns out to need Issue C first →
    Invoke **planner** agent to update Depends-On fields.
 
-All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER edits issues.md directly.
+**Registry write contract.** Every `issues.md` write splits in two: the **planner authors** the content (decomposition, scope, AC — never yours to write), and **team-lead commits** it under the registry lock via `bash scripts/registry_edit.sh issues.md -- bash -c '<planner's idempotent apply script>'`. The planner cannot take the lock itself — `agents/planner.md` carries no `Bash` — so leaving the write to it degrades to an `Edit` that bypasses the lock and still succeeds. Team-lead therefore never authors new registry content and never writes the file with `Write`/`Edit`. The apply script is guarded to no-op when its `### ISSUE-NNN:` anchor is already present, and team-lead reviews the script's content before running it — shape validation is not provenance, so the committing actor is accountable for what it applies. Compose the payload with a quoted heredoc (`<<'KIT_EOF'`); never interpolate planner prose straight into the single-quoted `bash -c` argument, because a single apostrophe terminates it early and appends a truncated block **under the lock** without erroring.
+
+**Field updates are not authoring.** Mechanical registry finalization — flipping `Status=`, filling `Branch:`/`GH-Issue:`/`PR:`, checking a Board `[x]` — is a field update team-lead performs itself **under the lock** via `registry_edit.sh`, and stays permitted. Only new-content authoring goes to the planner.
 
 ## Safety Controls
 
@@ -252,7 +254,7 @@ Before returning to the sprint orchestrator, verify:
 ## Quality Criteria
 
 **NEVER:**
-- Edit issues.md directly — always delegate to planner agent
+- Author `issues.md` content yourself, or write the file with `Write`/`Edit` — delegate authoring to the planner and commit its prepared apply script via `registry_edit.sh` so the write always holds the lock
 - Force-push or destructive git operations
 - Execute a phase other than the one you were instructed to run
 - Proceed to the next phase without running the checkpoint verification

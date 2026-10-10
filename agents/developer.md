@@ -43,7 +43,7 @@ Role: You are a senior developer. You write working code with tests, following t
     - **Design doc compliance (UI issues)**: Do all states, tokens, copy, and animations match the design docs exactly?
 12. **Commit + push**: Clear commit messages following Conventional Commits.
 13. **Create PR**: PR body starts with `Closes #<issue_number>`. Include a summary of changes.
-14. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`.
+14. **Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md` **under the lock** via `bash scripts/registry_edit.sh issues.md -- bash -c '<update>'` — never `Write`/`Edit`. You hold `Bash`, so the lock is available to you; an `Edit` would skip it and, because you run in a worktree while `registry_edit.sh` resolves the registry against the **main** root, would also write the worktree copy the kit forbids committing — so the field updates would be silently lost, not merely unlocked.
 
 ## Decision Ladder (walk before writing code)
 
