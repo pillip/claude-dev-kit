@@ -250,8 +250,6 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 17) **Component cross-check**:
     - Every component referenced in `wireframes.md` MUST have a definition in `design_system.md`
     - List any gaps and add missing component definitions before proceeding
-17.5) **Design verification sweeps** (script-owned gates + model sweeps):
-{{DESIGN_SWEEPS}}
 18) **PRD feature cross-check**:
     - Every feature in the PRD (F1, F2, ... including P2) MUST appear in wireframes and/or interactions
     - List any gaps and add missing features (P2 features as "deferred" notes)
@@ -269,6 +267,8 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 22) **State demo check**:
     - Every screen has a visible state-switcher toolbar
     - Loading, empty, and error states are implemented and togglable
+22.4) **Design verification sweeps** (script-owned gates + model sweeps) — runs LAST among the content-mutating Phase 5.5 steps: anything steps 18-22 added or fixed must also pass the gates:
+{{DESIGN_SWEEPS}}
 22.5) **issues.md coverage cross-check** (only if `issues.md` exists):
     - Read `issues.md` and extract titles, scope, and `UI` flag from each issue.
     - Compare against the design deliverables and produce a gap list:
@@ -318,7 +318,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash, WebSearch
 
 These rules prevent Claude from converging on generic, forgettable defaults.
 
-**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 17.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
+**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 22.4. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
 
 {{SLOP_CALIBRATION}}
 

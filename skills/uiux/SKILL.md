@@ -416,7 +416,24 @@ Run these checks silently at the start. Use results to adapt behavior:
 17) **Component cross-check**:
     - Every component referenced in `wireframes.md` MUST have a definition in `design_system.md`
     - List any gaps and add missing component definitions before proceeding
-17.5) **Design verification sweeps** (script-owned gates + model sweeps):
+18) **PRD feature cross-check**:
+    - Every feature in the PRD (F1, F2, ... including P2) MUST appear in wireframes and/or interactions
+    - List any gaps and add missing features (P2 features as "deferred" notes)
+19) **Token compliance check**:
+    - CSS custom properties used in `styles.css` MUST match values in `design_system.md`
+    - Check for hardcoded hex colors, font sizes, or spacing in `styles.css` that should use `var(--token)`
+20) **Cross-document consistency check**:
+    - Color token references in wireframes/interactions use CSS custom property names (not prose descriptions)
+    - Hover/interaction states in interactions.md match component states in design_system.md
+    - Container widths and breakpoints are consistent across all docs and CSS
+21) **Accessibility check**:
+    - No `outline: none` on `:focus` without `:focus-visible` coverage
+    - Placeholder text contrast >= 3:1
+    - All interactive elements have keyboard handlers
+22) **State demo check**:
+    - Every screen has a visible state-switcher toolbar
+    - Loading, empty, and error states are implemented and togglable
+22.4) **Design verification sweeps** (script-owned gates + model sweeps) — runs LAST among the content-mutating Phase 5.5 steps: anything steps 18-22 added or fixed must also pass the gates:
 - **Script-owned sweeps — literal-quote / Signature Move / AI-tell (deterministic subset)**: run from the project root:
   ```
   python3 scripts/verify_design_sweeps.py all --class <signature-move-class> [--exempt <tell-id> ...]
@@ -436,23 +453,6 @@ Run these checks silently at the start. Use results to adapt behavior:
   - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
   - List every violation as `file:line`, fix, and re-sweep.
 - **Depreciation triggers**: per tell/rule, two consecutive design runs whose sweep reports zero hits delete that prose line (script-side entries stay — script lines are cheap, prose lines cost context). The whole mechanics block is replaced by a validator call the day `scripts/verify_design_sweeps.py` grows a mechanics sweep; the contrast prose is replaced by a computed-style validator call when one lands.
-18) **PRD feature cross-check**:
-    - Every feature in the PRD (F1, F2, ... including P2) MUST appear in wireframes and/or interactions
-    - List any gaps and add missing features (P2 features as "deferred" notes)
-19) **Token compliance check**:
-    - CSS custom properties used in `styles.css` MUST match values in `design_system.md`
-    - Check for hardcoded hex colors, font sizes, or spacing in `styles.css` that should use `var(--token)`
-20) **Cross-document consistency check**:
-    - Color token references in wireframes/interactions use CSS custom property names (not prose descriptions)
-    - Hover/interaction states in interactions.md match component states in design_system.md
-    - Container widths and breakpoints are consistent across all docs and CSS
-21) **Accessibility check**:
-    - No `outline: none` on `:focus` without `:focus-visible` coverage
-    - Placeholder text contrast >= 3:1
-    - All interactive elements have keyboard handlers
-22) **State demo check**:
-    - Every screen has a visible state-switcher toolbar
-    - Loading, empty, and error states are implemented and togglable
 22.5) **issues.md coverage cross-check** (only if `issues.md` exists):
     - Read `issues.md` and extract titles, scope, and `UI` flag from each issue.
     - Compare against the design deliverables and produce a gap list:
@@ -502,7 +502,7 @@ Run these checks silently at the start. Use results to adapt behavior:
 
 These rules prevent Claude from converging on generic, forgettable defaults.
 
-**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 17.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
+**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 22.4. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
 
 **Calibration — the three current AI-design clusters.** Independent of subject, AI-generated design converges on three looks right now:
 1. Warm cream ground (near `#F4F1EA`) + high-contrast serif display + terracotta accent.
