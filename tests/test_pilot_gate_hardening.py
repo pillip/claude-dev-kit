@@ -7,23 +7,37 @@ Each uiux template must declare the 4-substep pilot gate:
 - Step 2.x.3 — Auto-correction cycle with N=3 hard cap
 
 The test parses the markdown — it does not run /uiux.
+
+Since ISSUE-060 (SPEC-060 K1) the pilot-gate protocol is extracted to the
+{{PILOT_GATE}} fragment token (scripts/fragments.py), so the contract is
+asserted against the RESOLVED template content — what /uiux actually
+reads — not the raw tmpl. Exact precedent: tests/test_reference_anchor_tuning.py
+was converted the same way when ISSUE-041 tokenized the interview. Every
+assertion from the raw-tmpl version is preserved unchanged; extraction
+changes location, zero behavior (K1 is C-bucket, Scope-Out for weakening).
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from gen_skills import process_template  # noqa: E402
+
 UIUX_TMPL_PATHS = [
-    Path("skills/uiux/SKILL.md.tmpl"),
-    Path("skills/mobile-uiux/SKILL.md.tmpl"),
-    Path("skills/desktop-uiux/SKILL.md.tmpl"),
+    ROOT / "skills/uiux/SKILL.md.tmpl",
+    ROOT / "skills/mobile-uiux/SKILL.md.tmpl",
+    ROOT / "skills/desktop-uiux/SKILL.md.tmpl",
 ]
 
 
 def _read(path: Path) -> str:
     assert path.exists(), f"missing template: {path}"
-    return path.read_text(encoding="utf-8")
+    return process_template(path)
 
 
 class TestNeutralObservation:
