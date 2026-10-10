@@ -110,6 +110,12 @@ Never commit these files to feature branches.
    - If `docs/sprint_state.md` exists with Status=running, ask user: resume or start fresh?
    - If resuming, load existing state.
    - If fresh, delete old sprint_state.md and create a new one from `templates/sprint_state.md`.
+   - **Pin the roster boundary**: in the new file's `## Meta` block, replace the
+     `- Roster-Watermark: ISSUE-NNN` placeholder with `ISSUE-<the highest ISSUE-NNN you just
+     wrote into the Issue Progress table>` — the max rostered ID **at sprint start**. Never
+     update it again for the life of the sprint: its whole purpose is to record the boundary the
+     roster had when the sprint was scoped. Leaving the placeholder in place is not fatal but is
+     announced as a rejection in every `reason` (see **Discovered-issue visibility** below).
 
 3) Gather context (read once, reuse across iterations):
    **Read all context files via parallel Read tool calls in a single message. Do NOT read them sequentially.**
@@ -158,11 +164,44 @@ Never commit these files to feature branches.
       but with **no row** in that table — typically filed mid-sprint by `/review` triage or
       `planner` — are auto-considered, so work discovered during a sprint is no longer invisible
       to the queue. Current bounds:
-      - Only IDs numerically **above** the highest `ISSUE-NNN` already in the table qualify. The
-        boundary is re-derived from the table on every run, so roster newly discovered issues in
-        **ascending ID order** — rostering a higher ID first pushes its lower-ID siblings below the
-        boundary and they stop being reported at all.
-      - Nothing is auto-considered unless the table already holds at least one `ISSUE-NNN` row.
+      - Only IDs numerically **above** the boundary pinned in `## Meta` as `Roster-Watermark` at
+        sprint start (step 2) qualify. Because that boundary is fixed for the sprint, visibility is
+        **monotonic**: an issue reported once keeps being reported until it is shipped or dropped,
+        and the order in which you roster discovered issues no longer matters.
+      - If the `Roster-Watermark` field is absent, malformed, duplicated, outside `## Meta`, or
+        above the highest ID on the Board, the queue falls back to re-deriving the boundary as the
+        highest `ISSUE-NNN` currently in the table and **names that fallback in `reason`**
+        (`[roster-watermark: rejected (…) — fell back …]` or `[roster-watermark: absent …]`). Under
+        the fallback the boundary moves as the roster grows, so a lower-ID sibling can drop out of
+        the report — fix the field rather than working around it.
+      - **The boundary in force is always named in `reason`** — `[roster-watermark: pinned at
+        ISSUE-NNN — X of Y Board backlog issue(s) are above it]` when a pin was accepted, a
+        `rejected`/`absent` fallback note otherwise. An accepted pin at or above the Board's
+        highest ID empties `unrostered` legitimately, so without this line a boundary that had
+        silenced the whole control would look exactly like a healthy sprint with nothing to report.
+        The `X of Y` count is the counter-evidence: `0 of 0` is a genuinely finished sprint, while
+        `0 of 12` means the pin is suppressing everything — check it. If you see no
+        `roster-watermark` note at all, the field is absent — treat that as the pre-pin behaviour
+        below, not as a clean bill of health.
+      - Above-boundary issues are **flagged but NOT dispatched — but ONLY while the
+        `Roster-Watermark` field is present** (accepted *or* rejected; a mangled pin still closes
+        the gate). They then appear in `unrostered` (and in `stranded` on a DONE) but are never
+        targeted, so a sprint scoped on older debt cannot auto-drive newer out-of-scope work
+        through implement → review → merge. `reason` says how many were withheld. Export
+        `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK=1` (also `true`/`yes`/`on`) to dispatch them instead;
+        when set, the knob's name appears in `reason` so a deliberately widened sprint is
+        distinguishable from a runaway one. Anything else — including unset, `0`, and `false` —
+        leaves dispatch off.
+      - **The gate is NOT fail-safe against a deleted field.** With NO `Roster-Watermark` line the
+        sprint keeps the pre-ISSUE-069 behaviour: above-boundary Board issues are auto-**targeted**
+        and driven through implement → review → merge. That backward compatibility is deliberate
+        (an in-flight pre-pin sprint must not change behaviour mid-flight), which is exactly why
+        the preserve-`## Meta` requirement in step 4d is load-bearing: **dropping** the field
+        re-opens autonomous dispatch of out-of-scope work, where **mangling** it does not. Check
+        for the `[roster-watermark: absent …]` note whenever a run targets something you did not
+        scope.
+      - Nothing is auto-considered unless the table already holds at least one `ISSUE-NNN` row, or
+        the boundary is pinned.
       - Auto-considered issues are withheld while any issue is in flight, so discovery can never
         starve the STUCK escalation path.
       - For auto-considered issues only, a dependency also counts as resolved when its `issues.md`
@@ -192,6 +231,15 @@ Never commit these files to feature branches.
       Execute this phase, update docs/sprint_state.md with results, then STOP.
       Do NOT loop.
       ```
+
+      **Preserve `## Meta` verbatim**: require the team-lead to copy the `## Meta` block —
+      including `Roster-Watermark` — unchanged when it rewrites `docs/sprint_state.md`, editing only
+      `Iteration` and `Status`. Every phase executor rewrites that file, and a dropped
+      `Roster-Watermark` reverts the sprint to the old re-derived boundary **and re-opens
+      autonomous dispatch of above-boundary work** (the absent state is the one state the dispatch
+      gate does not close — see **Discovered-issue visibility** above). The revert is announced as
+      `[roster-watermark: absent …]`, not silent, but it is a real widening of autonomous scope:
+      treat the `## Meta` block as copy-only.
 
       **Unrostered targets**: for any target that appeared in `unrostered`, say so in the prompt and
       require the team-lead to **add its Issue Progress row** when it records progress. The queue

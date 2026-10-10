@@ -12,6 +12,11 @@ Exit codes:
   0 — success (JSON output on stdout)
   1 — operational issue (nothing actionable, validation failure)
   2 — usage error (missing files, malformed input)
+
+Environment:
+  KIT_SPRINT_DISPATCH_ABOVE_WATERMARK — 1/true/yes/on widens autonomous dispatch
+    to Board issues ABOVE the pinned sprint roster boundary (default: off — they
+    are flagged in `unrostered` but never targeted)
 """
 
 from __future__ import annotations
@@ -495,7 +500,14 @@ def ship_merge_decision(pr_ref, *, merge_state_fn=None):
 # uncaught ValueError — i.e. a traceback instead of JSON from the script that
 # drives the sprint loop. A cell wider than the bound simply does not match and
 # is ignored (no watermark contribution, not a candidate).
-_ROSTER_ID_RE = re.compile(r"ISSUE-(\d{1,9})")
+#
+# ``[0-9]`` and NOT ``\d`` (review fix, ISSUE-069): for ``str`` patterns Python's
+# ``\d`` matches every Unicode decimal-digit (category Nd), and ``int()`` accepts
+# them, so ``ISSUE-０５５`` (fullwidth) and ``ISSUE-٠١١`` (Arabic-Indic) were
+# honoured as canonical ids. AC-7 requires a CANONICAL-id fullmatch, and a
+# validator over untrusted workspace input must not accept a spelling no
+# generator in this repo emits.
+_ROSTER_ID_RE = re.compile(r"ISSUE-([0-9]{1,9})")
 
 # Board ``Status`` comparisons below are deliberately EXACT, not prefix matches.
 # Real issues.md entries do annotate the field (this repo carries
@@ -508,10 +520,265 @@ _ROSTER_ID_RE = re.compile(r"ISSUE-(\d{1,9})")
 # safe side for an admission filter and a dependency gate. The excluded-by-
 # annotation cases are pinned by TestAnnotatedBoardStatusFailsClosed.
 
+# ── Roster watermark pin (ISSUE-069) ────────────────────────────────
+
+# The ONLY accepted spelling of the sprint_state ``## Meta`` field that holds the
+# sprint-start boundary. Acceptance is exact (see parse_roster_watermark).
+_WATERMARK_CANONICAL_NAME = "- Roster-Watermark"
+
+# Detection is deliberately BROAD — an occurrence-whitelist, not a phrasing
+# blacklist: line-anchored, case-insensitive, and tolerant of every bullet
+# marker, indentation and emphasis form the line could carry. A field-shaped line
+# the detector MISSES is the worst outcome available: it is honoured-by-OMISSION,
+# because `watermark_present` goes False, which (a) re-opens the above-boundary
+# dispatch gate in `cmd_next_action` and (b) makes the engine affirmatively
+# report `[roster-watermark: absent from ## Meta]` about a field that is plainly
+# there. Decoration and indentation are therefore DETECTED and then rejected as
+# non-canonical by the `_WATERMARK_CANONICAL_NAME` check — being found-then-
+# refused is the whole point, because it fails closed and announces.
+#
+# Review fix (ISSUE-069): the previous pattern enumerated only `[-*]` as bullet
+# markers and only `[ \t]` as whitespace, so eleven field-shaped lines slipped
+# past it — `+` (CommonMark's third bullet marker), NBSP/ZWSP indentation,
+# `_emphasis_`, `~~strike~~`, `***triple***`, and blockquoted `> - `. Each
+# rendered identically to the canonical line and each silently re-opened
+# dispatch; a single byte (`-` → `+`) turned `DONE`/`targets: []` into a
+# `PIPELINE` on three out-of-scope issues. The duplicate guard inherited the same
+# blind spot, so a canonical field plus a `+`-bulleted second copy counted as ONE
+# hit and honoured the first — the exact silent loosening the duplicate rule
+# exists to stop.
+#
+# Folding the leading run into ONE character class also removes the adjacent
+# greedy quantifiers (`[ \t]*` … `[ \t]*` around an optional atom) that made the
+# old pattern backtrack quadratically: a line of 80k spaces took 66s, and this
+# scan runs over untrusted workspace input on every iteration of the sprint loop
+# with no timeout wrapper. The class form is linear.
+_WATERMARK_FIELD_RE = re.compile(
+    r"^[\s\u00a0\u200b>+*\-_~`]*roster-watermark[*_~`\s\u00a0]*:",
+    re.IGNORECASE,
+)
+
+# `str.splitlines()` also breaks on VT, FF, FS, GS, RS, NEL, LS and PS, none of
+# which `Path.read_text`'s universal-newline translation normalizes. That let a
+# whole field declaration — or even a `## Meta` heading — be smuggled INSIDE a
+# physical `\n`-delimited line, where this parser saw and honoured it but `grep`,
+# a line-based linter and a human reading the file could not find it. Detection
+# stays broad (the smuggled field IS found, so the gate closes), and acceptance
+# refuses it: a document whose line structure is ambiguous does not get to pin
+# the boundary. No generator in this repo emits these characters.
+_AMBIGUOUS_LINE_SEPARATORS = (
+    "\x0b\x0c\x1c\x1d\x1e\u0085\u2028\u2029"
+)
+
+# Board ids are compared against the pinned value as a range check, and
+# `board_max` is a `max()` over ids read from `issues.md` — also untrusted. One
+# inert `### ISSUE-999999999:` heading would otherwise raise the ceiling far
+# enough to make any forged boundary "in range", silencing the whole control.
+# Real ids in this repo are 3 digits; 4 leaves generous headroom.
+_MAX_PLAUSIBLE_BOARD_ID = 9999
+
+
+def _meta_section_bounds(lines: list[str]) -> tuple[int, int]:
+    """Half-open ``[start, end)`` line range of the ``## Meta`` section body.
+
+    The terminating condition is copied from the structure of ``## Meta``
+    ITSELF, not from any other scan in this module: ``## Meta`` is a
+    bullet-list section, and a markdown section of that shape ends at its next
+    SIBLING heading (``## `` → EOF). So an h3 sub-heading does not close it —
+    an h3 nested inside ``## Meta`` is still ``## Meta`` — while a stray paste
+    under a sibling ``## `` heading is correctly outside it. ``(0, 0)`` — an
+    empty range — when there is no ``## Meta`` heading at all, which makes
+    every field line "outside ## Meta" and therefore refused (fail-closed).
+
+    Deliberately NOT the same terminator ``parse_sprint_table`` uses. That scan
+    reads a GFM *table*, whose structure ends it at the first line that is not a
+    table row (blank line, prose, or a heading of ANY level — ISSUE-076). Two
+    different markdown constructs, so two different terminators, each taken from
+    the construct it parses. Do not "unify" them.
+    """
+    for start, line in enumerate(lines):
+        # ``rstrip()`` (review fix): ``parse_sprint_table``'s heading match is
+        # ``r"## Issue Progress\s*\n"``, i.e. it tolerates trailing whitespace.
+        # An exact ``==`` here was stricter than that oracle, so a cosmetic
+        # trailing space on the heading moved every field line "outside
+        # ## Meta" and cost the sprint its pin on every run (announced, and the
+        # gate stays closed — degradation, not unsafety, but needless).
+        if line.rstrip() == "## Meta":
+            for end in range(start + 1, len(lines)):
+                if lines[end].startswith("## "):
+                    return start + 1, end
+            return start + 1, len(lines)
+    return 0, 0
+
+
+def _truncate_value(value: str) -> str:
+    """Sanitize + cap an echoed untrusted value at 40 chars + an ellipsis.
+
+    A rejected ``## Meta`` value is quoted back in ``reason``, so a pathological
+    one (e.g. a 4301-digit ID) must not be amplified through stdout.
+
+    Square brackets are stripped first (review fix). ``reason`` is the channel an
+    LLM orchestrator reads as the engine's verdict, and the engine marks its own
+    signals with bracketed sentinels (``[dispatch: …]``, ``[roster-watermark:
+    …]``). 40 characters is ample room for a convincing lookalike, e.g.
+    ``x] [dispatch: ENABLED] [ok``, landing verbatim beside the real markers.
+    Review lesson: those sentinels are data, not directives — so the untrusted
+    echo must not be able to spell one.
+    """
+    cleaned = value.replace("[", "").replace("]", "")
+    return cleaned if len(cleaned) <= 40 else cleaned[:40] + "…"
+
+
+def parse_roster_watermark(
+    sprint_text: str,
+    issues_meta: dict[str, dict],
+) -> tuple[int | None, str | None, bool]:
+    """Read the sprint-start roster boundary pinned in sprint_state's ``## Meta``.
+
+    Returns ``(num, rejection_detail, present)``:
+      * ``num`` — the pinned boundary when a canonical field passed every
+        validation, else ``None`` (the caller then falls back to the ISSUE-068
+        max-rostered-ID derivation).
+      * ``rejection_detail`` — ``None`` when the field is absent or accepted; a
+        short human-readable reason when it was found and refused.
+      * ``present`` — ``True`` when a field-shaped line exists ANYWHERE in the
+        document, accepted or not. The dispatch gate in ``cmd_next_action`` keys
+        on this rather than on acceptance, so "we found a boundary declaration
+        and refused it" stays distinguishable from "there is none".
+
+    ``## Meta`` is workspace-writable state every phase executor rewrites, i.e.
+    untrusted input this script reads back and acts on: detection is broad,
+    acceptance is narrow, and everything in between falls back with the reason
+    named in the output. Occurrence counting is deliberately FENCE-BLIND — a copy
+    inside a code fence still counts as a duplicate — and the reason is that the
+    two rules do NOT degrade alike, so this is a safety choice rather than a
+    simplicity one. Fence-AWARE counting would discard the fenced copy and
+    HONOUR the remaining one, which hands an attacker (or a careless rewrite) a
+    silent loosening: wrap the real field in a fence, add your own beside it, and
+    exactly one "real" field remains — yours, accepted, with nothing in `reason`
+    to say so. Fence-BLIND counting sees two declarations, refuses both, and
+    announces. Refusing is the fail-closed direction, so it wins; it also cannot
+    be defeated by wrapping a second field in backticks. Known cost, accepted: a
+    field line that exists ONLY inside a fence (a doc example under ``## Meta``
+    with no real field anywhere) is read as a real declaration. That direction is
+    announced — ``reason`` names the boundary it pinned — and the dispatch gate
+    closes either way, so it costs precision, never restraint.
+
+    Never raises: every step is total for a ``str``/``dict`` pair, and both digit
+    runs handed to ``int()`` are bounded by ``_ROSTER_ID_RE``.
+    """
+    text = sprint_text or ""
+    # `splitlines()` is deliberate here, NOT `split("\n")`: it also breaks on the
+    # separators in `_AMBIGUOUS_LINE_SEPARATORS`, which is what lets this scan
+    # FIND a field smuggled inside a physical line. Finding it is what closes the
+    # dispatch gate; the acceptance check below is what refuses to honour it.
+    lines = text.splitlines()
+    hits = [
+        (index, line)
+        for index, line in enumerate(lines)
+        if _WATERMARK_FIELD_RE.match(line)
+    ]
+    if not hits:
+        return None, None, False
+    if len(hits) > 1:
+        return None, f"{len(hits)} field lines found, expected exactly one", True
+
+    # A field was found, so the gate is already closed from here on. Refuse to
+    # HONOUR it if the document's line structure is ambiguous: a declaration that
+    # only this parser can see is not a declaration an operator can audit.
+    if any(sep in text for sep in _AMBIGUOUS_LINE_SEPARATORS):
+        return None, (
+            "document contains a non-newline Unicode line separator, so a field "
+            "line here is not visible to a line-based reader"
+        ), True
+
+    index, line = hits[0]
+    meta_start, meta_end = _meta_section_bounds(lines)
+    if not meta_start <= index < meta_end:
+        return None, "field is outside the ## Meta section", True
+
+    name, _, raw_value = line.partition(":")
+    if name != _WATERMARK_CANONICAL_NAME:
+        return None, (
+            f"non-canonical field line, expected "
+            f"'{_WATERMARK_CANONICAL_NAME}: ISSUE-NNN'"
+        ), True
+
+    value = raw_value.strip()
+    match = _ROSTER_ID_RE.fullmatch(value)
+    if not match:
+        return None, (
+            f"value {_truncate_value(value)!r} is not a canonical "
+            "ISSUE-<digits> id"
+        ), True
+    num = int(match.group(1))
+
+    # Lower end of the range (review fix): AC-7 names "out of the live ID range",
+    # and a range has two ends — the upper bound alone let ``ISSUE-000`` through.
+    # Canonical issue ids start at 001, and a boundary below every real id is the
+    # mirror failure of one above every real id: instead of silencing the control
+    # it maximally OPENS it (the whole Board backlog lands in
+    # ``unrostered``/``stranded``, and with the opt-in set it becomes a Board-wide
+    # dispatcher). Checked before the Board scan because it needs no Board at all.
+    if num < 1:
+        return None, (
+            f"ISSUE-{num:03d} is below the lowest possible Board id ISSUE-001"
+        ), True
+
+    # Range sanity against the LIVE Board: a boundary above every real ID
+    # silences the whole control while looking perfectly well-formed. Skipped
+    # when no Board key is parseable, so an unrelated issues.md problem cannot
+    # cost the sprint its pinned boundary. The bound on `_ROSTER_ID_RE` is
+    # load-bearing on this scan too — an overlong Board heading reaching `int()`
+    # is the same CPython 4300-digit crash via a different input file.
+    #
+    # The ceiling is clamped to `_MAX_PLAUSIBLE_BOARD_ID` (review fix): `issues.md`
+    # is untrusted too, so without a clamp a single inert
+    # `### ISSUE-999999999:` heading raised `board_max` high enough to make any
+    # forged boundary "in range" — and a boundary above every real id silences the
+    # whole control, which is precisely what this guard exists to stop. Ids beyond
+    # the clamp are ignored for ceiling purposes rather than failing the check, so
+    # one implausible heading cannot cost the sprint its pin either.
+    board_nums = [
+        int(board_match.group(1))
+        for board_match in (_ROSTER_ID_RE.fullmatch(key) for key in issues_meta)
+        if board_match
+    ]
+    plausible = [n for n in board_nums if n <= _MAX_PLAUSIBLE_BOARD_ID]
+    if plausible:
+        board_max = max(plausible)
+        if num > board_max:
+            return None, (
+                f"ISSUE-{num:03d} is above the highest Board id "
+                f"ISSUE-{board_max:03d}"
+            ), True
+
+    return num, None, True
+
+
+# ISSUE-069 opt-in knob: widen autonomous dispatch to Board issues ABOVE the
+# pinned boundary (out-of-scope work). Read at CALL time, deliberately NOT via
+# the module-level import-time pattern `GH_MERGE_PROBE_TIMEOUT` uses above: a
+# constant snapshotted at import is unreachable by monkeypatch (the module is
+# imported long before any test runs) and unsettable by an operator who exports
+# the knob after the interpreter starts. The split in convention is intentional.
+#   KIT_SPRINT_DISPATCH_ABOVE_WATERMARK — 1/true/yes/on dispatches above-boundary
+#   issues (default off: they are flagged in `unrostered` but never targeted)
+DISPATCH_ABOVE_WATERMARK_ENV = "KIT_SPRINT_DISPATCH_ABOVE_WATERMARK"
+_DISPATCH_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _dispatch_above_watermark_enabled() -> bool:
+    """True only for the documented truthy vocabulary — everything else is OFF."""
+    raw = os.environ.get(DISPATCH_ABOVE_WATERMARK_ENV, "")
+    return raw.strip().lower() in _DISPATCH_TRUTHY
+
 
 def augment_roster_from_board(
     sprint_rows: list[dict[str, str]],
     issues_meta: dict[str, dict],
+    *,
+    pinned_watermark: int | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Synthesize roster rows for Board-registered backlog issues (ISSUE-068).
 
@@ -522,11 +789,26 @@ def augment_roster_from_board(
     auto-consider them without touching any rostered row.
 
     Watermark scoping: an issue counts as mid-sprint-registered if and only if
-    its numeric ID is above EVERY sprint-start rostered ID (watermark = max
-    numeric ID among rostered ``ISSUE-<digits>`` cells). Pre-existing Board
-    backlog below the watermark was deliberately excluded at sprint planning
-    and stays invisible. No rostered rows → no watermark → no synthesis (the
-    legacy empty-table DONE path is preserved).
+    its numeric ID is above EVERY sprint-start rostered ID. ``pinned_watermark``
+    (ISSUE-069) IS that boundary when given — the roster max is then not
+    consulted at all, so the boundary cannot drift upward as the roster grows and
+    re-hide a lower-ID sibling it already surfaced. Without a pin the boundary is
+    derived as ``max`` of the rostered ``ISSUE-<digits>`` cells, byte-identically
+    to ISSUE-068: no rostered ID → no watermark → no synthesis. Pre-existing
+    Board backlog below the boundary was deliberately excluded at sprint planning
+    and stays invisible.
+
+    The legacy empty-table DONE path is preserved in both cases: the
+    ``if not sprint_rows`` short-circuit stays FIRST and a pin does not bypass it,
+    so an un-started sprint never becomes a Board-wide dispatcher. A pin DOES
+    deliberately override the narrower ``not rostered_nums`` no-op, i.e. a roster
+    that HAS rows but no canonical ``ISSUE-<digits>`` cell (all cells decorated or
+    mangled) synthesizes under a pin where legacy returned early. That is
+    intended — it keeps the Board visible when the roster text is corrupted
+    instead of reporting a false DONE — and it is reachable only via the new
+    field, so no pre-feature file changes behaviour. It is also non-dispatching:
+    the presence-keyed gate in ``cmd_next_action`` withholds every synthesized id
+    unless the opt-in knob is set.
 
     Synthesized candidates must be: above the watermark, not already rostered,
     Board ``Status: backlog``, and not ``Manual: true``. Each synthesized row
@@ -549,9 +831,12 @@ def augment_roster_from_board(
         if match:
             rostered_nums.append(int(match.group(1)))
 
-    if not rostered_nums:
-        return sprint_rows, []
-    watermark = max(rostered_nums)
+    if pinned_watermark is None:
+        if not rostered_nums:
+            return sprint_rows, []
+        watermark = max(rostered_nums)
+    else:
+        watermark = pinned_watermark
 
     candidates: list[tuple[int, str]] = []
     for issue_id, meta in issues_meta.items():
@@ -656,6 +941,57 @@ def compute_queues(
         "implement_ready": implement_ready,
         "in_flight": in_flight,
     }
+
+
+def diagnose_carry_forward_gaps(
+    sprint_rows: list[dict[str, str]],
+    issues_meta: dict[str, dict],
+    queues: dict[str, list[str]],
+) -> list[tuple[str, list[str]]]:
+    """Explain rostered backlog rows stalled by a PRIOR-sprint dependency.
+
+    A rostered row resolves its ``Depends-On`` from the Issue Progress table
+    ONLY. ISSUE-068's Board-resolved loosening deliberately covers synthesized
+    (``unrostered``) rows only, and TC-068d pins that. So a rostered row whose
+    dependency was satisfied in an earlier sprint — Board ``done``/``drop``/
+    ``dropped`` with no row in this sprint's table — is undispatchable and
+    nothing says why.
+
+    This is a DIAGNOSIS, not a relaxation: the rostered-row contract stays
+    table-only. The helper mutates nothing, and the caller may only feed it into
+    ``reason`` — never into ``action``, ``targets`` or a queue.
+
+    Returns ``[(issue_id, [dep_ids])]`` in Issue Progress table order. Board
+    ``Status`` is matched EXACTLY, consistently with the ISSUE-068 filters:
+    ``done (sign-off pending)`` does not resolve a dependency, so calling it
+    "Board-resolved, only the row is missing" would be false advice.
+    """
+    rostered = {row.get("issue", "") for row in sprint_rows}
+    queued = {issue_id for queue in queues.values() for issue_id in queue}
+
+    gaps: list[tuple[str, list[str]]] = []
+    for row in sprint_rows:
+        if row.get("unrostered"):
+            continue
+        if row.get("phase") != "backlog":
+            continue
+        if row.get("status") in ("dropped", "waiting"):
+            continue
+        issue_id = row.get("issue", "")
+        if issue_id in queued:
+            continue
+        meta = issues_meta.get(issue_id, {})
+        if meta.get("manual", False):
+            continue
+        carried = [
+            dep
+            for dep in meta.get("depends_on", [])
+            if dep not in rostered
+            and issues_meta.get(dep, {}).get("status") in ("done", "drop", "dropped")
+        ]
+        if carried:
+            gaps.append((issue_id, carried))
+    return gaps
 
 
 def choose_action(
@@ -878,12 +1214,20 @@ def cmd_next_action(args: argparse.Namespace) -> int:
         print(json.dumps(result))
         return 1
 
+    # ISSUE-069: the roster boundary is PINNED at sprint start in sprint_state's
+    # ## Meta, so it cannot drift upward as the roster grows and re-hide a
+    # lower-ID sibling it already surfaced. An absent or refused pin falls back
+    # to the ISSUE-068 max-rostered-ID derivation, named in `reason` below.
+    pinned_watermark, watermark_detail, watermark_present = parse_roster_watermark(
+        sprint_text, issues_meta
+    )
+
     # ISSUE-068: surface Board-registered backlog issues that are absent from
     # the sprint roster (registered mid-sprint, above the roster ID watermark).
     # Synthesis happens BEFORE compute_queues so discovered issues can be
     # targeted; rostered rows and the empty-table path above are untouched.
     sprint_rows, unrostered_ids = augment_roster_from_board(
-        sprint_rows, issues_meta
+        sprint_rows, issues_meta, pinned_watermark=pinned_watermark
     )
 
     queues = compute_queues(sprint_rows, issues_meta)
@@ -917,6 +1261,46 @@ def cmd_next_action(args: argparse.Namespace) -> int:
             iid for iid in queues["implement_ready"] if iid not in deferred
         ]
 
+    # ISSUE-069 (Harm B): above-boundary Board issues are FLAGGED, never
+    # auto-driven through implement → review → `gh pr merge`. A sprint
+    # deliberately scoped on older debt otherwise pulls in everything newer.
+    #
+    # The gate keys on field PRESENCE, not on acceptance: a REJECTED pin closes
+    # it too. This is the one place where "fall back" does NOT mean "behave
+    # exactly like legacy", and it is deliberate — a mangled ## Meta line must
+    # never silently re-enable autonomous dispatch of unscoped work, or
+    # corrupting one line becomes a way to widen a sprint's scope without opting
+    # in. An ABSENT field is a legitimate pre-feature sprint and keeps the legacy
+    # dispatch behaviour byte-identically (AC-6). Do NOT "simplify" this to key
+    # on `pinned_watermark is not None`.
+    #
+    # Applied ALONGSIDE the in-flight deferral above, and only to the
+    # synthesized ids, so rostered-row outcomes stay identical and the issues
+    # remain visible in `unrostered`/`stranded`.
+    #
+    # `withheld_ids` records what this gate ACTUALLY removed, not what it decided
+    # (review fix). Note B used to be driven by the decision, so it overstated in
+    # both directions: with the opt-in set it claimed "dispatched" even when the
+    # in-flight deferral above had already removed every synthesized id, and with
+    # the opt-in unset it counted above-boundary issues that were never in
+    # `implement_ready` anyway (e.g. an unresolved dependency) and promised the
+    # knob would dispatch them. AC-5 exists so the log distinguishes a
+    # deliberately widened sprint from a runaway one, so the log reports the
+    # outcome.
+    dispatch_above = _dispatch_above_watermark_enabled()
+    withheld_ids: list[str] = []
+    if unrostered_ids and watermark_present and not dispatch_above:
+        withheld = set(unrostered_ids)
+        withheld_ids = [iid for iid in queues["implement_ready"] if iid in withheld]
+        queues["implement_ready"] = [
+            iid for iid in queues["implement_ready"] if iid not in withheld
+        ]
+
+    # What the gate let through: synthesized ids still dispatchable at this point.
+    dispatched_above_ids = [
+        iid for iid in queues["implement_ready"] if iid in set(unrostered_ids)
+    ]
+
     result = choose_action(queues, args.max_parallel)
 
     # ISSUE-068: annotate the result whenever unrostered Board issues exist.
@@ -938,6 +1322,114 @@ def cmd_next_action(args: argparse.Namespace) -> int:
                 " [visibility: Board-registered issue(s) absent from the "
                 f"sprint roster auto-considered: {', '.join(unrostered_ids)}]"
             )
+
+    # ISSUE-069: every new signal lands in `reason` — the top-level key set stays
+    # {action, targets, reason, unrostered, stranded}, which the sprint skill and
+    # team-lead read. Only the ABSENT-field state stays quiet when there is
+    # nothing above the boundary, which is what keeps the legacy `reason`
+    # byte-pins intact (a legacy sprint_state has no field at all).
+
+    # Note A — which boundary was in force, and why.
+    #
+    # Review fix: a FOUND field is announced unconditionally — rejected OR
+    # accepted — and NOT only when `unrostered` is non-empty. An accepted pin at
+    # or above the Board max legitimately empties `unrostered`, and the old
+    # `elif unrostered_ids and …` guard made that case emit nothing at all, so a
+    # boundary that had silenced the entire control was byte-indistinguishable
+    # from a healthy sprint with nothing to report. That is the GAP-068h
+    # "one value disables the whole control with no signal" shape the issue's
+    # Scope rules out ("never a silently emptied `unrostered_ids`"), reached via
+    # a VALID value rather than a bad one. The boundary in force is the audit
+    # record for a restraint mechanism: always state it.
+    if watermark_detail is not None:
+        # A refused boundary is announced even with an empty `unrostered`:
+        # silence would be indistinguishable from health.
+        result["reason"] += (
+            f" [roster-watermark: rejected ({watermark_detail}) — fell back to "
+            "the max rostered ID derivation]"
+        )
+    elif pinned_watermark is not None:
+        # The count is the counter-evidence an operator needs to tell a correctly
+        # quiet boundary from a defeated one (review fix). A forged-but-in-range
+        # pin reports "0 of N above it" on an otherwise healthy DONE; a genuine
+        # end-of-sprint boundary reports "0 of 0".
+        board_backlog = sum(
+            1
+            for issue_id, meta in issues_meta.items()
+            if _ROSTER_ID_RE.fullmatch(issue_id)
+            and meta.get("status") == "backlog"
+            and not meta.get("manual", False)
+        )
+        result["reason"] += (
+            f" [roster-watermark: pinned at ISSUE-{pinned_watermark:03d} — "
+            f"{len(unrostered_ids)} of {board_backlog} Board backlog issue(s) "
+            "are above it]"
+        )
+    elif unrostered_ids:
+        result["reason"] += (
+            " [roster-watermark: absent from ## Meta — fell back to the max "
+            "rostered ID derivation]"
+        )
+
+    # Note B — the dispatch OUTCOME for above-boundary work (review fix: the
+    # outcome, not the gate's decision — see `withheld_ids` above). Omitted
+    # entirely when the field is absent: the gate is off in that state, so naming
+    # a knob that would change nothing is noise. Also omitted when the gate
+    # neither withheld nor released anything, because then the knob is not what
+    # is holding the work back — something upstream is (an in-flight deferral, an
+    # unresolved dependency), and pointing at the knob would send the operator to
+    # the wrong lever.
+    if watermark_present:
+        if dispatch_above and dispatched_above_ids:
+            result["reason"] += (
+                f" [dispatch: {DISPATCH_ABOVE_WATERMARK_ENV} is set — "
+                f"{len(dispatched_above_ids)} above-boundary issue(s) "
+                f"dispatched: {', '.join(dispatched_above_ids)}]"
+            )
+        elif withheld_ids:
+            result["reason"] += (
+                f" [dispatch: {len(withheld_ids)} above-boundary issue(s) "
+                "flagged but NOT dispatched — set "
+                f"{DISPATCH_ABOVE_WATERMARK_ENV}=1 to dispatch them: "
+                f"{', '.join(withheld_ids)}]"
+            )
+
+    # Note C — rostered rows stalled on a dependency satisfied in a PRIOR sprint.
+    # Diagnosis only: `action`, `targets` and the queues are already decided.
+    gaps = diagnose_carry_forward_gaps(sprint_rows, issues_meta, queues)
+    if gaps:
+        # Bounded echo (review fix). Both the row ids and the dep ids come from
+        # untrusted files, and `_parse_depends_on`/`parse_issues_metadata` use an
+        # UNBOUNDED `ISSUE-\d+`, unlike `_ROSTER_ID_RE`. Unbounded, this note
+        # reached 259 KB of `reason` from 60 rows carrying one 4299-digit dep id —
+        # burying `action`, `targets` and the `[dispatch: … NOT dispatched]`
+        # restraint marker under a quarter megabyte of digits in the string an
+        # LLM orchestrator reads as the verdict.
+        shown, extra = gaps[:5], len(gaps) - 5
+        listed = ", ".join(
+            f"{_truncate_value(issue_id)} "
+            f"(dep {', '.join(_truncate_value(dep) for dep in deps[:5])})"
+            for issue_id, deps in shown
+        )
+        if extra > 0:
+            listed += f", and {extra} more"
+        # The remediation names `Phase: shipped` explicitly. A row added with the
+        # DEFAULT `backlog` phase does the OPPOSITE of the intent: `compute_queues`
+        # resolves a dependency only at `phase == "shipped"` (or status
+        # dropped/waiting), so a plain row makes the already-DONE dependency itself
+        # a fresh `implement_ready` candidate and an autonomous consumer re-runs
+        # implement → review → `gh pr merge` on shipped work. Verified: advice
+        # followed literally → PIPELINE targeting the DONE dependency; advice with
+        # `Phase: shipped` → PIPELINE targeting the blocked row, as intended.
+        result["reason"] += (
+            f" [carry-forward gap: {listed} — the dependency is resolved on the "
+            "Board but has no Issue Progress row, and a rostered row resolves "
+            "dependencies from that table only, so the row cannot dispatch. "
+            "Carry the dependency forward by adding its Issue Progress row with "
+            "Phase `shipped` (a row added with the default `backlog` phase makes "
+            "the completed dependency a dispatch target instead), or drop the "
+            "dependency.]"
+        )
 
     print(json.dumps(result))
     return 0 if result["action"] not in ("DONE", "STUCK") else 1
