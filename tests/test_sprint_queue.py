@@ -2171,7 +2171,7 @@ class TestRealSprintStateDocsStillParse:
 
 
 class TestTruncatedRosterIsDetected:
-    """`orphaned_roster_rows` — the under-read detector, both directions."""
+    """`unparsed_roster_rows` — the under-read detector, both directions."""
 
     def test_blank_line_inside_the_roster_drops_the_rows_below(self):
         state = _sprint_state(
