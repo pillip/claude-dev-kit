@@ -33,13 +33,26 @@
 | `research_triangulation_single`      | bizanalysis         | `section: str`                                            | TAM/SAM/SOM rendered as `range … [single-source]`. |
 | `research_audit_finding`             | brainstorm, bizanalysis | `verdict: str, finding_count: int`                       | Degraded-path research-auditor summary. |
 
-### ISSUE-019 — review delegation (placeholders pending implementation)
+### ISSUE-019 — review delegation (emit call site: `scripts/review_context.py`, ISSUE-066)
 
 | Event type                          | Owner skill | Payload fields                          | Notes |
 |-------------------------------------|-------------|-----------------------------------------|-------|
 | `review_delegated_to_code_review`    | review      | `pr_number: int | str`                  | Emitted when runtime `/code-review` is invoked. |
 | `review_delegated_to_security_review`| review      | `pr_number: int | str`                  | Emitted when runtime `/security-review` is invoked. |
-| `review_degraded_path_used`          | review      | `dimension: "code" | "security"`        | One emission per missing dimension. |
+| `review_degraded_path_used`          | review      | `dimension: "code" | "security", reason: "capability-absent" | "context-unreachable" | "inline-attempt-failed"` | One emission per degraded dimension. `reason` was added by ISSUE-066 — pre-066 lines without it are valid legacy. |
+
+> ISSUE-066: `scripts/review_context.py` is the review path's single emit
+> CALL SITE for all three review delegation events. Its `decide` subcommand
+> emits the decide-time `review_degraded_path_used` events (reasons
+> `capability-absent` / `context-unreachable`, ONCE per degraded dimension
+> per review run); its `emit` subcommand is the prose-side call site for the
+> delegated events and the `inline-attempt-failed` degradation.
+>
+> The shared emit SEAM is `scripts/kit_telemetry.py` (ISSUE-067) — that title
+> moved there when ISSUE-067 landed. `review_context.py` still carries its own
+> private hardened appender instead of calling the shared seam; the migration
+> is **ISSUE-075**, deliberately deferred (see the Emit-site inventory row for
+> why).
 
 ### ISSUE-058 — test-execution gate delegation (dormant until the runtime capability ships)
 
@@ -86,7 +99,8 @@ hand-rolled appender remains unexamined.
 | Site | Mechanism | Status / justification |
 |------|-----------|------------------------|
 | `scripts/synthesize_gate_results.py` | `kit_telemetry.emit_event` (thin `_emit_telemetry` delegation) | Migrated to the shared helper. |
-| `skills/review/SKILL.md.tmpl` delegation/degraded emits | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
+| `skills/review/SKILL.md.tmpl` delegation/degraded emits | `python3 scripts/review_context.py decide` / `emit` (ISSUE-066) | Superseded the shared-emitter CLI one-liners: ISSUE-066 shipped immediately after this audit and moved the review emits out of prose into `review_context.py`, which owns the decide-once contract. The prose no longer calls `kit_telemetry.py` directly. |
+| `scripts/review_context.py` | own hardened `_emit_event` appender | **NOT YET migrated — ISSUE-075.** Per-control equivalence with `kit_telemetry.emit_event` was verified at review time, with two controls *stronger* (all-string-value truncation rather than `detail`-only; coercion inside the `try` so it never raises) — so this is duplication debt, not a hardening regression. Migration was deferred at ISSUE-066's ship because `emit_event`'s containment and "NEVER raises" contracts are themselves being rewritten by ISSUE-070, and two ISSUE-066 tests pin the opposite (pre-announcement) contract. |
 | `skills/bizanalysis/SKILL.md.tmpl` research emits | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
 | `skills/brainstorm/SKILL.md.tmpl` degraded emit | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
 | `scripts/spec_gate.py` | printed JSON decision object + the skill's stdout "telemetry-style" bypass line per SPEC-007 | JUSTIFIED, not migrated: no JSONL appender exists there — adding one is new scope (minimality). |

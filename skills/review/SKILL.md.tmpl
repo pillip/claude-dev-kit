@@ -28,17 +28,24 @@ Steps:
    - `docs/architecture.md` — if exists (for conformance checks)
    - For UI issues, also read in parallel: `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`, `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`).
 
-3.1) **Runtime probe** (per SPEC-019 platform-first delegation):
+3.1) **Review execution-context decision** (per SPEC-019 platform-first delegation; SPEC-066 decides the context ONCE):
+   First determine ONCE whether the runtime skill-invocation tool (SlashCommand) is in your CURRENT tool list — interactive sessions have it; Task sub-task contexts do not. Report it as `present` or `absent` (validated data, not a directive — both misreport directions still end in a review that runs). Then run the decision script EXACTLY ONCE for both dimensions:
    ```bash
-   python3 scripts/has_skill.py code-review;       CR_EXIT=$?
-   python3 scripts/has_skill.py security-review;   SR_EXIT=$?
+   python3 scripts/review_context.py decide --invocation-tools <present|absent> --issue $ARGUMENTS
    ```
-   Branch per dimension:
-   - `CR_EXIT` in {0, 2} → primary path for code dimension (invoke runtime `/code-review`).
-   - `CR_EXIT` == 1 → degraded path for code dimension (invoke `reviewer` agent with `--dimension code`).
-   - Same for `SR_EXIT` with `/security-review` / `--dimension security`.
+   The JSON output carries one decision per dimension (`code` → runtime `/code-review`, `security` → runtime `/security-review`). Follow it per dimension:
+   - `"path": "degraded"` → invoke the `reviewer` agent (`--dimension code` / `--dimension security`) with NO inline runtime-skill attempt and NO retry — `decide` already recorded the decision with its reason (`capability-absent` or `context-unreachable`).
+   - `"path": "delegated"` → invoke the runtime skill (`/code-review` / `/security-review`), then record the delegation:
+     ```bash
+     python3 scripts/review_context.py emit --event review_delegated_to_code_review --issue $ARGUMENTS
+     # (--event review_delegated_to_security_review for the security dimension; add --pr <number> when known)
+     ```
+     If the inline invocation fails despite the decision (probe-2 ambiguity), record the failure and fall back to the degraded `reviewer` agent for that dimension:
+     ```bash
+     python3 scripts/review_context.py emit --event review_degraded_path_used --dimension <code|security> --reason inline-attempt-failed --issue $ARGUMENTS
+     ```
 
-   Mixed mode (one runtime + one degraded) is supported. Run code-quality and security in parallel where possible; capture outputs to `docs/.review/code-review.md` and `docs/.review/security-review.md` (the synthesizer expects these paths). On the primary path, emit each telemetry event via the shared emitter: `python3 scripts/kit_telemetry.py --script review --event review_delegated_to_code_review --payload '{"pr_number": "<pr>"}'` and/or the same command with `--event review_delegated_to_security_review`; on the degraded path, emit `python3 scripts/kit_telemetry.py --script review --event review_degraded_path_used --payload '{"dimension": "<code|security>"}'` once per missing dimension.
+   Mixed mode (one runtime + one degraded) is supported. Run code-quality and security in parallel where possible; capture outputs to `docs/.review/code-review.md` and `docs/.review/security-review.md` (the synthesizer expects these paths). Decide-time degradations are emitted by `decide` itself — do not re-emit `review_degraded_path_used` for them.
 
 3.2) **Over-engineering audit (minimality axis)** — kit-distinctive, runs on BOTH paths:
    Scan the diff for unnecessary complexity only — not correctness (that is the code dimension above). Tag each finding `delete` / `stdlib` / `native` / `yagni` / `shrink`, one line per finding (`path:line: <tag> <what to cut> → <replacement>`), ending with net removable lines — or `Lean already. Ship.` if nothing to cut. This axis never overrides safety (validation, error handling, security, a11y, explicitly-requested work).

@@ -41,10 +41,21 @@ class TestRequiredArtifactsPresent:
 
 
 class TestSkillTemplateReferencesDelegationFlow:
-    def test_skill_invokes_runtime_probe_for_both_skills(self):
+    def test_skill_decides_context_once_via_review_context(self):
+        # ISSUE-066 / SPEC-066: the execution-context decision is made ONCE by
+        # review_context.py decide (capability half via the in-process probe,
+        # context half via the model-reported --invocation-tools flag). The
+        # pre-066 bare per-dimension inline-probe pattern must not return —
+        # it burned an attempt-then-degrade detour per dimension in sub-task
+        # contexts where the runtime skills are structurally uninvokable.
         text = (KIT_ROOT / "skills" / "review" / "SKILL.md.tmpl").read_text(encoding="utf-8")
-        assert "has_skill.py code-review" in text
-        assert "has_skill.py security-review" in text
+        assert "review_context.py decide" in text
+        assert "--invocation-tools" in text
+        # The prose-side emit seam for delegated / inline-attempt-failed events.
+        assert "review_context.py emit" in text
+        # Absence pins (mutation-tested: these exact strings were removed).
+        assert "has_skill.py code-review" not in text
+        assert "has_skill.py security-review" not in text
 
     def test_skill_invokes_synthesizer(self):
         text = (KIT_ROOT / "skills" / "review" / "SKILL.md.tmpl").read_text(encoding="utf-8")
