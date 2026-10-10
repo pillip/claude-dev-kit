@@ -20,6 +20,11 @@ import sys
 import time
 from pathlib import Path
 
+# ISSUE-065: the invoker's own process-start reference for the gate-handoff
+# freshness check — captured at import, not computed per call, so a handoff
+# artifact must postdate THIS checkpoint process to be ingested.
+_GATE_PROCESS_START = time.time()
+
 
 def _extract_field(text: str, field_name: str) -> str:
     """Extract a metadata field value from issue text (reused pattern from validate_issues.py)."""
@@ -891,14 +896,21 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
 
     # ISSUE-058 (SPEC-058): consult the dormant delegation layer first. Only a
     # valid runtime handoff artifact (KIT_GATE_RESULTS_FILE) yields synthesized
-    # results; on ANY other outcome — probe miss, dormant, invalid artifact, or
-    # a crash inside the delegation layer — fall back to verify_gates unchanged
-    # (the degraded path is byte-identical to the legacy behavior).
+    # results; on ANY other outcome — probe miss, dormant, invalid artifact,
+    # binding refusal, or a crash inside the delegation layer — fall back to
+    # verify_gates unchanged (the dormant degraded path is byte-identical to
+    # the legacy behavior). ISSUE-065: the call carries the binding materials
+    # (per-run ephemeral key + this process's start time) — binding, not env
+    # presence, is the enforced delegation precondition.
     results = None
     try:
         import synthesize_gate_results as _gate_delegation
 
-        decision, delegated, _reason = _gate_delegation.decide_gate_path(pp)
+        decision, delegated, _reason = _gate_delegation.decide_gate_path(
+            pp,
+            binding_key=_gate_delegation.generate_binding_key(),
+            process_start=_GATE_PROCESS_START,
+        )
         if decision == "delegated":
             results = delegated
             # A delegated run must never be byte-indistinguishable from a
