@@ -131,14 +131,22 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
         when set, the knob's name appears in `reason` so a deliberately widened sprint is
         distinguishable from a runaway one. Anything else — including unset, `0`, and `false` —
         leaves dispatch off.
-      - **The gate is NOT fail-safe against a deleted field.** With NO `Roster-Watermark` line the
-        sprint keeps the pre-ISSUE-069 behaviour: above-boundary Board issues are auto-**targeted**
-        and driven through implement → review → merge. That backward compatibility is deliberate
-        (an in-flight pre-pin sprint must not change behaviour mid-flight), which is exactly why
-        the preserve-`## Meta` requirement in step 4d is load-bearing: **dropping** the field
-        re-opens autonomous dispatch of out-of-scope work, where **mangling** it does not. Check
-        for the `[roster-watermark: absent …]` note whenever a run targets something you did not
-        scope.
+      - **The gate itself is still NOT fail-safe against a deleted field — the loop is what
+        refuses.** `next-action` is unchanged: with NO `Roster-Watermark` line it keeps the
+        pre-ISSUE-069 behaviour byte-identically — above-boundary Board issues are
+        auto-**targeted** and driven through implement → review → merge, announced as
+        `[roster-watermark: absent …]`. That backward compatibility is deliberate (an in-flight
+        pre-pin sprint must not change behaviour mid-flight). What changed is downstream: **step
+        4f now refuses a `running` sprint whose boundary is `absent` or `rejected`** (`valid`
+        false, exit **3**), so a field dropped by a 4d rewrite cannot survive to the next dispatch
+        decision. Residuals that remain, stated so you can recognise them rather than discover
+        them: a `Status: running` line declared **outside** `## Meta` is not detected, and neither
+        is a sprint_state with **no `## Meta` heading at all** (both read as `not-running`, so 4f
+        does not fire); invoking `next-action` by hand without running 4f gets no refusal; and an
+        `issues.md` `Depends-On` cycle makes `next-action` return STUCK before it parses the
+        boundary, so its own `[roster-watermark: …]` note is suppressed (the 4f `validate` leg is
+        unaffected and still refuses). Keep checking for the `[roster-watermark: absent …]` note
+        whenever a run targets something you did not scope.
       - Nothing is auto-considered unless the table already holds at least one `ISSUE-NNN` row, or
         the boundary is pinned.
       - Auto-considered issues are withheld while any issue is in flight, so discovery can never
@@ -180,6 +188,11 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
       `[roster-watermark: absent …]`, not silent, but it is a real widening of autonomous scope:
       treat the `## Meta` block as copy-only.
 
+      The loss is now **detected**, not merely discouraged: step 4f's `validate` runs AFTER this
+      rewrite and BEFORE the next iteration's `next-action`, so a field dropped here is refused
+      (`roster_boundary.state` = `absent`, exit **3**) before anything is dispatched on it — as
+      long as you actually run 4f. Fix the `## Meta` block rather than continuing the loop.
+
       **Unrostered targets**: for any target that appeared in `unrostered`, say so in the prompt and
       require the team-lead to **add its Issue Progress row** when it records progress. The queue
       synthesizes those rows in memory only; step 4f's `validate` reports a target with no row as
@@ -201,11 +214,26 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
 
       Run the validation script:
       ```bash
-      python3 scripts/sprint_queue.py validate --sprint-state docs/sprint_state.md --action {ACTION} --targets {COMMA_SEPARATED_TARGETS}
+      python3 scripts/sprint_queue.py validate --sprint-state docs/sprint_state.md --issues issues.md --action {ACTION} --targets {COMMA_SEPARATED_TARGETS}
       ```
       Parse the JSON output:
       - If `valid` = true: all targets transitioned successfully (or stopped at a phase with logged error). Continue loop.
       - If `valid` = false: log the `errors` array in sprint_state.md. The `stuck` list shows which issues failed to transition — they will be retried in the next iteration via REVIEW or SHIP action.
+
+      **Roster boundary check** (this step is where a dropped boundary is caught — it runs AFTER
+      the team-lead's rewrite in 4d and BEFORE the next iteration's `next-action`):
+      - `roster_boundary` is always present in the output. Its `state` is one of `accepted`,
+        `absent`, `rejected`, or `not-running` (`not-running` = `## Meta` does not say
+        `Status: running`, so no boundary is load-bearing and nothing is checked).
+      - `state: "absent"` or `state: "rejected"` on a `running` sprint → `valid` is false and the
+        exit code is **3**. The sprint has lost its scope boundary: **do not dispatch another
+        iteration.** Restore `- Roster-Watermark: ISSUE-<max rostered ID at sprint start>` inside
+        `## Meta` (for `rejected`, the parser's reason is in `roster_boundary.detail` — fix that
+        instead of re-adding a second line), then re-run 4f.
+      - Exit **3** is a distinct class from exit 1: `stuck` is unaffected by this check, so **no
+        target is retried because of it**. Do not read a boundary refusal as a phase failure.
+      - `--issues issues.md` is what gives this leg the same Board-range check `next-action` uses;
+        without it, a boundary above the highest ID on the Board is not detected here.
 
    **Continue loop from step 4a.**
 

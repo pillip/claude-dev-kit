@@ -25,10 +25,20 @@ from scripts.sprint_queue import (
 # ── Fixtures ────────────────────────────────────────────────────────
 
 
-def _make_sprint_state(rows: list[tuple[str, str, str, str, str]]) -> str:
+def _make_sprint_state(
+    rows: list[tuple[str, str, str, str, str]],
+    *,
+    watermark: str | None = None,
+) -> str:
     """Build sprint_state.md content.
 
     Each row: (issue, status, attempts, last_error, phase).
+
+    ``watermark`` (ISSUE-078) emits ``- Roster-Watermark: <value>`` inside
+    ``## Meta``. Default ``None`` keeps the output BYTE-IDENTICAL for every
+    pre-existing caller — several of them byte-pin `next-action`'s `reason`,
+    which gains a `[roster-watermark: …]` note the moment the field exists, so
+    this must stay opt-in rather than becoming the default shape.
     """
     lines = [
         "# Sprint State\n",
@@ -47,7 +57,14 @@ def _make_sprint_state(rows: list[tuple[str, str, str, str, str]]) -> str:
     lines.append("## Discovered Issues")
     lines.append("")
     lines.append("## Escalations")
-    return "\n".join(lines) + "\n"
+    text = "\n".join(lines) + "\n"
+    if watermark is not None:
+        text = text.replace(
+            "- Status: running\n",
+            f"- Status: running\n- Roster-Watermark: {watermark}\n",
+            1,
+        )
+    return text
 
 
 def _make_issue(
@@ -443,10 +460,17 @@ class TestCLI:
         assert output["targets"] == ["ISSUE-001"]
 
     def test_validate_json_output(self, tmp_path):
+        # The boundary is pinned (ISSUE-078): `validate` now refuses a `## Meta`
+        # that says `Status: running` while carrying no accepted
+        # `Roster-Watermark` — exit 3, `valid: false`. A sprint_state without the
+        # field is no longer a clean-verdict fixture, and `templates/sprint_state.md`
+        # ships the field, so pinning it is what makes this fixture current.
+        # The absent-field refusal itself is covered in
+        # tests/test_sprint_queue_watermark.py (ISSUE-078 AC-1).
         sprint = tmp_path / "sprint_state.md"
         sprint.write_text(_make_sprint_state([
             ("ISSUE-001", "active", "1", "—", "shipped"),
-        ]))
+        ], watermark="ISSUE-001"))
 
         import io
         import sys as _sys
@@ -1809,18 +1833,26 @@ def _fixture_text(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
 
 
-def _sprint_state(issue_progress_body: str, *, trailer: str = "## Escalations\n") -> str:
+def _sprint_state(issue_progress_body: str, *, trailer: str = "## Escalations\n",
+                  watermark: str | None = None) -> str:
     """Build a sprint_state.md with a verbatim `## Issue Progress` body.
 
     Unlike `_make_sprint_state`, the body is passed through byte-for-byte so a
     test can place prose, subsection headings, blank lines, and off-shape rows
     exactly where a real phase executor would write them.
+
+    ``watermark`` (ISSUE-078) pins the roster boundary in ``## Meta``. Default
+    ``None`` keeps the output byte-identical for every pre-existing caller; only
+    a test that asserts `validate`'s EXIT CODE needs it, because an unpinned
+    `running` sprint_state now exits 3 regardless of its transitions.
     """
     return (
         "# Sprint State\n\n"
         "## Meta\n"
         "- Started: 2026-10-10\n"
-        "- Status: running\n\n"
+        "- Status: running\n"
+        + (f"- Roster-Watermark: {watermark}\n" if watermark is not None else "")
+        + "\n"
         "## Issue Progress\n"
         f"{issue_progress_body}"
         f"{trailer}"
@@ -2405,6 +2437,11 @@ class TestValidateWarnsOnATruncatedRoster:
     """`validate` keeps its verdict contract; the warning only names the cause."""
 
     def test_warns_on_stderr_without_changing_the_verdict(self, tmp_path, capsys):
+        # The boundary is pinned so the ISSUE-078 `roster_boundary` leg accepts
+        # and this test keeps asserting what it is about: the truncated-roster
+        # warning changes neither the verdict nor the EXIT CODE. Unpinned, the
+        # same file would exit 3 (boundary refused) and the exit-code half of
+        # "without changing the verdict" would stop being tested at all.
         sprint = tmp_path / "sprint_state.md"
         sprint.write_text(
             _sprint_state(
@@ -2412,7 +2449,8 @@ class TestValidateWarnsOnATruncatedRoster:
                 + "| ISSUE-100 | done | 1 | - | shipped |\n"
                 "\n"
                 "| ISSUE-200 | done | 1 | - | shipped |\n"
-                "\n"
+                "\n",
+                watermark="ISSUE-100",
             )
         )
         exit_code = main([
