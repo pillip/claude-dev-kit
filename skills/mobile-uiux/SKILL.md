@@ -238,7 +238,7 @@ Run these checks silently at the start. Use results to adapt behavior:
       - **MUST include**: FlatList/SectionList patterns (ItemSeparator, ListHeader, ListEmpty, key extractor)
       - **MUST include**: Stack header styling (back button, title alignment, header background)
     - **Shadows**: ios (shadowColor/Offset/Opacity/Radius) vs android (elevation) separated
-    - **Motion tokens**: Duration (micro 80-120ms to large 400-600ms, max 700ms), spring configs (damping/stiffness/mass), easing (Reanimated), haptic mapping (expo-haptics)
+    - **Motion tokens**: Duration, spring configs (damping/stiffness/mass), easing (Reanimated), haptic mapping (expo-haptics)
       - **Signature animations**: MUST include full worklet code for at least one signature animation, not just prose descriptions or comment stubs
     - **Loading states**: Skeleton screen spec, pull-to-refresh indicator, cold start visual (splash → skeleton → content → interactive)
     - **Platform tokens**: `ios`/`android` keys for platform-specific values
@@ -330,31 +330,8 @@ Run these checks silently at the start. Use results to adapt behavior:
         navigation/
           index.tsx
     ```
-17) Generate `prototype-mobile/package.json`:
-    - `"main"`: MUST be `"node_modules/expo/AppEntry.js"` (NOT `"App.tsx"`)
-    - **Required dependencies** (MUST include all of these):
-      - `expo`, `babel-preset-expo`, `expo-asset` — core Expo runtime
-      - `react`, `react-native` — framework
-      - `@react-navigation/native`, `@react-navigation/native-stack`, `@react-navigation/bottom-tabs` — navigation
-      - `react-native-reanimated`, `react-native-worklets` — animation (worklets is required for Reanimated v4+)
-      - `react-native-gesture-handler`, `react-native-safe-area-context`, `react-native-screens` — navigation native deps
-      - `expo-haptics`, `expo-status-bar` — interaction/UI
-      - `expo-font` (only if custom fonts are used)
-    - Use the latest stable Expo SDK — do NOT pin to an older version for Expo Go compatibility
-    - Use `~` ranges for Expo ecosystem packages
-    - After generating package.json, run: `cd prototype-mobile && npm install && npx expo install --fix` to resolve exact compatible versions
-17-a) Generate `prototype-mobile/babel.config.js`:
-    - ONLY use `babel-preset-expo` as preset
-    - Do NOT manually add `react-native-reanimated/plugin` — babel-preset-expo handles it automatically (SDK 54+)
-17-b) Generate `prototype-mobile/.gitignore`:
-    - Standard Expo gitignore: node_modules, .expo, dist, *.jks, *.keystore, .env
-17-c) Generate `prototype-mobile/tsconfig.json`:
-    - Extends `expo/tsconfig.base`
-    - If using path aliases, also configure `babel-plugin-module-resolver` (Metro ignores tsconfig paths)
-18) Generate `prototype-mobile/app.json`:
-    - Expo config with app name, slug, orientation, userInterfaceStyle
-    - Do NOT reference asset files (icon, splash.image) unless they physically exist in the project
-    - `plugins` array: ONLY include packages that provide a config plugin (e.g., `expo-font`). Do NOT include `expo-haptics` (it has no config plugin)
+17) Generate the Expo project config — `prototype-mobile/package.json`, `app.json`, `babel.config.js`, `tsconfig.json`, `.gitignore` — as a valid Expo managed-workflow project on the latest stable SDK (do NOT pin an older SDK for Expo Go compatibility; the prototype targets the Simulator/Emulator, not Expo Go).
+    - **Boot gate (contract — replaces the former config-pin checklists)**: after generating the config, run `cd prototype-mobile && npm install && npx expo install --fix` to resolve exact compatible versions. The prototype **must boot** on the iOS Simulator / Android Emulator (`npx expo start --ios` / `--android`). Fix whatever the boot surfaces (entry point, babel, config plugins, dependencies, tsconfig) until it boots — a pin the boot gate catches is fixed on the spot, never re-documented as a checklist line. The gate also catches misconfigurations no checklist knew yet.
 19) Generate `prototype-mobile/src/theme/`:
     - `colors.ts` — color palette from design system
     - `spacing.ts` — spacing scale
@@ -376,36 +353,46 @@ Run these checks silently at the start. Use results to adapt behavior:
       - Generate `prototype-mobile/App.tsx` (SafeAreaProvider + NavigationContainer + theme provider) so the pilots are runnable.
       - Do NOT generate the remaining screens or the full navigation yet.
     - **Step 2.5 — PILOT GATE — observe → critique → specificity → auto-correct → user HOLD**
-      Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This block routes critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting.
-      Mobile pilots run live in Expo (no PNG capture in this skill), so the critique inputs are the pilot `.tsx` source + the design system. This is treated as **degraded mode** by default — record `pilot_degraded: no_screenshot_input` in the critique log so the user sees the limitation. Do NOT silently skip the critique.
+      Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This gate routes the critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting to the user. Do not auto-proceed past Step 3.
 
-      - **Step 2.5.0 — Neutral observation** (mandatory; BEFORE judgment).
-        For each pilot `.tsx`, write 5 plain factual statements about what would render.
-        **Banned vocabulary**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
-        Save to `prototype-mobile/src/screens/<pilot>.observations.md`.
+    - **Render inputs**: mobile pilots run live in Expo (no PNG capture in this skill), so the critique inputs are the pilot `.tsx` source + the design system. This is treated as **degraded mode** by default — record `pilot_degraded: no_screenshot_input` in the critique log so the user sees the limitation. DO NOT silently skip the critique.
 
-      - **Step 2.5.1 — Separate-context critique** (mandatory). Invoke `design-auditor` via the Task tool. **Do NOT inline-critique in the generator's context.**
-        Pass:
-          - the pilot `.tsx` path
-          - `prototype-mobile/src/screens/<pilot>.observations.md`
-          - `docs/design_philosophy.md`
-          - `docs/design_system_mobile.md`
-        Ask for a 6-axis 1–5 score (Philosophy / Hierarchy / Execution / Specificity / Restraint / Variety), one cited evidence per axis referencing observation indices, and a list of slop signals.
-        Where ui-reviewer's scope applies (state coverage in the pilot, copy usage), invoke `ui-reviewer` separately. Disjoint scopes (ISSUE-013) — surface both outputs.
-        Save the structured output to `prototype-mobile/src/screens/<pilot>.critique.md`.
+    - **Step 2.5.0 — Neutral observation** (mandatory; do this BEFORE any judgment).
+      For each pilot, write 5 plain factual statements about what would render.
+      **Banned vocabulary in this step**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
+      Output to `prototype-mobile/src/screens/<pilot>.observations.md`.
+      If you catch yourself reaching for a banned word, restart Step 2.5.0 — the observation is the input that prevents the critique from agreeing with itself.
 
-      - **Step 2.5.2 — Specificity check** (mandatory). Ask design-auditor:
-        *"Name 3 details visible in this pilot that ONLY make sense for THIS specific product / domain / user. Generic UI primitives don't count. Domain content does count (real entity names, the literal_quote from Reference Anchors, brand-specific shortcuts/units). Fewer than 3 → FAIL."*
-        The literal_quote (from ISSUE-012) counts as exactly **1** of the 3.
+    - **Step 2.5.1 — Separate-context critique** (mandatory). Invoke `design-auditor` via the Task tool to evaluate the pilot from a fresh context. **Do NOT inline-critique in the generator's context.**
+      Pass the auditor:
+        - the pilot `.tsx` path
+        - `prototype-mobile/src/screens/<pilot>.observations.md`
+        - `docs/design_philosophy.md` (so it knows the system claim it should check)
+        - `docs/design_system_mobile.md`
+      Ask it to return:
+        - the 6-axis score (Philosophy / Hierarchy / Execution / Specificity / Restraint / Variety), each 1–5
+        - one piece of cited evidence per axis, referencing observation indices (e.g., "Specificity 2 — observations 2,3 are interchangeable with any landing page")
+        - a list of slop signals it flags
+      Where ui-reviewer's scope applies (state coverage in pilots, copy usage), also invoke `ui-reviewer` via the Task tool with the same inputs. The two sub-agents' scopes are disjoint (per ISSUE-013) — do not deduplicate findings, surface both.
+      Save the structured output to `prototype-mobile/src/screens/<pilot>.critique.md`.
 
-      - **Step 2.5.3 — Auto-correction cycle** (hard cap N=3). If any score < 3, specificity FAIL, or slop signals fire:
-        1. Identify the patch layer (philosophy / system / layout / pilot only).
-        2. Apply the patch.
-        3. Re-observe → re-critique → re-specificity.
-        4. Increment cycle counter. Append to `prototype-mobile/src/screens/<pilot>.cycles.log`:
-           `cycle N: layer=<L> change="<summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
-        5. **Hard stop at N=3.** After cycle 3, freeze and surface to the user with the full history.
-        Record final scores at the top of the pilot screen file: `// pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 specificity=PASS`.
+    - **Step 2.5.2 — Specificity check** (mandatory). Ask the design-auditor (still in its separate context) to answer:
+      *"Name 3 details visible in this pilot that ONLY make sense for THIS specific product / domain / user. Generic UI primitives ('a card', 'a hero', 'a button') do not count. Domain content does count (real entity names, the literal_quote from Reference Anchors, domain-specific units, brand-specific shortcuts). If you can list fewer than 3, the pilot FAILs specificity."*
+      The literal_quote (from ISSUE-012) counts as exactly **1** of the 3 — not 0, not 2+. The other 2 must come from independent product/domain details.
+      Specificity FAIL → treat as a critique failure feeding Step 2.5.3.
+
+    - **Step 2.5.3 — Auto-correction cycle** (hard cap N=3 rounds). If any axis score < 3, OR Step 2.5.2 returns FAIL, OR slop signals are flagged:
+      1. Identify the correct layer to patch:
+         - Philosophy / Specificity < 3 → revisit Phase 2 step 9 (`docs/design_philosophy.md`).
+         - Hierarchy / Execution / Restraint < 3 → revisit the Phase 3 design system (`docs/design_system_mobile.md`) or Phase 4 numeric layout commitments.
+         - Variety < 3 → re-pick the pilot archetype or restructure the pilot itself.
+         - Specificity FAIL → either add concrete product details to the pilot or, if Phase 1.5 was skipped, document that and proceed.
+      2. Apply the patch.
+      3. Re-run the gate: re-observe (Step 2.5.0) → re-critique (Step 2.5.1) → re-specificity (Step 2.5.2).
+      4. Increment the cycle counter. Append a one-line summary to `prototype-mobile/src/screens/<pilot>.cycles.log`:
+         `cycle N: layer=<L> change="<short summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
+      5. **Hard stop at N=3**. After the third unsuccessful cycle, freeze the pilot and surface to the user with the full cycle history. Do NOT loop indefinitely.
+      Record final scores at the top of the pilot screen file: `// pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 specificity=PASS`.
 
     - **Step 3 — PILOT GATE — present and HOLD for user** (do not auto-proceed):
       - Tell the user how to run:
@@ -441,15 +428,9 @@ Run these checks silently at the start. Use results to adapt behavior:
 23) Update `prototype-mobile/App.tsx` if the full navigation needs additional providers or status bar config beyond what the pilot version already set up.
 
 ### Phase 5.5 — Prototype Verification (REQUIRED before presenting to user)
-24) **Expo project setup check**:
-    - `package.json` `"main"` is `"node_modules/expo/AppEntry.js"` (NOT `"App.tsx"`)
-    - `babel-preset-expo` and `expo-asset` are in dependencies
-    - `react-native-worklets` is in dependencies (required for Reanimated v4+)
-    - `babel.config.js` uses ONLY `babel-preset-expo` preset (no manual reanimated plugin)
-    - `app.json` does NOT reference non-existent asset files
-    - `app.json` `plugins` does NOT include packages without config plugins (e.g., `expo-haptics`)
-    - `tsconfig.json` exists with `"extends": "expo/tsconfig.base"`
-    - `.gitignore` exists
+24) **Prototype boot gate (contract — replaces the former Expo setup checklist)**:
+    - If not already done in Phase 5 step 17, run `cd prototype-mobile && npm install && npx expo install --fix`.
+    - The prototype **must boot** on the Simulator/Emulator (`npx expo start --ios` / `--android`) before presenting. The boot is the gate: fix whatever it surfaces until it boots — a pin the boot gate catches is fixed, never re-documented as a checklist line.
 25) **Token compliance check**:
     - Scan all files in `src/screens/` and `src/components/` for hardcoded style values
     - Every color, spacing, font size, border radius, and shadow MUST use imports from `src/theme/`
@@ -464,31 +445,21 @@ Run these checks silently at the start. Use results to adapt behavior:
 28) **Animation completeness check**:
     - At least ONE signature animation from `docs/design_philosophy.md` MUST be fully implemented with Reanimated worklet code
     - `useReducedMotion()` MUST be respected globally, not just in one component
-28.3) **Contrast sweep** (CRITICAL — catches the failures that ship most):
-    - For every text/icon color vs its computed background, verify WCAG ratio: body text needs ≥ 4.5:1; large text (≥24pt / ≥18pt bold), icons, and focus indicators need ≥ 3:1.
-    - Fail on any of: **button label ≈ button fill** (the black-on-black bug — label colour within ~5% lightness of the fill); an accent-filled surface carrying text without a verified accent-ink colour; any **dark surface** (lightness < 50%) that did not flip its `<Text>` color (ink-on-ink). Most-missed: text in a card that switched `backgroundColor` but kept the default ink color.
-    - List failing pairs as `file:component`, fix, and re-check before proceeding.
-28.4) **State & motion mechanics sweep**:
-    - `TextInput` fields satisfy the state rules from Anti-AI-Slop ("Motion & input mechanics"): constant `borderWidth`, input height == button height, reserved helper/error slot, multi-channel disabled.
-    - Reanimated worklets animate only `transform`/`opacity` (no layout props); overshoot springs appear only on gesture-driven interactions, not incidental state changes; no element stacks multiple simultaneous effects.
-    - List violations as `file:line`, fix, and re-sweep.
-28.5) **Signature Move check**:
-    - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
-    - The Signature Move must be implemented as a reusable component/hook/HOC under `src/components/` or `src/theme/`.
-    - Every `.tsx` file in `src/screens/` (including the pilots) must reference that reusable Signature Move primitive at least once.
-    - If any check fails: list violations, fix, and re-verify before proceeding.
-28.6) **Literal quote verbatim render check** (skip if Phase 1.5 was explicitly skipped):
-    - Read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors.
-    - Grep `src/screens/*.tsx` for the literal string. The string MUST appear verbatim in at least one screen file (inside a string literal, NOT inside a comment).
-    - If absent: name the screens that would naturally host it (per the anchor's "where it appears" hint), inject the quote into that screen, and re-grep. Do not skip by widening the search.
-    - Example: `literal_quote: "47.2-A"` MUST appear as the literal characters `47.2-A` — not `47-2-A`, not interpolated from a variable, not inside `{/* */}`.
-29) **Performance check**:
-    - List item components used in FlatList MUST use `React.memo`
-    - Event handlers passed to memoized children MUST use `useCallback`
-29.5) **AI Tell sweep** (CRITICAL):
-    - Sweep every `.tsx` file in `src/screens/` and `src/components/` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`) in any string literal, generic person/brand names, fake-perfect numbers, section-number eyebrows, version labels, `<View>`-based fake product UI, decorative status dots, locale/time strips, scroll cues.
-    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and View-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them.
+28.5) **Design verification sweeps** (model-executed contract sweeps):
+- **Script handover (K9 trigger)**: these sweeps stay model-executed contract prose — stated as deterministic grep procedures, not vibes — because `scripts/verify_design_sweeps.py` discovers `*.html` screens only. The day the validator accepts non-HTML prototype trees (a post-ISSUE-064 successor), replace them with validator call sites; the web skill already runs one.
+- **Signature Move sweep**: `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only), implemented as a reusable component/hook/HOC under `src/components/` or `src/theme/`. Grep `src/screens/*.tsx`: every screen (including the pilots) must reference that reusable primitive at least once. On any failure: list violations, fix, and re-verify.
+- **Literal quote verbatim render check** (skip only if Phase 1.5 was explicitly skipped): read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors; grep `src/screens/*.tsx` — the string MUST appear verbatim in at least one screen's string literal (NOT inside a comment, NOT interpolated from a variable). If absent: inject it into the screen named by the anchor's "where it appears" hint and re-grep — never widen the match.
+- **AI Tell sweep** (CRITICAL): sweep every `.tsx` file in `src/screens/` and `src/components/` for the banned tells in "Specific AI Tells": em-dash (`—`/`–`) in any string literal, generic person/brand names, fake-perfect numbers, section-number eyebrows, version labels, `<View>`-based fake product UI, decorative status dots, locale/time strips, scroll cues. Exempt exactly the recorded `Brief overrides:` bullets in `docs/design_philosophy.md` and no others; report each as `exempt: <tell> — <brief quote>` — an unrecorded violation is never exempt. Zero tolerance on em-dash and View-based fake product UI. List every violation as `file:line`, fix, re-sweep.
+- **Contrast sweep** (CRITICAL — catches the failures that ship most):
+  - For every text/icon color vs its computed background, verify WCAG ratio: body text needs ≥ 4.5:1; large text (≥24pt / ≥18pt bold), icons, and focus indicators need ≥ 3:1.
+  - Fail on any of: **button label ≈ button fill** (the black-on-black bug — label colour within ~5% lightness of the fill); an accent-filled surface carrying text without a verified accent-ink colour; any **dark surface** (lightness < 50%) that did not flip its `<Text>` color (ink-on-ink). Most-missed: text in a card that switched `backgroundColor` but kept the default ink color.
+  - List failing pairs as `file:component`, fix, and re-check before proceeding.
+- **Mechanics sweep** (state & motion):
+  - `TextInput` fields satisfy the state rules from Anti-AI-Slop ("Motion & input mechanics"): constant `borderWidth`, input height == button height, reserved helper/error slot, multi-channel disabled.
+  - Reanimated worklets animate only `transform`/`opacity` (no layout props); overshoot springs appear only on gesture-driven interactions, not incidental state changes; no element stacks multiple simultaneous effects.
+  - `useReducedMotion()` is respected globally, not just in one component.
+  - List violations as `file:line`, fix, and re-sweep.
+- **Depreciation triggers**: per tell/rule, two consecutive design runs whose sweep reports zero hits delete that prose line (script-side entries stay — script lines are cheap, prose lines cost context). The whole mechanics block is replaced by a validator call the day `scripts/verify_design_sweeps.py` grows a mechanics sweep; the contrast prose is replaced by a computed-style validator call when one lands.
 
 ### Phase 6 — Review & Iterate
 30) Present deliverables summary to the user:
@@ -562,7 +533,7 @@ Each is legitimate for *some* brief. They are banned as **defaults**, not as cho
 - Signature gesture or interaction that defines the app's personality
 
 **Specific AI Tells (hard bans — sweep every screen before presenting).**
-Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one.
+Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one. Per-tell depreciation trigger: named in the Phase 5.5 sweep block.
 
 *Content & data:*
 - Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
@@ -578,12 +549,12 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 - No section-number eyebrows (`001 · Capabilities`) or `01 / 4` pagination labels — name the topic in plain language.
 - No version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) unless the brief is explicitly a launch/preview.
 - No decorative status dots before every list row/tab/badge (only for real semantic state, sparingly).
-- No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
+- No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll to explore`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
 - Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
 
 *Typography & interaction tells:*
 - **No italic headings.** `fontStyle: 'italic'` on title/display/hero-stat `<Text>` is a top tell. Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
-- No celebratory success toast/haptic for an action whose effect is already visible on screen (silent success; reserve toasts for failures and invisible effects).
+- No celebratory success toast/haptic for an action whose effect is already visible (silent success; reserve toasts for failures and invisible effects).
 - Auto-advancing carousels/banners must be pausable and never the only way to reach content.
 
 *Motion & input mechanics (React Native):*

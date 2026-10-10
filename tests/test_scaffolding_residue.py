@@ -24,8 +24,10 @@ Three A-bucket deletion classes from the SPEC-055 evolution audit
 Occurrence-whitelist convention (ISSUE-040/042 lessons): allowed files
 are enumerated and asserted to STILL contain the pattern so the list
 cannot rot; no phrasing blacklists. The uiux triplet agents and the
-`self_review_confidence` fragment in scripts/fragments.py are owned by
-ISSUE-060 and intentionally untouched here.
+`self_review_confidence` fragment in scripts/fragments.py were owned by
+ISSUE-060 (SPEC-060 D5), which empties the whitelist: the ritual is now
+banned everywhere. The mechanism (enumerate + assert-still-present) stays
+so any future exception must re-enumerate itself here.
 """
 
 from pathlib import Path
@@ -42,17 +44,12 @@ DIAGNOSE_CHECKLIST_MARKER = "Rate confidence (High/Medium/Low)"
 # the deletion, absent after).
 INLINE_PROMPT_MARKER = "## Required Steps (do ALL of these"
 
-# Agents still allowed to carry the confidence-rating ritual: the uiux
-# triplet is synced verbatim to scripts/fragments.py AGENT_DESIGN_FRAGMENTS
-# (drift guard: tests/test_design_fragments.py) and is deflated by
-# ISSUE-060, not here. No other kept exceptions.
-CONFIDENCE_WHITELIST = frozenset(
-    {
-        "desktop-uiux-developer.md",
-        "mobile-uiux-developer.md",
-        "uiux-developer.md",
-    }
-)
+# Agents still allowed to carry the confidence-rating ritual: NONE.
+# ISSUE-060 (SPEC-060 D5) deletes the uiux triplet's ritual and the
+# `self_review_confidence` chunk in scripts/fragments.py, emptying the
+# whitelist. Any file added here must still contain the pattern (the
+# rot-check below) — the mechanism survives the empty set.
+CONFIDENCE_WHITELIST: frozenset[str] = frozenset()
 
 TEXT_SUFFIXES = {".md", ".tmpl"}
 
@@ -87,7 +84,7 @@ def test_no_persona_blocks_in_skills_or_agents():
     )
 
 
-def test_confidence_rating_only_in_uiux_whitelist():
+def test_confidence_rating_only_in_whitelist():
     hits = {
         p.name
         for p in _agent_files()
@@ -95,8 +92,9 @@ def test_confidence_rating_only_in_uiux_whitelist():
     }
     unexpected = sorted(hits - CONFIDENCE_WHITELIST)
     assert unexpected == [], (
-        f"confidence-rating ritual (deleted in ISSUE-059 per SPEC-010) "
-        f"found outside the ISSUE-060 whitelist: {unexpected}"
+        f"confidence-rating ritual (deleted in ISSUE-059 per SPEC-010; "
+        f"uiux triplet deleted in ISSUE-060 per SPEC-060 D5) found outside "
+        f"the now-empty whitelist: {unexpected}"
     )
     rotted = sorted(CONFIDENCE_WHITELIST - hits)
     assert rotted == [], (

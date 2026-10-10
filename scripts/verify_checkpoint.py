@@ -1957,7 +1957,10 @@ def verify_uiux_philosophy(issue_id: str, **_) -> bool:
     Anchors section OR an explicit "Reference Anchors skipped" line, and
     (c) a ``literal_quote:`` field when Reference Anchors is present.
     Depth (numeric specificity, 2–3 cue count, image citations) stays
-    model-side until the ISSUE-056 sweeps are wired in (ISSUE-060).
+    model-side; the ISSUE-056 sweeps were wired into the skill prose in
+    ISSUE-060 (the web skill's Phase 5.5 calls verify_design_sweeps.py
+    directly — not a checkpoint phase, because the signature-move sweep
+    needs a per-run --class value this invocation cannot carry).
     """
     root = _repo_root()
     phil = root / "docs" / "design_philosophy.md"

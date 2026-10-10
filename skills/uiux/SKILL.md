@@ -231,7 +231,6 @@ Run these checks silently at the start. Use results to adapt behavior:
      - **ALL button variants** (primary, secondary, destructive, ghost) MUST have full CSS with ALL states — not just the primary variant in CSS and others in prose
      - **App-specific composite components** (e.g., FAB, list items, progress rings, pickers) MUST also be defined with full CSS — not just generic UI primitives
    - **Motion tokens**: Transition durations, easing curves, animation-delay stagger values
-     - Performance rules: only `transform` and `opacity` are GPU-composited. Do NOT list `box-shadow`.
    - All values expressed as CSS custom properties
 10) Ask the user if the design system direction looks right before proceeding.
 
@@ -316,7 +315,7 @@ Run these checks silently at the start. Use results to adapt behavior:
     - Generate ONLY these pilot HTML files in `prototype/screens/` following all the rules listed in step 15 below. Both pilots share `styles.css` from step 14.
     - Do NOT generate other screens or `prototype/index.html` yet.
 14.6) **PILOT GATE — render → observe → critique → specificity → auto-correct → user HOLD**
-    Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This phase routes the critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting to the user. Do not auto-proceed past Step 3.
+    Generator-as-judge fails: the same context that produced the pilot will not reliably catch its own slop. This gate routes the critique through a separate sub-agent context and runs up to 3 auto-correction cycles before presenting to the user. Do not auto-proceed past Step 3.
 
     - **Step 1 — Render**: for each pilot HTML, run:
       ```
@@ -329,7 +328,7 @@ Run these checks silently at the start. Use results to adapt behavior:
     - **Step 2.0 — Neutral observation** (mandatory; do this BEFORE any judgment).
       For each pilot, write 5 plain factual statements about what you see in the PNG (or HTML in degraded mode).
       **Banned vocabulary in this step**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
-      Output to `prototype/screens/<pilot>.observations.md` like:
+      Output to `prototype/screens/<pilot>.observations.md`. Like:
       ```
       1. Top bar 64px tall, dark navy background, four icon buttons right-aligned.
       2. Hero headline reads "조용한", left-aligned, 168pt serif, off-white text.
@@ -360,11 +359,11 @@ Run these checks silently at the start. Use results to adapt behavior:
     - **Step 2.3 — Auto-correction cycle** (hard cap N=3 rounds). If any axis score < 3, OR Step 2.2 returns FAIL, OR slop signals are flagged:
       1. Identify the correct layer to patch:
          - Philosophy / Specificity < 3 → revisit Phase 2 step 8 (`docs/design_philosophy.md`).
-         - Hierarchy / Execution / Restraint < 3 → revisit Phase 3 design system (`docs/design_system.md`) or Phase 4 layout numbers.
+         - Hierarchy / Execution / Restraint < 3 → revisit the Phase 3 design system (`docs/design_system.md`) or Phase 4 numeric layout commitments.
          - Variety < 3 → re-pick the pilot archetype or restructure the pilot itself.
          - Specificity FAIL → either add concrete product details to the pilot or, if Phase 1.5 was skipped, document that and proceed.
       2. Apply the patch.
-      3. Re-screenshot (Step 1) → re-observe (Step 2.0) → re-critique (Step 2.1) → re-specificity (Step 2.2).
+      3. Re-run the gate: re-screenshot (Step 1) → re-observe (Step 2.0) → re-critique (Step 2.1) → re-specificity (Step 2.2).
       4. Increment the cycle counter. Append a one-line summary to `prototype/screens/<pilot>.cycles.log`:
          `cycle N: layer=<L> change="<short summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
       5. **Hard stop at N=3**. After the third unsuccessful cycle, freeze the pilot and surface to the user with the full cycle history. Do NOT loop indefinitely.
@@ -417,16 +416,6 @@ Run these checks silently at the start. Use results to adapt behavior:
 17) **Component cross-check**:
     - Every component referenced in `wireframes.md` MUST have a definition in `design_system.md`
     - List any gaps and add missing component definitions before proceeding
-17.5) **Signature Move check**:
-    - `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only).
-    - `prototype/styles.css` must implement it as a reusable class or component variant.
-    - Every HTML file in `prototype/screens/` (including the pilot) must apply that class/variant at least once.
-    - If any check fails: list violations, fix, and re-verify before proceeding.
-17.6) **Literal quote verbatim render check** (skip if Phase 1.5 was explicitly skipped):
-    - Read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors.
-    - Grep `prototype/screens/*.html` for the literal string. The string MUST appear verbatim in at least one screen's rendered output.
-    - If absent: name the screens that would naturally host it (per the anchor's "where it appears" hint), inject the quote into that screen's HTML, and re-grep. Do not skip this check by widening the search (no substring matches, no partial matches).
-    - Example: `literal_quote: "47.2-A"` MUST appear as the literal characters `47.2-A` in at least one screen file — not `47-2-A`, not `47.2A`, not in a comment.
 18) **PRD feature cross-check**:
     - Every feature in the PRD (F1, F2, ... including P2) MUST appear in wireframes and/or interactions
     - List any gaps and add missing features (P2 features as "deferred" notes)
@@ -441,13 +430,29 @@ Run these checks silently at the start. Use results to adapt behavior:
     - No `outline: none` on `:focus` without `:focus-visible` coverage
     - Placeholder text contrast >= 3:1
     - All interactive elements have keyboard handlers
-21.5) **Contrast sweep** (CRITICAL — catches the failures that ship most):
-    - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text (<24px regular / <18px bold) needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
-    - Fail on any of: **button text ≈ button fill** (text colour within ~5% lightness of the fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark section** (background lightness < 50%) that did not also flip its text colour (ink-on-ink). Most-missed: text in a card that switched `background` but inherited `color`; muted text on a tinted surface.
-    - List failing pairs as `file:selector`, fix, and re-check before proceeding.
 22) **State demo check**:
     - Every screen has a visible state-switcher toolbar
     - Loading, empty, and error states are implemented and togglable
+22.4) **Design verification sweeps** (script-owned gates + model sweeps) — runs LAST among the content-mutating Phase 5.5 steps: anything steps 18-22 added or fixed must also pass the gates:
+- **Script-owned sweeps — literal-quote / Signature Move / AI-tell (deterministic subset)**: run from the project root:
+  ```
+  python3 scripts/verify_design_sweeps.py all --class <signature-move-class> [--exempt <tell-id> ...]
+  ```
+  - `<signature-move-class>` is the Signature Move's reusable class from the Phase 5A step 14 encoding (`docs/design_philosophy.md` states the move with numeric/token specificity; `prototype/styles.css` implements it as that reusable class). `all` without `--class` fails closed (exit 2, naming the signature-move sweep) — never drop a sweep to get past a usage error.
+  - `--exempt` tell-ids map 1:1 from the recorded `Brief overrides:` bullets in `docs/design_philosophy.md`, and only from those — an unrecorded violation is never exempt. Script-owned tell ids: `em-dash`, `100vh`, `flex-calc-width`, `generic-name`, `fake-perfect-number`, `filler-verb`, `scroll-cue`.
+  - Exit 0 → the literal-quote / signature-move / ai-tell gates pass. Exit 1 → fix the listed `file:line` violations and re-run. The validator's verdict is final — no prose re-adjudication.
+  - The **Literal quote verbatim render check** is script-owned here (the `literal-quote` sweep). Fix path on failure: inject the quote verbatim into the screen named by the anchor's "where it appears" hint, then re-run — never widen the match (no substring or partial matches).
+- **AI Tell sweep (judgment subset — model-executed)**: sweep `prototype/screens/` and `prototype/styles.css` for the tells the script does not own: `<div>`-based fake product UI, section-number eyebrows, hero version labels, three equal feature cards, decorative status dots, locale/time strips, mono-caps decoration strips, middle-dot rationing, italic headings, celebratory success toasts, unpausable auto-rotating content. Exempt exactly the recorded `Brief overrides:` bullets and no others; report each as `exempt: <tell> — <brief quote>`. Zero tolerance on div-based fake product UI. List every violation as `file:line`, fix, re-sweep.
+- **Contrast sweep** (CRITICAL — catches the failures that ship most):
+  - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text (<24px regular / <18px bold) needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
+  - Fail on any of: **button text ≈ button fill** (text colour within ~5% lightness of the fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark section** (background lightness < 50%) that did not also flip its text colour (ink-on-ink). Most-missed: text in a card that switched `background` but inherited `color`; muted text on a tinted surface.
+  - List failing pairs as `file:selector`, fix, and re-check before proceeding.
+- **Mechanics sweep** (deterministic — grep `prototype/styles.css` and screens):
+  - Flag and fix: `transition: all` / `transition-all`; animating `width`/`height`/`top`/`left`/`margin`/`padding`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0` (only the nav may sit there); all-caps display with `line-height` < 1.0.
+  - Confirm present: `overflow-x: clip` on BOTH `html` and `body`; a `prefers-reduced-motion: reduce` media block that reduces non-essential motion (the reduced-motion requirement is this one contract line); input fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Phase 5A step 14.
+  - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
+  - List every violation as `file:line`, fix, and re-sweep.
+- **Depreciation triggers**: per tell/rule, two consecutive design runs whose sweep reports zero hits delete that prose line (script-side entries stay — script lines are cheap, prose lines cost context). The whole mechanics block is replaced by a validator call the day `scripts/verify_design_sweeps.py` grows a mechanics sweep; the contrast prose is replaced by a computed-style validator call when one lands.
 22.5) **issues.md coverage cross-check** (only if `issues.md` exists):
     - Read `issues.md` and extract titles, scope, and `UI` flag from each issue.
     - Compare against the design deliverables and produce a gap list:
@@ -457,15 +462,6 @@ Run these checks silently at the start. Use results to adapt behavior:
       - **New states**: loading/empty/error states added in `interactions.md` or `copy_guide.md` beyond what was anticipated in `ux_spec.md`
     - Persist the gap list in memory for Phase 6 reporting. Do NOT modify `issues.md` — issue creation is `/issue`'s responsibility.
     - If `issues.md` does not exist, skip silently.
-22.7) **AI Tell sweep** (CRITICAL):
-    - Sweep every file in `prototype/screens/` and `prototype/styles.css` for the banned tells in "Specific AI Tells" (Anti-AI-Slop Rules): em-dash (`—`/`–`), `100vh`/`height: 100vh` on full-height sections, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, hero version labels, three equal feature cards, `<div>`-based fake product UI, decorative status dots, locale/time strips, scroll cues, mono-caps decoration strips.
-    - Before sweeping, read the `Brief overrides:` bullets in `docs/design_philosophy.md` (Anti-AI-Slop "The brief's own words win"). Exempt exactly the tells listed there and no others; report each exemption as `exempt: <tell> — <brief quote>` alongside the violation list. An unrecorded violation is never exempt.
-    - List every violation as `file:line`, fix it, and re-sweep. **Zero tolerance on em-dash and div-based fake product UI** — these must be 0 before presenting unless a `Brief overrides:` bullet covers them. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).
-22.8) **Slop-proof mechanics sweep** (deterministic — grep `prototype/styles.css` and screens):
-    - Flag and fix: `transition: all` / `transition-all`; animating `width`/`height`/`top`/`left`/`margin`/`padding`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0` (only the nav may sit there); all-caps display with `line-height` < 1.0.
-    - Confirm present: `overflow-x: clip` on BOTH `html` and `body`; input fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Phase 5A step 14.
-    - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
-    - List every violation as `file:line`, fix, and re-sweep.
 
 ### Phase 6 — Review & Iterate
 23) Present deliverables summary to the user:
@@ -506,7 +502,7 @@ Run these checks silently at the start. Use results to adapt behavior:
 
 These rules prevent Claude from converging on generic, forgettable defaults.
 
-**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 17.5. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
+**Primary anchor — the Signature Move.** The single most effective slop-blocker is the numeric/token-specific Signature Move defined in Phase 2 step 8 and enforced at Phase 5A pilot gate and Phase 5.5 step 22.4. Negative rules below are secondary; if the Signature Move is weak or missing, the rules below will not save the output.
 
 **Calibration — the three current AI-design clusters.** Independent of subject, AI-generated design converges on three looks right now:
 1. Warm cream ground (near `#F4F1EA`) + high-contrast serif display + terracotta accent.
@@ -536,7 +532,7 @@ Each is legitimate for *some* brief. They are banned as **defaults**, not as cho
 - Implementation complexity matched to aesthetic vision
 
 **Specific AI Tells (hard bans — sweep every screen before presenting).**
-Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one.
+Concrete signatures LLMs default to. Banned unless the brief explicitly calls for one. Per-tell depreciation trigger: named in the Phase 5.5 sweep block.
 
 *Content & data:*
 - Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
@@ -545,29 +541,29 @@ Concrete signatures LLMs default to. Banned unless the brief explicitly calls fo
 - **Em-dash (`—`) and en-dash-as-separator (`–`): zero tolerance** everywhere visible (headlines, labels, body, captions, attribution). Use a regular hyphen `-`, comma, period, colon, or line break. The single most-violated tell.
 
 *Fake product UI:*
-- NEVER build a fake product UI out of styled `<div>` rectangles (fake dashboard, terminal, task list, chart) to fill a hero or preview. This is the #1 design tell. Use a real screenshot, generated image, real component preview, or skip the preview.
-- No fake version footers / sync stamps inside previews (`v0.6.2-rc.1`, `last sync 4s ago`).
+- NEVER build a fake product UI out of styled `<div>` rectangles (fake dashboard, terminal, task list, chart) to fill a hero or preview. This is the #1 design tell. Use a real screenshot, generated image, real component preview, or skip it.
+- No fake version footers / sync stamps (`v0.6.2-rc.1`, `last sync 4s ago`) inside previews.
 
-*Decorative meta (agency-portfolio clichés):*
-- No section-number eyebrows (`001 · Capabilities`, `06 · how it works`) or `01 / 4` pagination labels. Name the topic in plain language.
-- No hero version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) unless the brief is explicitly a launch/preview.
-- No three identical equal-width feature cards in a row → 2-col zig-zag, asymmetric grid, or scroll-pinned alternative.
+*Decorative meta:*
+- No section-number eyebrows (`001 · Capabilities`) or `01 / 4` pagination labels — name the topic in plain language.
+- No version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) unless the brief is explicitly a launch/preview.
 - No decorative status dots before every nav/list/badge (only for real semantic state, sparingly).
 - No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll to explore`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
 - Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
+- No three identical equal-width feature cards in a row → 2-col zig-zag, asymmetric grid, or scroll-pinned alternative.
 - No fake photo-credit captions (`Frame XII · 35mm`, `Plate 03`) — real photographer credit only.
-
-*CSS mechanics (web):*
-- Full-height hero: use `min-height: 100dvh`, NEVER `100vh` / `height: 100vh` (iOS Safari address-bar jump).
-- Multi-column layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`).
-- Selector-specificity collisions: a section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Section-to-section `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
-- Full deterministic layout/motion/input rules live in Phase 5A step 14 ("Layout-safety / Motion / Input-state mechanics") and are swept in Phase 5.5.
 
 *Typography & interaction tells:*
 - **No italic headings.** `font-style: italic` on `h1`–`h6` / display / wordmark / hero stat / `<em>` inside a heading is a top tell. Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
 - No celebratory success toast for an action whose effect is already visible (silent success; reserve toasts for failures and invisible effects).
 - Tooltip delays differ by input: hover delays 800–1000ms, keyboard focus shows at 0ms (never equal).
 - Auto-rotating content (carousel, banner, stat ticker) must pause on hover AND focus (WCAG 2.2.2).
+
+*CSS mechanics (web):*
+- Full-height hero: use `min-height: 100dvh`, NEVER `100vh` / `height: 100vh` (iOS Safari address-bar jump).
+- Multi-column layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`).
+- Selector-specificity collisions: a section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Section-to-section `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
+- Full deterministic layout/motion/input rules live in Phase 5A step 14 ("Layout-safety / Motion / Input-state mechanics") and are swept in Phase 5.5.
 
 ## Guidelines
 - **Self-contained prototypes**: Opens via `file://` — no build tools, no npm, no frameworks.

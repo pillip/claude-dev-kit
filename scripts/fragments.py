@@ -23,6 +23,16 @@ the single source of truth:
   :func:`find_out_of_sync_fragments` — editing a canonical chunk without
   syncing the agent files fails the suite, naming the out-of-sync file.
 
+ISSUE-060 / SPEC-060 extends the mechanism with three contract-conversion
+tokens — ``{{PILOT_GATE}}``, ``{{AI_TELLS}}``, ``{{DESIGN_SWEEPS}}`` —
+resolved per-skill by :func:`pilot_gate_fragment`, :func:`ai_tells_fragment`
+and :func:`design_sweeps_fragment`. The shared surviving text of the pilot
+gate, the Specific-AI-Tells list and the Phase 5.5 verification sweeps lives
+here exactly once; the web ``{{DESIGN_SWEEPS}}`` resolution wires the
+``scripts/verify_design_sweeps.py`` call site, while the mobile/desktop
+resolutions stay contract-shaped prose sweeps carrying the K9 handover
+trigger.
+
 Content changes here are intentional-by-definition: update the three agent
 files in the same commit, then regenerate skills via
 ``python3 scripts/gen_skills.py``.
@@ -270,6 +280,356 @@ _EXTEND_MODE_TEMPLATE = """\
      <file:line>`) instead of rewriting the product's own conventions."""
 
 
+# ---------------------------------------------------------------------------
+# Skill-side fragment: pilot-gate protocol (ISSUE-060 / SPEC-060 K1).
+# Extraction changes location, zero behavior — the full 4-substep protocol
+# (neutral observation → separate-context critique → specificity check →
+# auto-correction hard cap) is pinned by tests/test_pilot_gate_hardening.py
+# against resolved template content.
+# ---------------------------------------------------------------------------
+
+_PILOT_GATE_PLATFORM: dict[str, dict[str, str]] = {
+    "uiux": {
+        "s": "2",
+        "render_block": """\
+    - **Step 1 — Render**: for each pilot HTML, run:
+      ```
+      python3 scripts/screenshot_pilot.py prototype/screens/<pilot>.html --viewport 1280x800 --full-page
+      ```
+      Produces `prototype/screens/<pilot>.png`. If the script exits "no screenshot backend available":
+        - DO NOT silently skip the critique. Enter **degraded mode** for Steps 2.0–2.2: critique runs against the HTML/CSS *source* instead of the rendered PNG.
+        - Record `pilot_degraded: no_screenshot_backend` in the critique log so the user sees the limitation.""",
+        "observe_subject": "what you see in the PNG (or HTML in degraded mode)",
+        "screens_dir": "prototype/screens",
+        "observation_example": """ Like:
+      ```
+      1. Top bar 64px tall, dark navy background, four icon buttons right-aligned.
+      2. Hero headline reads "조용한", left-aligned, 168pt serif, off-white text.
+      3. Below the hero, three cards in a row at 24% / 38% / 38% widths.
+      4. Bottom-right floating action button, 56px, orange fill, no border.
+      5. Sticky bottom toolbar with four state-switcher buttons.
+      ```""",
+        "critique_inputs": "the pilot PNG path (or HTML path in degraded mode)",
+        "design_system_doc": "docs/design_system.md",
+        "philosophy_step": "8",
+        "rerun_chain": (
+            "re-screenshot (Step 1) → re-observe (Step 2.0) → re-critique "
+            "(Step 2.1) → re-specificity (Step 2.2)"
+        ),
+        "stamp_line": (
+            "Record the final scores as a one-line stamp at the top of "
+            "`styles.css`: `/* pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 "
+            "specificity=PASS */`."
+        ),
+    },
+    "mobile-uiux": {
+        "s": "2.5",
+        "render_block": """\
+    - **Render inputs**: mobile pilots run live in Expo (no PNG capture in this skill), so the critique inputs are the pilot `.tsx` source + the design system. This is treated as **degraded mode** by default — record `pilot_degraded: no_screenshot_input` in the critique log so the user sees the limitation. DO NOT silently skip the critique.""",
+        "observe_subject": "what would render",
+        "screens_dir": "prototype-mobile/src/screens",
+        "observation_example": "",
+        "critique_inputs": "the pilot `.tsx` path",
+        "design_system_doc": "docs/design_system_mobile.md",
+        "philosophy_step": "9",
+        "rerun_chain": (
+            "re-observe (Step 2.5.0) → re-critique (Step 2.5.1) → "
+            "re-specificity (Step 2.5.2)"
+        ),
+        "stamp_line": (
+            "Record final scores at the top of the pilot screen file: "
+            "`// pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 "
+            "specificity=PASS`."
+        ),
+    },
+    "desktop-uiux": {
+        "s": "2.5",
+        "render_block": """\
+    - **Render inputs**: desktop pilots run live in Electron (`npm run dev`). If Playwright + Electron is installed, screenshot the rendered window for the critique inputs. Otherwise critique runs against the pilot `.tsx` source (**degraded mode**) — record `pilot_degraded: no_playwright_electron` in the critique log so the user sees the limitation. DO NOT silently skip the critique.""",
+        "observe_subject": (
+            "what renders (screenshot) or what the source would render "
+            "(degraded)"
+        ),
+        "screens_dir": "prototype-desktop/src/screens",
+        "observation_example": "",
+        "critique_inputs": (
+            "the pilot screenshot path (if available) AND the pilot `.tsx` "
+            "path"
+        ),
+        "design_system_doc": "docs/design_system_desktop.md",
+        "philosophy_step": "9",
+        "rerun_chain": (
+            "re-screenshot (if available) → re-observe (Step 2.5.0) → "
+            "re-critique (Step 2.5.1) → re-specificity (Step 2.5.2)"
+        ),
+        "stamp_line": (
+            "Record final scores at the top of the pilot stylesheet/screen "
+            "file: `/* pre-emit critique cycle=N: P5 H4 E5 S4 R5 V5 "
+            "specificity=PASS */`."
+        ),
+    },
+}
+
+_PILOT_GATE_TEMPLATE = """\
+Generator-as-judge fails: the same context that produced the pilot will not \
+reliably catch its own slop. This gate routes the critique through a separate \
+sub-agent context and runs up to 3 auto-correction cycles before presenting \
+to the user. Do not auto-proceed past Step 3.
+
+{render_block}
+
+    - **Step {s}.0 — Neutral observation** (mandatory; do this BEFORE any judgment).
+      For each pilot, write 5 plain factual statements about {observe_subject}.
+      **Banned vocabulary in this step**: `signature move`, `aesthetic`, `archetype`, `philosophy`, `direction`, `taste`, `slop`, `generic`, `bold`, `restrained`, `premium`, brand names, the chosen aesthetic name. Use only colors, sizes, shapes, positions, counts, content categories.
+      Output to `{screens_dir}/<pilot>.observations.md`.{observation_example}
+      If you catch yourself reaching for a banned word, restart Step {s}.0 — the observation is the input that prevents the critique from agreeing with itself.
+
+    - **Step {s}.1 — Separate-context critique** (mandatory). Invoke `design-auditor` via the Task tool to evaluate the pilot from a fresh context. **Do NOT inline-critique in the generator's context.**
+      Pass the auditor:
+        - {critique_inputs}
+        - `{screens_dir}/<pilot>.observations.md`
+        - `docs/design_philosophy.md` (so it knows the system claim it should check)
+        - `{design_system_doc}`
+      Ask it to return:
+        - the 6-axis score (Philosophy / Hierarchy / Execution / Specificity / Restraint / Variety), each 1–5
+        - one piece of cited evidence per axis, referencing observation indices (e.g., "Specificity 2 — observations 2,3 are interchangeable with any landing page")
+        - a list of slop signals it flags
+      Where ui-reviewer's scope applies (state coverage in pilots, copy usage), also invoke `ui-reviewer` via the Task tool with the same inputs. The two sub-agents' scopes are disjoint (per ISSUE-013) — do not deduplicate findings, surface both.
+      Save the structured output to `{screens_dir}/<pilot>.critique.md`.
+
+    - **Step {s}.2 — Specificity check** (mandatory). Ask the design-auditor (still in its separate context) to answer:
+      *"Name 3 details visible in this pilot that ONLY make sense for THIS specific product / domain / user. Generic UI primitives ('a card', 'a hero', 'a button') do not count. Domain content does count (real entity names, the literal_quote from Reference Anchors, domain-specific units, brand-specific shortcuts). If you can list fewer than 3, the pilot FAILs specificity."*
+      The literal_quote (from ISSUE-012) counts as exactly **1** of the 3 — not 0, not 2+. The other 2 must come from independent product/domain details.
+      Specificity FAIL → treat as a critique failure feeding Step {s}.3.
+
+    - **Step {s}.3 — Auto-correction cycle** (hard cap N=3 rounds). If any axis score < 3, OR Step {s}.2 returns FAIL, OR slop signals are flagged:
+      1. Identify the correct layer to patch:
+         - Philosophy / Specificity < 3 → revisit Phase 2 step {philosophy_step} (`docs/design_philosophy.md`).
+         - Hierarchy / Execution / Restraint < 3 → revisit the Phase 3 design system (`{design_system_doc}`) or Phase 4 numeric layout commitments.
+         - Variety < 3 → re-pick the pilot archetype or restructure the pilot itself.
+         - Specificity FAIL → either add concrete product details to the pilot or, if Phase 1.5 was skipped, document that and proceed.
+      2. Apply the patch.
+      3. Re-run the gate: {rerun_chain}.
+      4. Increment the cycle counter. Append a one-line summary to `{screens_dir}/<pilot>.cycles.log`:
+         `cycle N: layer=<L> change="<short summary>" scores=P5 H4 E5 S3 R5 V4 specificity=PASS|FAIL`.
+      5. **Hard stop at N=3**. After the third unsuccessful cycle, freeze the pilot and surface to the user with the full cycle history. Do NOT loop indefinitely.
+      {stamp_line}"""
+
+
+# ---------------------------------------------------------------------------
+# Skill-side fragment: Specific AI Tells (ISSUE-060 / SPEC-060 K3).
+# One canonical tell list; the per-tell depreciation trigger is named in the
+# {{DESIGN_SWEEPS}} block that executes the sweep.
+# ---------------------------------------------------------------------------
+
+_AI_TELLS_PLATFORM: dict[str, dict[str, str]] = {
+    "uiux": {
+        "emdash_scope": (
+            "everywhere visible (headlines, labels, body, captions, "
+            "attribution)"
+        ),
+        "fake_ui_rule": (
+            "build a fake product UI out of styled `<div>` rectangles (fake "
+            "dashboard, terminal, task list, chart) to fill a hero or "
+            "preview. This is the #1 design tell."
+        ),
+        "fake_ui_alt": " preview",
+        "version_footer_tail": " inside previews",
+        "dot_scope": "nav/list/badge",
+        "decorative_extra": """\
+- No three identical equal-width feature cards in a row → 2-col zig-zag, asymmetric grid, or scroll-pinned alternative.
+- No fake photo-credit captions (`Frame XII · 35mm`, `Plate 03`) — real photographer credit only.
+""",
+        "italic_rule": (
+            "`font-style: italic` on `h1`–`h6` / display / wordmark / hero "
+            "stat / `<em>` inside a heading is a top tell."
+        ),
+        "toast_kind": "toast",
+        "interaction_extra": """\
+- Tooltip delays differ by input: hover delays 800–1000ms, keyboard focus shows at 0ms (never equal).
+- Auto-rotating content (carousel, banner, stat ticker) must pause on hover AND focus (WCAG 2.2.2).
+""",
+        "mechanics_block": """\
+*CSS mechanics (web):*
+- Full-height hero: use `min-height: 100dvh`, NEVER `100vh` / `height: 100vh` (iOS Safari address-bar jump).
+- Multi-column layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`).
+- Selector-specificity collisions: a section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Section-to-section `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
+- Full deterministic layout/motion/input rules live in Phase 5A step 14 ("Layout-safety / Motion / Input-state mechanics") and are swept in Phase 5.5.""",
+    },
+    "mobile-uiux": {
+        "emdash_scope": (
+            "in all visible text (titles, labels, body, empty/error copy)"
+        ),
+        "fake_ui_rule": (
+            "fake a product surface out of styled `<View>` rectangles (fake "
+            "chart, fake feed, fake map) to fill a hero/onboarding slide."
+        ),
+        "fake_ui_alt": "",
+        "version_footer_tail": " as decoration",
+        "dot_scope": "list row/tab/badge",
+        "decorative_extra": "",
+        "italic_rule": (
+            "`fontStyle: 'italic'` on title/display/hero-stat `<Text>` is a "
+            "top tell."
+        ),
+        "toast_kind": "toast/haptic",
+        "interaction_extra": """\
+- Auto-advancing carousels/banners must be pausable and never the only way to reach content.
+""",
+        "mechanics_block": """\
+*Motion & input mechanics (React Native):*
+- Animate only `transform` / `opacity` in Reanimated worklets; never animate layout props (`width`, `height`, `margin`, `padding`, `top`, `left`) that trigger re-layout per frame.
+- Reserve overshoot/bouncy springs for **gesture-driven / physical** interactions (press, drag, pull-to-refresh, sheet) — not for incidental state changes (colour, opacity, content swaps).
+- No stacking multiple simultaneous effects (scale + translate + shadow + rotate) on one element.
+- `TextInput` states: keep `borderWidth` constant across default/focus/error (change `borderColor`/background, never width — it shifts layout); input height == adjacent button height (44pt floor); reserve the helper/error slot height so an appearing error doesn't push content; disabled needs three channels — dimmed style + `editable={false}` + `accessibilityState={{ disabled: true }}` (never opacity alone).""",
+    },
+    "desktop-uiux": {
+        "emdash_scope": (
+            "in all visible text (titles, labels, menu items, body, "
+            "empty/error copy)"
+        ),
+        "fake_ui_rule": (
+            "fake a product surface out of styled `<div>` rectangles (fake "
+            "chart, fake terminal, fake data table) to fill a welcome/empty "
+            "screen."
+        ),
+        "fake_ui_alt": "",
+        "version_footer_tail": (
+            " as decoration (a real app-version readout in About/status bar "
+            "is fine)"
+        ),
+        "dot_scope": "list row/tab/badge",
+        "decorative_extra": "",
+        "italic_rule": (
+            "`font-style: italic` on `h1`–`h6` / display / wordmark / `<em>` "
+            "inside a heading is a top tell."
+        ),
+        "toast_kind": "toast",
+        "interaction_extra": """\
+- Tooltip delays differ by input: hover delays 800–1000ms, keyboard focus shows at 0ms (never equal).
+- Auto-rotating content (carousel, banner, ticker) must pause on hover AND focus (WCAG 2.2.2).
+""",
+        "mechanics_block": """\
+*CSS mechanics (renderer) — deterministic, all mandatory:*
+- Multi-column / split-pane layouts: use CSS Grid (`grid-template-columns`), NEVER flex percentage math (`width: calc(33% - 1rem)`), which breaks on gap rounding.
+- Selector-specificity collisions: a pane/section-level class (`.section`) and an element-level class (`.cta`) that both set the same box property silently cancel each other out by source order. Pane-to-pane `padding`/`margin` is where this bites most. Give each box property exactly ONE owning selector; when two must coexist, raise the intended winner's specificity explicitly instead of relying on rule order.
+- `overflow-x: clip` on BOTH `html` and `body` (use `clip`, not `hidden` — preserves descendant `sticky`/`fixed`); no horizontal scroll at any window width down to 320px.
+- Any grid track holding an image uses `minmax(0, 1fr)`, never bare `1fr`.
+- Display headers set `overflow-wrap: anywhere; min-width: 0`; all-caps display type uses `line-height ≥ 1.0`.
+- At most ONE `position: sticky; top: 0` (the top chrome/toolbar); other sticky elements offset to `top: var(--banner-height)` with a lower z-index than the toolbar.
+- Flex rows mixing height-different children set `align-items: center`.
+- No `transition: all` / `transition-all` — name properties. Focus rings appear instantly (no `transition` on `outline`) and use `outline`, never `border`. Reserve overshoot easings for drag/physical interactions only.
+- Input/select 8-state rules: constant `border-width` across states (change `outline`/`box-shadow`/`border-color`); `outline`-based focus ring; input height == adjacent button height; reserve helper/error slot with `min-height: 1lh`; disabled = `opacity` + `cursor: not-allowed` + `disabled`/`aria-disabled` (never opacity alone).""",
+    },
+}
+
+_AI_TELLS_TEMPLATE = """\
+**Specific AI Tells (hard bans — sweep every screen before presenting).**
+Concrete signatures LLMs default to. Banned unless the brief explicitly \
+calls for one. Per-tell depreciation trigger: named in the Phase 5.5 sweep \
+block.
+
+*Content & data:*
+- Generic person names ("John Doe", "Sarah Chan") or startup-slop brand names ("Acme", "Nexus", "SmartFlow", "Cloudly") → invent contextual, locale-appropriate, real-sounding names.
+- Fake-perfect numbers (`99.99%`, round `50%`, `1,234,567`) → organic messy values (`47.2%`, `+1 (312) 847-1928`).
+- Filler verbs ("Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionize") → concrete verbs only.
+- **Em-dash (`—`) and en-dash-as-separator (`–`): zero tolerance** {emdash_scope}. Use a regular hyphen `-`, comma, period, colon, or line break. The single most-violated tell.
+
+*Fake product UI:*
+- NEVER {fake_ui_rule} Use a real screenshot, generated image, real component{fake_ui_alt}, or skip it.
+- No fake version footers / sync stamps (`v0.6.2-rc.1`, `last sync 4s ago`){version_footer_tail}.
+
+*Decorative meta:*
+- No section-number eyebrows (`001 · Capabilities`) or `01 / 4` pagination labels — name the topic in plain language.
+- No version labels (`V0.6`, `BETA`, `EARLY ACCESS`, `ALPHA`) unless the brief is explicitly a launch/preview.
+- No decorative status dots before every {dot_scope} (only for real semantic state, sparingly).
+- No locale/time/weather strips (`Lisbon 14:23 · 18°C`), no scroll cues (`↓ Scroll to explore`), no mono-caps decoration strips (`BRAND. MOTION. SPATIAL.`).
+- Ration the middle dot `·` to max 1 per metadata line; never as a universal separator.
+{decorative_extra}
+*Typography & interaction tells:*
+- **No italic headings.** {italic_rule} Emphasis = weight, accent colour, or a drawn underline. Italic only inside running body copy.
+- No celebratory success {toast_kind} for an action whose effect is already visible (silent success; reserve toasts for failures and invisible effects).
+{interaction_extra}
+{mechanics_block}"""
+
+
+# ---------------------------------------------------------------------------
+# Skill-side fragment: Phase 5.5 verification sweeps (ISSUE-060 / SPEC-060).
+# Web: the deterministic literal-quote / signature-move / ai-tell sweeps are
+# ONE scripts/verify_design_sweeps.py call site (the ISSUE-057 deferral
+# closed). Mobile/desktop: contract-shaped prose sweeps carrying the K9
+# handover trigger. Contrast (K6) and mechanics (K4/K5) sweeps stay prose on
+# all platforms until their named validator successors land.
+# ---------------------------------------------------------------------------
+
+_DESIGN_SWEEPS_PLATFORM: dict[str, dict[str, str]] = {
+    "uiux": {
+        "lead": """\
+- **Script-owned sweeps — literal-quote / Signature Move / AI-tell (deterministic subset)**: run from the project root:
+  ```
+  python3 scripts/verify_design_sweeps.py all --class <signature-move-class> [--exempt <tell-id> ...]
+  ```
+  - `<signature-move-class>` is the Signature Move's reusable class from the Phase 5A step 14 encoding (`docs/design_philosophy.md` states the move with numeric/token specificity; `prototype/styles.css` implements it as that reusable class). `all` without `--class` fails closed (exit 2, naming the signature-move sweep) — never drop a sweep to get past a usage error.
+  - `--exempt` tell-ids map 1:1 from the recorded `Brief overrides:` bullets in `docs/design_philosophy.md`, and only from those — an unrecorded violation is never exempt. Script-owned tell ids: `em-dash`, `100vh`, `flex-calc-width`, `generic-name`, `fake-perfect-number`, `filler-verb`, `scroll-cue`.
+  - Exit 0 → the literal-quote / signature-move / ai-tell gates pass. Exit 1 → fix the listed `file:line` violations and re-run. The validator's verdict is final — no prose re-adjudication.
+  - The **Literal quote verbatim render check** is script-owned here (the `literal-quote` sweep). Fix path on failure: inject the quote verbatim into the screen named by the anchor's "where it appears" hint, then re-run — never widen the match (no substring or partial matches).
+- **AI Tell sweep (judgment subset — model-executed)**: sweep `prototype/screens/` and `prototype/styles.css` for the tells the script does not own: `<div>`-based fake product UI, section-number eyebrows, hero version labels, three equal feature cards, decorative status dots, locale/time strips, mono-caps decoration strips, middle-dot rationing, italic headings, celebratory success toasts, unpausable auto-rotating content. Exempt exactly the recorded `Brief overrides:` bullets and no others; report each as `exempt: <tell> — <brief quote>`. Zero tolerance on div-based fake product UI. List every violation as `file:line`, fix, re-sweep.""",
+        "contrast_body": """\
+  - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text (<24px regular / <18px bold) needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
+  - Fail on any of: **button text ≈ button fill** (text colour within ~5% lightness of the fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark section** (background lightness < 50%) that did not also flip its text colour (ink-on-ink). Most-missed: text in a card that switched `background` but inherited `color`; muted text on a tinted surface.
+  - List failing pairs as `file:selector`, fix, and re-check before proceeding.""",
+        "mech_label": " (deterministic — grep `prototype/styles.css` and screens)",
+        "mechanics_body": """\
+  - Flag and fix: `transition: all` / `transition-all`; animating `width`/`height`/`top`/`left`/`margin`/`padding`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0` (only the nav may sit there); all-caps display with `line-height` < 1.0.
+  - Confirm present: `overflow-x: clip` on BOTH `html` and `body`; a `prefers-reduced-motion: reduce` media block that reduces non-essential motion (the reduced-motion requirement is this one contract line); input fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Phase 5A step 14.
+  - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
+  - List every violation as `file:line`, fix, and re-sweep.""",
+    },
+    "mobile-uiux": {
+        "lead": """\
+- **Script handover (K9 trigger)**: these sweeps stay model-executed contract prose — stated as deterministic grep procedures, not vibes — because `scripts/verify_design_sweeps.py` discovers `*.html` screens only. The day the validator accepts non-HTML prototype trees (a post-ISSUE-064 successor), replace them with validator call sites; the web skill already runs one.
+- **Signature Move sweep**: `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only), implemented as a reusable component/hook/HOC under `src/components/` or `src/theme/`. Grep `src/screens/*.tsx`: every screen (including the pilots) must reference that reusable primitive at least once. On any failure: list violations, fix, and re-verify.
+- **Literal quote verbatim render check** (skip only if Phase 1.5 was explicitly skipped): read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors; grep `src/screens/*.tsx` — the string MUST appear verbatim in at least one screen's string literal (NOT inside a comment, NOT interpolated from a variable). If absent: inject it into the screen named by the anchor's "where it appears" hint and re-grep — never widen the match.
+- **AI Tell sweep** (CRITICAL): sweep every `.tsx` file in `src/screens/` and `src/components/` for the banned tells in "Specific AI Tells": em-dash (`—`/`–`) in any string literal, generic person/brand names, fake-perfect numbers, section-number eyebrows, version labels, `<View>`-based fake product UI, decorative status dots, locale/time strips, scroll cues. Exempt exactly the recorded `Brief overrides:` bullets in `docs/design_philosophy.md` and no others; report each as `exempt: <tell> — <brief quote>` — an unrecorded violation is never exempt. Zero tolerance on em-dash and View-based fake product UI. List every violation as `file:line`, fix, re-sweep.""",
+        "contrast_body": """\
+  - For every text/icon color vs its computed background, verify WCAG ratio: body text needs ≥ 4.5:1; large text (≥24pt / ≥18pt bold), icons, and focus indicators need ≥ 3:1.
+  - Fail on any of: **button label ≈ button fill** (the black-on-black bug — label colour within ~5% lightness of the fill); an accent-filled surface carrying text without a verified accent-ink colour; any **dark surface** (lightness < 50%) that did not flip its `<Text>` color (ink-on-ink). Most-missed: text in a card that switched `backgroundColor` but kept the default ink color.
+  - List failing pairs as `file:component`, fix, and re-check before proceeding.""",
+        "mech_label": " (state & motion)",
+        "mechanics_body": """\
+  - `TextInput` fields satisfy the state rules from Anti-AI-Slop ("Motion & input mechanics"): constant `borderWidth`, input height == button height, reserved helper/error slot, multi-channel disabled.
+  - Reanimated worklets animate only `transform`/`opacity` (no layout props); overshoot springs appear only on gesture-driven interactions, not incidental state changes; no element stacks multiple simultaneous effects.
+  - `useReducedMotion()` is respected globally, not just in one component.
+  - List violations as `file:line`, fix, and re-sweep.""",
+    },
+    "desktop-uiux": {
+        "lead": """\
+- **Script handover (K9 trigger)**: these sweeps stay model-executed contract prose — stated as deterministic grep procedures, not vibes — because `scripts/verify_design_sweeps.py` discovers `*.html` screens only. The day the validator accepts non-HTML prototype trees (a post-ISSUE-064 successor), replace them with validator call sites; the web skill already runs one.
+- **Signature Move sweep**: `docs/design_philosophy.md` must contain a Signature Move with numeric/token specificity (not prose-only), implemented as a reusable component/class/CSS-custom-property primitive under `src/components/` or `src/theme/`. Grep `src/screens/*.tsx`: every screen (including the pilots) must reference that reusable primitive at least once. On any failure: list violations, fix, and re-verify.
+- **Literal quote verbatim render check** (skip only if Phase 1.5 was explicitly skipped): read `literal_quote:` from `docs/design_philosophy.md` Reference Anchors; grep `src/screens/*.tsx` — the string MUST appear verbatim in at least one screen's string literal (NOT inside a comment, NOT interpolated from a variable). If absent: inject it into the screen named by the anchor's "where it appears" hint and re-grep — never widen the match.
+- **AI Tell sweep** (CRITICAL): sweep every `.tsx`/`.css` file in `src/screens/`, `src/components/`, and theme/style files for the banned tells in "Specific AI Tells": em-dash (`—`/`–`) in any string literal, flex `calc()` column math, generic person/brand names, fake-perfect numbers, section-number eyebrows, decorative version labels, `<div>`-based fake product UI, decorative status dots, locale/time strips. Exempt exactly the recorded `Brief overrides:` bullets in `docs/design_philosophy.md` and no others; report each as `exempt: <tell> — <brief quote>` — an unrecorded violation is never exempt. Zero tolerance on em-dash and div-based fake product UI. List every violation as `file:line`, fix, re-sweep. Match CSS patterns whitespace-insensitively (`height:100vh` ≡ `height: 100vh`).""",
+        "contrast_body": """\
+  - For every `(color, background-color)` pair on a screen, verify the WCAG ratio against its *computed* background: body text needs ≥ 4.5:1; large text (≥24px / ≥18px bold), icons, and focus rings need ≥ 3:1.
+  - Fail on any of: **button text ≈ button fill** (text within ~5% lightness of fill — the black-on-black bug); `--color-accent` filling a text-bearing surface without a defined, verified `--color-accent-ink`; any **dark panel** (background lightness < 50%) that did not flip its text colour (ink-on-ink). Most-missed: text in a panel that switched `background` but inherited `color`; muted text on a tinted surface.
+  - List failing pairs as `file:selector`, fix, and re-check before proceeding.""",
+        "mech_label": " (deterministic — grep `.css`/theme/screens)",
+        "mechanics_body": """\
+  - Flag and fix: `transition: all` / `transition-all`; bare `1fr` tracks on image-bearing grids (must be `minmax(0, 1fr)`); `font-style: italic` on heading/display selectors; a second `position: sticky; top: 0`; all-caps display with `line-height` < 1.0.
+  - Confirm present: `overflow-x: clip` on `html`+`body`; input/select fields satisfy the 8-state rules (constant `border-width`, `outline`-based focus ring, reserved helper slot, multi-channel disabled) from Anti-AI-Slop "CSS mechanics (renderer)".
+  - Match patterns **whitespace-insensitively** (normalize spaces first, and ignore matches inside CSS comments): `transition:all` ≡ `transition: all`, `top:0` ≡ `top: 0`, `overflow-x:clip` ≡ `overflow-x: clip`.
+  - List violations as `file:line`, fix, and re-sweep.""",
+    },
+}
+
+_DESIGN_SWEEPS_TEMPLATE = """\
+{lead}
+- **Contrast sweep** (CRITICAL — catches the failures that ship most):
+{contrast_body}
+- **Mechanics sweep**{mech_label}:
+{mechanics_body}
+- **Depreciation triggers**: per tell/rule, two consecutive design runs whose sweep reports zero hits delete that prose line (script-side entries stay — script lines are cheap, prose lines cost context). The whole mechanics block is replaced by a validator call the day `scripts/verify_design_sweeps.py` grows a mechanics sweep; the contrast prose is replaced by a computed-style validator call when one lands."""
+
+
 def _require_uiux_skill(skill_name: str) -> None:
     if skill_name not in UIUX_SKILLS:
         raise ValueError(
@@ -318,6 +678,45 @@ def design_extend_mode_fragment(skill_name: str) -> str:
     """
     _require_uiux_skill(skill_name)
     return _EXTEND_MODE_TEMPLATE.format(**_EXTEND_MODE_PLATFORM[skill_name])
+
+
+def pilot_gate_fragment(skill_name: str) -> str:
+    """Resolve the {{PILOT_GATE}} token for a uiux-family skill.
+
+    SPEC-060 K1: the 4-substep pilot-gate protocol (neutral observation →
+    separate-context critique → specificity check → auto-correction hard cap
+    N=3) with degraded mode that never silently skips. Extraction changes
+    location, zero behavior — only the render inputs, artifact paths, step
+    labels and patch-layer step numbers vary per platform.
+    """
+    _require_uiux_skill(skill_name)
+    return _PILOT_GATE_TEMPLATE.format(**_PILOT_GATE_PLATFORM[skill_name])
+
+
+def ai_tells_fragment(skill_name: str) -> str:
+    """Resolve the {{AI_TELLS}} token for a uiux-family skill.
+
+    SPEC-060 K3: one canonical Specific-AI-Tells list; platform deltas
+    (container element, visibility scope, platform mechanics tail) are
+    injected per skill. The per-tell depreciation trigger lives in the
+    {{DESIGN_SWEEPS}} block that executes the sweep.
+    """
+    _require_uiux_skill(skill_name)
+    return _AI_TELLS_TEMPLATE.format(**_AI_TELLS_PLATFORM[skill_name])
+
+
+def design_sweeps_fragment(skill_name: str) -> str:
+    """Resolve the {{DESIGN_SWEEPS}} token for a uiux-family skill.
+
+    SPEC-060 sweep wiring: on web the deterministic literal-quote /
+    signature-move / ai-tell sweeps are one `scripts/verify_design_sweeps.py
+    all --class` call site; mobile/desktop keep contract-shaped prose sweeps
+    carrying the K9 handover trigger (the day the validator accepts non-HTML
+    prototype trees, the prose sweeps become validator calls too). Contrast
+    (K6) and mechanics (K4/K5) sweeps carry their own named triggers.
+    """
+    _require_uiux_skill(skill_name)
+    return _DESIGN_SWEEPS_TEMPLATE.format(**_DESIGN_SWEEPS_PLATFORM[skill_name])
 
 
 # ---------------------------------------------------------------------------
@@ -374,11 +773,9 @@ Before committing to an aesthetic direction:
     # (web: "CSS custom properties?", mobile/desktop: "`src/theme/`?").
     "self_review_token_rule": """\
 - **Token compliance**: Are there any hardcoded colors, font sizes, or spacing values outside of""",
-    "self_review_confidence": """\
-- **Confidence rating**: Rate your confidence (High/Medium/Low) and explain why.
-  - If Low: re-check prototype and fix issues before finalizing.
-  - If Medium: flag specific concerns in deliverable docs.
-  - If High: proceed to finalize.""",
+    # self_review_confidence deleted in ISSUE-060 (SPEC-060 D5, the ISSUE-059
+    # debt): SPEC-010 recorded self-grading sycophancy as a defect — the
+    # load-bearing gates are separate-context auditors and checkpoint scripts.
     # Same text the skills get via {{SLOP_CALIBRATION}}. Split into three
     # chunks so a drift report names which block moved.
     "slop_calibration_clusters": _SLOP_CALIBRATION.split("\n\n")[0],

@@ -11,6 +11,12 @@ are deduplicated into scripts/fragments.py:
   canonical AGENT_DESIGN_FRAGMENTS chunks verbatim (whitespace-normalized).
   Editing a canonical chunk without syncing the agents makes the drift
   guard fail, naming the out-of-sync agent file (TC-041c).
+
+ISSUE-060 / SPEC-060 extends the mechanism with three new tokens —
+{{PILOT_GATE}}, {{AI_TELLS}}, {{DESIGN_SWEEPS}} — pinned below the same
+way (AC2: shared surviving text exists once in scripts/fragments.py and
+zero times as per-skill copies), and deletes the `self_review_confidence`
+chunk (SPEC-060 D5, the ISSUE-059 debt explicitly assigned to ISSUE-060).
 """
 
 import sys
@@ -22,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import fragments as fragments_module  # noqa: E402
 from fragments import (  # noqa: E402
     AGENT_DESIGN_FRAGMENTS,
     UIUX_AGENT_FILES,
@@ -244,3 +251,179 @@ class TestAgentDriftGuard:
         agent_text = (ROOT / UIUX_AGENT_FILES[0]).read_text(encoding="utf-8")
         reflowed = _normalize(agent_text)
         assert not find_out_of_sync_fragments(reflowed)
+
+
+# ---------------------------------------------------------------------------
+# ISSUE-060 / SPEC-060: contract-conversion fragment tokens
+# ---------------------------------------------------------------------------
+
+# Token -> resolver function name in scripts/fragments.py (same naming
+# convention as design_philosophy_fragment / slop_calibration_fragment /
+# design_extend_mode_fragment).
+NEW_FRAGMENT_RESOLVERS: dict[str, str] = {
+    "PILOT_GATE": "pilot_gate_fragment",
+    "AI_TELLS": "ai_tells_fragment",
+    "DESIGN_SWEEPS": "design_sweeps_fragment",
+}
+
+# Once-only sentinels: one distinctive sentence per shared block, copied
+# verbatim from the pre-conversion tmpls (each occurs exactly once in every
+# tmpl today, and zero times in scripts/fragments.py — grep-verified
+# 2026-10-10). Post-conversion the ownership inverts: exactly once in
+# scripts/fragments.py, zero inline tmpl copies, exactly once per generated
+# SKILL.md.
+NEW_FRAGMENT_SENTINELS: dict[str, str] = {
+    "PILOT_GATE": (
+        "Generator-as-judge fails: the same context that produced the "
+        "pilot will not reliably catch its own slop."
+    ),
+    "AI_TELLS": (
+        "Concrete signatures LLMs default to. Banned unless the brief "
+        "explicitly calls for one."
+    ),
+    "DESIGN_SWEEPS": "catches the failures that ship most",
+}
+
+ALL_UIUX_SKILLS = ["uiux", "mobile-uiux", "desktop-uiux"]
+
+
+def _resolver_for(token: str):
+    """getattr-based lookup so a missing resolver is a clean assert failure
+    naming the gap, never a collection-time ImportError."""
+    name = NEW_FRAGMENT_RESOLVERS[token]
+    fn = getattr(fragments_module, name, None)
+    assert fn is not None, (
+        f"scripts/fragments.py defines no {name}() resolver for "
+        f"{{{{{token}}}}} (SPEC-060 Migration step 1)"
+    )
+    return fn
+
+
+def _fragments_source_normalized() -> str:
+    """fragments.py source with backslash-continued string lines joined,
+    then whitespace-normalized — so a sentinel split across continuation
+    lines (the _SLOP_CALIBRATION style) still counts as one occurrence."""
+    src = (SCRIPTS_DIR / "fragments.py").read_text(encoding="utf-8")
+    return _normalize(src.replace("\\\n", ""))
+
+
+class TestContractConversionTokens:
+    """TC-060a / AC2: shared surviving text exists once in
+    scripts/fragments.py and zero times as per-skill copies — the three
+    SPEC-060 blocks (pilot gate, Specific AI Tells, Phase 5.5 sweeps) are
+    extracted to {{PILOT_GATE}} / {{AI_TELLS}} / {{DESIGN_SWEEPS}} tokens
+    parameterized over UIUX_SKILLS like {{DESIGN_EXTEND_MODE}}."""
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_RESOLVERS))
+    @pytest.mark.parametrize("skill", ALL_UIUX_SKILLS)
+    def test_tmpl_uses_token(self, token, skill):
+        text = _tmpl_path(skill).read_text(encoding="utf-8")
+        assert f"{{{{{token}}}}}" in text, (
+            f"{skill}: {{{{{token}}}}} token missing from the tmpl"
+        )
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_RESOLVERS))
+    def test_resolver_registered_in_gen_skills(self, token):
+        fn = _resolver_for(token)
+        assert RESOLVERS.get(token) is fn, (
+            f"gen_skills.RESOLVERS[{token!r}] is not "
+            f"fragments.{NEW_FRAGMENT_RESOLVERS[token]}"
+        )
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_RESOLVERS))
+    @pytest.mark.parametrize("skill", ALL_UIUX_SKILLS)
+    def test_resolver_output_contains_shared_sentinel(self, token, skill):
+        frag = _resolver_for(token)(skill)
+        assert NEW_FRAGMENT_SENTINELS[token] in _normalize(frag), (
+            f"{token} resolution for {skill} lost the shared sentinel "
+            f"{NEW_FRAGMENT_SENTINELS[token][:40]!r}..."
+        )
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_RESOLVERS))
+    @pytest.mark.parametrize("bad_skill", ["implement", "figma2proto", ""])
+    def test_resolver_rejects_unknown_skill(self, token, bad_skill):
+        fn = _resolver_for(token)
+        with pytest.raises(ValueError):
+            fn(bad_skill)
+
+
+class TestContractConversionOnceOnly:
+    """TC-060b / AC2 once-only sentinels: the canonical copy lives in
+    scripts/fragments.py exactly once; no literal per-skill copy survives
+    in any tmpl; each generated SKILL.md contains the resolved content
+    exactly once."""
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_SENTINELS))
+    def test_sentinel_exactly_once_in_fragments_py(self, token):
+        sentinel = _normalize(NEW_FRAGMENT_SENTINELS[token])
+        count = _fragments_source_normalized().count(sentinel)
+        assert count == 1, (
+            f"scripts/fragments.py contains the {token} sentinel "
+            f"{NEW_FRAGMENT_SENTINELS[token][:40]!r}... {count} times "
+            f"(expected exactly 1 canonical copy)"
+        )
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_SENTINELS))
+    @pytest.mark.parametrize("skill", ALL_UIUX_SKILLS)
+    def test_sentinel_zero_times_in_tmpl(self, token, skill):
+        text = _normalize(_tmpl_path(skill).read_text(encoding="utf-8"))
+        sentinel = _normalize(NEW_FRAGMENT_SENTINELS[token])
+        assert sentinel not in text, (
+            f"{skill}: inline per-skill copy of the {token} block survives "
+            f"in the tmpl ({NEW_FRAGMENT_SENTINELS[token][:40]!r}...)"
+        )
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_SENTINELS))
+    @pytest.mark.parametrize("skill", ALL_UIUX_SKILLS)
+    def test_generated_contains_sentinel_exactly_once(self, token, skill):
+        text = _normalize(_generated_path(skill).read_text(encoding="utf-8"))
+        sentinel = _normalize(NEW_FRAGMENT_SENTINELS[token])
+        count = text.count(sentinel)
+        assert count == 1, (
+            f"{skill}/SKILL.md: expected exactly 1 occurrence of the "
+            f"{token} sentinel, found {count}"
+        )
+
+    @pytest.mark.parametrize("token", sorted(NEW_FRAGMENT_RESOLVERS))
+    @pytest.mark.parametrize("skill", ALL_UIUX_SKILLS)
+    def test_generated_contains_full_resolved_fragment(self, token, skill):
+        """The generated SKILL.md carries the resolver's full output
+        (whitespace-normalized containment, the drift-guard convention)."""
+        frag = _resolver_for(token)(skill)
+        generated = _generated_path(skill).read_text(encoding="utf-8")
+        assert _normalize(frag) in _normalize(generated), (
+            f"{skill}/SKILL.md does not contain the resolved "
+            f"{{{{{token}}}}} content — regenerate via "
+            f"python3 scripts/gen_skills.py"
+        )
+
+
+class TestConfidenceRitualChunkRemoved:
+    """TC-060c / SPEC-060 D5 (the ISSUE-059 debt assigned to ISSUE-060):
+    the `self_review_confidence` chunk is deleted from
+    AGENT_DESIGN_FRAGMENTS; the surviving Self-Review chunks stay."""
+
+    def test_self_review_confidence_chunk_absent(self):
+        assert "self_review_confidence" not in AGENT_DESIGN_FRAGMENTS, (
+            "AGENT_DESIGN_FRAGMENTS still carries the "
+            "self_review_confidence chunk (SPEC-060 D5 deletes the "
+            "confidence-rating ritual; SPEC-010 recorded self-grading "
+            "sycophancy as a defect)"
+        )
+
+    def test_no_chunk_carries_confidence_rating_content(self):
+        offenders = [
+            name
+            for name, frag in AGENT_DESIGN_FRAGMENTS.items()
+            if "**Confidence rating**" in frag
+        ]
+        assert offenders == [], (
+            f"canonical chunk(s) {offenders} still contain the "
+            f"confidence-rating ritual content (SPEC-060 D5)"
+        )
+
+    def test_surviving_self_review_chunks_stay(self):
+        # Deleting the ritual must not take the load-bearing Self-Review
+        # chunks with it.
+        assert "self_review_alignment" in AGENT_DESIGN_FRAGMENTS
+        assert "self_review_token_rule" in AGENT_DESIGN_FRAGMENTS
