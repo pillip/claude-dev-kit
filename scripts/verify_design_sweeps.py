@@ -390,13 +390,18 @@ def run_ai_tell(
     violations: list[dict] = []
     exemptions = sorted(set(exempt))
 
-    if not targets:
+    # ISSUE-064 F4: an empty screens set is a violation regardless of the
+    # stylesheet's presence - the no-vacuous-pass AC applies uniformly,
+    # never half-passed on the css half alone. (`targets` can only be
+    # empty when `screens` is, so this subsumes the old all-targets check
+    # without double-reporting when both halves are missing.)
+    if not screens:
         violations.append(
             {
-                "file": _rel(css_path, project),
+                "file": _rel_dirname(screens, project),
                 "line": 0,
                 "tell_id": "empty-input",
-                "snippet": "no sweep target files found (screens + stylesheet)",
+                "snippet": "no screen files found (empty input set never passes)",
             }
         )
 
