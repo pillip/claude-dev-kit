@@ -5,8 +5,10 @@
 > plus `scripts/trace_query.py`. The **semantic delegation events** below
 > (`research_delegated_to_deep_research`, `review_delegated_to_code_review`, …)
 > are skill-emitted markers documented here as the source of truth; they are
-> best-effort local appends owned by the skills, a superset of the hook trace
-> rather than a replacement. This file is the schema contract the SPEC-018/019
+> non-blocking local appends written by the kit's hardened emit layer
+> (`scripts/kit_telemetry.py`, ISSUE-067 — see the Emit-site inventory for
+> the per-site mechanism), a superset of the hook trace rather than a
+> replacement. This file is the schema contract the SPEC-018/019
 > guard tests assert against.
 
 ## Conventions
@@ -14,6 +16,9 @@
 - One event per JSON object per line.
 - Required fields on every event: `ts` (ISO-8601), `event_type`, `skill_or_script`, `issue_id?`.
 - `payload` field carries event-specific data per the table below.
+- `run_id_fallback?` is present only when the run id could not be resolved
+  from `KIT_RUN_ID`; its value names the condition (see Append behavior).
+  Consumers must tolerate the key being absent.
 - Events are append-only; never edit historical lines.
 
 ## Event catalog
@@ -72,23 +77,30 @@
 
 ## Append behavior
 
-Until ISSUE-001 lands its collector, events should be appended to
-`.claude/runs/<run-id>.jsonl` (project-side, gitignored) using `O_APPEND`
-with payloads kept under 4 KB to preserve POSIX atomicity. Each event line
-must validate against this schema; future ingestion replays these files
-under the ISSUE-001 pipeline. The shared emitter
-(`scripts/kit_telemetry.py`, ISSUE-067) resolves the run-id from the
-`KIT_RUN_ID` env var and auto-creates `.claude/runs/`; an unset or invalid
-run-id means the event is written under the explicit `unattributed` run id
-with a top-level `run_id_fallback` field naming the condition, plus one
+Until ISSUE-001 lands its collector, events land in the project-side
+`.claude/runs/<run-id>.jsonl` — an `O_APPEND` write with the serialized
+event kept under 4 KB to preserve POSIX atomicity. New emit sites must not
+hand-roll that appender: call the shared emitter
+(`scripts/kit_telemetry.py`, ISSUE-067) through its `emit_event` Python API
+or its CLI, and see the Emit-site inventory below for the audited
+exceptions. Each event line must validate against this schema; future
+ingestion replays these files under the ISSUE-001 pipeline. The shared
+emitter resolves the run-id from the `KIT_RUN_ID` env var and auto-creates
+`.claude/runs/`; an unset or invalid run-id means the event is written
+under the explicit `unattributed` run id with a top-level
+`run_id_fallback` field naming the condition, plus one
 `[kit-telemetry]` stdout announcement naming the knob — never a silent
 no-op.
 
-Every remaining skip path announces its named reason on stdout (containment
-violation, serialized event past the 4 KB cap, write failure). A rejected
-containment violation writes nothing anywhere, so the stdout line is its
-only signal. Telemetry stays non-blocking: never fail the parent skill on a
-telemetry write error (unchanged).
+Every remaining skip path in the shared emitter announces its named reason
+on stdout (containment violation, serialized event past the 4 KB cap, write
+failure). A rejected containment violation writes nothing anywhere, so the
+stdout line is its only signal. Telemetry stays non-blocking: never fail the
+parent skill on a telemetry write error (unchanged).
+
+`.claude/runs/` is run-scoped scratch, not a tracked artifact. This repo
+gitignores it; a consumer project should add the same line to its own
+`.gitignore`.
 
 ## Emit-site inventory (ISSUE-067)
 
@@ -106,7 +118,7 @@ hand-rolled appender remains unexamined.
 | `scripts/spec_gate.py` | printed JSON decision object + the skill's stdout "telemetry-style" bypass line per SPEC-007 | JUSTIFIED, not migrated: no JSONL appender exists there — adding one is new scope (minimality). |
 | `project/.claude/hooks/agent_state.py` | hook-trace appender to `.claude/run/events.jsonl` | JUSTIFIED: separate ISSUE-001 shape-only hook-trace stream with its own contract; ISSUE-001 analytics scope is explicitly Out. |
 | `/ship` skill, `scripts/checkpoint.sh` / `verify_checkpoint.py` | — | JUSTIFIED: no emit call sites exist today (audited; nothing to migrate). |
-| `scripts/trace_query.py` | — | Consumer, not an emitter. |
+| `scripts/trace_query.py` | — | Consumer, not an emitter — and it reads the ISSUE-001 hook trace (`.claude/run/events.jsonl`), not this stream. |
 
 Events cataloged above without a live emit instruction (e.g.
 `synthesis_*`, `research_quote_*`) have no call site to migrate; when a

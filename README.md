@@ -689,8 +689,9 @@ optional — the defaults are safe for local and CI runs:
   `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset or
   invalid: the shared emitter (`scripts/kit_telemetry.py`, ISSUE-067)
   writes the event under the `unattributed` fallback run id and prints one
-  `[kit-telemetry]` stdout line naming the knob — script-side telemetry is
-  never a silent no-op.
+  `[kit-telemetry]` stdout line naming the knob — an emit through the shared
+  emitter is never a silent no-op. `.claude/runs/` is run-scoped scratch: add
+  it to your project's `.gitignore` so event files are never committed.
 
 ### Configuring gates via `docs/test_plan.md`
 

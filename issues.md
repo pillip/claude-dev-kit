@@ -45,6 +45,7 @@
 - [ ] ISSUE-072: Verify sub-agent skill invocation in the feature matrix and grant it on the review path if supported _(track: platform, P1, 0.5d — ISSUE-066 review triage: the kit's own agent `tools:` frontmatter confounds SPEC-066's categorical conclusion; depends on 066)_
 - [ ] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
 - [ ] ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it _(track: platform, P1, 0.5d — iter-1 review triage: team-lead is forbidden to write issues.md and planner is told to use flock_edit.sh but has no Bash, so the contract resolves as a silently unlocked write that still succeeds; mirror of ISSUE-072; depends on none)_
+- [ ] ISSUE-075: Migrate review_context.py's private telemetry appender onto the shared kit_telemetry emit seam _(track: platform, P2, 0.5d — ISSUE-066 ship-time deferral: SPEC-066 pre-committed to adopting ISSUE-067's shared emitter, deferred because `emit_event`'s "NEVER raises" contract is false today (ISSUE-070) and two existing tests pin the opposite silent-skip contract; duplication debt, not a hardening regression; depends on 066, 067)_
 
 ### Doing
 
@@ -4128,3 +4129,69 @@ Whichever actor the contract instructs to write `issues.md` under the lock can a
 
 #### Rollback
 `git revert` — the change is contract text in two agent files plus one guard test, with no script, schema, or runtime surface. A revert restores the unsatisfiable contract and therefore re-opens the silently-unlocked write, so pair it with the interim rule that every `issues.md` write goes through a Bash-capable caller running `registry_edit.sh` over planner-prepared content (the practice this triage already followed) until the reconciliation re-lands.
+
+---
+
+### ISSUE-075: Migrate review_context.py's private telemetry appender onto the shared kit_telemetry emit seam
+
+> ISSUE-066 ship-time deferral, recorded 2026-10-11. ISSUE-067 (PR #123, merged) shipped `scripts/kit_telemetry.py::emit_event` as the kit's **single shared telemetry emit seam**, carrying the ISSUE-058 writer hardening in one place. ISSUE-066 (PR #122) landed `scripts/review_context.py`, which carries its **own** private hardened appender `_emit_event` plus five module constants (`RUN_ID_ENV`, `_RUN_ID_RE`, `_MAX_EVENT_BYTES`, `_MAX_DETAIL_CHARS`, `_SCRIPT_NAME`) — and SPEC-066 had pre-committed to adopting ISSUE-067's helper at ISSUE-066's ship-time rebase. **At ISSUE-066's ship the migration was deliberately DEFERRED, not forgotten**, for three reasons: (1) `emit_event`'s documented "NEVER raises" contract is currently **FALSE** — reproduced by closing stdout (`ValueError: I/O operation on closed file`) — whereas `review_context._emit_event`'s blanket `except Exception: return` makes the guarantee hold today, so adopting now would trade a working promise for a known-broken one *inside the review gate*; (2) ISSUE-070 is already rewriting `emit_event`'s containment check and its raise contract, so migrating first would mean migrating twice; (3) ISSUE-067 deliberately replaced silent-skip semantics with announce-and-write-to-`unattributed.jsonl` semantics, so **two existing tests pin the opposite contract** and must be rewritten in the same commit as the migration — `tests/test_review_context.py::test_unset_run_id_is_silent_noop_exit_0` and `::test_invalid_run_id_refused` (the latter asserts the runs dir is empty) — and doing that inside a merge-conflict resolution would have been an unreviewed test rewrite. Hence this issue. This is **duplication debt, NOT a hardening regression**: the ISSUE-066 review gave a per-control equivalence verdict and found **two controls stronger** than the baseline (all-string-value truncation rather than `payload["detail"]`-only, and type coercion inside the `try` so it never raises).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-066 ship-time deferral, pre-committed in SPEC-066 and recorded in its Open Questions; consumes the ISSUE-067 shared emit seam; review lesson "an instrument's documented contract must be true or narrowed to what holds, and a shared seam's consumers must not rest on an untested promise" — native memory review-lessons.md)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-066, ISSUE-067
+
+#### Goal
+`scripts/review_context.py` emits telemetry exclusively through `kit_telemetry.emit_event`, its private appender and the five now-unused constants are deleted, the two tests that pinned the pre-ISSUE-067 silent-skip contract assert the announce-and-fallback contract instead, and the three in-repo provenance notes that point at this issue by name are closed out.
+
+#### Scope (In/Out)
+- In:
+  - **Delete** `_emit_event` and the now-unused module constants (`RUN_ID_ENV`, `_RUN_ID_RE`, `_MAX_EVENT_BYTES`, `_MAX_DETAIL_CHARS`, `_SCRIPT_NAME`) rather than leaving a fourth hardened copy of the appender in the repo; every emit routes through the shared seam.
+  - Map the call sites onto the shared API exactly: `emit_event(event_type, payload=None, *, script_name, project_path=None, issue_id=None) -> bool`. `script_name` is required keyword-only; `review_context`'s `--issue` maps to the **TOP-LEVEL** `issue_id=` parameter, NOT into `payload`; `reason` stays **INSIDE** `payload`; `project_path` is passed explicitly (it defaults to `Path.cwd()` and review runs from a worktree); a `False` return is a **skip, not an error**.
+  - Preserve review_context's stronger all-string-value truncation **at the call site** — the shared emitter truncates only `payload["detail"]`, so this control must move with the migration rather than be dropped on the way.
+  - Rewrite the two tests that pin the superseded contract in the same commit as the migration: `tests/test_review_context.py::test_unset_run_id_is_silent_noop_exit_0` and `::test_invalid_run_id_refused`, so both assert announce-and-write-to-`unattributed.jsonl` instead of silence / an empty runs dir.
+  - Update `docs/telemetry_schema.md`: the **Emit-site inventory** row for `scripts/review_context.py` (currently reads "NOT YET migrated — ISSUE-075") and the `### ISSUE-019` blockquote.
+  - Tick the now-resolved Open Question in `docs/specs/SPEC-066.md`.
+- Out:
+  - Changing the event schema, or the `capability-absent` / `context-unreachable` / `inline-attempt-failed` reason vocabulary.
+  - Any change to the decide-once decision contract.
+  - Fixing `emit_event`'s own containment / FIFO / no-raise defects — that is **ISSUE-070**. This issue *consumes* the fixed contract, it does not produce it.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the migration has landed, when `scripts/review_context.py` is searched for its own appender, then `_emit_event` and all five module constants (`RUN_ID_ENV`, `_RUN_ID_RE`, `_MAX_EVENT_BYTES`, `_MAX_DETAIL_CHARS`, `_SCRIPT_NAME`) are absent and every emit call goes through `kit_telemetry.emit_event`, so no fourth hardened copy of the appender remains in the repo.
+- [ ] Given a review-context run invoked with `--issue ISSUE-NNN` from a worktree, when the migrated emit runs, then the appended event line carries `issue_id` as a **top-level** field (never inside `payload`), keeps `reason` **inside** `payload`, and is written under the explicitly passed `project_path` rather than under `Path.cwd()`.
+- [ ] Given `KIT_RUN_ID` is unset, when the migrated review_context emits, then the event is written under the `unattributed` run id with the `run_id_fallback` field plus one `[kit-telemetry]` stdout announcement and the process still exits 0, and `tests/test_review_context.py::test_unset_run_id_is_silent_noop_exit_0` has been rewritten to assert that announce-and-fallback contract instead of a silent no-op.
+- [ ] Given `KIT_RUN_ID` is set to an invalid value, when the migrated review_context emits, then the event lands under the `unattributed` run id with the named fallback reason announced, and `::test_invalid_run_id_refused` has been rewritten so it no longer asserts that the runs directory is empty.
+- [ ] Given a payload whose over-long strings sit in keys other than `detail`, when the migrated emit runs, then every string value is truncated at the call site before `emit_event` is reached and the serialized line stays under the 4 KB append cap, so the stronger-than-baseline all-string truncation credited by the ISSUE-066 review survives the migration.
+- [ ] Given `emit_event` returns `False` for a skipped emit, when review_context observes that return value, then the decide-once decision result and the process exit code are unchanged, because a `False` return is a skip rather than an error.
+- [ ] Given the migration has landed, when `docs/telemetry_schema.md` and `docs/specs/SPEC-066.md` are read, then the Emit-site inventory row for `scripts/review_context.py` no longer reads "NOT YET migrated — ISSUE-075", the `### ISSUE-019` blockquote reflects the shared seam, and SPEC-066's Open Question about adopting ISSUE-067's helper is ticked as resolved.
+
+#### Implementation Notes
+- **Ordering constraint, stated plainly: land ISSUE-070 first.** Adopting the shared seam before ISSUE-070 fixes `emit_event`'s raise contract would move the review gate from a guarantee that holds (review_context's blanket `except Exception: return`) onto a docstring that is known false, and would also mean migrating twice once ISSUE-070 rewrites the containment check. This issue rests on a *tested* promise, not on an advertised one.
+- Three in-repo provenance sites already point here by name and are the checklist for "done": `scripts/review_context.py`'s module docstring "Migration status" paragraph, `docs/telemetry_schema.md`'s **Emit-site inventory** row for `scripts/review_context.py`, and `docs/specs/SPEC-066.md`'s **Open Questions**. (Branch files not yet on main at filing time — cite by content and re-locate after PR #122 merges.)
+- Shared-seam API, for the diff: `emit_event(event_type, payload=None, *, script_name, project_path=None, issue_id=None) -> bool` in `scripts/kit_telemetry.py`. `issue_id` becomes a top-level event field; `script_name` becomes `skill_or_script`; `project_path` defaults to `Path.cwd()`, which is wrong for a worktree review run, so pass it. `scripts/synthesize_gate_results.py`'s thin `_emit_telemetry` delegation is the precedent shape for the call-site wrapper.
+- Review lesson (native memory): an instrument's documented contract must be **true or narrowed to what holds**, and a shared seam's consumers must not rest on an untested promise. The whole reason this is a separate issue rather than a rebase chore is that the promise was not yet true at adoption time — record that reasoning in the PR so the deferral does not read as oversight later.
+- The ISSUE-066 review's per-control equivalence verdict is the baseline to migrate against, not the shared emitter's current behaviour alone: two of review_context's controls were *stronger*, and a migration that silently levels them down is a regression wearing a dedupe hat.
+- Mutation-test with `PYTHONDONTWRITEBYTECODE=1` and validate the harness with one known-killing mutant before trusting any SURVIVED verdict (bytecode-cache lesson).
+
+#### Tests
+- [ ] Control-survival mutation check: after the migration, each of the five ISSUE-058 writer controls (run-id whitelist, `O_NOFOLLOW` open, realpath directory containment, 4 KB cap with truncation, never-raise containment) still fails at least one test when individually broken — the controls move to the shared seam, so their pins must move with them and not evaporate.
+- [ ] All-string truncation pin: an over-long string in a non-`detail` payload key is truncated and the line stays under the 4 KB cap; removing the call-site truncation fails this test.
+- [ ] Top-level `issue_id` pin: `--issue` produces a top-level `issue_id` field and no `payload["issue_id"]`; `reason` stays inside `payload`.
+- [ ] Rewritten contract tests: unset and invalid `KIT_RUN_ID` both write under `unattributed` with the announcement and exit 0 (replacing the silent-noop / empty-runs-dir assertions).
+- [ ] Clean-path pin: a normal rostered review emit is schema-identical to the pre-migration event body, and `project_path` is the kit worktree rather than `Path.cwd()`.
+- [ ] Absence pin: `_emit_event` and the five removed constants are gone from `scripts/review_context.py`, asserted as an occurrence check on the removed names rather than a phrasing blacklist.
+
+#### Rollback
+`git revert` — restores `scripts/review_context.py`'s private appender. The emit contract and the event schema are unchanged either way, so no consumer breaks on a revert; the only cost is the duplicated hardened appender coming back, which is the state this issue was filed against.

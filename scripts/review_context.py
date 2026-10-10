@@ -30,10 +30,14 @@ probe-exit-2 ambiguity).
 **Single emit call site**: ``_emit_event`` is the ONE function through which
 every review delegation event is appended (``decide`` for decide-time
 degradations, ``emit`` for the prose-side events) — do not add a second
-emission call site. It implements the hardened best-effort append contract of
-docs/telemetry_schema.md: run-id whitelist, runs-dir realpath containment,
-``O_NOFOLLOW`` append, 4096-byte event cap with long-string truncation,
-never raises, silent no-op when unconfigured.
+emission call site. It carries the ISSUE-058 writer hardening — run-id
+whitelist, runs-dir realpath containment, ``O_NOFOLLOW`` append, 4096-byte
+event cap with long-string truncation, never raises — and **silently skips
+when unconfigured**. Note the divergence: docs/telemetry_schema.md's "Append
+behavior" section describes the *shared* emitter, which instead ANNOUNCES an
+unresolvable run id and writes the event under ``unattributed``. This module
+predates that change by one merge and keeps the older silent-skip semantics
+until ISSUE-075; the Emit-site inventory in that doc records the difference.
 
 Migration status (ship-time decision, 2026-10-11): the kit's shared emit SEAM
 is now ``scripts/kit_telemetry.py::emit_event`` (ISSUE-067, landed just before
@@ -113,8 +117,10 @@ _ISSUE_ID_RE = re.compile(r"ISSUE-\d+")
 # Script-side run-id source for telemetry (docs/telemetry_schema.md).
 RUN_ID_ENV = "KIT_RUN_ID"
 
-# Hardened-append constants — mirror synthesize_gate_results._emit_telemetry
-# (ISSUE-067's shared helper subsumes these at ship-time rebase).
+# Hardened-append constants. These duplicate the shared emitter's
+# (scripts/kit_telemetry.py, ISSUE-067) by value; ISSUE-075 deletes them when
+# this module adopts that seam. synthesize_gate_results._emit_telemetry, the
+# shape these originally mirrored, already delegates there.
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _MAX_EVENT_BYTES = 4096
 _MAX_DETAIL_CHARS = 512
@@ -169,9 +175,11 @@ def _emit_event(
 ) -> None:
     """Append one schema-conformant event line; silent no-op when unconfigured.
 
-    THE single emit seam for all review delegation events (see module
-    docstring — ISSUE-067's shared helper replaces this body at ship-time
-    rebase). Hardened as an untrusted-path write: run-id is
+    THE single emit call site for all review delegation events; the kit's
+    shared emit SEAM is ``scripts/kit_telemetry.py::emit_event``, which this
+    body is scheduled to adopt under ISSUE-075 (see the module docstring's
+    "Migration status" for why that was deferred rather than done at
+    ISSUE-066's ship). Hardened as an untrusted-path write: run-id is
     whitelist-validated, the runs dir realpath must stay inside the project,
     the event file is opened ``O_NOFOLLOW`` so a pre-planted symlink cannot
     redirect the append, long string values are truncated, and events over
