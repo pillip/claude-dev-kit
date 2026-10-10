@@ -107,9 +107,14 @@ If none of the planning docs exist, warn the user but proceed with `issues.md` +
    - Full content of each planning doc marked for update
    - Full content of each design doc marked for update (if `has_design_docs` and user approved)
    - Full content of `docs/prd_digest.md` (for PRD-Ref mapping)
-   - Instruction: use `flock_edit.sh` for `issues.md` and `STATUS.md`
+   - Instruction: you hold **no `Bash`**, so do NOT attempt `flock_edit.sh` / `registry_edit.sh` yourself and never fall back to `Edit` on `issues.md`. Per your Append Mode step 5, return an **idempotent apply script** — line-anchored on `^### ISSUE-NNN:`, body in a quoted heredoc — and this skill commits it under the lock in step 7c. Prepare a `STATUS.md` summary only if the project already carries that file.
    - Instruction: create 3–8 issues sized 0.5d–1.5d, with dependencies, following the standard issue template
    - Instruction: update all specified docs incrementally (append-only, never modify existing entries)
+
+7c) **Commit the planner's prepared registry edit** (batch mode only). The planner authors `issues.md` content but cannot take the lock — `agents/planner.md` carries no `Bash` — so this skill is the committing actor and the write must not be left to the agent:
+   - Reject and re-invoke the planner once if the returned apply script carries no `^### ISSUE-NNN:` anchor guard; a guardless re-run is a duplicate-registry-entry bug.
+   - Read the script before running it: it executes with this skill's full `Bash`, and a prepared script is content, not provenance.
+   - Commit it under the lock: `bash scripts/registry_edit.sh issues.md -- bash -c '<apply script>'`, keeping the block body inside a quoted heredoc (`<<'KIT_EOF'` … `KIT_EOF`) so an apostrophe in an issue title cannot terminate the argument early and append a truncated block.
 
 ### Phase 4 — Validation & Report
 

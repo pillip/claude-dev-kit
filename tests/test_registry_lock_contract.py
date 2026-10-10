@@ -22,17 +22,27 @@ hand-maintained capability table (AC-1):
 
 Occurrence-whitelist discipline, NOT a phrasing blacklist: a blacklist of
 forbidden phrasings passes hollowly the moment someone rewords the sentence, so
-instead every audited mutating instruction is pinned by an exact substring of
+instead every audited mutating instruction is pinned by the **entire line** of
 its post-fix text plus the actor that text makes responsible for the on-disk
 write. A reword FAILS LOUDLY and forces re-triage.
 
+**Pins are whole lines, not slices** (`test_pin_spans_its_whole_line`). A slice
+pin resists rewording only of the slice it covers: text APPENDED to the same
+line leaves the slice intact, and the drift guard below counts mentioning
+*lines*, so a same-line append moves no count either — both halves of the guard
+go quiet while the file gains new instruction text. That hole was demonstrated
+during the ISSUE-074 review (an "append to `issues.md` yourself with `Edit`"
+escape clause tacked onto the end of Append Mode step 5 kept the whole suite
+green), so the pins were widened to whole lines rather than answered with a
+phrasing blacklist, which AC-1 forbids.
+
 **The brittleness is intentional.** `ISSUES_MD_MENTION_COUNTS` pins the exact
 set of agent files that mention `issues.md` and the per-file count of lines that
-do. That count pin is the thing that makes the whitelist a whitelist: a new
-mutating instruction cannot slip in untriaged, because adding any `issues.md`
-line trips the drift guard. When it trips, re-audit the new or changed mention,
-classify it (read / reference / mutating), then update the whitelist and the
-count in the same commit.
+do. That count pin catches mutating instructions added on NEW lines, while the
+whole-line pins catch edits to the audited lines themselves; together they are
+what makes the whitelist a whitelist. When either trips, re-audit the new or
+changed mention, classify it (read / reference / mutating), then update the
+whitelist and the count in the same commit.
 
 Lines classified NON-mutating during the ISSUE-074 audit (hence absent from the
 whitelist, but still covered by the count pin): every "Load / Parse / Read
@@ -102,11 +112,33 @@ def _split_tools(raw: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _tools_lines(stem: str) -> list[str]:
+    """Every `tools:` declaration in the agent's frontmatter (normally one)."""
+    return re.findall(r"^tools:\s*(.+)$", _frontmatter(stem), re.MULTILINE)
+
+
 def _tools(stem: str) -> list[str]:
-    """Parse the agent's declared tool entries out of its frontmatter."""
-    match = re.search(r"^tools:\s*(.+)$", _frontmatter(stem), re.MULTILINE)
-    assert match, f"agents/{stem}.md: no `tools:` line in frontmatter"
-    return _split_tools(match.group(1))
+    """Parse the agent's declared tool entries out of its frontmatter.
+
+    Refuses a duplicate `tools:` key rather than silently reading the first
+    one: YAML resolves a duplicate mapping key to the LAST occurrence, while
+    this parser reads the FIRST, so a second `tools:` line is a capability the
+    oracle cannot see. Demonstrated during the ISSUE-074 review — appending
+    `tools: Read, Glob, Grep, Write, Edit, Bash` under agents/planner.md's real
+    `tools:` line left the whole suite green while the planner genuinely held
+    `Bash`, a hollow pass on AC-4, the one pin that must not be hollow.
+    (ISSUE-042's duplicate-key lesson, recurring.)
+    """
+    declarations = _tools_lines(stem)
+    assert declarations, f"agents/{stem}.md: no `tools:` line in frontmatter"
+    assert len(declarations) == 1, (
+        f"agents/{stem}.md declares {len(declarations)} `tools:` lines in its "
+        f"frontmatter: {declarations}. YAML resolves a duplicate key to the "
+        f"LAST occurrence while this parser reads the FIRST, so the extra line "
+        f"can grant a capability (notably `Bash`) that the capability oracle "
+        f"never sees. Collapse them into a single `tools:` line."
+    )
+    return _split_tools(declarations[0])
 
 
 def _is_bash_entry(tool: str) -> bool:
@@ -186,7 +218,8 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="developer",
         label="workflow step 14 (registry field update)",
         substring=(
-            "**Update registry**: Set Branch/GH-Issue/PR/Status in `issues.md`."
+            "14. **Update registry**: Set Branch/GH-Issue/PR/Status in "
+            "`issues.md`."
         ),
         writer="developer",
     ),
@@ -195,8 +228,8 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="issue-writer",
         label="workflow step 4 (append under the lock)",
         substring=(
-            "**Append to issues.md**: Use `flock_edit.sh` for safe concurrent "
-            "access."
+            "4. **Append to issues.md**: Use `flock_edit.sh` for safe "
+            "concurrent access."
         ),
         writer="issue-writer",
     ),
@@ -205,17 +238,30 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="planner",
         label="workflow step 10 (greenfield generation)",
         substring=(
-            "**Write output**: Generate `issues.md` using the template "
-            "conventions."
+            "10. **Write output**: Generate `issues.md` using the template "
+            "conventions. This is the **only single-writer path**, and it is "
+            "gated on the file's **absence**, not on which skill invoked you: "
+            "it applies only when no `issues.md` exists yet (greenfield "
+            "generation at `/kickoff`, before any sprint exists), so there is "
+            "no concurrent writer to lock against and no existing registry "
+            "content to clobber. Where `issues.md` already exists — "
+            "**including an evidence-mode `/scan` of a brownfield repo**, "
+            "which reaches this same step — that licence does **not** apply, "
+            "and regenerating the file would clobber a live registry you "
+            "cannot lock. Every later modification goes through Append Mode "
+            "step 5's prepare-and-hand-off shape — never a direct `Edit` of an "
+            "existing `issues.md`."
         ),
         writer="planner",
         exempt_reason=(
-            "one-time greenfield generation at /kickoff, before any sprint "
-            "exists — no concurrent writer to lock against"
+            "generation into the ABSENCE of the file (greenfield /kickoff), "
+            "before any sprint exists — no concurrent writer to lock against "
+            "and no existing content to clobber"
         ),
         justification=(
-            "This is the **only single-writer path**: greenfield generation "
-            "runs once at `/kickoff`, before any sprint exists"
+            "This is the **only single-writer path**, and it is gated on the "
+            "file's **absence**, not on which skill invoked you: it applies "
+            "only when no `issues.md` exists yet"
         ),
     ),
     # ── planner: Append Mode hands the commit to a Bash-capable caller ──
@@ -223,9 +269,32 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="planner",
         label="append mode step 5 (prepare + hand off)",
         substring=(
-            "The **Bash-capable caller** (the invoking skill, or **team-lead**) "
-            "commits it under the lock via `bash scripts/registry_edit.sh "
-            "issues.md -- bash -c '<apply script>'`."
+            "5. **Prepare the `issues.md` append — never write the file "
+            "yourself**: this agent's `tools:` line carries **no `Bash`**, so "
+            "it **cannot take the `issues.md` lock**, and writing the registry "
+            "with `Edit` would be an **unlocked write that still succeeds** — "
+            "the one outcome this contract forbids. So **emit, as your output, "
+            "an idempotent apply script** that appends the new "
+            "`### ISSUE-NNN:` detail blocks AND their `### Backlog` Board "
+            "lines. The **idempotence guard is mandatory**: the script must "
+            "no-op when its `### ISSUE-NNN:` anchor is already present in "
+            "`issues.md` — an apply script re-run without that guard is itself "
+            "a duplicate-registry-entry bug. Match that anchor "
+            "**line-anchored** (`^### ISSUE-NNN:`) so a "
+            "`<!-- ### ISSUE-NNN SHIP NOTE -->` comment or a prose citation "
+            "cannot satisfy it, and make the no-op **announce itself on "
+            "stderr**, because a silent skip is indistinguishable from a "
+            "successful write — the very failure shape this contract exists to "
+            "remove. The **Bash-capable caller** (the invoking skill, or "
+            "**team-lead**) commits it under the lock via `bash "
+            "scripts/registry_edit.sh issues.md -- bash -c "
+            "'<apply script>'`. **Quote the payload with a heredoc**: emit the "
+            "block body inside `<<'KIT_EOF'` … `KIT_EOF` and never interpolate "
+            "a bare `'` into that single-quoted `bash -c` argument — "
+            "apostrophes are routine in issue titles and ACs, and one of them "
+            "closes the argument early, drops the heredoc delimiter, and "
+            "appends a **truncated** block while holding the lock, with no "
+            "error raised."
         ),
         writer="team-lead",
     ),
@@ -234,24 +303,28 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="team-lead",
         label="quick summary (authoring vs committing split)",
         substring=(
-            "Delegate `issues.md` **authoring** to the planner agent; "
+            "- Delegate `issues.md` **authoring** to the planner agent; "
             "**commit** the planner's prepared edit yourself under the "
-            "registry lock"
+            "registry lock (team-lead has `Bash`; the planner does not)"
         ),
         writer="team-lead",
     ),
     RegistryWrite(
         agent="team-lead",
         label="ship step 5d (testgen registry registration)",
-        substring="register in `issues.md` via Sprint Integration.",
+        substring=(
+            "- The testgen flow will create a GH Issue + PR and register in "
+            "`issues.md` via Sprint Integration."
+        ),
         writer="team-lead",
     ),
     RegistryWrite(
         agent="team-lead",
         label="finalize step 3 (registry finalization under the lock)",
         substring=(
-            "Complete registry finalization (issues.md Status=done + backlog "
-            "[x], CHANGELOG) via `registry_edit.sh`"
+            "3. Complete registry finalization (issues.md Status=done + "
+            "backlog [x], CHANGELOG) via `registry_edit.sh`, then the "
+            "post-ship test-gap check (same as SHIP step 5)."
         ),
         writer="team-lead",
     ),
@@ -259,9 +332,24 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="team-lead",
         label="dynamic issue management (registry write contract)",
         substring=(
-            "**team-lead commits** it under the registry lock via `bash "
-            "scripts/registry_edit.sh issues.md -- bash -c '<planner's "
-            "idempotent apply script>'`"
+            "**Registry write contract.** Every `issues.md` write splits in "
+            "two: the **planner authors** the content (decomposition, scope, "
+            "AC — never yours to write), and **team-lead commits** it under "
+            "the registry lock via `bash scripts/registry_edit.sh issues.md "
+            "-- bash -c '<planner's idempotent apply script>'`. The planner "
+            "cannot take the lock itself — `agents/planner.md` carries no "
+            "`Bash` — so leaving the write to it degrades to an `Edit` that "
+            "bypasses the lock and still succeeds. Team-lead therefore never "
+            "authors new registry content and never writes the file with "
+            "`Write`/`Edit`. The apply script is guarded to no-op when its "
+            "`### ISSUE-NNN:` anchor is already present, and team-lead reviews "
+            "the script's content before running it — shape validation is not "
+            "provenance, so the committing actor is accountable for what it "
+            "applies. Compose the payload with a quoted heredoc "
+            "(`<<'KIT_EOF'`); never interpolate planner prose straight into "
+            "the single-quoted `bash -c` argument, because a single apostrophe "
+            "terminates it early and appends a truncated block **under the "
+            "lock** without erroring."
         ),
         writer="team-lead",
     ),
@@ -269,8 +357,10 @@ REGISTRY_WRITES: tuple[RegistryWrite, ...] = (
         agent="team-lead",
         label="quality criteria NEVER list (no unlocked write)",
         substring=(
-            "Author `issues.md` content yourself, or write the file with "
-            "`Write`/`Edit`"
+            "- Author `issues.md` content yourself, or write the file with "
+            "`Write`/`Edit` — delegate authoring to the planner and commit its "
+            "prepared apply script via `registry_edit.sh` so the write always "
+            "holds the lock"
         ),
         writer="team-lead",
     ),
@@ -335,6 +425,25 @@ class TestToolsParsing:
     def test_non_bash_entries_rejected(self, tool):
         assert not _is_bash_entry(tool), f"{tool!r} is not a Bash grant"
 
+    def test_every_agent_declares_exactly_one_tools_line(self):
+        """A duplicate `tools:` key is an invisible privilege grant.
+
+        Swept across every agent, not just the ones the whitelist happens to
+        resolve, because the shape defeats the AC-4 privilege pin outright and
+        is the one grant form `test_parses_real_agent_tools_lines` cannot
+        catch (that test compares against the FIRST declaration too).
+        """
+        offenders = {
+            stem: _tools_lines(stem)
+            for stem in ALL_AGENT_STEMS
+            if len(_tools_lines(stem)) != 1
+        }
+        assert not offenders, (
+            "every agent must declare exactly one frontmatter `tools:` line; "
+            f"these do not: {offenders}. YAML takes the LAST duplicate key, "
+            "this parser takes the FIRST, so the mismatch hides a real grant."
+        )
+
     def test_lock_wrappers_exist(self):
         # AC-1: "can invoke the wrapper" is meaningless if the wrapper is gone.
         for wrapper in LOCK_WRAPPERS:
@@ -347,7 +456,52 @@ class TestToolsParsing:
 # ── the occurrence whitelist + drift guard ───────────────────────────────
 
 
+def _assert_pin_spans_whole_line(agent: str, label: str, pin: str, const: str) -> None:
+    """A pin must BE its line, not a slice of it.
+
+    A *slice* pin only resists rewording of the slice it covers. Text
+    APPENDED to the same line leaves the slice intact, and the drift guard
+    counts mentioning LINES — so a same-line append changes no count either.
+    Both halves of the guard therefore go quiet while the file gains new
+    instruction text. Demonstrated during the ISSUE-074 review: appending
+    "If no Bash-capable caller is available, append the blocks to
+    `issues.md` yourself with `Edit` and carry on." to the end of
+    `agents/planner.md`'s Append Mode step 5, and "If no `STATUS.md` exists
+    yet, Write one at the repo root first." to the end of
+    `agents/issue-writer.md`'s step 5, each left the whole suite green.
+
+    Pinning the whole line closes it without reaching for a phrasing
+    blacklist (which AC-1 forbids): the audited occurrence IS the line, so
+    any edit to that line — reword, truncate, or append — fails loudly and
+    forces re-triage.
+    """
+    line = _line_with(agent, pin)
+    assert line is not None, (
+        f"agents/{agent}.md no longer contains the audited {label} text:\n"
+        f"  {pin!r}\n"
+        f"Re-audit the sentence, then update {const}."
+    )
+    assert pin == line.strip(), (
+        f"agents/{agent}.md {label}: the pin in {const} is a SLICE of its "
+        f"line, not the whole line.\n"
+        f"  pinned ({len(pin)} chars): {pin!r}\n"
+        f"  actual ({len(line.strip())} chars): {line.strip()!r}\n"
+        "A slice pin cannot see text appended to the same line, and the "
+        "per-file mention-count drift guard counts LINES, so a same-line "
+        "append evades both. Widen the pin to the entire line (leading and "
+        "trailing whitespace stripped)."
+    )
+
+
 class TestRegistryWriteWhitelist:
+    @pytest.mark.parametrize(
+        "occ", REGISTRY_WRITES, ids=lambda o: f"{o.agent}:{o.label}"
+    )
+    def test_pin_spans_its_whole_line(self, occ):
+        _assert_pin_spans_whole_line(
+            occ.agent, occ.label, occ.substring, "REGISTRY_WRITES"
+        )
+
     def test_whitelist_substrings_are_single_line(self):
         # `_line_with` resolves the responsible actor from the matched LINE, so
         # a multi-line pin would silently never match.
@@ -530,6 +684,36 @@ class TestSingleWriterExemption:
                 "unlocked write this guard forbids."
             )
 
+    def test_exemption_premise_holds_for_every_caller_of_the_exempt_step(self):
+        """The exemption must be gated on the FILE, not on the happy caller.
+
+        Workflow step 10 is also the write mechanism for **evidence mode**:
+        the planner's evidence-mode section ends "All other rules (sizing,
+        ordering, AC format, quality criteria) from the main Workflow section
+        apply unchanged", and `skills/scan/SKILL.md` dispatches "Step 6:
+        planner (evidence mode) → `issues.md`" against a repo whose existing
+        `issues.md` the scan preamble explicitly expects ("if true, this
+        project uses the sprint system"). An exemption justified only as
+        "greenfield, nothing to clobber" therefore licenses a Bash-free
+        `Write` over a live registry — the exact defect ISSUE-074 closes,
+        re-admitted as the one blessed exemption. Gating on the file's
+        absence makes the premise true for every caller of the step.
+        """
+        text = _agent_text("planner")
+        assert "gated on the file's **absence**" in text, (
+            "agents/planner.md's single-writer exemption must be gated on "
+            "`issues.md` being ABSENT, not on the invoking skill — Workflow "
+            "step 10 is reached by evidence-mode `/scan` too, where the file "
+            "already exists."
+        )
+        assert "including an evidence-mode `/scan` of a brownfield repo" in text, (
+            "agents/planner.md must name the evidence-mode `/scan` path as "
+            "excluded from the single-writer exemption. `/scan` reaches "
+            "Workflow step 10 on a repo that already carries `issues.md`, so "
+            "an unqualified exemption there is an unlocked whole-file "
+            "overwrite of a live registry by a Bash-free agent."
+        )
+
     def test_later_modifications_are_routed_through_the_hand_off_shape(self):
         assert (
             "Every later modification goes through Append Mode step 5's "
@@ -589,7 +773,7 @@ STATUS_MENTIONS: tuple[StatusMention, ...] = (
         agent="issue-writer",
         label="workflow step 5",
         substrings=(
-            "**Update STATUS.md**: Use `flock_edit.sh` to update the issue "
+            "5. **Update STATUS.md**: Use `flock_edit.sh` to update the issue "
             "count summary.",
         ),
         form="update",
@@ -598,22 +782,28 @@ STATUS_MENTIONS: tuple[StatusMention, ...] = (
         agent="planner",
         label="append mode step 6",
         substrings=(
-            "this step applies **only** in projects that already carry a "
-            "`STATUS.md`",
-            "**never create one**",
+            "6. **`STATUS.md` (only where one already exists)**: this step "
+            "applies **only** in projects that already carry a `STATUS.md` — "
+            "**never create one**. Where it exists, prepare the updated "
+            "issue-count summary the same way as step 5 and hand it to the "
+            "Bash-capable caller to commit under the lock.",
         ),
         form="conditional",
     ),
     StatusMention(
         agent="team-lead",
         label="after-any-phase step 2",
-        substrings=("**Update STATUS.md**: Reflect progress (via flock_edit.sh).",),
+        substrings=(
+            "2. **Update STATUS.md**: Reflect progress (via flock_edit.sh).",
+        ),
         form="update",
     ),
     StatusMention(
         agent="team-lead",
         label="output listing",
-        substrings=("`STATUS.md` — overall project progress (via flock_edit.sh)",),
+        substrings=(
+            "- `STATUS.md` — overall project progress (via flock_edit.sh)",
+        ),
         form="output-listing",
     ),
 )
@@ -642,6 +832,15 @@ def _unnegated_creation_verbs(line: str) -> list[str]:
 
 
 class TestStatusMdIsNeverCreated:
+    @pytest.mark.parametrize(
+        "mention", STATUS_MENTIONS, ids=lambda m: f"{m.agent}:{m.label}"
+    )
+    def test_pins_span_their_whole_line(self, mention):
+        for pin in mention.substrings:
+            _assert_pin_spans_whole_line(
+                mention.agent, mention.label, pin, "STATUS_MENTIONS"
+            )
+
     def test_status_md_mention_files_match_the_audit(self):
         actual = set(_mention_counts("STATUS.md"))
         expected = set(STATUS_MD_MENTION_COUNTS)
@@ -718,6 +917,56 @@ class TestStatusMdIsNeverCreated:
             "an unconditional `STATUS.md` update via flock_edit.sh — "
             "unsatisfiable (no Bash) and, in a project without STATUS.md, an "
             "instruction to create one."
+        )
+
+
+# ── the caller layer must not forward the lock to a Bash-free agent ──────
+
+# Both the template and its generated artifact: the runtime loads the
+# generated file, so pinning only the source would let `gen_skills.py` drift.
+SKILL_ISSUE_FILES = ("skills/issue/SKILL.md.tmpl", "skills/issue/SKILL.md")
+
+
+class TestCallerLayerDoesNotForwardTheLockToThePlanner:
+    """A caller instruction can override an agent's own contract (GAP-074a).
+
+    `skills/issue/SKILL.md` batch mode is the one site that dispatches the
+    planner for a registry append, so its prompt is where the unsatisfiable
+    "use `flock_edit.sh`" instruction can be re-issued to an agent that holds
+    no `Bash` — and everything above this line scans `agents/*.md` only. Until
+    this pin existed, the agent-layer fix was reachable but the causal
+    caller-side instruction was not guarded at all.
+
+    The sibling dispatch in the same skill (step 7a) targets `issue-writer`,
+    which DOES hold `Bash`, so its `flock_edit.sh` instruction is satisfiable
+    and is deliberately not pinned here.
+    """
+
+    @pytest.mark.parametrize("rel", SKILL_ISSUE_FILES)
+    def test_planner_dispatch_states_the_missing_capability(self, rel):
+        text = (KIT_ROOT / rel).read_text(encoding="utf-8")
+        assert (
+            "you hold **no `Bash`**, so do NOT attempt `flock_edit.sh` / "
+            "`registry_edit.sh` yourself and never fall back to `Edit` on "
+            "`issues.md`"
+        ) in text, (
+            f"{rel} must tell the planner it cannot take the registry lock. "
+            "Re-issuing 'use `flock_edit.sh`' to a Bash-free agent is the "
+            "caller-side twin of the ISSUE-074 defect: the agent either fails "
+            "the tool call or silently falls back to an unlocked `Edit`."
+        )
+
+    @pytest.mark.parametrize("rel", SKILL_ISSUE_FILES)
+    def test_skill_commits_the_prepared_edit_itself(self, rel):
+        text = (KIT_ROOT / rel).read_text(encoding="utf-8")
+        assert "7c) **Commit the planner's prepared registry edit**" in text, (
+            f"{rel} lost the step that COMMITS the planner's apply script. "
+            "Without a receiver, batch-mode /issue emits an apply script into "
+            "the transcript and the registry is never written — while step 10 "
+            "still reports the issues as created."
+        )
+        assert "bash scripts/registry_edit.sh issues.md" in text, (
+            f"{rel}'s commit step must take the lock via registry_edit.sh"
         )
 
 
