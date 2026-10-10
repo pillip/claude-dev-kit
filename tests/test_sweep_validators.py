@@ -841,6 +841,29 @@ class TestLiteralQuoteNonRenderedPlacements:
         assert rc == 0, out
         assert "MISSING" not in out
 
+    def test_quote_in_unterminated_script_block_fails_then_rendered_restores(
+        self, proto, capsys
+    ):
+        # Review fix (ISSUE-064): an UNCLOSED <script> is script data to
+        # EOF per the HTML parser — the body must be blanked even without
+        # a closing tag, or omitting one close tag bypasses F3 entirely.
+        screen = proto / "prototype/screens/order-detail.html"
+        probe = "<script>// 47.2-A"  # no closing tag, deliberately
+        _mutate(screen, RENDERED_QUOTE_SPAN, probe)
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 1, (
+            f"quote only in an UNTERMINATED <script> body satisfied "
+            f"literal-quote:\n{out}"
+        )
+        assert QUOTE in out
+
+        _mutate(screen, probe, RENDERED_QUOTE_SPAN)  # reverse direction
+        rc = self._run(proto)
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "MISSING" not in out
+
     def test_quote_in_alt_attribute_still_satisfies(self, proto, capsys):
         # Scope pin: other attributes (alt/aria-label text) stay accepted
         # rendered surfaces — only data-* values are blanked.

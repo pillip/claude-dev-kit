@@ -131,8 +131,10 @@ SKIP_MARKER = re.compile(r"literal_quote:\s*\(skipped[^)\n]*\)")
 # data-* attribute value are not rendered text and must not satisfy the
 # sweep. Exactly these two surfaces are blanked (newline-preserving, like
 # comments); other attribute text (alt, aria-label) and <style> bodies
-# stay accepted rendered surfaces.
-_SCRIPT_BODY = re.compile(r"(<script\b[^>]*>)(.*?)(?=</script\b)", re.S | re.I)
+# stay accepted rendered surfaces. An UNTERMINATED <script> blanks to
+# end-of-input (`|\Z` terminator), mirroring the HTML parser's
+# script-data-to-EOF rule — nothing after it renders (ISSUE-064 review).
+_SCRIPT_BODY = re.compile(r"(<script\b[^>]*>)(.*?)(?=</script\b|\Z)", re.S | re.I)
 _DATA_ATTR_VALUE = re.compile(r"""(\bdata-[\w-]+\s*=\s*)("[^"]*"|'[^']*')""", re.I)
 
 
