@@ -97,10 +97,36 @@ ROSTER_COLUMN_COUNT = 5
 # separator lines never match it.
 _ROSTER_ROW_SHAPE_RE = re.compile(r"^\|\s*ISSUE-\d+\s*\|")
 
+# A fenced code block is illustration, never roster state. ISSUE-076 review:
+# `agents/team-lead.md` teaches the writer agent a FENCED `## Issue Progress`
+# example, and without this the first fenced heading wins the section and its
+# example rows are dispatched as real work (identically broken on main).
+_FENCE_RE = re.compile(r"^(?:`{3,}|~{3,})")
+
 
 def _row_cells(line: str) -> list[str]:
     """Split a GFM table row into stripped cells."""
     return [c.strip() for c in line.strip("|").split("|")]
+
+
+def _unfenced(lines: list[str]) -> list[str | None]:
+    """Blank out every fenced line (and the fence delimiters themselves).
+
+    Returns a list parallel to ``lines`` where a fenced position holds ``None``.
+    ``None`` is deliberately neither a table row nor a heading, so a fence
+    terminates a table exactly as any other non-row line does — which is what a
+    GFM renderer does with it.
+    """
+    out: list[str | None] = []
+    in_fence = False
+    for line in lines:
+        stripped = line.strip()
+        if _FENCE_RE.match(stripped):
+            in_fence = not in_fence
+            out.append(None)
+        else:
+            out.append(None if in_fence else stripped)
+    return out
 
 
 def _scan_issue_progress(text: str) -> tuple[list[str], list[str]]:
@@ -137,13 +163,17 @@ def _scan_issue_progress(text: str) -> tuple[list[str], list[str]]:
     Rows beyond the next heading of ANY level belong to a different table — the
     `### Review outcomes` pattern this issue exists to exclude — and are never
     reported.
+
+    Fenced code blocks are excluded throughout (review lesson 4's fence clause):
+    a fenced `## Issue Progress` example otherwise wins the section outright and
+    its illustration rows are dispatched as real work.
     """
-    lines = text.splitlines()
+    lines = _unfenced(text.splitlines())
     start = next(
         (
             i
             for i, line in enumerate(lines)
-            if _ISSUE_PROGRESS_HEADING_RE.match(line.strip())
+            if line is not None and _ISSUE_PROGRESS_HEADING_RE.match(line)
         ),
         None,
     )
@@ -154,10 +184,9 @@ def _scan_issue_progress(text: str) -> tuple[list[str], list[str]]:
     table: list[str] = []
     stop = len(rest)
     for offset, line in enumerate(rest):
-        stripped = line.strip()
-        if stripped.startswith("|") and stripped.endswith("|"):
-            table.append(stripped)
-        elif table or _ATX_HEADING_RE.match(stripped):
+        if line is not None and line.startswith("|") and line.endswith("|"):
+            table.append(line)
+        elif table or (line is not None and _ATX_HEADING_RE.match(line)):
             # The table ended — or a heading was reached before it ever began,
             # meaning this section carries no table at all.
             stop = offset
@@ -174,11 +203,12 @@ def _scan_issue_progress(text: str) -> tuple[list[str], list[str]]:
     ]
     # (b) rows the boundary truncated away, up to the next heading of any level.
     for line in rest[stop:]:
-        stripped = line.strip()
-        if _ATX_HEADING_RE.match(stripped):
+        if line is None:
+            continue
+        if _ATX_HEADING_RE.match(line):
             break
-        if _ROSTER_ROW_SHAPE_RE.match(stripped):
-            unparsed.append(stripped)
+        if _ROSTER_ROW_SHAPE_RE.match(line):
+            unparsed.append(line)
     return table, unparsed
 
 

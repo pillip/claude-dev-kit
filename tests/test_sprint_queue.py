@@ -2062,3 +2062,142 @@ class TestValidateWarnsOnATruncatedRoster:
             "--targets", "ISSUE-066,ISSUE-067,ISSUE-068",
         ])
         assert "were not parsed" not in capsys.readouterr().err
+
+
+class TestFencedCodeBlocksAreNotRosterState:
+    """A fenced example is illustration, never state (review lesson 4's fence clause).
+
+    `agents/team-lead.md` teaches the writer agent a FENCED `## Issue Progress`
+    example, so this is the kit's own documented output shape — not a contrived
+    input. Pre-fix, the first fenced heading won the section outright and its
+    illustration rows were dispatched as real work (main was identically broken,
+    so this half is a pre-existing defect rather than a regression).
+    """
+
+    FENCED_EXAMPLE = (
+        "Format reminder:\n"
+        "\n"
+        "```markdown\n"
+        "## Issue Progress\n"
+        + ROSTER_HEADER
+        + "| ISSUE-900 | active | 0 | - | backlog |\n"
+        "```\n"
+        "\n"
+    )
+
+    def test_fenced_heading_does_not_win_the_section(self):
+        """The real roster must be found even when a fenced one precedes it."""
+        state = (
+            "# Sprint State\n\n"
+            "## Meta\n- Status: running\n\n"
+            + self.FENCED_EXAMPLE
+            + "## Issue Progress\n"
+            + ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n## Escalations\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [(r["issue"], r["phase"]) for r in rows] == [
+            ("ISSUE-100", "reviewed")
+        ]
+        assert "ISSUE-900" not in [r["issue"] for r in rows], rows
+        assert sq.unparsed_roster_rows(state) == []
+
+    def test_fenced_example_under_the_real_heading_is_skipped(self):
+        """A fenced illustration between the heading and the real table."""
+        state = _sprint_state(
+            "```\n"
+            + ROSTER_HEADER
+            + "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "```\n"
+            "\n"
+            + ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        rows = sq.parse_sprint_table(state)
+        assert [r["issue"] for r in rows] == ["ISSUE-100"], rows
+        assert sq.unparsed_roster_rows(state) == []
+
+    def test_fenced_rows_are_never_reported_as_unparsed(self):
+        """Over-firing direction: a fence AFTER the roster is not an under-read."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n"
+            "```\n"
+            "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "```\n"
+            "\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+        assert sq.unparsed_roster_rows(state) == []
+
+    def test_tilde_fences_are_honoured(self):
+        state = (
+            "# Sprint State\n\n"
+            "~~~\n"
+            "## Issue Progress\n"
+            + ROSTER_HEADER
+            + "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "~~~\n"
+            "\n"
+            "## Issue Progress\n"
+            + ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+
+    def test_a_fence_terminates_the_table_like_any_non_row_line(self):
+        """A fence opening immediately after a row ends the table, per GFM.
+
+        The rows below it are inside the fence, so they are illustration and must
+        NOT be reported as truncated-away roster rows.
+        """
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "```\n"
+            "| ISSUE-900 | active | 0 | - | backlog |\n"
+            "```\n"
+            "\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+        assert sq.unparsed_roster_rows(state) == []
+
+    def test_unfenced_helper_blanks_only_fenced_positions(self):
+        """Direct unit pin on the helper, including the fence delimiters."""
+        assert sq._unfenced(
+            ["a", "```", "b", "```", "c"]
+        ) == ["a", None, None, None, "c"]
+        # An unterminated fence swallows the remainder — a renderer does the same.
+        assert sq._unfenced(["a", "```", "b"]) == ["a", None, None]
+
+    @pytest.mark.parametrize(
+        "doc_path", REAL_SPRINT_STATE_DOCS, ids=lambda p: p.name
+    )
+    def test_fence_handling_does_not_change_any_real_doc(self, doc_path):
+        """No real sprint_state doc contains a fence, so nothing may shift."""
+        text = doc_path.read_text(encoding="utf-8")
+        assert sq.parse_sprint_table(text), doc_path.name
+        assert sq.unparsed_roster_rows(text) == [], doc_path.name
+
+    def test_fewer_than_three_delimiters_is_not_a_fence(self):
+        """Over-firing direction: a fence needs 3+ delimiters, per GFM.
+
+        Without the threshold, an ordinary prose line opening with a backtick or
+        a tilde blanks the rest of the section and silently zeroes the roster.
+        """
+        state = _sprint_state(
+            "`parse_sprint_table` rosters this iteration:\n"
+            "\n"
+            + ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+        assert sq._unfenced(["`x`", "~approx~", "``y``"]) == [
+            "`x`",
+            "~approx~",
+            "``y``",
+        ]
