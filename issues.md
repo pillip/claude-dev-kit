@@ -90,6 +90,9 @@
 - [x] ISSUE-063: Fix verify_design_sweeps SPEC-056 contract deviations — multi-line CSS evasion, concatenated `all --json`, fail-open `all` without `--class` _(track: platform, P1, 0.5d — ISSUE-056 review triage, docs/review_notes/ISSUE-056.md; depends on 056)_
 - [x] ISSUE-064: Harden verify_design_sweeps matcher edges — encoded/case tell variants, non-rendered quote placements, zero-screen vacuity, input containment _(track: platform, P2, 1d — ISSUE-056 review triage, adjacent Medium findings; depends on 063)_
 - [x] ISSUE-065: Add provenance, freshness, and consume-once binding to the KIT_GATE_RESULTS_FILE delegation handoff _(track: platform, P1, 1d — ISSUE-058 review triage, unresolved High finding in docs/review_notes/ISSUE-058.md; activation precondition per SPEC-058 Open Questions / test-plan GAP-058a; depends on 058)_
+- [ ] ISSUE-066: Make the SPEC-019 primary path reachable inside /sprint — runtime review skills are uninvokable from sub-task context _(track: platform, P1, 1.5d — 2026-10 sprint retro: all 6 sprint reviews ran degraded; the flagship idiom is interactive-only today)_
+- [ ] ISSUE-067: Silent-skip instrumentation must announce itself — unify the event emitter and surface eval-gate skips _(track: platform, P1, 1d — 2026-10 sprint retro: eval gate skipped silently on all 10 ships (zero review_eval artifacts); telemetry emits inconsistent (hand-appended JSONL vs silent no-op))_
+- [ ] ISSUE-068: Discovered issues must enter the sprint queue's visibility automatically _(track: platform, P1, 0.5d — 2026-10 sprint retro: 063/064/065 were invisible to sprint_queue until the orchestrator hand-added Issue Progress rows)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -3578,3 +3581,154 @@ The design-sweep matchers detect the recorded evasion/false-pass variants and re
 
 #### Rollback
 `git revert` — binding is additive in `synthesize_gate_results.py`/`verify_checkpoint.py` and the branch is dormant either way, so revert restores the pre-binding dormant state, not an activated unsafe path. The activation-blocked guard test couples any future activation PR to the binding check, so this issue must not be reverted after an activation PR lands without reverting that PR too.
+
+---
+
+### ISSUE-066: Make the SPEC-019 primary path reachable inside /sprint — runtime review skills are uninvokable from sub-task context
+
+> 2026-10 sprint retrospective: all 6 review runs across the SPEC-055 sprint executed the DEGRADED path despite `has_skill.py` probes returning 2 (attempt) — runtime slash-skills (`/code-review`, `/security-review`) are not invokable from sub-task (Task tool) context, where every /sprint review actually runs. The flagship probe → delegate → synthesize → audit → degrade idiom (SPEC-019) is therefore interactive-only today: the kit's main loop never exercises its primary path. The degraded reviewer held up (0 unresolved Critical/High across 10 ships), but the architecture story and the dominant execution path disagree, and every sprint burns the attempt-then-degrade detour per dimension per issue.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; sprint retro finding; extends SPEC-019)
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-066-sprint-primary-path-delegation
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A /sprint review runs the SPEC-019 primary path when the runtime capability exists for the session, with the degraded path reserved for genuine capability absence — and telemetry distinguishes "capability absent" from "capability present but unreachable from this context".
+
+#### Scope (In/Out)
+- In:
+  - SPEC first: enumerate and decide between candidate mechanisms — (a) hoist the review dimensions to the orchestrator level, where slash-skills are invokable, with results handed to the team-lead via an artifact contract (the ISSUE-065 binding pattern is the precedent for safe handoffs); (b) a probe mode that detects sub-task context and reports "unreachable-from-context" distinctly, so skills stop burning attempt-then-degrade detours; (c) any runtime capability that makes slash-skills reachable from sub-tasks, if one exists by implementation time.
+  - Telemetry: new event tag separating `capability-absent` from `context-unreachable` degradations.
+  - The degraded reviewer path remains fully intact as the fallback.
+- Out:
+  - Changing review content/dimensions or the synthesizer contract (SPEC-019 scope stands).
+  - The research delegation path (/brainstorm, /bizanalysis) — interactive-invoked, unaffected today; follows whatever pattern this SPEC lands, later.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a /sprint review iteration in a session where the runtime review skills are available, when the review phase runs, then the primary path executes (runtime findings reach `synthesize_review_notes.py`) and telemetry records the delegated tag — verified in a live sprint iteration, not only unit fixtures.
+- [ ] Given a session where the capability is genuinely absent, when the review phase runs, then the degraded path executes unchanged and telemetry records `capability-absent`.
+- [ ] Given a sub-task context that cannot reach the runtime skills under the chosen design, when the review phase runs, then the detour is not silently retried per dimension — the context decision is made once and recorded as `context-unreachable`.
+
+#### Implementation Notes
+- Sprint-retro evidence: iteration 4 review report ("both reviews ran the degraded path despite probes returning 2 — runtime slash-skills uninvokable from sub-task context"); same pattern in iterations 1, 2, 9.
+- If option (a) wins, the orchestrator-level run must preserve review independence (separate context from implement) — that constraint is why reviews live in sub-tasks today; the SPEC must address it explicitly.
+- Handoff artifacts, if any, follow the ISSUE-065 precedent: provenance-bound, fresh, consume-once — never bare env-var trust.
+
+#### Tests
+- [ ] Probe/context-detection unit tests for the three telemetry outcomes (delegated / capability-absent / context-unreachable).
+- [ ] If an artifact handoff lands: binding tests mirroring tests/test_gate_binding.py's mutation pairs.
+
+#### Rollback
+`git revert` — the degraded path is never modified, so reverting restores today's degraded-always sprint behaviour.
+
+---
+
+### ISSUE-067: Silent-skip instrumentation must announce itself — unify the event emitter and surface eval-gate skips
+
+> 2026-10 sprint retrospective, two instances of one failure shape — instrumentation that silently does nothing: (1) the ISSUE-002 eval gate (`scripts/eval_review.py`, /ship step 8, non-blocking) skipped silently on ALL 10 ships this sprint — zero `docs/review_eval_*.md` artifacts exist, and no ship report mentioned the skip or its reason (CLI absent? notes path mismatch? sub-task env?); (2) telemetry emission is inconsistent — ISSUE-065's review `review_degraded_path_used` event was a silent no-op (no shared emitter, `KIT_RUN_ID` unset in sub-task env) while ISSUE-063's sub-task hand-appended JSONL events. A gate that can skip without saying so reads as "covered" when it did not run — the exact hole the kit's own validators exist to close (SPEC-056's no-vacuous-pass rule, applied to the kit's own instrumentation).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; sprint retro finding; extends ISSUE-002's eval gate and the ISSUE-001 telemetry surface)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-067-silent-skip-instrumentation
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Every non-blocking instrument (eval gate, telemetry emits) either runs or announces its skip with a reason — in stdout where the phase report can see it and as a structured event — so "no signal" can no longer be confused with "all clear".
+
+#### Scope (In/Out)
+- In:
+  - `eval_review.py` degraded-mode skips print a one-line reason (named knob/dependency per the review lesson: print the remediation in the failure message) and the /ship step records skip-vs-ran in its phase output; the ship checkpoint surfaces the eval verdict or the skip reason.
+  - One shared emit helper for kit scripts (append JSONL under `.claude/run/` honoring the existing writer hardening — O_NOFOLLOW, containment, truncation): hand-rolled per-script emitters and silent no-ops both migrate to it. Absent `KIT_RUN_ID` gets a documented fallback (generate-and-print, or an explicit `unattributed` run id) instead of dropping the event.
+  - Audit the existing emit call sites (review/bizanalysis/brainstorm delegation tags, ship, checkpoint) for the same silent-drop shape.
+- Out:
+  - Making the eval gate blocking (stays advisory; ISSUE-002's design stands).
+  - New telemetry dimensions or the deferred ISSUE-001 analytics scope.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a /ship run where the eval gate cannot run, when the ship phase completes, then its output contains the skip line with the concrete reason and remediation, and a structured skip event exists — a silent skip is no longer possible (mutation test: force each skip cause, assert the announcement).
+- [ ] Given any kit script emitting a telemetry event without `KIT_RUN_ID`, when it emits, then the event is written under the documented fallback instead of silently dropped, and the fallback is visible in the event body.
+- [ ] Given the emit-call-site audit, when it completes, then every site either uses the shared helper or carries a recorded justification — no hand-rolled appender remains unexamined.
+
+#### Implementation Notes
+- Evidence: zero `docs/review_eval_*.md` after 10 ships (2026-10 sprint); iteration 4 report "065's `review_degraded_path_used` telemetry was a silent no-op while 063's sub-task hand-appended JSONL events".
+- Review lessons: print the knob name in the failure message it remediates; workspace-writable event files follow the ISSUE-058 writer hardening; mutation-test announcements in both directions (skip → announced; ran → no skip line).
+
+#### Tests
+- [ ] Per-skip-cause mutation fixtures for eval_review (CLI absent, notes missing, judge error) asserting the announcement line + structured event.
+- [ ] Shared-emitter unit tests: with and without KIT_RUN_ID, containment violations rejected, truncation preserved.
+
+#### Rollback
+`git revert` — announcements and the shared helper are additive; instruments stay non-blocking throughout.
+
+---
+
+### ISSUE-068: Discovered issues must enter the sprint queue's visibility automatically
+
+> 2026-10 sprint retrospective: ISSUE-063/064/065 were created mid-sprint by the planner (correctly registered in issues.md Board + Detail) but `sprint_queue.py next-action` never surfaced them — the queue's roster is the sprint_state Issue Progress table, and nothing added rows for the new issues. The orchestrator noticed by cross-reading the Board and hand-added three rows; without that, the sprint would have reported DONE with two P1 review follow-ups (one an unresolved-High security precondition) silently stranded in backlog. State-contract gap between the planner's registration surface (issues.md) and the queue's visibility surface (sprint_state.md).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; sprint retro finding; extends ISSUE-052's queue semantics)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-068-discovered-issue-queue-visibility
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+An issue registered in issues.md during a running sprint becomes visible to `sprint_queue.py next-action` without manual state-table surgery — either the queue derives its roster from issues.md directly, or row-creation is an enforced step of the finding-to-issue path.
+
+#### Scope (In/Out)
+- In:
+  - Decide the mechanism (small enough to not need a SPEC; record the choice in the PR): (a) `sprint_queue.py next-action` treats issues.md as the roster source of truth and auto-considers Board-registered backlog issues absent from the state table (emitting a visibility note), or (b) the team-lead finding-to-issue protocol gains a mandatory "add Issue Progress row" step enforced by `sprint_queue.py validate`.
+  - A regression test reproducing this sprint's exact case: Board has a backlog issue with resolved deps, state table lacks its row → next-action must surface it (or validate must fail), not return DONE.
+  - DONE-safety: the queue must not report DONE while any Board-registered, non-Manual, dep-resolved backlog issue exists.
+- Out:
+  - Any change to phase ordering, FINALIZE semantics, or the IRON LAW (ISSUE-052 contract untouched).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a running sprint whose state table lacks a row for a Board-registered backlog issue with resolved dependencies, when `next-action` runs, then the issue is surfaced (targeted or flagged) — never silently ignored.
+- [ ] Given the same situation at sprint end, when the queue computes DONE, then DONE is refused or annotated until the stranded issue is acknowledged — a sprint cannot close over invisible ready work.
+- [ ] Given the previous sprint's recorded sequence (063/064/065 created in iteration 1, rows absent), when replayed as a fixture, then the fix surfaces all three without orchestrator intervention.
+
+#### Implementation Notes
+- Evidence: sprint_state.md recovery log, iteration 2→3 transition (orchestrator hand-added rows 2026-10-09).
+- Review lesson 8 applies: loosening the queue's input contract (reading the Board) must be scoped so existing callers' failure modes stay pinned — add fixtures for the legacy exact-table path alongside.
+
+#### Tests
+- [ ] Fixture replay of the 063/064/065 case (row-less Board backlog issue → surfaced).
+- [ ] DONE-refusal fixture (stranded ready issue at sprint end).
+- [ ] Legacy-path pins: existing next-action fixtures unchanged.
+
+#### Rollback
+`git revert` — queue/validate changes are self-contained; the manual row-surgery workaround remains documented in the sprint recovery log.
