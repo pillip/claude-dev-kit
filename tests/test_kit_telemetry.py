@@ -248,6 +248,37 @@ class TestContainmentViolation:
         assert "NOT written" in out
         assert "test_event" in out
 
+    def test_symlinked_claude_dir_gains_no_directories(
+        self, project, tmp_path, monkeypatch, capsys
+    ):
+        """Review fix (lesson 12 — pin the control's POSITION, not just its
+        presence): containment must be checked BEFORE ``runs_dir.mkdir``.
+
+        The sibling tests plant ``.claude/runs`` as a symlink to an
+        ALREADY-EXISTING dir, where ``mkdir(exist_ok=True)`` is a no-op — so
+        they pass even if the mkdir runs first. Here ``.claude`` itself is the
+        symlink and ``runs/`` does not exist yet, so a mkdir ahead of the
+        containment check creates ``<outside>/runs`` — an arbitrary-directory
+        -creation primitive outside the project root. Mutation-verified:
+        swapping the two lines makes THIS test fail and no other.
+        """
+        monkeypatch.setenv(kt.RUN_ID_ENV, "testrun")
+        outside = tmp_path / "outside-claude"
+        outside.mkdir()
+        before = sorted(p.name for p in outside.iterdir())
+        (project / ".claude").symlink_to(outside)
+        ok = kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=project
+        )
+        assert ok is False
+        assert sorted(p.name for p in outside.iterdir()) == before == [], (
+            "containment must precede mkdir — the symlink target gained "
+            f"entries: {[p.name for p in outside.iterdir()]}"
+        )
+        out = capsys.readouterr().out
+        assert "containment" in out
+        assert "NOT written" in out
+
     def test_containment_wins_over_run_id_fallback(self, project, tmp_path, capsys):
         """With KIT_RUN_ID unset AND a containment violation, nothing is
         written anywhere (no unattributed file either) and the announcement
@@ -325,6 +356,48 @@ class TestWriteHardening:
         assert "4096" in out, "the announcement must name the byte cap"
         assert "test_event" in out
         assert "NOT written" in out
+
+    def test_absent_project_root_is_refused_not_created(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Review fix (PR #123 security finding F1): the emitter auto-creates
+        ``.claude/runs/`` but NEVER the project root — otherwise an
+        attacker-influenced ``--project-path`` is a multi-level
+        directory-creation primitive in an arbitrary location.
+
+        Mutation direction 2 (the AC is NOT regressed) is pinned by
+        ``test_runs_dir_auto_created_on_clean_path_still_silent``: inside an
+        EXISTING root, dir absence is still not a skip path.
+        """
+        monkeypatch.setenv(kt.RUN_ID_ENV, "testrun")
+        absent = tmp_path / "does" / "not" / "exist" / "yet"
+        ok = kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=absent
+        )
+        assert ok is False
+        assert not (tmp_path / "does").exists(), (
+            "the emitter must not materialize the project root"
+        )
+        out = capsys.readouterr().out
+        assert "[kit-telemetry]" in out
+        assert "not an existing directory" in out
+        assert "NOT written" in out
+
+    def test_absent_project_root_refused_through_the_cli(self, tmp_path):
+        """Same control at the surface F1 actually targets — the CLI whose
+        ``--project-path`` is model-chosen at the SKILL call sites."""
+        absent = tmp_path / "victim" / "tree"
+        result = _run_cli(
+            [
+                "--script", "review",
+                "--event", "review_degraded_path_used",
+                "--project-path", str(absent),
+            ],
+            _cli_env("clirun"),
+        )
+        assert result.returncode == 0, result.stderr
+        assert "not an existing directory" in result.stdout
+        assert not (tmp_path / "victim").exists()
 
     def test_never_raises_on_bogus_project_path(self, tmp_path, capsys):
         """Non-blocking instrument: a project path that is a regular file

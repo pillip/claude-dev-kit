@@ -35,7 +35,10 @@ Behavior (see docs/telemetry_schema.md for the event catalog):
       raw invalid value is NEVER used in a filename.
 - ``<project>/.claude/runs/`` is auto-created (mkdir parents, exist_ok) —
   dir absence is no longer a silent-skip path; mere creation is not
-  announced.
+  announced. The project ROOT itself is never created: a
+  ``project_path`` that is not an existing directory is refused with an
+  announcement (review fix, PR #123 security finding F1 — the emitter
+  must not be a directory-creation primitive in an arbitrary location).
 - Containment: the resolved runs dir must stay inside the resolved project
   root; on violation the rejection is announced with its named reason and
   NOTHING is written anywhere (the stdout line is the only signal).
@@ -138,6 +141,19 @@ def emit_event(
     try:
         project = Path(project_path) if project_path is not None else Path.cwd()
         run_id, fallback_reason = _resolve_run_id()
+
+        # The project root must already exist (review fix, PR #123 security
+        # finding F1). `.claude/runs/` is still auto-created inside a real
+        # project — dir absence there is not a skip path — but the emitter
+        # never materializes the root itself, so an attacker-influenced
+        # ``--project-path`` cannot turn this instrument into a multi-level
+        # directory-creation primitive in an arbitrary location.
+        if not project.is_dir():
+            _announce(
+                f"skipped: project root '{project}' is not an existing "
+                f"directory; event '{event_type}' NOT written"
+            )
+            return False
 
         # Containment before any mkdir: a symlinked .claude/ or runs/ must
         # not even gain subdirectories outside the project root.
