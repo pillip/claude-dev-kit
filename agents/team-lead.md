@@ -187,6 +187,7 @@ All issues.md modifications go through planner + flock_edit.sh. Team-lead NEVER 
 - Iteration: N / MAX
 - Parallel: 3
 - Status: running | paused | completed
+- Roster-Watermark: ISSUE-NNN
 
 ## Issue Progress
 | Issue | Phase | Attempts | Last Error |
@@ -205,6 +206,8 @@ Bold phases = pipeline bottleneck. Must be cleared before new implements.
 ## Escalations
 - ISSUE-004: 3 consecutive failures — needs human intervention. Last error: ...
 ```
+
+**`## Meta` is copy-only.** When rewriting `docs/sprint_state.md`, copy the whole `## Meta` block through unchanged — including `Roster-Watermark`, the roster boundary pinned at sprint start — and edit only `Iteration` and `Status`. Dropping the `Roster-Watermark` line reverts the sprint to a boundary re-derived from the roster **and re-opens autonomous dispatch of Board issues above it**, i.e. work the sprint was never scoped for. Never recompute or "refresh" that value.
 
 ## Output
 - `docs/sprint_state.md` — checkpoint file, updated each iteration

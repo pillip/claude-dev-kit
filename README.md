@@ -668,13 +668,17 @@ optional — the defaults are safe for local and CI runs:
 - `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` — set to `1` (also `true`/`yes`/`on`) to
   let the sprint queue autonomously dispatch Board issues *above* the roster
   boundary pinned in `docs/sprint_state.md`'s `## Meta` as `Roster-Watermark`
-  (`scripts/sprint_queue.py`). Unset (the default) or any other value keeps
-  out-of-scope work **flagged but never targeted**: above-boundary issues appear
-  in `unrostered` and the knob's name is printed in `reason`, so a deliberately
-  widened sprint is distinguishable from a runaway one. Note the boundary is only
-  enforced when the `Roster-Watermark` field is present — a sprint_state with no
-  such field keeps the pre-ISSUE-069 behaviour of dispatching above the
-  re-derived `max(rostered IDs)`.
+  (`scripts/sprint_queue.py`). Unset (the default) or any other value — `0` and
+  `false` included — keeps out-of-scope work **flagged but never targeted**:
+  above-boundary issues appear in `unrostered` (and in `stranded` when the run
+  reports `DONE`) but never in the dispatched targets. Either way the boundary in
+  force is named in `reason` as a `[roster-watermark: …]` note, and whenever the
+  gate actually withheld or released work a `[dispatch: …]` note names this knob
+  — so a deliberately widened sprint is distinguishable from a runaway one. Note
+  the boundary is only enforced when the `Roster-Watermark` field is present (a
+  malformed field still counts as present and still closes the gate) — a
+  sprint_state with no such field keeps the pre-ISSUE-069 behaviour of
+  dispatching above the re-derived `max(rostered IDs)`.
 - `KIT_ALLOW_BROWSER_INSTALL` — set to `1` to let the visual-diff and
   computed-styles gates auto-install Playwright + Chromium (heavy network +
   subprocess provisioning) when the browser is missing. Unset (the default) or
