@@ -7,7 +7,11 @@ model self-check can no longer pass the gate:
 
   literal-quote   the exact characters of every `literal_quote: "<string>"`
                   field in docs/design_philosophy.md appear in at least one
-                  prototype/screens/*.html OUTSIDE HTML comments. Matching is
+                  prototype/screens/*.html as RENDERED text: outside HTML
+                  comments, <script> element bodies, and data-* attribute
+                  values (ISSUE-064 - those surfaces are blanked before the
+                  search; other attribute text such as alt stays accepted).
+                  Matching is
                   whitespace-insensitive (runs of whitespace collapse to one
                   space on both sides) - the only permitted normalization; no
                   substring widening. The explicit skip marker
@@ -117,6 +121,23 @@ def collapse_ws_with_lines(text: str) -> tuple[str, list[int]]:
 QUOTE_FIELD = re.compile(r'literal_quote:\s*"([^"]+)"')
 SKIP_MARKER = re.compile(r"literal_quote:\s*\(skipped[^)\n]*\)")
 
+# ISSUE-064 F3: quote characters placed in a <script> element body or a
+# data-* attribute value are not rendered text and must not satisfy the
+# sweep. Exactly these two surfaces are blanked (newline-preserving, like
+# comments); other attribute text (alt, aria-label) and <style> bodies
+# stay accepted rendered surfaces.
+_SCRIPT_BODY = re.compile(r"(<script\b[^>]*>)(.*?)(?=</script\b)", re.S | re.I)
+_DATA_ATTR_VALUE = re.compile(r"""(\bdata-[\w-]+\s*=\s*)("[^"]*"|'[^']*')""", re.I)
+
+
+def blank_non_rendered(html_text: str) -> str:
+    blanked = _SCRIPT_BODY.sub(
+        lambda m: m.group(1) + re.sub(r"[^\n]", " ", m.group(2)), html_text
+    )
+    return _DATA_ATTR_VALUE.sub(
+        lambda m: m.group(1) + re.sub(r"[^\n]", " ", m.group(2)), blanked
+    )
+
 
 def run_literal_quote(
     philosophy: Path,
@@ -163,7 +184,9 @@ def run_literal_quote(
         violations.append({"quote": None, "reason": "no screen files found"})
     else:
         haystacks = {
-            s: collapse_ws(strip_html_comments(s.read_text(encoding="utf-8")))
+            s: collapse_ws(
+                blank_non_rendered(strip_html_comments(s.read_text(encoding="utf-8")))
+            )
             for s in screens
         }
         for quote in quotes:
