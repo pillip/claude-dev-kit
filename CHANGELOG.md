@@ -105,6 +105,79 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **The sprint roster boundary is pinned once at sprint start, and out-of-scope
+  Board work is flagged instead of auto-dispatched** (ISSUE-069, PR #129) —
+  `scripts/sprint_queue.py::augment_roster_from_board` re-derived
+  `watermark = max(rostered_nums)` from the **mutable** `docs/sprint_state.md`
+  Issue Progress table on *every* `next-action` call, while
+  `compute_queues`/`choose_action` order `implement_ready` by **priority, not
+  ID**. One mechanism, two High harms, both now closed. **Harm A — the control
+  re-hid what it surfaced:** once a higher-ID discovered issue was rostered, a
+  lower-ID sibling fell below the new watermark and vanished entirely — no
+  target, no `unrostered`, no `stranded`. Replayed on ISSUE-068's own motivating
+  case (063 + 065 rostered, 064 still `backlog` with its dependency Board-done),
+  `next-action` returned a bare `DONE`. **Harm B — above-boundary backlog was
+  auto-TARGETED, not merely flagged:** a sprint deliberately scoped on older debt
+  pulled everything newer into `implement_ready` and drove it through
+  implement → review → `gh pr merge`.
+  The boundary now lives in the sprint_state `## Meta` block as
+  `- Roster-Watermark: ISSUE-NNN`, written once at sprint creation (new field in
+  `templates/sprint_state.md`; write instruction in `skills/sprint/SKILL.md.tmpl`
+  step 1 — the skill is **AUTO-GENERATED**, so regenerate with
+  `python3 scripts/gen_skills.py` and never hand-edit `skills/sprint/SKILL.md`).
+  New `parse_roster_watermark(sprint_text, issues_meta) -> (num, rejection_detail,
+  present)` reads it as **untrusted workspace input** — `ISSUE-[0-9]{1,9}`
+  fullmatch (ASCII digits only; `\d` admitted Arabic-Indic, fullwidth and
+  Devanagari lookalikes), range sanity with a floor of 1 and a ceiling clamped to
+  `_MAX_PLAUSIBLE_BOARD_ID = 9999` so one inert `### ISSUE-999999999:` heading
+  cannot forge a boundary above the whole Board, and refusal of duplicated,
+  mis-cased, decorated, blockquoted, emphasis-wrapped, `+`-bulleted,
+  NBSP/ZWSP-indented, outside-`## Meta` and U+2028-smuggled variants. Every
+  refusal falls back to the legacy derivation, **names the refusing guard in
+  `reason`**, and never crashes or silently empties `unrostered_ids` (the
+  GAP-068h shape). An accepted pin is announced unconditionally with
+  counter-evidence — `[roster-watermark: pinned at ISSUE-068 — 5 of 5 Board
+  backlog issue(s) are above it]` — so `0 of 0` (a finished sprint) is
+  distinguishable from `0 of 12` (a pin that silenced the control).
+  Harm B is gated by a new opt-in knob, **`KIT_SPRINT_DISPATCH_ABOVE_WATERMARK`**
+  — default OFF: above-boundary issues are surfaced in `unrostered`/`stranded`
+  but withheld from `implement_ready`. Set `1`/`true`/`yes`/`on`
+  (case-insensitive; everything else, including `0` and `false`, is fail-closed
+  OFF) and they are dispatched **with the knob's literal name echoed in
+  `reason`**, so a deliberately widened sprint is distinguishable from a runaway
+  one in the sprint log. It is read at call time, not import time. The
+  annotations report the gate's **outcome**, not its intention: `withheld_ids`
+  records what was actually removed and the note is omitted entirely when the
+  knob was not the lever holding anything back. The top-level JSON key set stays
+  frozen at `{action, targets, reason, unrostered, stranded}` — no new key.
+  With **no** `Roster-Watermark` line, behaviour is byte-identically the legacy
+  `max(rostered_nums)` derivation plus one named fallback note (AC-6; verified at
+  ship by differential against post-ISSUE-076 main over 8 no-field fixtures).
+  `tests/test_sprint_queue.py` is untouched by this change, so ISSUE-068's
+  TC-068d/TC-068i pins are provably unmodified; the 190 new tests live in
+  `tests/test_sprint_queue_watermark.py` and are built on a **two-iteration
+  replay harness** (invoke, apply the roster mutation to the on-disk fixture,
+  invoke again) — the structural gap that let both harms ship, since every
+  pre-existing test was a single invocation against a roster whose max was also
+  the global max. Closes GAP-068a and GAP-068b, and GAP-068h incidentally.
+  **This also closes ISSUE-068's unmet AC-1 and AC-3.**
+  **Known fail-open, shipped deliberately and carried by follow-ups:** the
+  dispatch gate keys on field **presence**, so every *corrupted* form of the
+  field fails closed — but a **deleted** field does not. A sprint_state with no
+  `Roster-Watermark` auto-targets above-boundary work exactly as before
+  (re-measured at ship: pinned → `DONE`/`targets: []`, absent → `PIPELINE` on all
+  five), and that state is reachable by removing one line from a file every phase
+  executor rewrites. AC-6 mandates it and closing it would break ISSUE-068's
+  tests, so it is documented as a fail-open in three operator-facing places
+  rather than described as safe — the implement phase's prose had claimed the
+  opposite and was corrected during review. Carrier: **ISSUE-078** (+ GAP-069a).
+  Separately, `diagnose_carry_forward_gaps` (~22% of the engine diff, which only
+  *explains* a carry-forward stall — the rostered-row dependency-contract
+  relaxation was explicitly **declined** per review lesson 8, leaving TC-068d
+  intact) is named by no AC, In, Out or Test, and both engine defects the review
+  found lived in it; it shipped rather than being cut because deleting ~250 lines
+  of green, provably inert code on a ship-last PR was the larger risk. Carrier:
+  **ISSUE-079** (+ GAP-069b). Full evidence in `docs/review_notes/ISSUE-069.md`.
 - **The sprint queue reads the Issue Progress table and nothing else — and
   refuses to dispatch off a roster it could not fully read** (ISSUE-076,
   PR #128) — `scripts/sprint_queue.py`'s `parse_sprint_table` scoped its capture
