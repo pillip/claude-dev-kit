@@ -31,8 +31,10 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 
 ### Problem: Sprint queue emits `SHIP` instead of `FINALIZE` with a "refusing PR ref" warning
 - **Symptom**: a reviewed issue whose PR is already merged is still queued as `SHIP` (not `FINALIZE`), and stderr carries `Warning: refusing PR ref '...' read from the issues.md 'PR:' field`
-- **Cause**: the `PR:` value in `issues.md` is not one of the three accepted forms, so the ISSUE-073 whitelist refuses to hand a ref it cannot prove safe to `gh` — most often a **compound** value such as `#122 https://github.com/<owner>/<repo>/pull/122` (two of which exist in this repo's own Board)
-- **Solution**: normalize the `PR:` field to a single accepted form — `123`, `#123`, or the full `https://github.com/<owner>/<repo>/pull/123` URL. The refusal is fail-safe, not a blocker: the ship path still runs and the real `gh pr merge` surfaces the true state.
+- **Cause**: the `PR:` value in `issues.md` is not one of the three accepted forms, so the ISSUE-073 whitelist refuses to hand `gh` a ref whose **shape** it cannot confirm. What the whitelist attests is narrow and worth stating exactly: the value is not option-shaped and is `github.com`-hosted — **not** that the ref denotes this issue's PR. Common triggers, in order of likelihood:
+  - a **compound** value such as `#122 https://github.com/<owner>/<repo>/pull/122` (two of which exist in this repo's own Board)
+  - a `/files`- or `/commits`-suffixed PR URL pasted from the browser address bar, or a `www.github.com` host — `gh` itself resolves both, so these refuse a ref that would otherwise have worked. The whitelist is deliberately narrower than `gh`; widening it for an unattested shape is the fail-open direction.
+- **Solution**: normalize the `PR:` field to a single accepted form — `123`, `#123`, or the full `https://github.com/<owner>/<repo>/pull/123` URL. The refusal is fail-safe, not a blocker: the ship path still runs and the real `gh pr merge` surfaces the true state. Normalizing also removes a reader divergence — `scripts/verify_checkpoint.py` reads the same field with a trailing-digits `re.search`, so it accepts compound values that `sprint_queue.py` refuses.
 
 ## Sprint Queue Visibility
 

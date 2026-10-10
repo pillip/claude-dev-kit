@@ -972,6 +972,23 @@ class TestPrRefGuardCLIPath:
         assert calls == []
         assert out["action"] == "merge"
 
+    def test_ac2_literal_two_token_argv_form_is_refused(self, capsys, monkeypatch):
+        """AC-2's literal spelling: `ship-merge-decision --pr '--repo attacker/evil'`.
+
+        Added in review (PR #127). The three tests above all use the single-token
+        `--pr=<value>` form, which is the only form reachable for a value with NO
+        space; AC-2 names the TWO-token form, which argparse accepts because the
+        value contains a space. Both spellings reach the same chokepoint, but the
+        AC was not literally auditable against the suite until this pin existed.
+        """
+        fake = _runner(state="MERGED")
+        _real_probe_with_seam(monkeypatch, fake)
+        exit_code = main(["ship-merge-decision", "--pr", "--repo attacker/evil"])
+        out = json.loads(capsys.readouterr().out)
+        assert exit_code == 0
+        assert fake.calls == []
+        assert out["action"] == "merge"
+
     def test_valid_cli_pr_still_reaches_gh_and_skips(self, capsys, monkeypatch):
         """Positive control: the seam IS wired, so the refusals above are real."""
         exit_code, out, calls = self._decide(capsys, "--pr=121", monkeypatch)
