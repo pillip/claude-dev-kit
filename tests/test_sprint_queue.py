@@ -1,5 +1,6 @@
 """Unit tests for scripts/sprint_queue.py."""
 
+import functools
 import json
 import subprocess
 
@@ -562,9 +563,24 @@ class TestGhPrMergeState:
         assert _gh_pr_merge_state("123", runner=r) is None
 
     def test_argv_is_fixed_and_shell_free(self):
+        # ISSUE-073 AC-6: the old `"PR-REF"` placeholder is rejected by the
+        # whitelist, so the fixture carries a legitimate ref instead — the
+        # validator is NOT loosened to keep a placeholder green.
         r = _runner(state="MERGED")
-        _gh_pr_merge_state("PR-REF", runner=r)
-        assert r.calls[0] == ["gh", "pr", "view", "PR-REF", "--json", "state,mergedAt"]
+        _gh_pr_merge_state("121", runner=r)
+        argv = r.calls[0]
+        assert argv == ["gh", "pr", "view", "--json", "state,mergedAt", "--", "121"]
+        # Every flag sits AHEAD of the `--` separator and the ref is last, so a
+        # value can never be re-read as an option (gh's cobra parser treats
+        # everything after `--` as positional; verified against gh 2.76.2).
+        sep = argv.index("--")
+        flag_positions = [
+            i for i, a in enumerate(argv) if a.startswith("-") and i != sep
+        ]
+        assert flag_positions, argv
+        assert all(i < sep for i in flag_positions), argv
+        assert argv[-1] == "121"
+        assert sep == len(argv) - 2
 
 
 class TestClassifyShipReady:
@@ -812,6 +828,350 @@ class TestGhPrMergeStateRobustness:
 
         assert _gh_pr_merge_state("123", runner=_run) is None
         assert "Warning" in capsys.readouterr().err
+
+
+# ── ISSUE-073: PR-ref validation before the gh merge-state probe ─────
+#
+# The Board `PR:` field and the model-chosen `ship-merge-decision --pr` argument
+# are both untrusted, and both funnel into ONE subprocess site inside
+# `_gh_pr_merge_state`. Every test below drives that production function (via
+# `runner=` or by monkeypatching the module attribute to a `functools.partial`
+# of the real probe) so the guard ACTUALLY EXECUTES. A `merge_state_fn=` double
+# replaces the probe wholesale and bypasses the guard by design, which is why
+# the existing `merge_state_fn` doubles in TestClassifyShipReady /
+# TestShipMergeDecision are left exactly as they are.
+
+# The three ref shapes the live Board demonstrably carries (census 2026-10-11:
+# 14 bare `#N` rows, ~35 full-URL rows). No bare-number-without-`#` value is
+# live, but `_gh_pr_merge_state`'s own tests use one, so it stays whitelisted.
+LIVE_REF_FORMS = (
+    "123",
+    "#123",
+    "https://github.com/pillip/claude-dev-kit/pull/123",
+)
+
+
+def _probe_ref(ref):
+    """Run the production probe against a MERGED fake; return (state, calls).
+
+    `calls == []` proves the guard refused the ref UPSTREAM of the subprocess
+    seam; a non-empty `calls` exposes the exact argv `gh` would have received.
+    """
+    r = _runner(state="MERGED")
+    return _gh_pr_merge_state(ref, runner=r), r.calls
+
+
+def _real_probe_with_seam(monkeypatch, runner):
+    """Point the module attribute at the REAL probe bound to a recording seam.
+
+    Keeps the validation guard in the call path for the Board (`classify_ship_ready`)
+    and CLI (`ship_merge_decision`) entry points, both of which resolve
+    `_gh_pr_merge_state` as a module global at call time.
+    """
+    monkeypatch.setattr(
+        sq,
+        "_gh_pr_merge_state",
+        functools.partial(_gh_pr_merge_state, runner=runner),
+    )
+
+
+class TestPrRefGuardBoardPath:
+    """AC-1: an option-shaped Board `PR:` value can never reach `gh`."""
+
+    HOSTILE = "--repo attacker/evil"
+
+    def _write(self, tmp_path, pr_value):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(_make_sprint_state([
+            ("ISSUE-001", "active", "1", "—", "reviewed"),
+        ]))
+        issues = tmp_path / "issues.md"
+        issues.write_text(
+            "### ISSUE-001: t\n- Priority: P1\n- Status: reviewed\n"
+            f"- Depends-On: none\n- PR: {pr_value}\n\n"
+            "#### Acceptance Criteria (DoD)\n- [ ] a\n"
+        )
+        return sprint, issues
+
+    def _run_next_action(self, sprint, issues, capsys):
+        exit_code = main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--max-parallel", "2",
+        ])
+        captured = capsys.readouterr()
+        return exit_code, json.loads(captured.out), captured.err
+
+    def test_option_shaped_board_pr_never_reaches_gh(self, tmp_path, capsys, monkeypatch):
+        fake = _runner(state="MERGED")
+        _real_probe_with_seam(monkeypatch, fake)
+        sprint, issues = self._write(tmp_path, self.HOSTILE)
+        exit_code, out, err = self._run_next_action(sprint, issues, capsys)
+        # Zero invocations is what pins the guard's POSITION: it must sit
+        # upstream of the runner call, not inspect the answer afterwards. A
+        # guard placed after `runner(...)` would still return None here but
+        # would record the invocation and fail this assertion.
+        assert fake.calls == []
+        # The MERGED fake would have forged FINALIZE; the refusal degrades to
+        # indeterminate, which keeps the issue on the (safe) ship path.
+        assert out["action"] == "SHIP"
+        assert out["targets"] == ["ISSUE-001"]
+        assert exit_code == 0
+        # The warning must name BOTH the rejected value and the field it came from.
+        assert self.HOSTILE in err
+        assert "PR:" in err
+
+    def test_valid_board_pr_still_reaches_gh_and_finalizes(self, tmp_path, capsys, monkeypatch):
+        """Positive control for the absence assertion above, same fixture.
+
+        Without this, a seam that is simply never wired would make the
+        zero-invocation assertion pass hollowly.
+        """
+        fake = _runner(state="MERGED")
+        _real_probe_with_seam(monkeypatch, fake)
+        ref = "https://github.com/pillip/claude-dev-kit/pull/1"
+        sprint, issues = self._write(tmp_path, ref)
+        exit_code, out, _ = self._run_next_action(sprint, issues, capsys)
+        assert fake.calls[0][-1] == ref
+        assert out["action"] == "FINALIZE"
+        assert out["targets"] == ["ISSUE-001"]
+        assert exit_code == 0
+
+
+class TestPrRefGuardCLIPath:
+    """AC-2: the model-chosen `--pr` argument is refused at the same chokepoint."""
+
+    # Why the `--pr=<value>` form: argparse's `_parse_optional` only treats a
+    # dash-leading token as an option when the token contains NO space, so
+    # `--pr '--repo=attacker/evil'` exits 2 while `--pr '--repo attacker/evil'`
+    # is accepted. The `=` form is reachable for BOTH shapes (verified against
+    # this interpreter), so pinning it keeps the test honest about what an
+    # attacker-influenced model can actually pass.
+    def _decide(self, capsys, pr_arg, monkeypatch):
+        fake = _runner(state="MERGED")
+        _real_probe_with_seam(monkeypatch, fake)
+        exit_code = main(["ship-merge-decision", pr_arg])
+        return exit_code, json.loads(capsys.readouterr().out), fake.calls
+
+    def test_option_shaped_cli_pr_decides_merge_with_zero_invocations(self, capsys, monkeypatch):
+        exit_code, out, calls = self._decide(
+            capsys, "--pr=--repo attacker/evil", monkeypatch
+        )
+        assert exit_code == 0
+        assert calls == []
+        # Fail-safe direction: indeterminate → `merge`, so the real `gh pr merge`
+        # surfaces the truth instead of `skip` silently finalizing an unmerged PR.
+        assert out["action"] == "merge"
+
+    def test_single_token_option_shaped_cli_pr_also_refused(self, capsys, monkeypatch):
+        exit_code, out, calls = self._decide(
+            capsys, "--pr=--repo=attacker/evil", monkeypatch
+        )
+        assert exit_code == 0
+        assert calls == []
+        assert out["action"] == "merge"
+
+    def test_valid_cli_pr_still_reaches_gh_and_skips(self, capsys, monkeypatch):
+        """Positive control: the seam IS wired, so the refusals above are real."""
+        exit_code, out, calls = self._decide(capsys, "--pr=121", monkeypatch)
+        assert exit_code == 0
+        assert calls[0][-1] == "121"
+        assert out["action"] == "skip"
+
+
+class TestPrRefAcceptForms:
+    """AC-3: every ref shape the live Board carries keeps working, unchanged."""
+
+    def test_each_live_form_resolves_to_merged_with_ref_unchanged(self):
+        for ref in LIVE_REF_FORMS:
+            state, calls = _probe_ref(ref)
+            assert state == "merged", ref
+            assert len(calls) == 1, ref
+            # Unchanged AND last: no normalization, no rewriting, and nothing
+            # can be appended behind the ref.
+            assert calls[0][-1] == ref, ref
+
+    def test_classify_ship_ready_still_finalizes_each_live_form(self, monkeypatch):
+        for ref in LIVE_REF_FORMS:
+            fake = _runner(state="MERGED")
+            _real_probe_with_seam(monkeypatch, fake)
+            fin, ship = classify_ship_ready(["ISSUE-001"], {"ISSUE-001": {"pr": ref}})
+            assert fin == ["ISSUE-001"], ref
+            assert ship == [], ref
+            assert fake.calls[0][-1] == ref, ref
+
+
+class TestPrRefCompoundCensusValues:
+    """AC-4: the two compound `#N <url>` values the live Board already carries."""
+
+    LIVE_COMPOUND = (
+        "#108 https://github.com/pillip/claude-dev-kit/pull/108",
+        "#122 https://github.com/pillip/claude-dev-kit/pull/122",
+    )
+
+    def test_live_compound_board_values_are_refused_not_normalized(self, capsys):
+        """Recorded decision: REFUSE as indeterminate; do NOT normalize.
+
+        Rationale, four points:
+        (1) Refusal reproduces today's observable result exactly — `gh` already
+            exits 1 on a two-token ref (`no pull requests found for branch
+            "#122 https://..."`, gh 2.76.2), which `_gh_pr_merge_state` already
+            maps to None — so the two live rows (ISSUE-062/PR #108,
+            ISSUE-066/PR #122) see ZERO behaviour change.
+        (2) Normalizing would move the outcome toward FINALIZE, the unsafe
+            direction: a wrong "merged" finalizes an unmerged PR as shipped.
+        (3) Refusal keeps this a pure `fullmatch` whitelist; normalizing needs a
+            search/extract step, i.e. the fail-open shape this issue exists to
+            remove.
+        (4) Refusal is self-correcting via ISSUE-052's attested fail-safe:
+            None → `still_ship` → `merge` → the real `gh pr merge` surfaces the
+            truth, the same observable mode `--no-check-merged` already produces.
+        """
+        for value in self.LIVE_COMPOUND:
+            state, calls = _probe_ref(value)
+            assert state is None, value
+            assert calls == [], value
+        err = capsys.readouterr().err
+        for value in self.LIVE_COMPOUND:
+            assert value in err
+            assert "PR:" in err
+
+    def test_compound_value_keeps_the_issue_on_the_ship_path(self, monkeypatch):
+        """Point (1) made observable end-to-end: SHIP, exactly as on main."""
+        fake = _runner(state="MERGED")
+        _real_probe_with_seam(monkeypatch, fake)
+        meta = {"ISSUE-001": {"pr": self.LIVE_COMPOUND[0]}}
+        fin, ship = classify_ship_ready(["ISSUE-001"], meta)
+        assert fin == []
+        assert ship == ["ISSUE-001"]
+        assert fake.calls == []
+
+
+class TestPrRefGuardNeverRaises:
+    """AC-7: the ISSUE-052 never-raises contract survives the new early return."""
+
+    HOSTILE_REFS = (
+        "--repo=x",
+        "-",
+        "--help",
+        "; rm -rf /",
+        "$(whoami)",
+        "a" * 500,
+        "#" + "9" * 20,
+        "https://evil.example.com/pillip/x/pull/1",
+        "https://github.com/o/r/pull/" + "9" * 12,
+    )
+
+    def test_hostile_refs_return_none_without_raising(self, capsys):
+        for value in self.HOSTILE_REFS:
+            state, calls = _probe_ref(value)
+            assert state is None, value
+            assert calls == [], value
+        assert "Warning" in capsys.readouterr().err
+
+    def test_six_degradation_modes_still_reach_gh_and_return_none(self, capsys):
+        """Anti-vacuity companion to the pre-existing degradation tests.
+
+        Those probe with `"123"` and assert only `is None` — which a guard that
+        rejected `"123"` would satisfy VACUOUSLY. Each mode here additionally
+        asserts whether the runner was invoked, so a valid ref is proven to pass
+        the whitelist and reach `gh` before degrading for its own reason.
+        """
+        seen: list = []
+
+        def _raiser(exc):
+            def _run(cmd, **kwargs):
+                seen.append(cmd)
+                raise exc
+
+            return _run
+
+        # 1. empty ref — the ONLY mode that must short-circuit before the seam.
+        r = _runner(state="MERGED")
+        assert _gh_pr_merge_state("", runner=r) is None
+        assert r.calls == []
+        # 2. non-zero exit
+        r = _runner(returncode=1, stderr="gh: not authenticated")
+        assert _gh_pr_merge_state("123", runner=r) is None
+        assert len(r.calls) == 1
+        # 3. OSError (gh missing)
+        assert _gh_pr_merge_state("123", runner=_raiser(OSError("not found"))) is None
+        # 4. TimeoutExpired
+        timeout = subprocess.TimeoutExpired(cmd=["gh"], timeout=1)
+        assert _gh_pr_merge_state("123", runner=_raiser(timeout)) is None
+        assert len(seen) == 2  # both raising runners were actually entered
+        # 5. unparseable JSON
+        r = _runner(stdout="not-json")
+        assert _gh_pr_merge_state("123", runner=r) is None
+        assert len(r.calls) == 1
+        # 6. valid-but-non-object JSON
+        r = _runner(stdout="null")
+        assert _gh_pr_merge_state("123", runner=r) is None
+        assert len(r.calls) == 1
+        assert "Warning" in capsys.readouterr().err
+
+
+class TestPrRefBoundsBind:
+    """The bounded quantifiers must actually bind.
+
+    Same defect class as ISSUE-068's `_ROSTER_ID_RE`: an unbounded `\\d+` or
+    segment run applied to text the kit does not author. Asserting the bound
+    behaviourally (not by reading the pattern) is what keeps a later `\\d+`
+    from slipping back in.
+    """
+
+    URL = "https://github.com/pillip/claude-dev-kit/pull/{}"
+    OWNER_URL = "https://github.com/{}/claude-dev-kit/pull/1"
+    REPO_URL = "https://github.com/pillip/{}/pull/1"
+
+    def _accepted(self, ref):
+        """(state, last argv element) for a ref the whitelist must admit."""
+        state, calls = _probe_ref(ref)
+        return state, (calls[0][-1] if calls else None)
+
+    def test_bare_digit_run_bound_binds_at_nine(self):
+        assert self._accepted("9" * 9) == ("merged", "9" * 9)
+        assert _probe_ref("9" * 10) == (None, [])
+
+    def test_hash_digit_run_bound_binds_at_nine(self):
+        ref = "#" + "9" * 9
+        assert self._accepted(ref) == ("merged", ref)
+        assert _probe_ref("#" + "9" * 10) == (None, [])
+
+    def test_url_digit_run_bound_binds_at_nine(self):
+        ref = self.URL.format("9" * 9)
+        assert self._accepted(ref) == ("merged", ref)
+        assert _probe_ref(self.URL.format("9" * 10)) == (None, [])
+
+    def test_owner_segment_bound_binds_at_sixty_four(self):
+        ref = self.OWNER_URL.format("o" * 64)
+        assert self._accepted(ref) == ("merged", ref)
+        assert _probe_ref(self.OWNER_URL.format("o" * 65)) == (None, [])
+
+    def test_repo_segment_bound_binds_at_sixty_four(self):
+        ref = self.REPO_URL.format("r" * 64)
+        assert self._accepted(ref) == ("merged", ref)
+        assert _probe_ref(self.REPO_URL.format("r" * 65)) == (None, [])
+
+
+class TestPrRefPatternIsAnchoredWhitelist:
+    """AC-5 mutation harness: one named target to delete or weaken.
+
+    Accessed as a module attribute rather than a top-level import so a missing
+    guard fails THIS test instead of erroring the whole module at collection.
+    """
+
+    def test_pattern_accepts_only_the_censused_forms(self):
+        for ref in LIVE_REF_FORMS:
+            assert sq._PR_REF_RE.fullmatch(ref), ref
+        assert sq._PR_REF_RE.fullmatch("--repo attacker/evil") is None
+
+    def test_pattern_rejects_an_embedded_ref_under_fullmatch(self):
+        hostile = "--repo=attacker/evil 121"
+        assert sq._PR_REF_RE.fullmatch(hostile) is None
+        # `search` WOULD admit it — documents why the guard must use fullmatch.
+        assert sq._PR_REF_RE.search(hostile) is not None
 
 
 # ── ISSUE-068: discovered-issue Board visibility ─────────────────────
