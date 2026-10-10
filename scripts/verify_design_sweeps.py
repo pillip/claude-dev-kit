@@ -49,7 +49,8 @@ Exit codes (verify_* family convention):
   0 - pass
   1 - violations found (including vacuous/empty input)
   2 - usage error (missing philosophy file, unknown --exempt id, missing
-      --class for signature-move or all); usage errors print to stderr
+      --class for signature-move or all, input resolving outside the
+      project tree - ISSUE-064 containment); usage errors print to stderr
 
 Usage:
     python3 scripts/verify_design_sweeps.py literal-quote  [--project-path P]
@@ -532,6 +533,36 @@ def main(argv: list[str] | None = None) -> int:
     screens_dir = Path(args.screens_dir) if args.screens_dir else project / "prototype" / "screens"
     css_path = Path(args.css) if args.css else project / "prototype" / "styles.css"
     screens = _discover_screens(screens_dir)
+
+    # ISSUE-064 F5: input containment. Every file the sweep would read must
+    # resolve inside a sanctioned root: the resolved project path plus any
+    # explicitly passed override (--philosophy/--screens-dir/--css are the
+    # caller's decision). A path escaping every root (e.g. via a symlink)
+    # fails closed as a usage error BEFORE the file is read; resolved-to-
+    # resolved comparison, so in-tree symlinks never false-trip.
+    roots = [project.resolve()]
+    roots += [
+        Path(override).resolve()
+        for override in (args.philosophy, args.screens_dir, args.css)
+        if override
+    ]
+    would_read = {
+        "literal-quote": [philosophy, *screens],
+        "signature-move": [css_path, *screens],
+        "ai-tell": [css_path, *screens],
+        "all": [philosophy, css_path, *screens],
+    }[args.command]
+    for target in would_read:
+        resolved = target.resolve()
+        if not any(resolved.is_relative_to(root) for root in roots):
+            print(
+                f"ERROR: {target} resolves outside the project tree "
+                f"({resolved} is under none of the sanctioned roots); pass "
+                "the path explicitly (--philosophy/--screens-dir/--css) to "
+                "sanction it",
+                file=sys.stderr,
+            )
+            return 2
 
     if args.command == "literal-quote":
         return run_literal_quote(philosophy, screens, project, args.json_out)
