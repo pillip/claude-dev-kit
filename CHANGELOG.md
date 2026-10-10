@@ -103,6 +103,41 @@ release tags are `claude-dev-kit--v<version>`.
   **ISSUE-069 carries AC-1 and AC-3**; see `docs/review_notes/ISSUE-068.md` and
   `docs/test_plan.md` GAP-068a/GAP-068b.
 
+### Fixed
+
+- **The sprint queue validates a PR reference before handing it to `gh`**
+  (ISSUE-073, PR #127) — `scripts/sprint_queue.py`'s `_gh_pr_merge_state` now
+  refuses a non-conforming PR reference *before* invoking `gh`, and passes `--`
+  ahead of the reference so a value can never be re-read as a flag:
+  `["gh", "pr", "view", "--json", "state,mergedAt", "--", <ref>]`. The accepted
+  forms are exactly the three the `issues.md` `PR:` field actually carries —
+  `123`, `#123`, and `https://github.com/<owner>/<repo>/pull/123` — matched by
+  `fullmatch` with bounded digit and path-segment runs. Anything option-shaped
+  (`--repo attacker/evil`) or otherwise non-conforming returns *indeterminate*
+  with a warning naming both the rejected value and the `PR:` field it was read
+  from, and never raises, so the never-raises contract from ISSUE-052 is intact.
+  The guard sits at the chokepoint **both** entry points share — the Board `PR:`
+  field read by `classify_ship_ready`, and the model-chosen
+  `ship-merge-decision --pr` CLI argument — so neither can reach `gh` unchecked.
+  Before this, `PR: --repo attacker/evil` was consumed by `gh` as a flag and a
+  `MERGED` answer from the attacker-chosen repo made the queue emit FINALIZE
+  instead of SHIP. Refusal is fail-safe in a single direction: it degrades
+  toward SHIP/`merge`, never toward FINALIZE/`skip`, so the real `gh pr merge`
+  always surfaces the truth. The two live compound `PR:` values
+  (`#108 https://…/pull/108` and the same shape for PR 122) are deliberately
+  refused rather than normalized; `docs/troubleshooting.md` explains how to
+  normalize a refused field and records that `scripts/verify_checkpoint.py`
+  reads the same field more permissively.
+  **Scope — read this before trusting the queue's MERGED verdict:** what ships
+  here is validated **shape**, not **provenance**. A conforming but *wrong-target*
+  reference still resolves to MERGED (`gh pr view … -- '#93'` returns
+  `{"state":"MERGED"}` for any issue), so an unmerged PR can still be finalized
+  as `shipped` through a mis-set `PR:` field, and `verify_checkpoint.py`'s ship
+  gate passes on it too. That residual is a different defect class and is
+  carried by **ISSUE-077** (binding the probe to the issue's own `Branch:` via
+  `--json state,mergedAt,headRefName`, free in the same `gh` call), recorded as
+  GAP-073a in `docs/test_plan.md`.
+
 ## 0.7.0 — 2026-10-10
 
 The SPEC-055 repositioning release: the kit's surface is reorganized around

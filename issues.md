@@ -43,10 +43,13 @@
 - [ ] ISSUE-070: Contain the telemetry emitter's write target and make its no-raise/no-hang contract true _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High + 2 same-module Medium; depends on 067)_
 - [ ] ISSUE-071: Give KIT_RUN_ID a producer or stop announcing its absence on every run _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High: the fallback announcement fires on 100% of runs; depends on 067)_
 - [ ] ISSUE-072: Verify sub-agent skill invocation in the feature matrix and grant it on the review path if supported _(track: platform, P1, 0.5d — ISSUE-066 review triage: the kit's own agent `tools:` frontmatter confounds SPEC-066's categorical conclusion; depends on 066)_
-- [ ] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
+- [x] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
 - [ ] ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it _(track: platform, P1, 0.5d — iter-1 review triage: team-lead is forbidden to write issues.md and planner is told to use flock_edit.sh but has no Bash, so the contract resolves as a silently unlocked write that still succeeds; mirror of ISSUE-072; depends on none)_
 - [ ] ISSUE-075: Migrate review_context.py's private telemetry appender onto the shared kit_telemetry emit seam _(track: platform, P2, 0.5d — ISSUE-066 ship-time deferral: SPEC-066 pre-committed to adopting ISSUE-067's shared emitter, deferred because `emit_event`'s "NEVER raises" contract is false today (ISSUE-070) and two existing tests pin the opposite silent-skip contract; duplication debt, not a hardening regression; depends on 066, 067)_
 - [ ] ISSUE-076: Scope parse_sprint_table to the Issue Progress table only — h3 subsection tables are parsed as roster rows _(track: platform, P1, 0.5d — observed 2026-10-11 by the sprint orchestrator: validate reported all three shipped issues as stuck)_
+- [ ] ISSUE-077: Bind the `gh` merge-state probe to the issue's own PR — a whitelist-conforming wrong-target `PR:` ref still forges a MERGED verdict _(track: platform, P1, 1d — ISSUE-073 / PR #127 review triage, unresolved High (GAP-073a): `#93` passes ISSUE-073's shape guard and finalizes ANY reviewed issue as `shipped`; 3 same-function Low folded in; depends on 073)_
+- [ ] ISSUE-078: Make the sprint roster boundary mechanically enforced — a running sprint_state must carry an accepted `Roster-Watermark` _(track: platform, P1, 0.5d — ISSUE-069 / PR #129 review residual: the ABSENT field is a deliberate fail-OPEN, so deleting one line from a file every executor rewrites re-opens autonomous dispatch of above-boundary work; depends on 069)_
+- [ ] ISSUE-079: Give the prior-sprint carry-forward diagnosis its own acceptance criteria, or remove it _(track: platform, P2, 0.5d — ISSUE-069 / PR #129 review: unrequested surface, ~22% of the engine diff named by no AC and no test, and where both engine defects were found; depends on 069)_
 
 ### Doing
 
@@ -3775,11 +3778,11 @@ An issue registered in issues.md during a running sprint becomes visible to `spr
 - PRD-Ref: none (kit self-development; ISSUE-068 review triage, GAP-068a + GAP-068b; review lessons "Workspace-persisted state consumed by auto-running hooks is untrusted input — validate on read" and "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class" — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-069-roster-watermark-pin
+- GH-Issue: 126
+- PR: https://github.com/pillip/claude-dev-kit/pull/129
 - Depends-On: ISSUE-068
 
 #### Goal
@@ -4004,6 +4007,15 @@ A default gate-checkpoint run produces no telemetry fallback announcement, becau
 
 > GAP-068j (docs/test_plan.md, ISSUE-068 review 2026-10-10 / PR #121; **pre-existing from ISSUE-052, live on main today**, hence its own issue rather than a finding against PR #121). The Board `PR:` field value flows into `gh pr view` as a **bare positional** at `scripts/sprint_queue.py:228`, so a value like `PR: --repo attacker/evil` is consumed by `gh` as a **flag**, not a PR reference. A `MERGED` answer sourced from the attacker-chosen repo makes `classify_ship_ready` emit **FINALIZE** instead of SHIP, and `ship_merge_decision` return `skip` through the same poisoned ref — so an **unmerged PR is finalized as `shipped`** and the sprint records as done work that was never merged. Reviewer-reproduced with a logging fake `gh` on the **live rostered** `reviewed` path (`GH-INVOKED: pr view --repo attacker/evil --json state,mergedAt`); ISSUE-068's synthesized rows provably cannot reach it (zero invocations), which is why this is not a PR #121 finding. The injection is reachable from two sources: the Board field via `classify_ship_ready`, and the **model-chosen** `ship-merge-decision --pr` CLI argument the ship skill passes (`cmd_ship_merge_decision`, line 626). This is the same leading-dash class that review lesson "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class" names at point (3), and whose sibling instance ISSUE-057's SEC-3 already fixed.
 
+<!-- ### ISSUE-073 SHIP NOTE -->
+> **Shipped 2026-10-11 (PR #127). Review verdict: changes-applied-then-approved, 0 unresolved Critical. All 6 ACs are met and mutation-pinned — but the GOAL is only PARTIALLY met and that is recorded here rather than closed silently.** The Goal has two clauses. Its **mechanism clause** ("a Board- or CLI-supplied PR reference can never be re-interpreted as a `gh` flag") is **fully met**: a bounded `fullmatch` whitelist (`_PR_REF_RE`: `\d{1,9}`, `#\d{1,9}`, `https://github\.com/[\w.-]{1,64}/[\w.-]{1,64}/pull/\d{1,9}`) sits at the `_gh_pr_merge_state` chokepoint both callers share, ahead of the `runner(...)` call, with `--` separating flags from the ref (`["gh","pr","view","--json","state,mergedAt","--",ref]`; the separator is honoured by `gh version 2.76.2`, verified). Mutation-proven in both directions — **10 distinct mutants, all KILLED** across two reviewers, including a guard-RELOCATED-downstream-of-`runner()` mutant, so the guard is pinned by position and not merely by presence. Do not re-litigate this class.
+>
+> **Its harm clause ("an unmerged PR therefore can no longer be finalized as `shipped`") is NOT met, and the checkbox-level ACs cannot see that because none of them assert it.** The whitelist attests a ref's **shape**, not its **provenance**. A fully whitelist-conforming but wrong-target ref still forges a MERGED verdict — re-reproduced at ship time against the installed `gh version 2.76.2`: `gh pr view --json state,mergedAt,headRefName -- '#93'` returns `{"headRefName":"chore/release-0.6.0","mergedAt":"2026-09-01T17:37:21Z","state":"MERGED"}`, and `#93` is a local, owner-correct, conforming ref. It therefore passes this issue's guard, drives `classify_ship_ready` to **FINALIZE** and `ship_merge_decision` to **`skip`** for *any* reviewed issue, whose own PR is then never merged while the work records as `shipped` — verbatim the harm this Goal claims to close. Owner/repo pinning does **not** fix it (`#93` has the correct owner); the needed control is binding the probe to the issue's own identity, which `gh` supplies free in the same call. The gap also spans a second module this PR did not consider: `scripts/verify_checkpoint.py::verify_ship_merge` (:1593-1609) reads the same untrusted Board field via `_extract_pr_number` and asserts `state == "MERGED"`, so the **ship gate passes** on a wrong-target ref — this PR's "structurally immune" claim for that file is right for the option-shaped class (digits-only extraction) and wrong for this one.
+>
+> **That residual is a different defect class — wrong-target *reference* (provenance), not option-shaped *value* (shape) — and its durable carrier is ISSUE-077** (P1, `Depends-On: ISSUE-073`), with the evidence recorded as **GAP-073a** in `docs/test_plan.md`. Recorded the same way ISSUE-066's unmet AC-1 was recorded at its ship, and for the same reason: *a deferred finding is only real if it has a durable carrier, and the carrier must be visible from the registry entry, not only from a PR body.* This issue earns that lesson — the review found the follow-up the PR body claimed was "filed separately" **did not exist**, so without the filing the residual would have been squashed into commit history and lost.
+>
+> Shipping strictly reduces reachable harm: every refusal this change adds moves toward SHIP/`merge`, never toward FINALIZE/`skip`, so the fail-safe direction is uniform and blocking the merge would have left the live flag-class injection on main. Two threat-model corrections are recorded rather than left wrong: the `--repo` family does exit 1 as single tokens (safe), **but** a single-token non-`--repo` flag (`--comments`, `--jq=.state`) makes `gh` fall back to resolving the **current branch's** PR — which does forge a verdict from a worktree — so the blocked class is real and this fix is more valuable than the PR body originally credited. Four Lows remain unresolved and are folded into ISSUE-077 rather than re-filed: the two divergent acceptance contracts for one `PR:` field (`sprint_queue.py` refuses the live compound values that `verify_checkpoint.py`'s trailing-digits `re.search` accepts), `_PR_REF_RE`'s lack of intrinsic `\A(?:...)\Z` anchoring, its Unicode-aware `\d`/`[\w.-]` classes, and the unbounded echo of a rejected ref into `stderr` and the stdout `reason`. The two live compound `PR:` values were deliberately **REFUSED, not normalized** (AC-4's explicit decision) — do not quietly reverse it.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -4013,11 +4025,11 @@ A default gate-checkpoint run produces no telemetry fallback announcement, becau
 - PRD-Ref: none (kit self-development; GAP-068j from the ISSUE-068 / PR #121 review; review lesson "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class" point (3), leading-dash class — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-073-pr-ref-validation
+- GH-Issue: 124
+- PR: https://github.com/pillip/claude-dev-kit/pull/127
 - Depends-On: none
 
 #### Goal
@@ -4036,12 +4048,12 @@ A Board- or CLI-supplied PR reference can never be re-interpreted as a `gh` flag
   - Broadening the whitelist to `gh`'s branch-name ref form — unattested in every live `PR:` value, so excluding it is a deliberate narrowing, not an oversight.
 
 #### Acceptance Criteria (DoD)
-- [ ] Given a rostered `reviewed` issue whose Board `PR:` value is `--repo attacker/evil`, when `next-action` runs with a logging fake supplied as `runner`, then the fake records zero invocations, the probe degrades to indeterminate, the emitted action is `SHIP` rather than `FINALIZE`, and the warning text names both the rejected value and the `PR:` field it was read from.
-- [ ] Given the same option-shaped value passed through the model-chosen CLI path as `sprint_queue.py ship-merge-decision --pr '--repo attacker/evil'`, when the command runs, then the decision is `merge` with zero `gh` invocations, proving the guard sits at the `_gh_pr_merge_state` chokepoint and not only at the Board-parse site.
-- [ ] Given the three ref forms the probe must keep accepting (a bare `123` as its own tests use, a `#123` as the historical Board rows carry, and a full `https://github.com/<owner>/<repo>/pull/123` URL as every recent row carries), when `_gh_pr_merge_state` runs against a fake runner answering `MERGED`, then each still resolves to `merged` with the ref string reaching the argv unchanged, and `classify_ship_ready` still emits `FINALIZE` for each exactly as on main.
-- [ ] Given the two compound values the live Board already carries (`#108 https://github.com/pillip/claude-dev-kit/pull/108` and the same shape for PR 122), when the probe runs on them, then the outcome matches the handling explicitly recorded in the PR — refused-as-indeterminate, which reproduces today's observable result since `gh` cannot parse a two-token ref, unless the PR records a normalization decision instead — and the test asserts the branch that shipped by name.
-- [ ] Given the validation helper deleted or weakened to a pass-through, when the injection test re-runs, then it fails with the fake recording the `--repo attacker/evil` invocation, so the guard is proven load-bearing rather than merely present.
-- [ ] Given the argv the probe builds, when the argv pin asserts it, then the pinned list is `["gh", "pr", "view", "--json", "state,mergedAt", "--", "<ref>"]` with every flag ahead of the `--` separator and the ref last, and the fixture's old `PR-REF` placeholder is replaced by a ref the validator accepts.
+- [x] Given a rostered `reviewed` issue whose Board `PR:` value is `--repo attacker/evil`, when `next-action` runs with a logging fake supplied as `runner`, then the fake records zero invocations, the probe degrades to indeterminate, the emitted action is `SHIP` rather than `FINALIZE`, and the warning text names both the rejected value and the `PR:` field it was read from.
+- [x] Given the same option-shaped value passed through the model-chosen CLI path as `sprint_queue.py ship-merge-decision --pr '--repo attacker/evil'`, when the command runs, then the decision is `merge` with zero `gh` invocations, proving the guard sits at the `_gh_pr_merge_state` chokepoint and not only at the Board-parse site.
+- [x] Given the three ref forms the probe must keep accepting (a bare `123` as its own tests use, a `#123` as the historical Board rows carry, and a full `https://github.com/<owner>/<repo>/pull/123` URL as every recent row carries), when `_gh_pr_merge_state` runs against a fake runner answering `MERGED`, then each still resolves to `merged` with the ref string reaching the argv unchanged, and `classify_ship_ready` still emits `FINALIZE` for each exactly as on main.
+- [x] Given the two compound values the live Board already carries (`#108 https://github.com/pillip/claude-dev-kit/pull/108` and the same shape for PR 122), when the probe runs on them, then the outcome matches the handling explicitly recorded in the PR — refused-as-indeterminate, which reproduces today's observable result since `gh` cannot parse a two-token ref, unless the PR records a normalization decision instead — and the test asserts the branch that shipped by name.
+- [x] Given the validation helper deleted or weakened to a pass-through, when the injection test re-runs, then it fails with the fake recording the `--repo attacker/evil` invocation, so the guard is proven load-bearing rather than merely present.
+- [x] Given the argv the probe builds, when the argv pin asserts it, then the pinned list is `["gh", "pr", "view", "--json", "state,mergedAt", "--", "<ref>"]` with every flag ahead of the `--` separator and the ref last, and the fixture's old `PR-REF` placeholder is replaced by a ref the validator accepts.
 
 #### Implementation Notes
 - Provenance: `docs/test_plan.md` GAP-068j, whose named candidate is "validate the ref against `#?\d+|https://github\.com/[\w.-]+/[\w.-]+/pull/\d+` and insert `--` before it". This issue bounds that pattern's quantifiers and places it at the chokepoint.
@@ -4056,13 +4068,13 @@ A Board- or CLI-supplied PR reference can never be re-interpreted as a `gh` flag
 - Run the AC-5 mutation matrix with `PYTHONDONTWRITEBYTECODE=1` and validate the harness with one known-killing mutant before trusting any SURVIVED verdict (bytecode-cache lesson) — that AC is a mutation verdict, so the harness is part of the evidence.
 
 #### Tests
-- [ ] Injection pin (Board path): `PR: --repo attacker/evil` on a rostered `reviewed` issue -> zero recorded `gh` invocations, action `SHIP` not `FINALIZE`, warning naming the `PR:` field.
-- [ ] Injection pin (CLI path): `ship-merge-decision --pr '--repo attacker/evil'` -> `merge`, zero invocations.
-- [ ] Accept-form matrix: bare `123`, `#123`, full URL -> `merged` under a `MERGED` fake with the ref unchanged in argv, plus `classify_ship_ready` -> `FINALIZE` for each.
-- [ ] Compound-value pin for the two live Board values, asserting the recorded branch by name.
-- [ ] Mutation pair: guard removed -> the injection test fails with the invocation recorded; guard present -> the accept-form matrix stays green.
-- [ ] Argv pin: `["gh", "pr", "view", "--json", "state,mergedAt", "--", "121"]` — flags before `--`, ref last.
-- [ ] Degradation unchanged: empty ref, non-zero exit, `OSError`, `TimeoutExpired`, unparseable JSON, and valid-but-non-object JSON all still return `None` without raising, so the new early return does not regress the ISSUE-052 contract.
+- [x] Injection pin (Board path): `PR: --repo attacker/evil` on a rostered `reviewed` issue -> zero recorded `gh` invocations, action `SHIP` not `FINALIZE`, warning naming the `PR:` field.
+- [x] Injection pin (CLI path): `ship-merge-decision --pr '--repo attacker/evil'` -> `merge`, zero invocations.
+- [x] Accept-form matrix: bare `123`, `#123`, full URL -> `merged` under a `MERGED` fake with the ref unchanged in argv, plus `classify_ship_ready` -> `FINALIZE` for each.
+- [x] Compound-value pin for the two live Board values, asserting the recorded branch by name.
+- [x] Mutation pair: guard removed -> the injection test fails with the invocation recorded; guard present -> the accept-form matrix stays green.
+- [x] Argv pin: `["gh", "pr", "view", "--json", "state,mergedAt", "--", "121"]` — flags before `--`, ref last.
+- [x] Degradation unchanged: empty ref, non-zero exit, `OSError`, `TimeoutExpired`, unparseable JSON, and valid-but-non-object JSON all still return `None` without raising, so the new early return does not regress the ISSUE-052 contract.
 
 #### Rollback
 `git revert` — the change is one validation helper plus an argv reorder inside `_gh_pr_merge_state`, with no schema, output-key, or phase-semantics surface. Note that a revert **restores a live argument injection**, so it must be paired with disabling the probe (`next-action --no-check-merged`, which forces phase-only SHIP) until the guard is re-landed; reverting the argv pin alone is not sufficient.
@@ -4216,11 +4228,11 @@ Whichever actor the contract instructs to write `issues.md` under the lock can a
 - PRD-Ref: none (kit self-development; orchestrator observation; review-lesson class "hand-rolled parser must match its intended boundary")
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
-- Owner:
+- Status: doing
+- Owner: developer
 - Branch: issue/ISSUE-076-sprint-table-parse-scoping
-- GH-Issue:
-- PR:
+- GH-Issue: 125
+- PR: 128
 - Depends-On: none
 
 #### Goal
@@ -4254,3 +4266,222 @@ Whichever actor the contract instructs to write `issues.md` under the lock can a
 
 #### Rollback
 `git revert` — the parser change is self-contained and tightens scoping only; reverting restores today's over-broad capture and the false-negative behaviour.
+
+---
+
+### ISSUE-077: Bind the `gh` merge-state probe to the issue's own PR — a whitelist-conforming wrong-target `PR:` ref still forges a MERGED verdict
+
+> ISSUE-073 review triage (2026-10-11; PR #127), unresolved High, recorded as `docs/test_plan.md` **GAP-073a** which names this issue as its tracker. ISSUE-073 shipped a bounded `fullmatch` whitelist (`_PR_REF_RE`) inside `scripts/sprint_queue.py::_gh_pr_merge_state` plus a `--` separator, and that **fully closes the option-shaped / flag-reinterpretation class** — mutation-verified in both directions, 10 mutants killed across two reviewers including a guard-RELOCATED-downstream-of-`runner()` mutant. Do **not** re-litigate it. What it does not close is **provenance**: the guard proves a ref's SHAPE, not that the ref denotes *this issue's* PR. Reproduced against the installed `gh version 2.76.2`: `gh pr view --json state,mergedAt,headRefName -- '#93'` returns `{"headRefName":"chore/release-0.6.0","mergedAt":"2026-09-01T17:37:21Z","state":"MERGED"}`. `#93` is a LOCAL, owner-correct, **fully whitelist-conforming** ref — it passes ISSUE-073's guard, so `classify_ship_ready` emits **FINALIZE** and `ship_merge_decision` returns **`skip`** for ANY reviewed issue, whose own PR is then never merged and whose work is silently recorded as `shipped`. That is verbatim the harm ISSUE-073's Goal claims to close ("an unmerged PR therefore can no longer be finalized as `shipped`"), so **ISSUE-073's Goal is only PARTIALLY met**. The foreign-repo variant resolves too: `gh pr view --json state,mergedAt -- 'https://github.com/cli/cli/pull/1'` returns `{"state":"MERGED"}`. **Owner/repo pinning does not fix this** — PR #127's own body proposed pinning owner/repo via `gh repo view --json nameWithOwner`, and `#93` defeats it (correct owner, wrong target); normalizing a URL down to its number does not fix it either, because the number *is* the untrusted part. **The gap also spans a second module PR #127 did not consider:** `scripts/verify_checkpoint.py::verify_ship_merge` (lines 1593-1609) reads the same untrusted Board `PR:` field via `_extract_pr_number` and asserts `state == "MERGED"`, so the **ship gate passes** on a wrong-target ref — PR #127's "structurally immune" claim for that file is correct for the OPTION-SHAPED class (its digits-only `re.search(r"(\d+)\s*$")` extraction) but not for this provenance class. Threat model, which is what justifies P1: the Board `PR:` field is model-authored text in `issues.md` and `ship-merge-decision --pr` is a model-chosen argument — neither requires repo write access to influence, since prompt-injected content in a GH issue body, a PR comment, or a fetched doc is enough (review lesson 5, "workspace-persisted state read by hooks/gates is untrusted input"). Three same-function Lows from the same review are folded in here rather than filed as three more issues.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-073 / PR #127 review triage, unresolved High recorded in `docs/review_notes/ISSUE-073.md` and as GAP-073a in `docs/test_plan.md`; review lesson "Delegation handoff artifacts are forgeable attestations: shape validation is not provenance" — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-073
+
+#### Goal
+The merge-state probe answers for the issue it was asked about: a ref that resolves to a PR other than that issue's own can never yield `merged`, so FINALIZE / `skip` requires attested provenance rather than a well-shaped ref — and every refusal lands on SHIP / `merge`.
+
+#### Scope (In/Out)
+- In:
+  - **Bind the verdict to the issue's identity using data already in the SAME `gh` call.** Widen the probe to `--json state,mergedAt,headRefName` and compare the returned `headRefName` against the issue's Board `Branch:` field; a mismatch yields a non-`merged` verdict with a named reason. Verified free: `gh pr view --json state,mergedAt,headRefName -- 127` returns `{"headRefName":"issue/ISSUE-073-pr-ref-validation",...}`, which matches ISSUE-073's `Branch:` field exactly. **No second subprocess and no additional network round trip on a hot path** — that is why this control is preferred over any probe that costs another `gh` invocation.
+  - An alternative/additional leg, optional and recorded either way: check the PR's closing issue (`--json closingIssuesReferences`) against the Board `GH-Issue:` field. If it ships, it ships in the same single call; if it does not, the PR records why (e.g. the field is empty on older rows).
+  - **Thread issue identity into the chokepoint from BOTH call sites — this is the main design cost and is why it was not folded into ISSUE-073's 0.5d scope.** `_gh_pr_merge_state(pr_ref, *, timeout=None, runner=None)` (line 209) takes only a ref today. `classify_ship_ready` (lines 272-297) has `issues_meta` in hand but `parse_issues_metadata` (lines 131-161) parses only `manual/depends_on/priority/status/pr` — add `branch` (and `gh_issue` if the second leg ships). `cmd_ship_merge_decision` (lines 778-788) has only `args.pr` — add an identity argument (`--issue ISSUE-NNN`, resolved to its Board `Branch:`), keeping the subcommand's always-exit-0 contract.
+  - **Update the three texts that invoke the subcommand**, so the identity argument is actually supplied: `skills/ship/SKILL.md.tmpl:40`, `skills/sprint/SKILL.md.tmpl:145`, `agents/team-lead.md:108`. Both SKILL files are AUTO-GENERATED — edit the `.tmpl` and regenerate with `python3 scripts/gen_skills.py`.
+  - **Fail-safe direction constraint (non-negotiable):** every refusal moves toward SHIP / `merge` so the real `gh pr merge` surfaces the truth, never toward FINALIZE / `skip`. A missing, empty, or unparseable `Branch:` field degrades to SHIP — not to "trust the ref". A missing or non-string `headRefName` in the response degrades the same way.
+  - **Preserve the ISSUE-052 never-raises contract:** empty ref, non-zero exit, `OSError`, `subprocess.TimeoutExpired`, unparseable JSON, and valid-but-non-object JSON all still return `None` without raising.
+  - **Second module:** apply the same binding in `scripts/verify_checkpoint.py::verify_ship_merge` (lines 1593-1609) — request `headRefName` alongside `state` and refuse MERGED when it does not match the issue's Board `Branch:`. Audit its sibling `gh` sites that consume the same untrusted field (`:416` `gh issue view`, `:1068` `gh pr view --json body`, `:1555`/`:1557` `gh pr checks`) and record each as fixed or why not, so the absence is auditable.
+  - **Folded Low 1 — anchor the pattern.** `_PR_REF_RE` is a bare top-level alternation `A|B|C`, correct only because its single call site uses `fullmatch`: `.match()` admits `121 --repo=x` and `.search()` admits `--repo=attacker/evil 121`, so a future second caller silently reintroduces the injection. Fix: `\A(?:...)\Z`. **Caveat:** this requires rewriting `tests/test_sprint_queue.py::test_pattern_rejects_an_embedded_ref_under_fullmatch`, which deliberately asserts that `search` DOES admit the hostile string in order to document the hazard — **replace that documentation with an equivalent anchored-safety assertion, do not just delete it.**
+  - **Folded Low 2 — make the classes ASCII.** `\d` and `[\w.-]` are Unicode-aware, so `١٢٣`, `１２３`, `https://github.com/öwner/répo/pull/1` and `https://github.com/../../pull/1` all pass the whitelist. No exploit path (none can be option-shaped; all degrade via `gh` exit 1), but the whitelist should mean what it says: `re.ASCII` or explicit `[0-9]` / `[A-Za-z0-9._-]` classes. `_ROSTER_ID_RE` (line 333) in the same module has the same property — fix it in the same pass or record why not.
+  - **Folded Low 3 — bound the echo.** The rejected ref is echoed unbounded into stderr (`{pr_ref!r}` amplifies non-printables ~4x) and raw into `ship_merge_decision`'s stdout `reason`, which a model consumes as rationale. Verified live: `{"action": "merge", "reason": "PR --repo attacker/evil not merged (state=None) — perform the merge"}`. Fix: truncate at ~120 chars with an elision marker, and stop presenting a refused value in `reason` as if it were a ref.
+- Out:
+  - **ISSUE-073's shipped shape whitelist and `--` separator — keep BOTH.** The identity binding is a **THIRD independent control**, not a replacement; removing either of the first two is out of scope and would be a regression.
+  - Any change to FINALIZE / SHIP semantics, the `--no-check-merged` flag, or the IRON LAW.
+  - Normalizing the two live compound `PR:` values (`#108 https://.../pull/108` and the same shape for PR 122). ISSUE-073 recorded a deliberate **REFUSE** decision for them — do not quietly reverse it; if the binding makes normalization look attractive, that is a separate decision with its own record.
+  - The ~66 lines of test duplication the minimality axis found in PR #127 — real debt, orthogonal to this defect, and refactoring it here would obscure the mutation evidence this issue owes.
+  - Hardening `gh pr merge` itself in the ship skill, and any new `gh` invocation that costs an extra subprocess.
+
+#### Acceptance Criteria (DoD)
+- [ ] **Wrong-target pin (the headline harm).** Given a rostered `reviewed` issue whose Board `Branch:` is `issue/ISSUE-0XX-<slug>` and whose Board `PR:` is `#93` — local, owner-correct, fully `_PR_REF_RE`-conforming — when `next-action` runs with a `runner=` fake answering the live gh 2.76.2 payload for `#93` (`{"state":"MERGED","mergedAt":"2026-09-01T17:37:21Z","headRefName":"chore/release-0.6.0"}`), then the probe returns a non-`merged` verdict, the emitted action is `SHIP`, the emitted JSON contains **zero** occurrences of `FINALIZE`, and the warning names the expected branch and the returned `headRefName`.
+- [ ] **Foreign-repo-URL pin.** Given `PR: https://github.com/cli/cli/pull/1` on the same issue, when the probe runs with a `runner=` fake answering `{"state":"MERGED","headRefName":"<foreign-branch>"}` (the live response for that URL is `{"state":"MERGED"}`), then the Board path emits `SHIP` with zero `FINALIZE` occurrences, and `sprint_queue.py ship-merge-decision --pr 'https://github.com/cli/cli/pull/1' --issue ISSUE-0XX` returns `{"action": "merge", ...}`.
+- [ ] **Positive control — the binding is not vacuous.** Given ISSUE-073's own Board row (`PR: https://github.com/pillip/claude-dev-kit/pull/127`, `Branch: issue/ISSUE-073-pr-ref-validation`), when the `runner=` fake answers the verified payload `{"state":"MERGED","mergedAt":"<ts>","headRefName":"issue/ISSUE-073-pr-ref-validation"}`, then the verdict is `merged`, `classify_ship_ready` emits `FINALIZE`, and `ship-merge-decision --pr 127 --issue ISSUE-073` returns `{"action": "skip", ...}` — a correctly-matching PR still reaches FINALIZE exactly as on ISSUE-073's branch.
+- [ ] **Degradation pin, fail-safe direction.** Given a correctly-matching ref but a `Branch:` field that is (a) absent entirely, (b) present-but-empty, (c) garbage (`Branch: --repo attacker/evil`), and separately a response whose `headRefName` key is (d) absent or (e) a non-string, when the probe runs on each of the five, then every case lands on `SHIP` / `{"action": "merge"}` with a named reason and **no case** yields `FINALIZE` / `skip`.
+- [ ] **ISSUE-052 never-raises contract unchanged.** Given each of the six degradation modes — empty ref, non-zero `gh` exit, `OSError` from the runner, `subprocess.TimeoutExpired`, unparseable JSON, and valid-but-non-object JSON (`null` / list / scalar) — when `_gh_pr_merge_state` runs, then each returns `None` without raising and with the existing `Warning:` diagnostic on stderr, so the identity binding adds no new raising path.
+- [ ] **Mutation requirement — the binding is load-bearing.** Given the identity comparison deleted, short-circuited (`or True`), or relocated after the `merged` determination, when the wrong-target pin re-runs, then it **fails** with `FINALIZE` recorded on the Board path and `{"action": "skip"}` on the CLI path; run the matrix with `PYTHONDONTWRITEBYTECODE=1` and validate the harness with one known-killing mutant before trusting any SURVIVED verdict.
+- [ ] **`verify_checkpoint.verify_ship_merge` leg.** Given an issue whose Board `PR:` is `93` and whose `Branch:` is `issue/ISSUE-0XX-<slug>`, when `verify_ship_merge` runs with its `gh` seam answering the `#93` payload, then it returns `False` and prints a message naming the branch mismatch; given the same function with a payload whose `headRefName` matches, then it returns `True` — both asserted through the module's own subprocess seam, and the mismatch case fails if the comparison is deleted.
+- [ ] **Anchored pattern (folded Low 1).** Given `_PR_REF_RE` rewritten as `\A(?:...)\Z`, when `.match()` and `.search()` are each applied to `121 --repo=x` and `--repo=attacker/evil 121`, then all four combinations reject, and the hazard previously documented by `test_pattern_rejects_an_embedded_ref_under_fullmatch` is still documented by a replacement test that names the anchors as the reason a future second caller is safe.
+- [ ] **ASCII classes and bounded echo (folded Lows 2-3).** Given the refs `١٢٣`, `１２３`, `https://github.com/öwner/répo/pull/1` and `https://github.com/../../pull/1`, when the whitelist runs, then each is refused; and given a refused ref of 10 000 characters containing non-printables, when the Board path warns and when `ship-merge-decision` emits its JSON, then the stderr echo is at most ~120 characters plus an elision marker and the stdout `reason` no longer presents the refused value as a ref (today it does: `{"action": "merge", "reason": "PR --repo attacker/evil not merged (state=None) — perform the merge"}`).
+
+#### Implementation Notes
+- Provenance: `docs/test_plan.md` GAP-073a (names ISSUE-077 as its tracker) and `docs/review_notes/ISSUE-073.md` (branch file, not yet on main at filing time — cite by content: one unresolved High "the whitelist is shape validation, not provenance; a conforming but wrong-target ref still forges MERGED", plus the three Lows folded in above). Every `gh` result quoted in this issue was reproduced against `gh version 2.76.2`; re-record the version in the PR if the environment has moved.
+- Files: `scripts/sprint_queue.py` — `_gh_pr_merge_state` (209-269, the `--json` widening plus the binding), `parse_issues_metadata` (131-161, add `branch`), `classify_ship_ready` (272-297, thread identity and keep the per-ref cache keyed so two issues cannot share a cached verdict), `ship_merge_decision` (300-322) and `cmd_ship_merge_decision` (778-788, new identity argument), `_PR_REF_RE` (branch-only today) and `_ROSTER_ID_RE` (333). Also `scripts/verify_checkpoint.py` (`verify_ship_merge` 1593-1609, `_extract_pr_number` 190-205). Tests: `tests/test_sprint_queue.py` (`TestGhPrMergeState` 531-567, the argv-recording `_runner` fixture 516-528, `TestClassifyShipReady` 570, `TestShipMergeDecision` 664, `TestGhPrMergeStateRobustness` 789).
+- **The per-ref cache in `classify_ship_ready` becomes identity-sensitive.** `cache[pr_ref]` keyed on the ref alone was safe when the verdict depended only on the ref; once the verdict depends on (ref, expected-branch) the key must carry both, or one issue's accepted verdict leaks to another issue sharing the ref. This is the quietest regression available in this change — pin it with a two-issues-one-ref test.
+- **The `_runner` fake must grow a `head_ref_name=` parameter.** It currently synthesizes `{"state": ..., "mergedAt": ...}` only and ignores argv, so without that parameter every new test would see `headRefName` absent and land on the degradation branch — a hollow pass that looks like the binding working. Assert the fake's recorded argv contains `state,mergedAt,headRefName` in the same test, so the fixture cannot drift away from the production `--json` list (ISSUE-037 fixture-pin lesson).
+- **Drive the production path through the `runner=` seam, not `merge_state_fn=`.** Tests that inject `merge_state_fn=` replace the probe wholesale and therefore bypass both ISSUE-073's guard and this binding by design (`TestShipMergeDecision` passes `"pull/1"`). Every injection, degradation, and mutation test here goes through `runner=`; leave the existing `merge_state_fn` doubles alone (mock-at-the-delegation-seam lesson).
+- **Rejected candidates, recorded so they are not re-proposed:** owner/repo pinning via `gh repo view --json nameWithOwner` (PR #127's own suggestion) fails because `#93` is owner-correct; URL-to-number normalization fails because the number is the untrusted part; a second `gh` call to resolve identity is rejected on hot-path cost when `headRefName` is free in the call already being made.
+- `parse_issues_metadata` gaining a `branch` key widens the GAP-068i fixture drift (`_board_meta` in the tests returns `{manual, depends_on, priority, status}` while the parser also emits `pr`, and now `branch`). Build the fixture from `parse_issues_metadata(_make_issue(...))` as GAP-068i's candidate suggests rather than adding a third hand-maintained key.
+- Review lesson (forgeable attestations): shape validation is not provenance — a validator that proves an artifact is well-formed must not be read as proving who it is about. Name this lesson in the PR, and when the lesson is next updated, add this instance alongside the gate-results-artifact one: the cheapest provenance binding is usually a field the trusted side already receives.
+- Review lesson 5 (untrusted workspace-persisted state): the Board `PR:`, `Branch:` and `GH-Issue:` fields are all model-authored text. `Branch:` becomes a *security-relevant* field the moment it is the comparison target, so validate its shape on read (`issue/ISSUE-\d{1,9}-[A-Za-z0-9._-]{0,64}` or the repo's actual convention) and degrade to SHIP rather than trusting a malformed value.
+- The refusal path is not novel behaviour: a non-`merged` verdict leaves the issue on `still_ship`, `ship_merge_decision` returns `merge`, and the real `gh pr merge` surfaces the truth — the same observable mode the existing `--no-check-merged` flag already produces.
+- Deflation check (PR #92 precedent): if the honest conclusion during implementation is that `headRefName` cannot be bound for some live row class (e.g. rows whose `Branch:` was deleted post-merge), the correct outcome is to record that class and have it degrade to SHIP, not to weaken the binding for everyone.
+
+#### Tests
+- [ ] Wrong-target pin (Board path): `PR: #93` + mismatched `headRefName` -> `SHIP`, zero `FINALIZE` occurrences, warning naming both branches.
+- [ ] Wrong-target pin (CLI path): `ship-merge-decision --pr '#93' --issue ISSUE-0XX` -> `{"action": "merge"}`.
+- [ ] Foreign-repo-URL pin, both paths.
+- [ ] Positive control: ISSUE-073's own ref + matching `headRefName` -> `merged`, `FINALIZE`, `skip`.
+- [ ] Degradation matrix (5 cases): `Branch:` absent / empty / garbage, `headRefName` absent / non-string -> SHIP / `merge` each, never FINALIZE / `skip`.
+- [ ] Never-raises matrix (6 ISSUE-052 modes) unchanged, with the `Warning:` diagnostic still on stderr.
+- [ ] Mutation pairs: binding deleted / `or True` / relocated after the merged determination -> the wrong-target pin fails with `FINALIZE` and `skip` recorded; harness validated with one known-killing mutant under `PYTHONDONTWRITEBYTECODE=1`.
+- [ ] Cache-identity pin: two issues sharing one `PR:` ref with different `Branch:` values -> the matching issue reaches FINALIZE and the non-matching one does not.
+- [ ] Argv pin updated: `["gh", "pr", "view", "--json", "state,mergedAt,headRefName", "--", "<ref>"]` — flags before `--`, ref last, `headRefName` present.
+- [ ] `verify_ship_merge` pair: mismatched `headRefName` -> `False` naming the mismatch; matching -> `True`; comparison deleted -> the mismatch case fails.
+- [ ] Anchored-pattern matrix: `.match()` and `.search()` both reject `121 --repo=x` and `--repo=attacker/evil 121`; the replacement hazard-documentation test exists and names the anchors.
+- [ ] ASCII-class matrix: `١٢٣`, `１２３`, `öwner/répo` URL, `../../` URL each refused; `_ROSTER_ID_RE` decision asserted as recorded.
+- [ ] Echo bound: 10 000-char refused ref with non-printables -> stderr echo <= ~120 chars + elision; `reason` no longer presents the refused value as a ref.
+- [ ] Call-site parity: `skills/ship/SKILL.md` / `skills/sprint/SKILL.md` match their `.tmpl` after `gen_skills.py`, and every `ship-merge-decision` invocation in skills/agents text supplies the identity argument.
+
+#### Rollback
+`git revert` — the change is the `--json` widening plus one comparison inside `_gh_pr_merge_state`, an additive `branch` key in `parse_issues_metadata`, one new CLI argument, the same comparison in `verify_ship_merge`, and three call-site text edits. There is no schema, output-key, or phase-semantics surface, and both ISSUE-073 controls survive a revert untouched. Note that a revert **restores a live forged-FINALIZE path** (`#93` re-accepted for any issue), so pair it with `next-action --no-check-merged` — which forces a phase-only SHIP — until the binding is re-landed; and revert the skill/agent text together with the CLI argument so no documented invocation names a flag the script no longer accepts (regenerate with `python3 scripts/gen_skills.py` after the revert).
+
+---
+
+### ISSUE-078: Make the sprint roster boundary mechanically enforced — a running sprint_state must carry an accepted `Roster-Watermark`
+
+> ISSUE-069 / PR #129 review residual (2026-10-11), carried here per the ratchet lesson's prevention point (4) and the "a deferred finding is only real if it has a durable carrier" lesson. ISSUE-069 pinned the roster boundary in `docs/sprint_state.md`'s `## Meta` and gated above-boundary autonomous dispatch behind field **PRESENCE**, so every *corrupted* form of the field — malformed, decorated, duplicated, mis-cased, out-of-range, declared outside `## Meta`, smuggled behind a Unicode line separator — still closes the gate and announces its refusal. The **absent** state is a different thing: it is a deliberate fail-OPEN, mandated by ISSUE-069's own AC-6 for backward compatibility, so a sprint_state with no `Roster-Watermark` keeps the pre-ISSUE-069 behaviour and Board issues above the re-derived `max(rostered_nums)` boundary are auto-**TARGETED**, not merely flagged. Verified during the ISSUE-069 review on a fixture where the harm can actually fire (roster ISSUE-010/011, boundary pinned at ISSUE-011, five higher-ID Board issues open): pinned -> `DONE` / `targets: []`; mangled -> `DONE` / `targets: []`; **absent -> `PIPELINE` targeting ISSUE-070/071/072**, byte-identical to main. So **deleting one line** from a file that every phase executor rewrites on every iteration re-opens autonomous dispatch of out-of-scope work through implement -> review -> `gh pr merge`. The only thing standing in the way is a model-followed instruction in `skills/sprint/SKILL.md.tmpl` step 4d ("copy the `## Meta` block verbatim") — prose, inside a mechanism whose entire purpose is to constrain autonomous action, and the ISSUE-069 PR body itself names it as the weakest link. The revert is announced (`[roster-watermark: absent from ## Meta — fell back ...]`) and is never worse than main's shipped behaviour, so this is a **residual, not a regression** — but it is the one state the control does not cover.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-069 / PR #129 review residual — the absent-field fail-OPEN named in the ratchet lesson "A visibility threshold derived from state the control itself mutates will ratchet shut", prevention point (4), and in "A deferred finding is only real if it has a durable carrier — a PR body is not one" — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-069
+
+#### Goal
+A running sprint cannot silently lose its pinned boundary: a `docs/sprint_state.md` with `Status: running` and no **accepted** `Roster-Watermark` is detected by a deterministic check rather than by a model remembering to copy a block.
+
+#### Scope (In/Out)
+- In:
+  - A deterministic check that a `Status: running` sprint_state carries an **accepted** `Roster-Watermark` — accepted, not merely present. `parse_roster_watermark` already returns the three-way `(num, rejection_detail, present)` signal, so reuse it; a second hand-rolled parser would fork ISSUE-069's detection alphabet, which is precisely the oracle-direction failure that review found (`[-*]` vs the grammar's `[-+*]`).
+  - **Decide and record WHERE the check runs**, naming the blast radius of the choice. Candidate carriers: (a) a new leg of `sprint_queue.py validate` — already invoked at sprint step 4f and already carrying a non-zero contract, so the smallest blast radius; (b) a `verify_checkpoint.py` phase, which buys blocking-gate semantics at the cost of a new phase in the 48-phase partition pinned by `tests/test_verify_checkpoint_contract.py`; (c) a non-zero exit from `next-action` itself, the loudest and the most invasive. Note explicitly that (c) **breaks ISSUE-069's AC-6 byte-identity** for legitimately pre-pin sprints, so choosing it requires a stated staged/opt-in rollout or a warn-then-fail migration, not a silent flip.
+  - A **machine-readable** signal, not only prose in `reason`. The ISSUE-069 review recorded this as an open Medium: the sprint skill's steps 4b-4c branch on `action` / `unrostered` / `stranded` only, so a boundary problem that lands in `reason` alone is unreadable by the orchestrator that is supposed to act on it. This overlaps the GAP-068d `stranded` consumer / exit-class decision — state whether this issue **settles** that or **defers** it, and if it defers, name the carrier.
+  - One line of operator-facing text for the new refusal and how to clear it, in `skills/sprint/SKILL.md.tmpl` (regenerate with `python3 scripts/gen_skills.py`; never hand-edit the generated `skills/sprint/SKILL.md`).
+- Out:
+  - Changing ISSUE-069's AC-6 backward-compatibility contract for sprints already in flight **without a migration story**. The compatibility path may be narrowed; it may not be removed silently.
+  - Re-deriving the boundary, and any change to `parse_roster_watermark`'s acceptance rules — ISSUE-069 hardened those in review (bounded digits, clamped range with both ends checked, ambiguous-line-structure refusal). This issue is about **enforcement**, not parsing.
+  - Renaming the `unrostered` / `stranded` JSON keys the sprint skill and team-lead read.
+  - The dispatch gate itself and the `## Meta` field's acceptance semantics (ISSUE-069); the carry-forward diagnosis surface (ISSUE-079).
+
+#### Acceptance Criteria (DoD)
+- [ ] **Absent-field refusal, both directions.** Given a `docs/sprint_state.md` whose `## Meta` carries `Status: running` and **no** `Roster-Watermark` line, when the chosen check runs, then it reports the state with a named reason containing both the literal field name `Roster-Watermark` and the word `running`; and given the byte-identical file with `- Roster-Watermark: ISSUE-069` added inside `## Meta`, when the same check runs, then it passes with no refusal — the positive control proves the check is not a constant.
+- [ ] **Presence is not acceptance.** Given a `Status: running` sprint_state whose `Roster-Watermark` is present but REJECTED by `parse_roster_watermark` — one case per rejection class already pinned by ISSUE-069 (decorated `**ISSUE-101**`, out-of-range, floor-violating `ISSUE-000`, duplicated in `## Meta`, declared outside `## Meta`, smuggled behind U+2028), when the check runs, then every case is reported with the parser's own rejection detail echoed (bounded), and **no** case passes; the ISSUE-069 engine behaviour for those same files (gate closed, `targets: []`) is unchanged by this issue.
+- [ ] **No over-firing on non-running states.** Given sprint_state files with `Status: planning`, `Status: complete`, a `## Meta` block with no `Status:` field at all, and no `docs/sprint_state.md` on disk, when the check runs on each, then none is refused and the exit code / verdict is identical to today's for that input — the refusal is scoped to the one state whose boundary is load-bearing.
+- [ ] **Migration behaviour is pinned, not implied.** Given a pre-ISSUE-069 sprint already in flight (a `Status: running` file with no `Roster-Watermark` and a roster whose rows are mid-pipeline), when the chosen carrier runs, then the recorded migration behaviour is reproduced exactly — either (i) `next-action` output stays byte-identical to ISSUE-069's AC-6 fallback while `validate` fails, or (ii) a warn-only verdict whose escalation to a failure is controlled by a documented, named opt-in — and the test asserts the chosen branch by equality, so flipping the migration decision breaks the test rather than silently changing operator behaviour.
+- [ ] **The signal has a consumer, and the consumer reads it.** Given the check's chosen output surface (a JSON key, an exit class, or both — not `reason` prose alone), when the sprint skill's owning step is read from `skills/sprint/SKILL.md.tmpl`, then that step names the key or exit code and states the operator action; and given the signal removed from the engine output, when the guard test runs, then it fails — pinning both halves, so this does not become another GAP-068d-shaped signal with no consumer.
+- [ ] **Mutation requirement.** Given the acceptance leg weakened to a presence check (`present` substituted for "accepted"), the `Status: running` predicate forced always-False, or the refusal downgraded to a silent `continue`, when the matrix re-runs under `PYTHONDONTWRITEBYTECODE=1`, then each mutant kills at least one of the tests above, and the harness is validated with one known-killing mutant before any `SURVIVED` verdict is trusted.
+
+#### Implementation Notes
+- Provenance: ISSUE-069 / PR #129 review (2026-10-11). The absent-state residual is recorded in the ratchet lesson's Observed section — "either gate on presence (as here) and accept that deletion is the residual, or add a mechanical check that a running state file carries an ACCEPTED boundary — and say which one you chose". This issue is the second option; whichever way it lands, the PR must say so, because an unqualified "this cannot be re-opened by a file edit" claim is false and was corrected in review once already.
+- Files: `scripts/sprint_queue.py` (reuse `parse_roster_watermark`'s three-way return; `cmd_validate` at line 757 and `cmd_next_action` at line 640 are the candidate carriers), possibly `scripts/verify_checkpoint.py` (a new phase must be added to the partition that `tests/test_verify_checkpoint_contract.py` enumerates), `skills/sprint/SKILL.md.tmpl` (step 4d/4f text; regenerate with `python3 scripts/gen_skills.py` — the AUTO-GEN header stays **below** the frontmatter per ISSUE-035's byte-0 rule), and `tests/` (extend `tests/test_sprint_queue_watermark.py` rather than adding a third watermark test module).
+- Review lesson ("A deferred finding is only real if it has a durable carrier — a PR body is not one"): this issue IS the carrier. Reference it by ID in the PR and in `docs/test_plan.md`, and do not let the narration substitute for the filing of whatever this issue itself defers.
+- Review lesson (ratchet, prevention point (4)): "a bounded-above filter and a bounded-below filter are different controls: state explicitly which side is open and test the open side." The open side here is the absent field. Every test above must exercise a fixture where the harm can actually fire — a boundary below the Board max with higher-ID issues open — or the suite re-runs ISSUE-069's structural blindness (a pin at or above the Board max empties the reported set legitimately and proves nothing).
+- Review lesson (counter-evidence): ISSUE-069's accepted path now always names the boundary in force with an `X of Y` count. Keep that output shape intact; if this check adds its own announcement, it must also be unconditional, since a conditional announcement is absent exactly in the state it is needed.
+- **Two same-module hardenings found in the ISSUE-069 review and left unfixed — fold them in here if cheap, or record why not.** (1) `_parse_depends_on` (line 79) and `parse_issues_metadata` (line 131) still use an **unbounded** `ISSUE-\d+` while `_ROSTER_ID_RE` (line 333) is bounded to `\d{1,9}` — the review had to truncate at the echo site instead of at the pattern, which is the wrong layer per the bounded-coercion lesson. (2) `cmd_next_action` returns early on `detect_circular_deps` **before** the watermark parse, so a single dependency cycle anywhere in `issues.md` discards the entire visibility signal, including any boundary rejection this issue would emit — the refusal must not be reachable only after an unrelated clean bill of health.
+- Deflation check (PR #92 precedent): if the honest conclusion during implementation is that no carrier can enforce this without breaking AC-6 for in-flight sprints, the correct outcome is to record that and narrow the claim in the skill doc — not to ship a check that is disabled by default and announces nothing.
+
+#### Tests
+- [ ] Absent-field pair: `Status: running` without the field -> refused with `Roster-Watermark` named; the same file with an accepted field -> passes.
+- [ ] Rejected-variant matrix (6 classes from ISSUE-069) -> each refused by the new check, with the ISSUE-069 engine verdict for the same files asserted unchanged.
+- [ ] Non-running matrix: `planning` / `complete` / no `Status:` / missing file -> no refusal, verdict equal to today's for that input.
+- [ ] Migration pin: pre-ISSUE-069 in-flight fixture -> the chosen branch asserted by equality (byte-identical `next-action` output, or the named opt-in controlling escalation).
+- [ ] Consumer pin: the owning step in `skills/sprint/SKILL.md.tmpl` names the key/exit code; the generated `skills/sprint/SKILL.md` matches its `.tmpl` after `gen_skills.py`; removing the signal from engine output fails the guard.
+- [ ] Mutation pairs: accepted -> present, `running` predicate always-False, refusal -> silent `continue`; run with `PYTHONDONTWRITEBYTECODE=1` and validate the harness with a known-killing mutant first.
+- [ ] If the two folded hardenings land: `ISSUE-<4301 digits>` in a `Depends-On` cell and in a Board `PR:`/`Status:` row parse without raising; and a dependency cycle in `issues.md` no longer suppresses the boundary signal (cycle present + boundary rejected -> both reported).
+
+#### Rollback
+`git revert` — the change is one reused parse call, one predicate, one output key and one block of skill text. A revert returns to ISSUE-069's shipped behaviour, in which the absent field falls back with an announcement, so nothing is left in an unparseable state; regenerate skills afterwards (`python3 scripts/gen_skills.py`) so `skills/sprint/SKILL.md` matches its `.tmpl`. Note that a revert **restores the one-line-deletion fail-OPEN** described above, so if a sprint is in flight, re-check that its `## Meta` still carries the boundary before resuming autonomous dispatch.
+
+---
+
+### ISSUE-079: Give the prior-sprint carry-forward diagnosis its own acceptance criteria, or remove it
+
+> ISSUE-069 / PR #129 review (2026-10-11), convergent code + minimality Medium, recorded rather than removed. ISSUE-069 shipped `diagnose_carry_forward_gaps` plus a new `reason` annotation (Note C) — roughly 49 engine lines and 17 tests, about **22% of its engine diff** — in response to an orchestrator request to record a *decision* about prior-sprint dependency resolution in the PR discussion. The decision itself was correct: it declined to relax the rostered-row dependency contract, per the review lesson "Relaxing a shared CLI/engine contract for a new caller class must be scoped to that class", and TC-068d stays green and table-only. The **implementation**, however, is named by none of ISSUE-069's 7 acceptance criteria, by neither its In nor its Out list, and by none of its Tests — so nothing specified its behaviour and no test-plan entry was designed against it. Both reviewers (the degraded code-review dimension and the team-lead) independently reached an "unrequested surface" verdict, and notably **both defects the ISSUE-069 review found in engine code lived in this function**, not in the AC-driven code: a **High** where the remediation advice, followed literally by an autonomous executor, made the engine target the already-shipped dependency for implement -> review -> `gh pr merge` (`compute_queues` resolves a rostered dependency only at `phase == "shipped"`, and a row added with the default `backlog` phase inverts the intent); and a **Medium** where the note echoed untrusted Board ids unbounded, producing a 259,734-character `reason` from 60 rows carrying one 4299-digit dependency id, burying `action`, `targets` and the `[dispatch: ... NOT dispatched]` restraint marker in the string an LLM orchestrator reads as the verdict. Both were fixed in review and are mutation-pinned; the function was left in because deleting ~250 lines of green, inert engine code during review of a ship-last PR whose two siblings merge first was judged the larger risk.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-069 / PR #129 review, unrequested-surface finding; review lesson "Work added to satisfy a request for a DECISION ships without acceptance criteria — and that is where the defects are", prevention point (3) — native memory review-lessons.md)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-069
+
+#### Goal
+The carry-forward diagnosis is either **specified and owned** — with its own acceptance criteria, a `docs/test_plan.md` entry and a stated remediation contract — or **removed** from the sprint engine; it does not stay in the tree as green, unspecified surface.
+
+#### Scope (In/Out)
+- In:
+  - Make the keep-or-remove decision **explicitly** and record the rationale where the loop reads it (this issue's PR plus a `docs/test_plan.md` entry), not only in a PR body.
+  - **If KEPT** — write the acceptance criteria it never had, covering at minimum: exact-Board-`Status` matching, so `done (sign-off pending)` is never advertised as resolved (consistent with the ISSUE-068 annotation-fails-closed finding); the exclusion set (synthesized / manual / dropped / waiting / queued rows); the **inertness guarantee** with respect to `action`, `targets` and every queue; the bounded echo of untrusted ids; and the **replayability of its remediation advice** — the review added a test that applies the advice and asserts the stall actually clears, and that must become the contract, per the lesson "Remediation advice a deterministic engine emits into a field an autonomous agent acts on is executable — test it by replaying it, not by asserting its wording".
+  - **If REMOVED** — revert the function, its Note C call site in `cmd_next_action` and its three test classes, and **record the silent-stall problem it was addressing** so it is not rediscovered from scratch: during this sprint's own setup, `next-action` withheld ISSUE-069 until the completed ISSUE-068 was carried into the roster by hand, reporting a bare `DONE` with no explanation, and that cost real time.
+  - Add the `docs/test_plan.md` entry the feature never had, under whichever outcome is chosen — TC-069l currently covers the function with no owning AC, so the entry must either gain an AC reference or be retired with the code.
+- Out:
+  - Relaxing the rostered-row dependency contract to resolve dependencies from the Board. ISSUE-069 explicitly declined it and TC-068d pins it; if anyone wants it, that is a separate issue with its own acceptance criteria.
+  - Renaming the `unrostered` / `stranded` JSON keys.
+  - The `## Meta` boundary parsing and the dispatch gate (ISSUE-069 / ISSUE-078).
+  - Re-litigating the two defects already fixed and mutation-pinned in the ISSUE-069 review — their pins must survive either outcome unless the code they pin is deleted.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The decision exists and is justified.** Given this issue's PR, when the keep-or-remove decision is read, then it names the outcome, the rationale, and the alternative it rejected; and given `docs/test_plan.md`, then TC-069l is either annotated with the acceptance criterion that now owns it or marked retired with the removal commit named — so no test in the plan is left with no owning AC either way.
+- [ ] **KEEP branch — specified behaviour, mutation-pinned.** Given the decision is KEEP, when the new acceptance criteria are implemented, then each of the five named properties is asserted by at least one test: a Board `Status: done (sign-off pending)` row is **not** reported as resolved; synthesized / manual / dropped / waiting / queued rows are excluded; `action`, `targets` and every queue are byte-identical with the diagnosis forced to return an empty result (the inertness guarantee); a row carrying a 4299-digit dependency id yields a `reason` under the documented bound with `action` and `targets` still readable in it; and each property fails when its guard is deleted, under `PYTHONDONTWRITEBYTECODE=1` with the harness validated by a known-killing mutant.
+- [ ] **KEEP branch — the advice is replayable, in both directions.** Given the decision is KEEP and a fixture reproducing the real stall (a rostered row whose dependency is Board-done but carries no `shipped` roster row), when the emitted remediation advice is applied to the fixture **literally** and `next-action` is re-invoked, then the stall clears and the engine targets the intended issue; and when the advice is applied **without** the field it names (`Phase: shipped` omitted, i.e. the default `backlog`), then the test asserts the trap direction explicitly — the already-shipped dependency being targeted — so the advice cannot silently become harmful again. A wording-only assertion (`"Issue Progress row" in reason`) does not satisfy this criterion.
+- [ ] **REMOVE branch — gone, and the problem is not lost.** Given the decision is REMOVE, when `scripts/sprint_queue.py` is grepped, then `diagnose_carry_forward_gaps` and its Note C call site are absent and `TestCarryForwardGapDiagnosis` / `TestCarryForwardGapAnnotation` / `TestCarryForwardRemediationIsCorrectAdvice` are deleted; and when `next-action` runs on the stall fixture above, then the resulting output is byte-identical to pre-ISSUE-069 main for that input, the full suite is green, and `docs/test_plan.md` carries the stall's reproduction steps and its cost so the problem is re-findable without re-deriving it.
+
+#### Implementation Notes
+- Provenance: ISSUE-069 / PR #129 review (2026-10-11), code + minimality Medium, "recorded not removed — post-merge extraction recommended". Review lesson: "Work added to satisfy a request for a DECISION ships without acceptance criteria — and that is where the defects are", whose prevention point (3) is exactly the disposition this issue executes: already-built, green, provably side-effect-free work is better extracted post-merge than deleted mid-review, **but it must be recorded with its own carrier** — this issue is that carrier.
+- Files: `scripts/sprint_queue.py` (`diagnose_carry_forward_gaps` and the Note C call site inside `cmd_next_action`, line 640), `tests/test_sprint_queue_watermark.py` (`TestCarryForwardGapDiagnosis`, `TestCarryForwardGapAnnotation`, `TestCarryForwardRemediationIsCorrectAdvice`), `docs/test_plan.md` (TC-069l, which currently covers the function with no owning AC).
+- The KEEP branch's cheapest honest shape is to lift the three already-written review fixes into stated criteria rather than to re-design the function: the exact-`Status` match, the bounded echo, and the replay test all exist — what is missing is the specification that owns them and the test-plan entry that records them.
+- The REMOVE branch is not free either: `compute_queues` resolving a rostered dependency only at `phase == "shipped"` is the real behaviour behind the stall, and removing the diagnosis returns the engine to a bare `DONE` for that input. Record that trade in the PR so the next person does not read the removal as "the stall was imaginary".
+- Review lesson (remediation advice is executable): whichever branch is chosen, do not leave advice in `reason` that names a remediation without naming every field it depends on — including fields with defaults, because the default is what an autonomous executor will produce.
+- Review lesson (relaxing a shared contract): the declined Board-dependency relaxation stays declined. If the KEEP branch's criteria tempt anyone toward resolving dependencies from the Board to make the diagnosis simpler, stop — TC-068d is the pin and reversing it needs its own issue.
+
+#### Tests
+- [ ] Decision record: `docs/test_plan.md` names TC-069l's owning AC or its retirement commit (asserted by a doc guard or by the PR checklist, consistent with how this repo pins test-plan entries).
+- [ ] KEEP: exact-`Status` pin — `done (sign-off pending)` not reported as resolved; `done` is.
+- [ ] KEEP: exclusion-set matrix over synthesized / manual / dropped / waiting / queued rows.
+- [ ] KEEP: inertness — `action`, `targets` and queues byte-identical with the diagnosis stubbed to empty.
+- [ ] KEEP: bounded echo — 60 rows carrying a 4299-digit dependency id -> `reason` within the documented bound, with `action`, `targets` and the `[dispatch: ... NOT dispatched]` marker still present and locatable.
+- [ ] KEEP: replay pair — advice applied literally clears the stall; advice applied without `Phase: shipped` reproduces the trap and is asserted as such.
+- [ ] KEEP: mutation matrix over each of the above guards, `PYTHONDONTWRITEBYTECODE=1`, harness validated with a known-killing mutant.
+- [ ] REMOVE: grep guard that the function, its call site and its three test classes are absent; `next-action` on the stall fixture byte-identical to pre-ISSUE-069 main; full suite green.
+
+#### Rollback
+`git revert`. Under the KEEP branch the revert is low risk — it removes acceptance criteria, tests and a test-plan entry, not behaviour, leaving ISSUE-069's shipped function and its two fixed defects intact. Under the REMOVE branch a revert **reinstates the unspecified surface**, so pair it with the test-plan entry's reproduction steps and re-open this issue rather than leaving the function back in the tree with no owning AC.
+
+---
