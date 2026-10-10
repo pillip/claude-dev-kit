@@ -18,7 +18,10 @@ model self-check can no longer pass the gate:
   ai-tell         occurrence-whitelist sweep of banned RENDERED patterns over
                   prototype/screens/*.html + prototype/styles.css. Comments
                   (HTML <!-- --> and CSS /* */) are blanked first - rendered-
-                  only semantics. CSS mechanics tells (flex-calc-width) are
+                  only semantics. HTML entities are decoded (html.unescape)
+                  AFTER comment stripping, per line, and tell matching is
+                  case-insensitive - encoded or case-varied tells are
+                  detected like literal ones (ISSUE-064). CSS mechanics tells (flex-calc-width) are
                   matched at declaration level - whitespace/newlines collapse
                   after comment blanking - so a declaration split across
                   lines cannot evade the sweep; the violation reports the
@@ -56,6 +59,7 @@ Options: --philosophy / --screens-dir / --css override the default paths;
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -293,19 +297,19 @@ TELLS: tuple[Tell, ...] = (
     ),
     Tell(
         "100vh",
-        re.compile(r"\b100vh\b"),
+        re.compile(r"\b100vh\b", re.I),
         ("html", "css"),
         "100vh full-height (use min-height: 100dvh)",
     ),
     Tell(
         "flex-calc-width",
-        re.compile(r"width\s*:\s*calc\(\s*[^)]*%"),
+        re.compile(r"width\s*:\s*calc\(\s*[^)]*%", re.I),
         ("html", "css"),
         "flex percentage column math (use CSS Grid)",
     ),
     Tell(
         "generic-name",
-        re.compile(r"\b(?:John Doe|Jane Doe|Sarah Chan|Acme|Nexus|SmartFlow|Cloudly)\b"),
+        re.compile(r"\b(?:John Doe|Jane Doe|Sarah Chan|Acme|Nexus|SmartFlow|Cloudly)\b", re.I),
         ("html",),
         "generic person/brand name",
     ),
@@ -384,6 +388,12 @@ def run_ai_tell(
         source_lines = stripped.splitlines()
         hits: list[dict] = []
         for lineno, line in enumerate(source_lines, 1):
+            if kind == "html":
+                # ISSUE-064 F1: decode entities AFTER comment stripping and
+                # per line - entity-encoded tells (&mdash;) are rendered text,
+                # entity-encoded <!-- markers never become strippable comments,
+                # and a decoded &NewLine; cannot shift reported line numbers.
+                line = html.unescape(line)
             for tell in line_wise:
                 if kind in tell.kinds and tell.pattern.search(line):
                     hits.append(
