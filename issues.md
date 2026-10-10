@@ -46,6 +46,7 @@
 - [ ] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
 - [ ] ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it _(track: platform, P1, 0.5d — iter-1 review triage: team-lead is forbidden to write issues.md and planner is told to use flock_edit.sh but has no Bash, so the contract resolves as a silently unlocked write that still succeeds; mirror of ISSUE-072; depends on none)_
 - [ ] ISSUE-075: Migrate review_context.py's private telemetry appender onto the shared kit_telemetry emit seam _(track: platform, P2, 0.5d — ISSUE-066 ship-time deferral: SPEC-066 pre-committed to adopting ISSUE-067's shared emitter, deferred because `emit_event`'s "NEVER raises" contract is false today (ISSUE-070) and two existing tests pin the opposite silent-skip contract; duplication debt, not a hardening regression; depends on 066, 067)_
+- [ ] ISSUE-076: Scope parse_sprint_table to the Issue Progress table only — h3 subsection tables are parsed as roster rows _(track: platform, P1, 0.5d — observed 2026-10-11 by the sprint orchestrator: validate reported all three shipped issues as stuck)_
 
 ### Doing
 
@@ -4195,3 +4196,61 @@ Whichever actor the contract instructs to write `issues.md` under the lock can a
 
 #### Rollback
 `git revert` — restores `scripts/review_context.py`'s private appender. The emit contract and the event schema are unchanged either way, so no consumer breaks on a revert; the only cost is the duplicated hardened appender coming back, which is the state this issue was filed against.
+
+---
+
+### ISSUE-076: Scope parse_sprint_table to the Issue Progress table only — h3 subsection tables are parsed as roster rows
+
+> Observed live 2026-10-11 by the sprint orchestrator closing the ISSUE-066..068 sprint. `python3 scripts/sprint_queue.py validate --action SHIP --targets ISSUE-066,ISSUE-067,ISSUE-068` returned `{"valid": false, "stuck": ["ISSUE-066","ISSUE-067","ISSUE-068"], "errors": ["ISSUE-066: Phase is '0 (6 medium, 8 low)', expected 'shipped'", "ISSUE-067: Phase is '2', expected 'shipped'", "ISSUE-068: Phase is '2', expected 'shipped'"]}` while the actual Issue Progress rows all read `done | 1 | - | shipped`.
+>
+> Cause: `parse_sprint_table` (scripts/sprint_queue.py:95) scopes its capture with `r"## Issue Progress\s*\n(.*?)(?=\n## |\Z)"`, which terminates only on an h2 heading. The team-lead's `### Review outcomes` table is an h3 subsection, so its rows fall inside the capture and are parsed as roster rows — and because that table has 6 columns, `cells[4]` resolves to the "High unresolved" cell instead of "Phase". Any h3 table a phase executor adds under Issue Progress poisons the roster the same way.
+>
+> This is a false negative on a validation gate, so it fails safe rather than silently passing — but a sprint loop acting on it would re-run completed phases, and `augment_roster_from_board` (ISSUE-068) consumes the same parse, so phantom rows can also skew the ID watermark.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; orchestrator observation; review-lesson class "hand-rolled parser must match its intended boundary")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch: issue/ISSUE-076-sprint-table-parse-scoping
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+`parse_sprint_table` reads exactly the Issue Progress table and nothing else, so prose, subsection headings, and additional tables written under that section by phase executors cannot become roster rows.
+
+#### Scope (In/Out)
+- In:
+  - Terminate the section capture at the Issue Progress table's own end rather than at the next h2: stop at the first blank line following the table's contiguous pipe rows, or at any heading of any level, whichever comes first.
+  - Reject rows whose column count does not match the 5-column roster shape instead of index-reading `cells[4]` from a wider row (the current `len(cells) < 5` guard admits 6+).
+  - Verify every consumer of the parse is covered by the fix: `cmd_next_action`, `validate_transitions`, and `augment_roster_from_board`.
+- Out:
+  - Changing the Issue Progress table's own schema, or forbidding executors from writing subsection tables (the parser accommodates the real writing pattern, not the reverse).
+  - The `--pr` validation work (ISSUE-073) and the watermark boundary (ISSUE-069), though both touch neighbouring code.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a sprint_state.md whose Issue Progress section is followed by an h3 subsection containing a 6-column table of the same ISSUE-NNN shape, when `validate --action SHIP` runs against correctly-shipped targets, then it reports `valid: true` with no stuck entries — reproducing this sprint's exact file as a fixture.
+- [ ] Given that same file, when `next-action` runs, then no row sourced from the h3 table appears in any queue and the ID watermark is computed only from real roster rows.
+- [ ] Given a row with more or fewer than the 5 roster columns, when the table is parsed, then the row is skipped rather than index-read — asserted in both directions (6-column row skipped; the legitimate 5-column row still parsed).
+- [ ] Given the existing sprint_queue fixtures, when the suite runs, then all legacy parse behaviour is unchanged (no roster row that parses today stops parsing).
+
+#### Implementation Notes
+- Reproduction fixture: archive a copy of the sprint_state.md that exhibited this (`docs/sprint_state.archive-2026-10-10-retro.md` after sprint close-out) rather than hand-authoring one, so the fixture matches what a real phase executor writes.
+- Review lesson (ISSUE-042 class): a hand-rolled section parser must match the boundary it claims — copy the terminating condition from the document structure, do not approximate it with the next-h2 heuristic. Mutation-test the guard in both directions.
+- Review lesson 8: this tightens rather than loosens the input contract, so the risk is a legitimate row no longer parsing — pin the existing fixtures explicitly.
+
+#### Tests
+- [ ] Fixture replay of the real 2026-10-11 false negative (h3 table present → `valid: true`).
+- [ ] Column-shape guard: 6-column row skipped, 5-column row parsed (both directions).
+- [ ] Watermark isolation: phantom high-numbered IDs in an h3 table do not raise the watermark.
+- [ ] Legacy fixture pins unchanged.
+
+#### Rollback
+`git revert` — the parser change is self-contained and tightens scoping only; reverting restores today's over-broad capture and the false-negative behaviour.
