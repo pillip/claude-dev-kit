@@ -3,6 +3,7 @@
 import json
 import subprocess
 
+import scripts.sprint_queue as sq
 from scripts.sprint_queue import (
     _gh_pr_merge_state,
     choose_action,
@@ -811,3 +812,564 @@ class TestGhPrMergeStateRobustness:
 
         assert _gh_pr_merge_state("123", runner=_run) is None
         assert "Warning" in capsys.readouterr().err
+
+
+# ── ISSUE-068: discovered-issue Board visibility ─────────────────────
+
+
+def _row(issue, phase="shipped", status="active", attempts="1", last_error="—"):
+    """Build a rostered sprint-table row (parse_sprint_table dict shape)."""
+    return {
+        "issue": issue,
+        "status": status,
+        "attempts": attempts,
+        "last_error": last_error,
+        "phase": phase,
+    }
+
+
+def _board_meta(status="backlog", depends_on=None, priority="p1", manual=False):
+    """Build an issues.md metadata entry (parse_issues_metadata dict shape)."""
+    return {
+        "manual": manual,
+        "depends_on": list(depends_on or []),
+        "priority": priority,
+        "status": status,
+    }
+
+
+def _roster(lo=56, hi=62, phase="shipped"):
+    """Rostered rows ISSUE-0<lo>..ISSUE-0<hi> — watermark is the max ID."""
+    return [_row(f"ISSUE-{n:03d}", phase=phase) for n in range(lo, hi + 1)]
+
+
+class TestAugmentRosterFromBoard:
+    def test_synthesizes_above_watermark_board_backlog_issue(self):
+        """A Board backlog issue above the watermark gets a synthesized row."""
+        rows = _roster()
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows, {"ISSUE-063": _board_meta()}
+        )
+        assert unrostered == ["ISSUE-063"]
+        assert len(augmented) == len(rows) + 1
+        # Pin the full synthesized row shape (note ASCII "-" last_error).
+        assert augmented[-1] == {
+            "issue": "ISSUE-063",
+            "status": "active",
+            "attempts": "0",
+            "last_error": "-",
+            "phase": "backlog",
+            "unrostered": True,
+        }
+
+    def test_original_rows_form_unchanged_prefix(self):
+        import copy
+
+        rows = _roster()
+        snapshot = copy.deepcopy(rows)
+        augmented, _ = sq.augment_roster_from_board(
+            rows, {"ISSUE-063": _board_meta()}
+        )
+        assert augmented[: len(rows)] == snapshot
+        assert rows == snapshot  # inputs never mutated
+
+    def test_skips_already_rostered_id(self):
+        rows = _roster(56, 61) + [_row("ISSUE-062", phase="backlog", attempts="0")]
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows, {"ISSUE-062": _board_meta()}
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_skips_board_status_done(self):
+        augmented, unrostered = sq.augment_roster_from_board(
+            _roster(), {"ISSUE-063": _board_meta(status="done")}
+        )
+        assert unrostered == []
+        assert augmented == _roster()
+
+    def test_skips_board_status_doing(self):
+        augmented, unrostered = sq.augment_roster_from_board(
+            _roster(), {"ISSUE-063": _board_meta(status="doing")}
+        )
+        assert unrostered == []
+        assert augmented == _roster()
+
+    def test_skips_manual_true(self):
+        augmented, unrostered = sq.augment_roster_from_board(
+            _roster(), {"ISSUE-063": _board_meta(manual=True)}
+        )
+        assert unrostered == []
+        assert augmented == _roster()
+
+    def test_below_watermark_backlog_stays_invisible(self):
+        """Pre-existing, deliberately-excluded Board backlog is never synthesized."""
+        rows = _roster(56, 62)
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows, {"ISSUE-010": _board_meta()}
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_empty_sprint_table_no_synthesis(self):
+        """Legacy empty-table DONE path pinned: no roster → no synthesis."""
+        augmented, unrostered = sq.augment_roster_from_board(
+            [], {"ISSUE-063": _board_meta()}
+        )
+        assert augmented == []
+        assert unrostered == []
+
+    def test_no_exact_issue_id_rows_no_synthesis(self):
+        """No rostered cell matching ISSUE-<digits> exactly → no watermark → no-op."""
+        rows = [_row("TASK-7", phase="backlog", attempts="0")]
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows, {"ISSUE-063": _board_meta()}
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_multiple_synthesized_rows_sorted_by_numeric_id(self):
+        rows = _roster()
+        meta = {
+            "ISSUE-065": _board_meta(),
+            "ISSUE-063": _board_meta(),
+            "ISSUE-064": _board_meta(),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-063", "ISSUE-064", "ISSUE-065"]
+        appended = [r["issue"] for r in augmented[len(rows):]]
+        assert appended == ["ISSUE-063", "ISSUE-064", "ISSUE-065"]
+
+
+class TestComputeQueuesUnrostered:
+    def test_synthesized_row_without_deps_is_implement_ready(self):
+        rows = [_row("ISSUE-056")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-063"]
+        queues = compute_queues(augmented, meta)
+        assert queues["implement_ready"] == ["ISSUE-063"]
+
+    def test_synthesized_row_dep_on_shipped_rostered_row_is_ready(self):
+        rows = [_row("ISSUE-056", phase="shipped")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(depends_on=["ISSUE-056"]),
+        }
+        augmented, _ = sq.augment_roster_from_board(rows, meta)
+        queues = compute_queues(augmented, meta)
+        assert queues["implement_ready"] == ["ISSUE-063"]
+
+    def test_synthesized_dep_on_other_synthesized_backlog_is_flagged_only(self):
+        """Dep on another synthesized backlog row → in NO queue (flagged only)."""
+        rows = [_row("ISSUE-056")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(),
+            "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-063", "ISSUE-064"]
+        queues = compute_queues(augmented, meta)
+        assert queues["implement_ready"] == ["ISSUE-063"]
+        assert all("ISSUE-064" not in members for members in queues.values())
+
+    def test_synthesized_row_dep_board_resolved_without_sprint_row(self):
+        """Unrostered rows also treat Board done/drop/dropped deps as resolved."""
+        for board_status in ("done", "drop", "dropped"):
+            rows = [_row("ISSUE-056")]
+            meta = {
+                "ISSUE-056": _board_meta(status="done"),
+                "ISSUE-063": _board_meta(status=board_status),  # NO sprint row
+                "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+            }
+            augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+            assert unrostered == ["ISSUE-064"], board_status
+            queues = compute_queues(augmented, meta)
+            assert queues["implement_ready"] == ["ISSUE-064"], board_status
+
+    def test_legacy_rostered_row_without_key_stays_filtered(self):
+        """Lesson-8 pin: a ROSTERED backlog row (no `unrostered` key) depending on
+        an issue that is Board-done but has no sprint row stays FILTERED —
+        byte-identical legacy semantics."""
+        rows = [
+            _row("ISSUE-056"),
+            _row("ISSUE-064", phase="backlog", attempts="0"),  # no `unrostered` key
+        ]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(status="done"),  # Board-done, NO sprint row
+            "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+        }
+        queues = compute_queues(rows, meta)
+        assert queues["implement_ready"] == []
+
+    def test_priority_sort_spans_rostered_and_synthesized(self):
+        rows = [
+            _row("ISSUE-056"),
+            _row("ISSUE-057", phase="backlog", attempts="0"),  # rostered backlog, p2
+        ]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-057": _board_meta(priority="p2"),
+            "ISSUE-063": _board_meta(priority="p0"),
+        }
+        augmented, _ = sq.augment_roster_from_board(rows, meta)
+        queues = compute_queues(augmented, meta)
+        assert queues["implement_ready"] == ["ISSUE-063", "ISSUE-057"]
+
+
+class TestNextActionDiscoveredVisibility:
+    def _write(self, tmp_path, rows, issues_text):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(_make_sprint_state(rows))
+        issues = tmp_path / "issues.md"
+        issues.write_text(issues_text)
+        return sprint, issues
+
+    def _run_next_action(self, sprint, issues, capsys):
+        exit_code = sq.main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--max-parallel", "3",
+        ])
+        out = json.loads(capsys.readouterr().out)
+        return exit_code, out
+
+    def test_replay_063_064_065_all_surfaced_without_intervention(self, tmp_path, capsys):
+        """AC3 replay: the SPEC-055 case — all three mid-sprint issues surfaced."""
+        rows = [(f"ISSUE-{n:03d}", "active", "1", "—", "shipped") for n in range(56, 63)]
+        board = [_make_issue(num=f"{n:03d}", status="done") for n in range(56, 63)]
+        board += [
+            _make_issue(num="063", priority="P1", status="backlog", depends_on="ISSUE-056"),
+            _make_issue(num="064", priority="P2", status="backlog", depends_on="ISSUE-063"),
+            _make_issue(num="065", priority="P1", status="backlog", depends_on="ISSUE-058"),
+        ]
+        sprint, issues = self._write(tmp_path, rows, "\n".join(board))
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 0
+        assert out["action"] == "PIPELINE"
+        assert out["targets"] == ["ISSUE-063", "ISSUE-065"]
+        assert out["unrostered"] == ["ISSUE-063", "ISSUE-064", "ISSUE-065"]
+        for issue_id in ("ISSUE-063", "ISSUE-064", "ISSUE-065"):
+            assert issue_id in out["reason"]
+
+    def test_replay_stage2_board_done_dep_unblocks_064(self, tmp_path, capsys):
+        """AC3 stage 2: ISSUE-063 Board-done (never rostered) unblocks ISSUE-064."""
+        rows = [(f"ISSUE-{n:03d}", "active", "1", "—", "shipped") for n in range(56, 63)]
+        board = [_make_issue(num=f"{n:03d}", status="done") for n in range(56, 63)]
+        board += [
+            _make_issue(num="063", priority="P1", status="done", depends_on="ISSUE-056"),
+            _make_issue(num="064", priority="P2", status="backlog", depends_on="ISSUE-063"),
+            _make_issue(num="065", priority="P1", status="backlog", depends_on="ISSUE-058"),
+        ]
+        sprint, issues = self._write(tmp_path, rows, "\n".join(board))
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 0
+        assert out["action"] == "PIPELINE"
+        assert "ISSUE-064" in out["targets"]
+        assert sorted(out["targets"]) == ["ISSUE-064", "ISSUE-065"]
+        assert out["unrostered"] == ["ISSUE-064", "ISSUE-065"]
+
+    def test_flagged_during_active_sprint_keeps_strict_priority(self, tmp_path, capsys):
+        """AC1: mid-sprint discovery is flagged, strict action priority preserved."""
+        rows = [("ISSUE-056", "active", "1", "—", "implemented")]
+        board = "\n".join([
+            _make_issue(num="056", status="doing"),
+            _make_issue(num="057", status="backlog"),
+        ])
+        sprint, issues = self._write(tmp_path, rows, board)
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 0
+        assert out["action"] == "REVIEW"
+        assert out["targets"] == ["ISSUE-056"]
+        assert out["unrostered"] == ["ISSUE-057"]
+        assert "ISSUE-057" in out["reason"]
+
+    def test_done_annotated_with_stranded_discovered_issue(self, tmp_path, capsys):
+        """AC2: DONE with an unresolvable discovered issue is annotated, not silent."""
+        rows = [
+            ("ISSUE-056", "active", "1", "—", "shipped"),
+            ("ISSUE-057", "active", "1", "—", "shipped"),
+        ]
+        board = "\n".join([
+            _make_issue(num="010", status="backlog"),  # below watermark, unresolved
+            _make_issue(num="056", status="done"),
+            _make_issue(num="057", status="done"),
+            _make_issue(num="058", status="backlog", depends_on="ISSUE-010"),
+        ])
+        sprint, issues = self._write(tmp_path, rows, board)
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 1
+        assert out["action"] == "DONE"
+        assert out["unrostered"] == ["ISSUE-058"]
+        assert out["stranded"] == ["ISSUE-058"]
+        assert "All issues are shipped, waiting, or dropped" in out["reason"]
+        assert "stranded" in out["reason"]
+        assert "ISSUE-058" in out["reason"]
+
+    def test_done_refused_structurally_when_discovered_issue_ready(self, tmp_path, capsys):
+        """AC2: a dep-free discovered issue is targeted — DONE never emitted."""
+        rows = [("ISSUE-056", "active", "1", "—", "shipped")]
+        board = "\n".join([
+            _make_issue(num="056", status="done"),
+            _make_issue(num="057", status="backlog"),
+        ])
+        sprint, issues = self._write(tmp_path, rows, board)
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 0
+        assert out["action"] == "PIPELINE"
+        assert out["targets"] == ["ISSUE-057"]
+        assert out["unrostered"] == ["ISSUE-057"]
+
+    def test_legacy_done_reason_byte_pinned_without_unrostered(self, tmp_path, capsys):
+        """Legacy pin: only below-watermark Board backlog → untouched DONE output."""
+        rows = [("ISSUE-056", "active", "1", "—", "shipped")]
+        board = "\n".join([
+            _make_issue(num="010", status="backlog"),
+            _make_issue(num="056", status="done"),
+        ])
+        sprint, issues = self._write(tmp_path, rows, board)
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 1
+        assert out["action"] == "DONE"
+        assert out["reason"] == "All issues are shipped, waiting, or dropped"
+        assert "unrostered" not in out
+        assert "stranded" not in out
+
+    def test_legacy_empty_table_pin_no_synthesis(self, tmp_path, capsys):
+        """Legacy pin: empty Issue Progress table never synthesizes a roster."""
+        board = _make_issue(num="063", status="backlog")
+        sprint, issues = self._write(tmp_path, [], board)
+        exit_code, out = self._run_next_action(sprint, issues, capsys)
+        assert exit_code == 1
+        assert out["action"] == "DONE"
+        assert out["reason"] == "No issues found in sprint_state.md Issue Progress table"
+        assert "unrostered" not in out
+        assert "stranded" not in out
+
+
+class TestValidateMissingRow:
+    def test_target_without_row_reports_no_row(self):
+        rows = [_row("ISSUE-056", phase="shipped")]
+        result = validate_transitions(rows, "SHIP", ["ISSUE-056", "ISSUE-099"])
+        assert result["valid"] is False
+        assert result["transitioned"] == ["ISSUE-056"]
+        assert result["stuck"] == ["ISSUE-099"]
+        missing_errors = [e for e in result["errors"] if "ISSUE-099" in e]
+        assert missing_errors, result["errors"]
+        assert "no row" in missing_errors[0]
+
+
+# ── ISSUE-068 review hardening (PR #121) ────────────────────────────
+
+
+class TestBoardTextRobustness:
+    """Board/roster text is untrusted engine input — neither site may crash or
+    silently drop a row on shapes real issues.md demonstrably produces."""
+
+    # CPython 3.11+ caps str→int at sys.int_max_str_digits (4300); an unbounded
+    # `\d+` handed to int() therefore raises ValueError on a wider digit run.
+    OVERLONG_ID = "1" * 4301
+
+    def test_overlong_roster_id_cell_does_not_crash(self):
+        """Site 1 (watermark scan): a pathological roster cell is ignored."""
+        rows = [
+            _row("ISSUE-056"),
+            _row(f"ISSUE-{self.OVERLONG_ID}", phase="backlog", attempts="0"),
+        ]
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows,
+            {"ISSUE-056": _board_meta(status="done"), "ISSUE-063": _board_meta()},
+        )
+        # Watermark comes from ISSUE-056 only; the overlong cell contributes none.
+        assert unrostered == ["ISSUE-063"]
+        assert len(augmented) == len(rows) + 1
+
+    def test_overlong_board_issue_id_does_not_crash(self):
+        """Site 2 (candidate scan): a pathological Board heading is skipped."""
+        rows = _roster()
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows, {f"ISSUE-{self.OVERLONG_ID}": _board_meta()}
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_overlong_id_next_action_still_emits_json(self, tmp_path, capsys):
+        """End-to-end: the engine returns a parseable action, not a traceback."""
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(
+            _make_sprint_state([
+                ("ISSUE-056", "active", "1", "—", "shipped"),
+                (f"ISSUE-{self.OVERLONG_ID}", "active", "0", "—", "backlog"),
+            ])
+        )
+        issues = tmp_path / "issues.md"
+        issues.write_text("\n".join([
+            _make_issue(num="056", status="done"),
+            _make_issue(num=self.OVERLONG_ID, status="backlog"),
+        ]))
+        exit_code = sq.main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        out = json.loads(capsys.readouterr().out)
+        assert out["action"] in ("DONE", "PIPELINE", "STUCK")
+        assert exit_code in (0, 1)
+
+
+class TestAnnotatedBoardStatusFailsClosed:
+    """Both ISSUE-068 Board `Status` comparisons are deliberately EXACT.
+
+    Real issues.md entries DO annotate the field (this repo carries
+    `drop (superseded by ISSUE-033, 2026-07-16)`), so prefix-matching the
+    leading keyword looks like a robustness win. It is not: both comparisons
+    gate autonomous dispatch, and an annotation usually states the opposite of
+    its keyword. These tests pin the fail-CLOSED direction so the tolerant form
+    cannot be reintroduced silently — a prefix match makes each of them fail.
+    """
+
+    def test_annotated_backlog_is_not_admitted(self):
+        """`backlog (blocked — do NOT auto-dispatch)` must not become a candidate."""
+        rows = _roster()
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows,
+            {
+                "ISSUE-063": _board_meta(
+                    status="backlog (blocked on the vendor contract — do NOT dispatch)"
+                )
+            },
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_annotated_done_does_not_resolve_a_dependency(self):
+        """`done (security sign-off still pending)` must NOT unblock its dependent."""
+        rows = [_row("ISSUE-056")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(
+                status="done (code landed, security sign-off still pending)"
+            ),
+            "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-064"]
+        queues = compute_queues(augmented, meta)
+        assert queues["implement_ready"] == []
+
+    def test_bare_keywords_keep_their_behavior(self):
+        """The fail-closed choice costs nothing for the documented bare vocabulary."""
+        rows = [_row("ISSUE-056")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(status="done"),
+            "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-064"]
+        assert compute_queues(augmented, meta)["implement_ready"] == ["ISSUE-064"]
+
+    def test_parser_returns_the_raw_annotated_value(self):
+        """Documents what the filters receive: the whole lowercased Status value."""
+        text = _make_issue(num="003", status="drop (superseded by ISSUE-033)")
+        meta = parse_issues_metadata(text)
+        assert meta["ISSUE-003"]["status"] == "drop (superseded by issue-033)"
+
+
+class TestDiscoveryNeverStarvesStuckEscalation:
+    """STUCK is the only path that escalates a wedged issue to a human.
+
+    `choose_action` checks implement_ready before in_flight, so a synthesized
+    row landing in implement_ready converts STUCK into PIPELINE — and the row is
+    rebuilt with `attempts: "0"` every invocation, so the wedged issue's Attempts
+    can never reach the >=3 escalation. Discovery is deferred (still flagged),
+    not dropped.
+    """
+
+    def _run(self, tmp_path, capsys, rows, board):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(_make_sprint_state(rows))
+        issues = tmp_path / "issues.md"
+        issues.write_text("\n".join(board))
+        exit_code = sq.main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        return exit_code, json.loads(capsys.readouterr().out)
+
+    def test_wedged_shipping_row_still_reports_stuck(self, tmp_path, capsys):
+        exit_code, out = self._run(
+            tmp_path,
+            capsys,
+            [("ISSUE-100", "active", "2", "ship crashed after merge", "shipping")],
+            [
+                _make_issue(num="100", status="doing"),
+                _make_issue(num="101", status="backlog"),
+            ],
+        )
+        assert out["action"] == "STUCK"
+        assert out["targets"] == ["ISSUE-100"]
+        assert exit_code == 1
+        # Still surfaced — AC-1 is satisfied by flagging, not by dispatch.
+        assert out["unrostered"] == ["ISSUE-101"]
+        assert "ISSUE-101" in out["reason"]
+
+    def test_each_in_flight_phase_defers_discovery(self, tmp_path, capsys):
+        for phase in ("implementing", "reviewing", "shipping"):
+            exit_code, out = self._run(
+                tmp_path,
+                capsys,
+                [("ISSUE-100", "active", "1", "—", phase)],
+                [
+                    _make_issue(num="100", status="doing"),
+                    _make_issue(num="101", status="backlog"),
+                ],
+            )
+            assert out["action"] == "STUCK", phase
+            assert out["unrostered"] == ["ISSUE-101"], phase
+
+    def test_discovery_dispatches_once_the_pipeline_is_drained(self, tmp_path, capsys):
+        """The deferral is bounded: a drained roster targets the discovered issue."""
+        exit_code, out = self._run(
+            tmp_path,
+            capsys,
+            [("ISSUE-100", "active", "1", "—", "shipped")],
+            [
+                _make_issue(num="100", status="done"),
+                _make_issue(num="101", status="backlog"),
+            ],
+        )
+        assert out["action"] == "PIPELINE"
+        assert out["targets"] == ["ISSUE-101"]
+        assert exit_code == 0
+
+    def test_rostered_backlog_row_still_pre_empts_stuck(self, tmp_path, capsys):
+        """Legacy pin: the deferral is scoped to synthesized rows ONLY.
+
+        A ROSTERED backlog row keeps main's priority outcome (implement_ready is
+        checked before in_flight) — unchanged by this PR.
+        """
+        exit_code, out = self._run(
+            tmp_path,
+            capsys,
+            [
+                ("ISSUE-100", "active", "1", "—", "shipping"),
+                ("ISSUE-101", "active", "0", "—", "backlog"),
+            ],
+            [
+                _make_issue(num="100", status="doing"),
+                _make_issue(num="101", status="backlog"),
+            ],
+        )
+        assert out["action"] == "PIPELINE"
+        assert out["targets"] == ["ISSUE-101"]
+        assert "unrostered" not in out

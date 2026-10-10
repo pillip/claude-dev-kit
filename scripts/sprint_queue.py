@@ -324,6 +324,101 @@ def ship_merge_decision(pr_ref, *, merge_state_fn=None):
 
 # ── Queue computation ───────────────────────────────────────────────
 
+# ISSUE-068 roster-ID shape. The digit run is BOUNDED on purpose: CPython 3.11+
+# caps str→int conversion at ``sys.int_max_str_digits`` (4300), so an unbounded
+# ``\d+`` fed to ``int()`` turns a pathological Board/roster cell into an
+# uncaught ValueError — i.e. a traceback instead of JSON from the script that
+# drives the sprint loop. A cell wider than the bound simply does not match and
+# is ignored (no watermark contribution, not a candidate).
+_ROSTER_ID_RE = re.compile(r"ISSUE-(\d{1,9})")
+
+# Board ``Status`` comparisons below are deliberately EXACT, not prefix matches.
+# Real issues.md entries do annotate the field (this repo carries
+# ``drop (superseded by ISSUE-033, 2026-07-16)``), and tolerating the annotation
+# looks like a robustness win — but both comparisons gate autonomous dispatch,
+# and an annotation is usually written to say the opposite of its keyword:
+# ``backlog (blocked — do NOT auto-dispatch)`` would be admitted, and
+# ``done (security sign-off still pending)`` would resolve a dependency that is
+# not actually met. Exact matching fails CLOSED in both directions, which is the
+# safe side for an admission filter and a dependency gate. The excluded-by-
+# annotation cases are pinned by TestAnnotatedBoardStatusFailsClosed.
+
+
+def augment_roster_from_board(
+    sprint_rows: list[dict[str, str]],
+    issues_meta: dict[str, dict],
+) -> tuple[list[dict], list[str]]:
+    """Synthesize roster rows for Board-registered backlog issues (ISSUE-068).
+
+    Rationale: ``next-action``'s roster is the sprint_state Issue Progress
+    table, so issues registered in issues.md MID-SPRINT (e.g. by /triage or
+    /plan while the loop runs) were invisible — the queue could emit DONE with
+    actionable work still on the Board. This augmentation makes next-action
+    auto-consider them without touching any rostered row.
+
+    Watermark scoping: an issue counts as mid-sprint-registered if and only if
+    its numeric ID is above EVERY sprint-start rostered ID (watermark = max
+    numeric ID among rostered ``ISSUE-<digits>`` cells). Pre-existing Board
+    backlog below the watermark was deliberately excluded at sprint planning
+    and stays invisible. No rostered rows → no watermark → no synthesis (the
+    legacy empty-table DONE path is preserved).
+
+    Synthesized candidates must be: above the watermark, not already rostered,
+    Board ``Status: backlog``, and not ``Manual: true``. Each synthesized row
+    is a backlog-phase row tagged ``unrostered: True`` so compute_queues can
+    scope its Board-resolved dependency loosening to this caller class only.
+
+    Returns ``(augmented_rows, unrostered_ids)``: the original rows unchanged
+    (never mutated) with synthesized rows appended in ascending numeric-ID
+    order, and the same sorted ID list.
+    """
+    if not sprint_rows:
+        return sprint_rows, []
+
+    rostered_ids: set[str] = set()
+    rostered_nums: list[int] = []
+    for row in sprint_rows:
+        cell = row.get("issue", "")
+        rostered_ids.add(cell)
+        match = _ROSTER_ID_RE.fullmatch(cell)
+        if match:
+            rostered_nums.append(int(match.group(1)))
+
+    if not rostered_nums:
+        return sprint_rows, []
+    watermark = max(rostered_nums)
+
+    candidates: list[tuple[int, str]] = []
+    for issue_id, meta in issues_meta.items():
+        match = _ROSTER_ID_RE.fullmatch(issue_id)
+        if not match:
+            continue
+        num = int(match.group(1))
+        if num <= watermark:
+            continue
+        if issue_id in rostered_ids:
+            continue
+        if meta.get("status") != "backlog":
+            continue
+        if meta.get("manual", False):
+            continue
+        candidates.append((num, issue_id))
+
+    candidates.sort()
+    unrostered_ids = [issue_id for _, issue_id in candidates]
+    synthesized = [
+        {
+            "issue": issue_id,
+            "status": "active",
+            "attempts": "0",
+            "last_error": "-",
+            "phase": "backlog",
+            "unrostered": True,
+        }
+        for issue_id in unrostered_ids
+    ]
+    return sprint_rows + synthesized, unrostered_ids
+
 
 def compute_queues(
     sprint_rows: list[dict[str, str]],
@@ -368,7 +463,18 @@ def compute_queues(
                 continue
             # Filter out issues with unresolved dependencies
             deps = meta.get("depends_on", [])
-            if deps and not all(d in resolved_issues for d in deps):
+            dep_resolved = resolved_issues
+            if row.get("unrostered"):
+                # ISSUE-068: synthesized (unrostered) rows ONLY also accept
+                # Board-resolved deps — issues done/dropped on the Board that
+                # never had a sprint row. Rostered rows keep the legacy
+                # table-only resolution semantics byte-identically.
+                dep_resolved = resolved_issues | {
+                    iid
+                    for iid, m in issues_meta.items()
+                    if m.get("status") in ("done", "drop", "dropped")
+                }
+            if deps and not all(d in dep_resolved for d in deps):
                 continue
             implement_ready.append(issue_id)
 
@@ -489,7 +595,18 @@ def validate_transitions(
     }
 
     for issue_id in targets:
-        current_phase = phase_by_issue.get(issue_id, "")
+        if issue_id not in phase_by_issue:
+            # ISSUE-068: a target entirely absent from the Issue Progress table
+            # (e.g. a Board-discovered issue never written into sprint_state)
+            # is reported explicitly instead of as an empty-phase mismatch.
+            stuck.append(issue_id)
+            errors.append(
+                f"{issue_id}: no row in sprint_state Issue Progress table "
+                f"(expected '{expected_phase}')"
+            )
+            continue
+
+        current_phase = phase_by_issue[issue_id]
         current_status = status_by_issue.get(issue_id, "")
 
         # Issue marked as waiting/dropped counts as "handled" (escalated)
@@ -572,6 +689,14 @@ def cmd_next_action(args: argparse.Namespace) -> int:
         print(json.dumps(result))
         return 1
 
+    # ISSUE-068: surface Board-registered backlog issues that are absent from
+    # the sprint roster (registered mid-sprint, above the roster ID watermark).
+    # Synthesis happens BEFORE compute_queues so discovered issues can be
+    # targeted; rostered rows and the empty-table path above are untouched.
+    sprint_rows, unrostered_ids = augment_roster_from_board(
+        sprint_rows, issues_meta
+    )
+
     queues = compute_queues(sprint_rows, issues_meta)
 
     # ISSUE-052 crash-recovery: for reviewed/ship-ready issues, probe the PR merge
@@ -587,7 +712,43 @@ def cmd_next_action(args: argparse.Namespace) -> int:
         queues["finalize_ready"] = finalize_ready
         queues["ship_ready"] = still_ship
 
+    # ISSUE-068 (review): a synthesized row must never pre-empt the in-flight
+    # STUCK escalation. `choose_action` checks implement_ready before in_flight,
+    # so letting Board-discovered work populate implement_ready turns a STUCK on
+    # an issue wedged in implementing/reviewing/shipping into a PIPELINE on new
+    # work — and because the synthesized row is rebuilt with `attempts: "0"` on
+    # every invocation, that starvation has no terminating counter: the wedged
+    # issue's Attempts freezes and the >=3-attempt human escalation never fires.
+    # Withholding only the synthesized ids keeps rostered-row outcomes identical
+    # and still satisfies AC-1 (the issue stays surfaced via `unrostered`), so
+    # discovery is deferred until the pipeline drains rather than dropped.
+    if unrostered_ids and queues["in_flight"]:
+        deferred = set(unrostered_ids)
+        queues["implement_ready"] = [
+            iid for iid in queues["implement_ready"] if iid not in deferred
+        ]
+
     result = choose_action(queues, args.max_parallel)
+
+    # ISSUE-068: annotate the result whenever unrostered Board issues exist.
+    # Without them, the output stays byte-identical to the legacy behavior.
+    if unrostered_ids:
+        result["unrostered"] = unrostered_ids
+        if result["action"] == "DONE":
+            # Discovered issues exist but none is actionable (e.g. unresolved
+            # deps) — DONE must not be silent about them.
+            result["stranded"] = unrostered_ids
+            result["reason"] += (
+                f" — WARNING: {len(unrostered_ids)} Board-registered backlog "
+                "issue(s) absent from the sprint roster remain stranded: "
+                f"{', '.join(unrostered_ids)}. Acknowledge before closing "
+                "the sprint."
+            )
+        else:
+            result["reason"] += (
+                " [visibility: Board-registered issue(s) absent from the "
+                f"sprint roster auto-considered: {', '.join(unrostered_ids)}]"
+            )
 
     print(json.dumps(result))
     return 0 if result["action"] not in ("DONE", "STUCK") else 1
