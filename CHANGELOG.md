@@ -105,6 +105,58 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **The sprint queue reads the Issue Progress table and nothing else — and
+  refuses to dispatch off a roster it could not fully read** (ISSUE-076,
+  PR #128) — `scripts/sprint_queue.py`'s `parse_sprint_table` scoped its capture
+  with `## Issue Progress\s*\n(.*?)(?=\n## |\Z)`, which terminates only on an
+  **h2**. A phase executor's `### Review outcomes` h3 subsection table therefore
+  fell *inside* the capture and its rows were parsed as roster rows; because
+  that table has 6 columns, `cells[4]` resolved to its "High unresolved" cell
+  instead of "Phase". Live on 2026-10-11 this made
+  `validate --action SHIP --targets ISSUE-066,ISSUE-067,ISSUE-068` report all
+  three correctly-shipped issues as **stuck** with
+  `Phase is '0 (6 medium, 8 low)'`, while the real rows all read
+  `done | 1 | - | shipped`. The capture now ends at the table's own end — the
+  first blank line after its contiguous pipe rows, or any ATX heading of any
+  level, whichever comes first — and a row must have **exactly** 5 columns
+  (`ROSTER_COLUMN_COUNT`) to be parsed, replacing a `len(cells) < 5` guard that
+  admitted 6+ and index-read the wrong cell. The real 2026-10-11 file is frozen
+  byte-identically as `tests/fixtures/sprint_state/`
+  `issue_progress_with_h3_subsection.md` and replayed as the regression.
+  **Shipped beyond the issue's stated Scope, deliberately — read this before
+  trusting the parse:** the issue asked only for scoping, but tightening the
+  parse made it fail **OPEN**, which is strictly worse than the false negative
+  it fixes. A single invisible whitespace-only line, a prose note, or a
+  `Last Error` cell containing an unescaped `|` silently **truncated or dropped**
+  roster rows, and `augment_roster_from_board` then re-materialized each dropped
+  row as fresh backlog work with `attempts` reset to `0` — so a finished issue
+  was re-implemented from scratch and the >=3-attempt escalation could never
+  fire (measured: main `SHIP ISSUE-200` exit 0 -> pre-fix branch
+  `PIPELINE ISSUE-200` exit 0, empty stderr). The module's integrity guard only
+  failed closed at **zero** rows, so a *partial* capture was structurally
+  invisible. Two defences were therefore added in review: a new public
+  `unparsed_roster_rows()` reporting both off-shape and truncated-away
+  roster-shaped rows, with `cmd_next_action` now **refusing to dispatch
+  (exit 2)** and `cmd_validate` warning on stderr without changing its verdict
+  contract; and `_unfenced()` + `_FENCE_RE`, which blank fenced lines so a
+  fenced `## Issue Progress` example can no longer win the section (one half of
+  that was pre-existing on main, the other a regression this PR introduced).
+  Zero false positives across all 6 real `docs/sprint_state*.md` files, the
+  template and the frozen fixture; mutation-pinned in 6 directions.
+  **Known residual, verified at ship:** an h3 heading sitting *between*
+  `## Issue Progress` and the real roster table zeroes the whole roster
+  (main parses 1 row, this engine 0). No real doc or template has that shape
+  (7/7 checked at ship), and it fails **loud** — exit 2 via the zero-row
+  diagnostic, re-measured at ship as main `SHIP ISSUE-100` exit 0 vs this engine
+  exit 2 — but the terminator should derive from the matched heading's own level
+  rather than from "any heading". Fixing it reverses an explicitly spec'd and
+  tested Scope bullet, so it is a planner decision and is deliberately
+  test-locked by `test_heading_before_any_table_yields_no_rows` meanwhile.
+  Eight further Mediums/Lows are recorded in `docs/review_notes/ISSUE-076.md`
+  and enumerated in this issue's registry entry rather than filed, including two
+  pre-existing items the live incident also depended on (duplicate roster IDs
+  are last-row-wins and unvalidated; `agents/team-lead.md` teaches a 4-column
+  roster this 5-column reader discards).
 - **The sprint queue validates a PR reference before handing it to `gh`**
   (ISSUE-073, PR #127) — `scripts/sprint_queue.py`'s `_gh_pr_merge_state` now
   refuses a non-conforming PR reference *before* invoking `gh`, and passes `--`
