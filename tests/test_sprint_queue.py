@@ -1163,3 +1163,213 @@ class TestValidateMissingRow:
         missing_errors = [e for e in result["errors"] if "ISSUE-099" in e]
         assert missing_errors, result["errors"]
         assert "no row" in missing_errors[0]
+
+
+# ── ISSUE-068 review hardening (PR #121) ────────────────────────────
+
+
+class TestBoardTextRobustness:
+    """Board/roster text is untrusted engine input — neither site may crash or
+    silently drop a row on shapes real issues.md demonstrably produces."""
+
+    # CPython 3.11+ caps str→int at sys.int_max_str_digits (4300); an unbounded
+    # `\d+` handed to int() therefore raises ValueError on a wider digit run.
+    OVERLONG_ID = "1" * 4301
+
+    def test_overlong_roster_id_cell_does_not_crash(self):
+        """Site 1 (watermark scan): a pathological roster cell is ignored."""
+        rows = [
+            _row("ISSUE-056"),
+            _row(f"ISSUE-{self.OVERLONG_ID}", phase="backlog", attempts="0"),
+        ]
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows,
+            {"ISSUE-056": _board_meta(status="done"), "ISSUE-063": _board_meta()},
+        )
+        # Watermark comes from ISSUE-056 only; the overlong cell contributes none.
+        assert unrostered == ["ISSUE-063"]
+        assert len(augmented) == len(rows) + 1
+
+    def test_overlong_board_issue_id_does_not_crash(self):
+        """Site 2 (candidate scan): a pathological Board heading is skipped."""
+        rows = _roster()
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows, {f"ISSUE-{self.OVERLONG_ID}": _board_meta()}
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_overlong_id_next_action_still_emits_json(self, tmp_path, capsys):
+        """End-to-end: the engine returns a parseable action, not a traceback."""
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(
+            _make_sprint_state([
+                ("ISSUE-056", "active", "1", "—", "shipped"),
+                (f"ISSUE-{self.OVERLONG_ID}", "active", "0", "—", "backlog"),
+            ])
+        )
+        issues = tmp_path / "issues.md"
+        issues.write_text("\n".join([
+            _make_issue(num="056", status="done"),
+            _make_issue(num=self.OVERLONG_ID, status="backlog"),
+        ]))
+        exit_code = sq.main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        out = json.loads(capsys.readouterr().out)
+        assert out["action"] in ("DONE", "PIPELINE", "STUCK")
+        assert exit_code in (0, 1)
+
+
+class TestAnnotatedBoardStatusFailsClosed:
+    """Both ISSUE-068 Board `Status` comparisons are deliberately EXACT.
+
+    Real issues.md entries DO annotate the field (this repo carries
+    `drop (superseded by ISSUE-033, 2026-07-16)`), so prefix-matching the
+    leading keyword looks like a robustness win. It is not: both comparisons
+    gate autonomous dispatch, and an annotation usually states the opposite of
+    its keyword. These tests pin the fail-CLOSED direction so the tolerant form
+    cannot be reintroduced silently — a prefix match makes each of them fail.
+    """
+
+    def test_annotated_backlog_is_not_admitted(self):
+        """`backlog (blocked — do NOT auto-dispatch)` must not become a candidate."""
+        rows = _roster()
+        augmented, unrostered = sq.augment_roster_from_board(
+            rows,
+            {
+                "ISSUE-063": _board_meta(
+                    status="backlog (blocked on the vendor contract — do NOT dispatch)"
+                )
+            },
+        )
+        assert unrostered == []
+        assert augmented == rows
+
+    def test_annotated_done_does_not_resolve_a_dependency(self):
+        """`done (security sign-off still pending)` must NOT unblock its dependent."""
+        rows = [_row("ISSUE-056")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(
+                status="done (code landed, security sign-off still pending)"
+            ),
+            "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-064"]
+        queues = compute_queues(augmented, meta)
+        assert queues["implement_ready"] == []
+
+    def test_bare_keywords_keep_their_behavior(self):
+        """The fail-closed choice costs nothing for the documented bare vocabulary."""
+        rows = [_row("ISSUE-056")]
+        meta = {
+            "ISSUE-056": _board_meta(status="done"),
+            "ISSUE-063": _board_meta(status="done"),
+            "ISSUE-064": _board_meta(depends_on=["ISSUE-063"]),
+        }
+        augmented, unrostered = sq.augment_roster_from_board(rows, meta)
+        assert unrostered == ["ISSUE-064"]
+        assert compute_queues(augmented, meta)["implement_ready"] == ["ISSUE-064"]
+
+    def test_parser_returns_the_raw_annotated_value(self):
+        """Documents what the filters receive: the whole lowercased Status value."""
+        text = _make_issue(num="003", status="drop (superseded by ISSUE-033)")
+        meta = parse_issues_metadata(text)
+        assert meta["ISSUE-003"]["status"] == "drop (superseded by issue-033)"
+
+
+class TestDiscoveryNeverStarvesStuckEscalation:
+    """STUCK is the only path that escalates a wedged issue to a human.
+
+    `choose_action` checks implement_ready before in_flight, so a synthesized
+    row landing in implement_ready converts STUCK into PIPELINE — and the row is
+    rebuilt with `attempts: "0"` every invocation, so the wedged issue's Attempts
+    can never reach the >=3 escalation. Discovery is deferred (still flagged),
+    not dropped.
+    """
+
+    def _run(self, tmp_path, capsys, rows, board):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(_make_sprint_state(rows))
+        issues = tmp_path / "issues.md"
+        issues.write_text("\n".join(board))
+        exit_code = sq.main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        return exit_code, json.loads(capsys.readouterr().out)
+
+    def test_wedged_shipping_row_still_reports_stuck(self, tmp_path, capsys):
+        exit_code, out = self._run(
+            tmp_path,
+            capsys,
+            [("ISSUE-100", "active", "2", "ship crashed after merge", "shipping")],
+            [
+                _make_issue(num="100", status="doing"),
+                _make_issue(num="101", status="backlog"),
+            ],
+        )
+        assert out["action"] == "STUCK"
+        assert out["targets"] == ["ISSUE-100"]
+        assert exit_code == 1
+        # Still surfaced — AC-1 is satisfied by flagging, not by dispatch.
+        assert out["unrostered"] == ["ISSUE-101"]
+        assert "ISSUE-101" in out["reason"]
+
+    def test_each_in_flight_phase_defers_discovery(self, tmp_path, capsys):
+        for phase in ("implementing", "reviewing", "shipping"):
+            exit_code, out = self._run(
+                tmp_path,
+                capsys,
+                [("ISSUE-100", "active", "1", "—", phase)],
+                [
+                    _make_issue(num="100", status="doing"),
+                    _make_issue(num="101", status="backlog"),
+                ],
+            )
+            assert out["action"] == "STUCK", phase
+            assert out["unrostered"] == ["ISSUE-101"], phase
+
+    def test_discovery_dispatches_once_the_pipeline_is_drained(self, tmp_path, capsys):
+        """The deferral is bounded: a drained roster targets the discovered issue."""
+        exit_code, out = self._run(
+            tmp_path,
+            capsys,
+            [("ISSUE-100", "active", "1", "—", "shipped")],
+            [
+                _make_issue(num="100", status="done"),
+                _make_issue(num="101", status="backlog"),
+            ],
+        )
+        assert out["action"] == "PIPELINE"
+        assert out["targets"] == ["ISSUE-101"]
+        assert exit_code == 0
+
+    def test_rostered_backlog_row_still_pre_empts_stuck(self, tmp_path, capsys):
+        """Legacy pin: the deferral is scoped to synthesized rows ONLY.
+
+        A ROSTERED backlog row keeps main's priority outcome (implement_ready is
+        checked before in_flight) — unchanged by this PR.
+        """
+        exit_code, out = self._run(
+            tmp_path,
+            capsys,
+            [
+                ("ISSUE-100", "active", "1", "—", "shipping"),
+                ("ISSUE-101", "active", "0", "—", "backlog"),
+            ],
+            [
+                _make_issue(num="100", status="doing"),
+                _make_issue(num="101", status="backlog"),
+            ],
+        )
+        assert out["action"] == "PIPELINE"
+        assert out["targets"] == ["ISSUE-101"]
+        assert "unrostered" not in out

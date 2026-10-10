@@ -324,6 +324,25 @@ def ship_merge_decision(pr_ref, *, merge_state_fn=None):
 
 # ── Queue computation ───────────────────────────────────────────────
 
+# ISSUE-068 roster-ID shape. The digit run is BOUNDED on purpose: CPython 3.11+
+# caps str→int conversion at ``sys.int_max_str_digits`` (4300), so an unbounded
+# ``\d+`` fed to ``int()`` turns a pathological Board/roster cell into an
+# uncaught ValueError — i.e. a traceback instead of JSON from the script that
+# drives the sprint loop. A cell wider than the bound simply does not match and
+# is ignored (no watermark contribution, not a candidate).
+_ROSTER_ID_RE = re.compile(r"ISSUE-(\d{1,9})")
+
+# Board ``Status`` comparisons below are deliberately EXACT, not prefix matches.
+# Real issues.md entries do annotate the field (this repo carries
+# ``drop (superseded by ISSUE-033, 2026-07-16)``), and tolerating the annotation
+# looks like a robustness win — but both comparisons gate autonomous dispatch,
+# and an annotation is usually written to say the opposite of its keyword:
+# ``backlog (blocked — do NOT auto-dispatch)`` would be admitted, and
+# ``done (security sign-off still pending)`` would resolve a dependency that is
+# not actually met. Exact matching fails CLOSED in both directions, which is the
+# safe side for an admission filter and a dependency gate. The excluded-by-
+# annotation cases are pinned by TestAnnotatedBoardStatusFailsClosed.
+
 
 def augment_roster_from_board(
     sprint_rows: list[dict[str, str]],
@@ -361,7 +380,7 @@ def augment_roster_from_board(
     for row in sprint_rows:
         cell = row.get("issue", "")
         rostered_ids.add(cell)
-        match = re.fullmatch(r"ISSUE-(\d+)", cell)
+        match = _ROSTER_ID_RE.fullmatch(cell)
         if match:
             rostered_nums.append(int(match.group(1)))
 
@@ -371,7 +390,7 @@ def augment_roster_from_board(
 
     candidates: list[tuple[int, str]] = []
     for issue_id, meta in issues_meta.items():
-        match = re.fullmatch(r"ISSUE-(\d+)", issue_id)
+        match = _ROSTER_ID_RE.fullmatch(issue_id)
         if not match:
             continue
         num = int(match.group(1))
@@ -692,6 +711,22 @@ def cmd_next_action(args: argparse.Namespace) -> int:
         )
         queues["finalize_ready"] = finalize_ready
         queues["ship_ready"] = still_ship
+
+    # ISSUE-068 (review): a synthesized row must never pre-empt the in-flight
+    # STUCK escalation. `choose_action` checks implement_ready before in_flight,
+    # so letting Board-discovered work populate implement_ready turns a STUCK on
+    # an issue wedged in implementing/reviewing/shipping into a PIPELINE on new
+    # work — and because the synthesized row is rebuilt with `attempts: "0"` on
+    # every invocation, that starvation has no terminating counter: the wedged
+    # issue's Attempts freezes and the >=3-attempt human escalation never fires.
+    # Withholding only the synthesized ids keeps rostered-row outcomes identical
+    # and still satisfies AC-1 (the issue stays surfaced via `unrostered`), so
+    # discovery is deferred until the pipeline drains rather than dropped.
+    if unrostered_ids and queues["in_flight"]:
+        deferred = set(unrostered_ids)
+        queues["implement_ready"] = [
+            iid for iid in queues["implement_ready"] if iid not in deferred
+        ]
 
     result = choose_action(queues, args.max_parallel)
 
