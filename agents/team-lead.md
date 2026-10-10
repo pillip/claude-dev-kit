@@ -115,7 +115,7 @@ If `ship-merge-decision` unexpectedly returns `merge` (the PR is NOT actually me
 
 ### After ANY phase completes
 
-1. **Update sprint_state.md**: Write current progress for all target issues.
+1. **Update sprint_state.md**: Write current progress for all target issues. If a target has **no row** in the Issue Progress table, **add the row first**. The sprint queue auto-considers `issues.md` backlog issues that were never rostered and synthesizes their rows in memory only, so a target can arrive without one; the orchestrator's step 4f `validate` then reports it stuck even after a successful phase, and its Attempts counter has no durable home until the row exists.
 2. **Update STATUS.md**: Reflect progress (via flock_edit.sh).
 3. **Test failure handling**: If any test failure occurs during the phase:
    - Run the **`/diagnose`** skill with the failing test output and relevant source files (root-cause discipline lives there — ISSUE-034 absorbed the diagnostician persona into the skill).

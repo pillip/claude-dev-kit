@@ -133,11 +133,17 @@ Never commit these files to feature branches.
       ```
       **If the script exits with non-zero and no JSON output**: STOP the sprint and report the error. This indicates a parsing failure or circular dependency — do NOT proceed.
 
-      Parse the JSON output. The result contains `action`, `targets`, and `reason` fields.
+      Parse the JSON output. The result always contains `action`, `targets`, and `reason`. When
+      `issues.md` holds backlog issues that are not yet in the Issue Progress table, it also
+      carries `unrostered` (the IDs the queue auto-considered, ascending) and — when action = DONE —
+      `stranded` (that same list, repeated under a warning because a DONE means none of them ran).
+      See **Discovered-issue visibility** below. With no such issues the output is unchanged from
+      before, and the exit code is unchanged either way: a stranded DONE still exits 1 and still
+      reports `action: "DONE"`, so the `stranded` key is the only signal you get.
 
-      - If action = **DONE** → **Go to step 5.**
+      - If action = **DONE** → if the output carries a `stranded` list, do NOT report a clean sprint: carry those IDs into the step 6 report as registered-but-unrun issues. Then **go to step 5.**
       - If action = **STUCK** → Log warning with the `reason`. Increment attempt counts for stuck issues in sprint_state.md. If attempts ≥ 3, escalate. Otherwise continue to next iteration.
-      - If action = **PIPELINE**, **SHIP**, **REVIEW**, or **FINALIZE** → proceed to step 4d with the action and targets from the script output.
+      - If action = **PIPELINE**, **SHIP**, **REVIEW**, or **FINALIZE** → proceed to step 4d with the action and targets from the script output. A target that also appears in `unrostered` has no Issue Progress row yet — see the unrostered-target note in step 4d.
 
       **IMPORTANT**: Do NOT manually compute queues or override the script's action choice. The script enforces strict priority ordering (FINALIZE > SHIP > REVIEW > PIPELINE) to prevent phase skipping. **FINALIZE** is a crash-recovery action (ISSUE-052): the queue detected a `reviewed` issue whose PR is already merged (a ship-phase interruption between the merge and the smoke checkpoint), so only smoke + registry remain — it must NOT be re-shipped/re-merged.
 
@@ -146,6 +152,25 @@ Never commit these files to feature branches.
       > - `review_ready`  = issues where Phase = `implemented`
       > - `pipeline_ready` = issues in `backlog` where Manual ≠ true AND all Depends-On are resolved
       > - `in_flight`     = issues where Phase ∈ {`implementing`, `reviewing`, `shipping`}
+
+      **Discovered-issue visibility**: the queue's roster is the `docs/sprint_state.md` Issue
+      Progress table. Issues registered in `issues.md` with `Status: backlog` and `Manual ≠ true`
+      but with **no row** in that table — typically filed mid-sprint by `/review` triage or
+      `planner` — are auto-considered, so work discovered during a sprint is no longer invisible
+      to the queue. Current bounds:
+      - Only IDs numerically **above** the highest `ISSUE-NNN` already in the table qualify. The
+        boundary is re-derived from the table on every run, so roster newly discovered issues in
+        **ascending ID order** — rostering a higher ID first pushes its lower-ID siblings below the
+        boundary and they stop being reported at all.
+      - Nothing is auto-considered unless the table already holds at least one `ISSUE-NNN` row.
+      - Auto-considered issues are withheld while any issue is in flight, so discovery can never
+        starve the STUCK escalation path.
+      - For auto-considered issues only, a dependency also counts as resolved when its `issues.md`
+        Status is `done`, `drop`, or `dropped`. Rostered rows keep table-only dependency resolution.
+      - `Status` is matched **exactly**: an annotated value such as `backlog (blocked — do not
+        dispatch)` is not admitted, and `done (sign-off pending)` does not resolve a dependency.
+        This fails closed by design — keep the bare keyword in the field and put qualifiers in the
+        issue body.
 
    **d) Invoke team-lead agent via Task tool** with this exact prompt structure:
       ```
@@ -167,6 +192,12 @@ Never commit these files to feature branches.
       Execute this phase, update docs/sprint_state.md with results, then STOP.
       Do NOT loop.
       ```
+
+      **Unrostered targets**: for any target that appeared in `unrostered`, say so in the prompt and
+      require the team-lead to **add its Issue Progress row** when it records progress. The queue
+      synthesizes those rows in memory only; step 4f's `validate` reports a target with no row as
+      stuck even after a successful phase, and the Attempts counter has no durable home until the
+      row exists.
 
       **Phase meanings:**
       - **PIPELINE**: Full implement→review→ship for backlog issues. Each issue goes through all three phases in one invocation. No phase can be skipped.
@@ -203,6 +234,7 @@ Never commit these files to feature branches.
    - Issues escalated (3+ failures)
    - Issues waiting (blocked/deferred)
    - New issues discovered during sprint
+   - **Registered but never run** — the `stranded` IDs from the final `next-action` output: in `issues.md` backlog, never rostered, and not dispatchable (usually an unresolved `Depends-On`)
 
 ## Agent Selection
 
