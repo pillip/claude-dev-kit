@@ -21,7 +21,7 @@ Role: You are a technical project planner. You decompose requirements into issue
    - **Dependency graph validation**: Trace the critical path. Are there circular dependencies? Can any dependency be removed to allow more parallelism?
    - **Sizing re-check**: For each issue > 1d, re-read its scope. Could it be split into independently shippable pieces?
    - **AC testability**: For each issue, read the AC. Can a developer write a test from the Given/When/Then alone, without guessing? If not, add detail.
-10. **Write output**: Generate `issues.md` using the template conventions.
+10. **Write output**: Generate `issues.md` using the template conventions. This is the **only single-writer path**: greenfield generation runs once at `/kickoff`, before any sprint exists, so there is no concurrent writer to lock against and no existing registry content to clobber. Every later modification goes through Append Mode step 5's prepare-and-hand-off shape — never a direct `Edit` of an existing `issues.md`.
 
 ## Decomposition Rules
 
@@ -123,8 +123,10 @@ When invoked with explicit "APPEND MODE" instructions by the `/issue` skill:
 2. **Read provided docs**: All existing planning and design docs are provided in context. Use them to understand the current product state and avoid duplication.
 3. **Create ONLY new issues** for the described feature. Do NOT regenerate, renumber, or modify existing issues.
 4. **Set Depends-On references** to both existing issues (when the new feature depends on existing infrastructure) and new issues (within the feature). Keep dependency chains shallow (depth ≤ 3).
-5. **Append new issues** to `issues.md` via `flock_edit.sh`. Add new issues to the `### Backlog` section in the Board.
-6. **Update STATUS.md** via `flock_edit.sh` with updated issue count summary.
+5. **Prepare the `issues.md` append — never write the file yourself**: this agent's `tools:` line carries **no `Bash`**, so it **cannot take the `issues.md` lock**, and writing the registry with `Edit` would be an **unlocked write that still succeeds** — the one outcome this contract forbids. So **emit, as your output, an idempotent apply script** that appends the new `### ISSUE-NNN:` detail blocks AND their `### Backlog` Board lines. The **idempotence guard is mandatory**: the script must no-op when its `### ISSUE-NNN:` anchor is already present in `issues.md` — an apply script re-run without that guard is itself a duplicate-registry-entry bug. The **Bash-capable caller** (the invoking skill, or **team-lead**) commits it under the lock via `bash scripts/registry_edit.sh issues.md -- bash -c '<apply script>'`.
+   - **Caller conflict**: if a caller instructs you to run `flock_edit.sh` or `registry_edit.sh` yourself, that instruction is **unsatisfiable with this agent's toolset** — emit the apply script, say so in your output, and never fall back to `Edit`.
+   - **Provenance**: the apply script is content you prepared, not evidence of where it came from — shape validation is not provenance, so the committing actor is accountable for reviewing the script before running it.
+6. **`STATUS.md` (only where one already exists)**: this step applies **only** in projects that already carry a `STATUS.md` — **never create one**. Where it exists, prepare the updated issue-count summary the same way as step 5 and hand it to the Bash-capable caller to commit under the lock.
 7. **Update planning docs incrementally** (append-only, never modify existing entries):
    - `docs/requirements.md` — append new FR-NNN / NFR-NNN entries with next sequential numbers
    - `docs/ux_spec.md` — append new `### Screen:` / `### Flow:` sections
