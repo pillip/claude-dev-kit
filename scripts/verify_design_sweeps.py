@@ -29,7 +29,12 @@ model self-check can no longer pass the gate:
                   matched at declaration level - whitespace/newlines collapse
                   after comment blanking - so a declaration split across
                   lines cannot evade the sweep; the violation reports the
-                  line where the declaration starts. Recorded Brief overrides
+                  line where the declaration starts. On HTML targets the
+                  declaration-level pass ALSO blanks CSS /* */ comments
+                  (inline style="" and <style> contexts mirror the browser's
+                  CSS parsing; ISSUE-064) - scoped to that pass only, so
+                  literal /* */ in rendered body text keeps line-wise
+                  rendered-text semantics. Recorded Brief overrides
                   are passed as --exempt TELL_ID (repeatable); each exemption
                   is reported. Judgment tells (div-based fake product UI,
                   three equal cards, ...) are NOT deterministically decidable
@@ -433,7 +438,13 @@ def run_ai_tell(
                             "snippet": line.strip()[:100],
                         }
                     )
-        collapsed, line_of = collapse_ws_with_lines(stripped)
+        # ISSUE-064 F6 (folded ISSUE-063 Medium): the declaration-level scan
+        # mirrors the browser's CSS parsing, so on HTML targets CSS comments
+        # (inline style="" / <style> contexts) are blanked for THIS pass
+        # only - a comment interleaved inside the declaration cannot split
+        # it. The line-wise scan above keeps rendered-text semantics.
+        decl_text = strip_css_comments(stripped) if kind == "html" else stripped
+        collapsed, line_of = collapse_ws_with_lines(decl_text)
         for tell in declaration_level:
             if kind not in tell.kinds:
                 continue
