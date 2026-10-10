@@ -5,6 +5,7 @@
 - Iteration: N / MAX
 - Parallel: 3
 - Status: running | paused | completed
+- Roster-Watermark: ISSUE-NNN
 
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |

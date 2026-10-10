@@ -201,7 +201,16 @@ def _row(issue, phase="shipped", status="active", attempts="1", last_error="—"
 # fixture mutation helper to delete a line this file itself wrote — and it
 # asserts that exactly one line disappeared, so it cannot silently drift from
 # the implementation's own detection regex.
-_FIELD_LINE_RE = re.compile(r"^\s*[-*]?\s*\*{0,2}roster-watermark\*{0,2}\s*:", re.I)
+#
+# `re.MULTILINE` is load-bearing for the `.search()` call site in
+# TestShippedTemplateCarriesTheField: without it `^` anchors to the start of the
+# whole `## Meta` block, which would quietly narrow that pin from "the field
+# lives inside ## Meta" (what it asserts) to "the field is the FIRST line of
+# ## Meta" (a template line-order constraint nothing else states). The
+# `.match(line)` call site in `drop_watermark_line` is per-line and unaffected.
+_FIELD_LINE_RE = re.compile(
+    r"^\s*[-*]?\s*\*{0,2}roster-watermark\*{0,2}\s*:", re.I | re.MULTILINE
+)
 
 
 def _meta_block(text):
