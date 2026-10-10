@@ -205,6 +205,25 @@ def detect_circular_deps(issues_meta: dict[str, dict]) -> list[str]:
 
 # ── Crash-recovery: already-merged PR awareness (ISSUE-052) ─────────
 
+# ISSUE-073 PR-ref shape. This is a ``fullmatch`` WHITELIST, not a sanitizer:
+# nothing is stripped or normalized, a ref either matches one of the three
+# attested forms or it is refused. Both inputs that reach the probe are
+# untrusted text — the Board ``PR:`` field (hand-written, and not always a bare
+# ref) and the model-chosen ``ship-merge-decision --pr`` argument — and both
+# arrive at ``gh`` as a command argument, where an option-shaped value such as
+# ``--repo attacker/evil`` would be re-read as a flag. The digit runs and the
+# owner/repo segments are BOUNDED on purpose (never ``\d+`` / unbounded ``+``)
+# for the same reason as ``_ROSTER_ID_RE`` below: the pattern runs over text the
+# kit does not author, so a pathological cell must simply fail to match rather
+# than drive the regex engine over an arbitrarily long run. ``gh``'s
+# branch-name ref form is deliberately EXCLUDED — it is unattested in every
+# live ``PR:`` value, and admitting it would mean admitting near-arbitrary text.
+_PR_REF_RE = re.compile(
+    r"\d{1,9}"
+    r"|#\d{1,9}"
+    r"|https://github\.com/[\w.-]{1,64}/[\w.-]{1,64}/pull/\d{1,9}"
+)
+
 
 def _gh_pr_merge_state(pr_ref, *, timeout=None, runner=None):
     """Return the merge state of a PR: ``"merged"``, ``"open"``, or ``None``.
@@ -216,16 +235,31 @@ def _gh_pr_merge_state(pr_ref, *, timeout=None, runner=None):
     JSON, so callers fall back to a phase-only decision. Offline-safe: the probe
     is timeout-guarded (see ``GH_MERGE_PROBE_TIMEOUT``).
 
+    Only three ref forms are accepted (ISSUE-073): ``123``, ``#123``, and
+    ``https://github.com/<owner>/<repo>/pull/123``. A non-conforming or
+    option-shaped ref is refused before ``gh`` is invoked at all and likewise
+    degrades to ``None`` (indeterminate) rather than raising, preserving the
+    never-raises contract.
+
     ``runner`` (defaults to ``subprocess.run``) is injectable for testing.
     """
     if not pr_ref:
+        return None
+    if not _PR_REF_RE.fullmatch(pr_ref):
+        print(
+            f"Warning: refusing PR ref {pr_ref!r} read from the issues.md `PR:` "
+            "field (or `ship-merge-decision --pr`) — not one of the accepted forms "
+            "`123`, `#123`, `https://github.com/<owner>/<repo>/pull/123`; "
+            "falling back to phase-only decision",
+            file=sys.stderr,
+        )
         return None
     runner = runner or subprocess.run
     if timeout is None:
         timeout = GH_MERGE_PROBE_TIMEOUT
     try:
         proc = runner(
-            ["gh", "pr", "view", pr_ref, "--json", "state,mergedAt"],
+            ["gh", "pr", "view", "--json", "state,mergedAt", "--", pr_ref],
             capture_output=True,
             text=True,
             timeout=timeout,
