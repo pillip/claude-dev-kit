@@ -533,9 +533,9 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 |-------|-------|------|-------|
 | `requirement-analyst` | medium | Extract requirements from PRD; evidence mode (/scan) reverse-engineers them from code and tests | Read, Glob, Grep, Write, Edit |
 | `ux-designer` | high | Create UX spec (v0: spec only) | Read, Glob, Grep, Write, Edit |
-| `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `mobile-uiux-developer` | xhigh | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
-| `desktop-uiux-developer` | xhigh | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch, WebFetch |
+| `uiux-developer` | xhigh | Design philosophy + design system + HTML/CSS prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch |
+| `mobile-uiux-developer` | xhigh | Mobile design system + React Native (Expo) prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch |
+| `desktop-uiux-developer` | xhigh | Desktop design system + Electron/Tauri prototype | Read, Glob, Grep, Write, Edit, Bash, WebSearch |
 | `figma-converter` | medium | Convert Figma exports to clean prototype HTML with design tokens | Read, Glob, Grep, Write, Edit, Bash |
 | `architect` | xhigh | Design software architecture; evidence mode (/scan) documents the as-is architecture | Read, Glob, Grep, Write, Edit |
 | `data-modeler` | xhigh | Design schemas, indexes, migrations, query patterns; evidence mode (/scan) extracts the as-is schema | Read, Glob, Grep, Write, Edit |
@@ -675,8 +675,16 @@ optional — the defaults are safe for local and CI runs:
   `scripts/synthesize_gate_results.py`; must live under the gitignored
   `.claude/run/` directory). Unset (the default, until the runtime
   capability ships): gate runs take the `verify_gates.py` path unchanged.
-  When set and valid, the checkpoint prints a `GATES DELEGATED` marker —
-  delegated runs are never silent.
+  Setting it alone never delegates: ingest additionally requires the
+  per-run provenance binding — a `<artifact>.sig` sidecar holding the
+  HMAC of the artifact bytes under an in-process key (never exposed via
+  env), artifact freshness (written after the checkpoint process
+  started), and one-shot consumption (ingest renames the artifact to
+  `<artifact>.consumed`, so byte-identical replays refuse). Any binding
+  failure degrades to running the real gates, with one loud stdout line
+  and telemetry reason `binding-rejected`. When the binding verifies,
+  the checkpoint prints a `GATES DELEGATED` marker — delegated runs are
+  never silent.
 - `KIT_RUN_ID` — run id for the kit's best-effort telemetry appends to
   `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset:
   script-side telemetry emission is a silent no-op.

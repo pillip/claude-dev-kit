@@ -59,7 +59,11 @@ Checkpoints are mandatory verification points in every skill pipeline. They prev
 - **review**: checkout → review → ui-review → test → push
 - **ship**: checks → merge → cleanup
 - **diagnose/refactor/devops/migrate**: worktree → test → push
-- **uiux/mobile-uiux**: context → philosophy → system
+- **kickoff**: prd-digest → requirements → ux-architecture → data-model → planning
+- **scan**: prd-digest → requirements → architecture → data-model (conditional: only when a database is detected) → test-plan → issues
+- **uiux/mobile-uiux/desktop-uiux**: context → philosophy → system
+
+Unknown skill names are rejected (fail-closed) — only skills registered in the verifier are accepted.
 
 ### Exit Codes
 - `0` — checkpoint passed, proceed

@@ -2,7 +2,7 @@
 
 > SSOT: Progress and completion are tracked by the Status field in this document (not inferred from code analysis)
 > Rule: **1 Issue = 1 PR** (GitHub-first)
-> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing 33 agents / 28 skills primitive set (counts asserted by tests/test_agent_effort.py and the skill generator).
+> Context: claude-dev-kit dogfoods itself — these issues build the "AI dev team control plane" layer (telemetry → eval → memory → spec → release) on top of the existing agent/skill primitive set (the roster shrinks by design; counts are deliberately not pinned — tests/test_agent_effort.py guards hygiene, not headcount).
 
 ## Conventions
 - Track: `product` | `platform`
@@ -80,13 +80,16 @@
 - [x] ISSUE-046: Fix verify_checkpoint.py's 60s pytest timeout breaking the GREEN gate and hollowing the RED gate on 4-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: test-phase subprocess timeouts (implement red/test, ship smoke; were hard-coded 60s/120s) now env-configurable via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) through a _test_timeout() helper; RED-phase exit-124 reported as inconclusive FAIL instead of being mistaken for a failing suite; absorbed verify_ship_smoke full-suite + no-runner-fallback caps (reviewer-accepted scope). Squash-merged PR #54 @ c04b78b 2026-08-10; ship smoke initially blocked solely by the pre-filed ISSUE-047 verify_gates 120s unit-gate cap — retried post-ISSUE-047 on 2026-08-11: GATE PASS unit [blocking] 14.5s, smoke PASS; review 0 Critical/High, 6 Low; eval artifacts in docs/review_notes/ISSUE-046.md)_
 - [x] ISSUE-047: Fix verify_gates.py hard-coded 120s unit-gate timeout (and sibling short caps) breaking blocking ship-smoke gates on multi-minute suites _(track: platform, P0, 0.5d — done 2026-08-11: env-configurable unit-gate timeout via KIT_CHECKPOINT_TEST_TIMEOUT (seconds; default 600) mirroring verify_checkpoint.py::_test_timeout, _run() timeout-mock contract (rc 124) preserved; absorbed test-isolation fix for two verify_implement_test tests whose unmocked gate-runner seam recursively spawned the full suite — the source of the false "~5-min suite" premise (true base ~21s). Squash-merged PR #56 @ b0d8bb3; post-merge smoke: GATE PASS unit [blocking] 14.6s, suite 1145 passed / 2 skipped ~11s; review 0 Critical/High/Medium, 6 Low; eval: pass)_
 - [x] ISSUE-054: Brownfield design path — extract a design system from existing UI code so /uiux can extend instead of replace _(track: platform, P2, 1.5d — 2026-08-17 official-plugin comparison; no platform capability covers it)_
-- [ ] ISSUE-056: Promote the four model-executed verification sweeps to deterministic validators _(track: platform, P1, 1.5d — SPEC-055 / evolution audit finding 3; numbering note: 055 skipped — consumed by ad-hoc SPEC-055)_
-- [ ] ISSUE-057: Add script checkpoints to the five zero-checkpoint skills _(track: platform, P1, 1.5d — SPEC-055 / audit finding 2)_
-- [ ] ISSUE-058: Delegation idiom expansion — test execution _(track: platform, P2, 1d — SPEC-019 flagged candidate; SPEC-055 / audit roadmap 4)_
-- [ ] ISSUE-059: Deflate scaffolding residue — persona blocks, confidence-rating boilerplate, inline prompts _(track: platform, P2, 1d — SPEC-055 / audit roadmap 3a)_
-- [ ] ISSUE-060: Contract-convert the uiux triplet — strip craft tutorials, keep gates and anti-slop contracts _(track: platform, P1, 1.5d — SPEC-055 / audit roadmap 3b; depends on 056, 059)_
-- [ ] ISSUE-061: Consolidate the scan-*/greenfield sibling agent pairs behind an evidence-mode flag _(track: platform, P2, 1.5d — SPEC-055 / audit roadmap 5)_
-- [ ] ISSUE-062: Dissolve A-bucket conversational agents into their skill contracts _(track: platform, P2, 1d — SPEC-055 / audit roadmap 6)_
+- [x] ISSUE-056: Promote the four model-executed verification sweeps to deterministic validators _(track: platform, P1, 1.5d — SPEC-055 / evolution audit finding 3; numbering note: 055 skipped — consumed by ad-hoc SPEC-055)_
+- [x] ISSUE-057: Add script checkpoints to the five zero-checkpoint skills _(track: platform, P1, 1.5d — SPEC-055 / audit finding 2)_
+- [x] ISSUE-058: Delegation idiom expansion — test execution _(track: platform, P2, 1d — SPEC-019 flagged candidate; SPEC-055 / audit roadmap 4)_
+- [x] ISSUE-059: Deflate scaffolding residue — persona blocks, confidence-rating boilerplate, inline prompts _(track: platform, P2, 1d — SPEC-055 / audit roadmap 3a)_
+- [x] ISSUE-060: Contract-convert the uiux triplet — strip craft tutorials, keep gates and anti-slop contracts _(track: platform, P1, 1.5d — SPEC-055 / audit roadmap 3b; depends on 056, 059)_
+- [x] ISSUE-061: Consolidate the scan-*/greenfield sibling agent pairs behind an evidence-mode flag _(track: platform, P2, 1.5d — SPEC-055 / audit roadmap 5)_
+- [x] ISSUE-062: Dissolve A-bucket conversational agents into their skill contracts _(track: platform, P2, 1d — SPEC-055 / audit roadmap 6)_
+- [x] ISSUE-063: Fix verify_design_sweeps SPEC-056 contract deviations — multi-line CSS evasion, concatenated `all --json`, fail-open `all` without `--class` _(track: platform, P1, 0.5d — ISSUE-056 review triage, docs/review_notes/ISSUE-056.md; depends on 056)_
+- [x] ISSUE-064: Harden verify_design_sweeps matcher edges — encoded/case tell variants, non-rendered quote placements, zero-screen vacuity, input containment _(track: platform, P2, 1d — ISSUE-056 review triage, adjacent Medium findings; depends on 063)_
+- [x] ISSUE-065: Add provenance, freshness, and consume-once binding to the KIT_GATE_RESULTS_FILE delegation handoff _(track: platform, P1, 1d — ISSUE-058 review triage, unresolved High finding in docs/review_notes/ISSUE-058.md; activation precondition per SPEC-058 Open Questions / test-plan GAP-058a; depends on 058)_
 
 ### Drop
 - [x] ISSUE-024: Move runtime state to ${CLAUDE_PLUGIN_DATA} — **dropped 2026-06-22** (premise invalid: PLUGIN_DATA is a single global dir, wrong for per-project/per-worktree state) _(track: platform, P2, 1d)_
@@ -3066,15 +3069,15 @@ Running `/uiux`, `/mobile-uiux`, or `/desktop-uiux` on a project that already ha
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-056.md
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 2)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-056-sweeps-to-validators
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/97
+- PR: https://github.com/pillip/claude-dev-kit/pull/101
 - Depends-On: none
 
 #### Goal
@@ -3119,15 +3122,15 @@ The four sweeps run as scripts with exit codes, callable from `checkpoint.sh` ph
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-057.md (lands with PR #102)
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 2)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-057-zero-checkpoint-skills
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/98
+- PR: https://github.com/pillip/claude-dev-kit/pull/102
 - Depends-On: none
 
 #### Goal
@@ -3169,15 +3172,15 @@ Every prose `CHECKPOINT — MANDATORY` block in kickoff, scan, uiux, mobile-uiux
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-058.md
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 4; SPEC-019 follow-up signal from ISSUE-014)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-058-delegate-test-execution
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/99
+- PR: https://github.com/pillip/claude-dev-kit/pull/100
 - Depends-On: none
 
 #### Goal
@@ -3223,11 +3226,11 @@ Test execution follows the same five-stage idiom as review/research: probe for a
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 3a)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-059-deflate-scaffolding-residue
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/103
+- PR: https://github.com/pillip/claude-dev-kit/pull/106
 - Depends-On: none
 
 #### Goal
@@ -3268,15 +3271,15 @@ The three scaffolding classes are removed with behaviour-relevant invariants pre
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-060.md
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 3b)
 - Priority: P1
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-060-uiux-triplet-contract-conversion
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/114
+- PR: https://github.com/pillip/claude-dev-kit/pull/116
 - Depends-On: ISSUE-056, ISSUE-059
 
 #### Goal
@@ -3319,15 +3322,15 @@ The three uiux skills and their developer agents shrink to contract + gates — 
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-061.md
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 5)
 - Priority: P2
 - Estimate: 1.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-061-scan-sibling-consolidation
-- GH-Issue:
-- PR:
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/104
+- PR: https://github.com/pillip/claude-dev-kit/pull/107
 - Depends-On: none
 
 #### Goal
@@ -3368,15 +3371,15 @@ Pairs are independent — revert any single pair's merge without touching the ot
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-062.md
 - PRD-Ref: none (kit self-development; SPEC-055 / docs/evolution_audit.md roadmap item 6)
 - Priority: P2
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-062-dissolve-a-bucket-agents
-- GH-Issue:
-- PR:
+- GH-Issue: #105 https://github.com/pillip/claude-dev-kit/issues/105
+- PR: #108 https://github.com/pillip/claude-dev-kit/pull/108
 - Depends-On: none
 
 #### Goal
@@ -3405,3 +3408,173 @@ Each of the five agents is either dissolved (invariants absorbed into the callin
 
 #### Rollback
 One commit per agent — revert restores any single agent and its wiring independently.
+
+---
+
+### ISSUE-063: Fix verify_design_sweeps SPEC-056 contract deviations — multi-line CSS evasion, concatenated `all --json`, fail-open `all` without `--class`
+
+> ISSUE-056 review follow-up (docs/review_notes/ISSUE-056.md on branch issue/ISSUE-056-sweeps-to-validators, PR #101): of the 8 Medium findings left unfixed under the minimal-fix policy, three deviate from the SPEC-056 contract itself and sit directly on the invocation surface ISSUE-057/ISSUE-060 will wire: (1) a flex-calc-width declaration split across lines evades detection — SPEC-056 contract 3 deviation (the scan is line-wise where the oracle, the browser's CSS parser, is declaration-wise); (2) `all --json` emits concatenated JSON objects no single `json.loads` can read — contract 5 deviation (machine-readable output); (3) `all` without `--class` exits 0 with the Signature Move sweep silently unenforced — recreating exactly the skipped-self-check hole the validators exist to close. The reviewer recommended batching these into one follow-up so the checkpoint wiring does not inherit them.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-056.md (existing — this issue conforms the implementation to it; no new spec)
+- PRD-Ref: none (review follow-up; review lesson "hand-rolled parser mirroring an oracle must match its edge cases" — native memory review-lessons.md, ISSUE-042 class)
+- Priority: P1
+- Estimate: 0.5d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-063-sweeps-contract-conformance
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/109
+- PR: https://github.com/pillip/claude-dev-kit/pull/111
+- Depends-On: ISSUE-056
+
+#### Goal
+`scripts/verify_design_sweeps.py` matches SPEC-056 contracts 3 and 5 exactly — multi-line declarations detected, `all --json` parseable in one `json.loads`, and `all` without `--class` fails closed — before ISSUE-057/060 wire it into checkpoint phases.
+
+#### Scope (In/Out)
+- In:
+  - Normalize CSS to declaration level before the flex-calc-width scan (strip comments, collapse whitespace/newlines) instead of adding a second line-wise regex.
+  - `all --json` aggregates every sweep's result into a single parseable JSON document (one top-level object keyed by sweep, matching SPEC-056 contract 5's per-sweep result shape).
+  - `all` without `--class` exits non-zero — either a usage error demanding `--class` or an explicit opt-out flag; never a silent 0 with Signature Move unenforced, and the output names the unenforced sweep.
+  - Mutation-pair fixtures per fix (defect present → non-zero; defect removed → 0).
+- Out:
+  - Detection-robustness hardening of the tell/quote matchers (ISSUE-064).
+  - Wiring into skill prose/checkpoint phases (ISSUE-057/060 own the call sites).
+  - `verify_hollow_tests.py` (no contract deviations recorded against it).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a styles fixture whose flex-calc-width declaration is split across multiple lines (including a variant with an interleaved CSS comment), when the sweep runs, then it exits non-zero naming the declaration exactly as it does for the single-line form; given the declaration is removed, then it exits 0.
+- [ ] Given any fixture set, when `verify_design_sweeps.py all --json` runs, then stdout parses with a single `json.loads` call and contains every sweep subcommand's result (SPEC-056 contract 5).
+- [ ] Given `all` invoked without `--class`, when it runs, then it exits non-zero and the output names the Signature Move sweep as unenforced — no code path lets `all` report success while silently skipping a sweep.
+- [ ] Review-lesson prevention: given each fixed check, when its mutation pair runs (defect present vs removed), then the result flips in both directions — no fix is validated only on the positive fixture.
+
+#### Implementation Notes
+- Provenance: docs/review_notes/ISSUE-056.md Medium findings (the three SPEC-contract ones); SPEC-056 contracts 3 and 5.
+- Review lesson (native memory, ISSUE-042 class): a hand-rolled parser that mirrors an oracle must match its edge cases — the CSS scan mirrors the browser's declaration-level parsing, so normalize to declarations rather than patching the line regex per evasion variant.
+- Keep the verify_* family exit-code conventions (0/1/2) and the per-sweep CLI unchanged; only `all`'s aggregation and the CSS normalization change. Landing before ISSUE-057/060 means the `--json` shape change has zero call-site migrations — hence P1 and the Depends-On ordering.
+
+#### Tests
+- [ ] Multi-line and comment-interleaved flex-calc-width fixtures detected identically to single-line; removal flips to pass (extend the ISSUE-056 fixture set).
+- [ ] `all --json` output round-trips through `json.loads`; asserted keys cover every sweep subcommand.
+- [ ] `all` without `--class` exits non-zero naming Signature Move; with `--class`, behaviour is byte-identical to today.
+
+#### Rollback
+`git revert` — self-contained edits to `scripts/verify_design_sweeps.py` + tests; no call sites exist until ISSUE-057/060 wire them.
+
+---
+
+### ISSUE-064: Harden verify_design_sweeps matcher edges — encoded/case tell variants, non-rendered quote placements, zero-screen vacuity, input containment
+
+> ISSUE-056 review follow-up, second batch: the five adjacent Medium robustness findings from docs/review_notes/ISSUE-056.md that are detection-quality issues rather than SPEC-contract deviations — the ai-tell check false-passes on `mock` appearing anywhere in a name; HTML-entity-encoded and case-variant tells go unmatched; the literal-quote validator is satisfied by quote text placed in `data-*` attributes or `<script>` blocks (not rendered text); the ai-tell sweep half-passes vacuously when zero screen files are found; symlinked/out-of-tree inputs are scanned without containment. Split from ISSUE-063 to keep the contract-conformance fix small; same file, so sequenced behind it.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-056.md (existing — hardening within its contracts; no new spec)
+- PRD-Ref: none (review follow-up; review lessons "occurrence-whitelist over phrasing blacklist" + "mutation-test absence-guards with actually-removed strings" — native memory review-lessons.md)
+- Priority: P2
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-064-sweeps-matcher-hardening
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/113
+- PR: https://github.com/pillip/claude-dev-kit/pull/115
+- Depends-On: ISSUE-063
+
+#### Goal
+The design-sweep matchers detect the recorded evasion/false-pass variants and refuse vacuous or out-of-tree input, closing the five robustness findings from the ISSUE-056 review.
+
+#### Scope (In/Out)
+- In:
+  - Tell matching normalizes HTML entities and case before comparison (decode via `html.unescape`, case-fold), so encoded/case-variant tells are detected like literal ones.
+  - Fix the `mock`-anywhere-in-name false pass recorded in the review notes (word-boundary/context-aware match, per the repro in docs/review_notes/ISSUE-056.md).
+  - Literal-quote matching counts only rendered text — quote characters appearing solely in `data-*` attributes or `<script>` blocks do not satisfy it (extends the existing not-in-comments rule).
+  - Zero screen files → the ai-tell sweep exits non-zero reporting an empty input set (SPEC-056's no-vacuous-pass AC applied uniformly, not half-passed).
+  - Input containment: symlinks or paths resolving outside the target tree are skipped-with-report or fail the run — never silently scanned.
+- Out:
+  - The SPEC-056 contract 3/5 deviations (ISSUE-063).
+  - New sweep categories or checkpoint wiring (ISSUE-057/060).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a screens fixture where a banned tell appears HTML-entity-encoded or case-varied, when the ai-tell sweep runs, then it exits non-zero naming the tell, identically to the literal form; removing it flips to pass.
+- [ ] Given the review-notes repro where a name merely containing `mock` satisfied the check, when the hardened matcher runs, then the repro fixture no longer false-passes, and a fixture with legitimate usage still passes.
+- [ ] Given a prototype whose literal_quote characters appear only inside a `data-*` attribute or a `<script>` block, when the literal-quote validator runs, then it exits non-zero naming the quote as not rendered.
+- [ ] Given an input set resolving to zero screen files, when the ai-tell sweep runs, then it exits non-zero reporting the empty input set — no vacuous half-pass.
+- [ ] Given a fixture tree containing a symlink that resolves outside the tree, when any sweep runs, then the out-of-tree target is not scanned and the run reports the containment decision.
+
+#### Implementation Notes
+- Provenance: docs/review_notes/ISSUE-056.md adjacent Medium findings (branch issue/ISSUE-056-sweeps-to-validators, PR #101).
+- Review lessons (native memory): keep occurrence-whitelist mechanics — normalize the haystack (entity-decode, case-fold) rather than multiplying blacklist phrasings; mutation-test every new guard in both directions with the actually-inserted/actually-removed string. Entity handling uses `html.unescape`, not a hand-rolled entity table (oracle-mirroring lesson).
+- Same file as ISSUE-063 (`scripts/verify_design_sweeps.py`) — sequenced behind it to avoid conflicting edits; keep each finding's fix a separate commit for revert granularity.
+
+#### Tests
+- [ ] Fixture pair per finding (evasion variant detected; removal passes), extending the ISSUE-056/063 fixture set.
+- [ ] Containment test: symlink-out-of-tree fixture asserts the target is skipped/failed and the decision is reported.
+
+#### Rollback
+`git revert` per finding commit — hardening is additive detection logic; no call-site or output-schema changes.
+
+---
+
+### ISSUE-065: Add provenance, freshness, and consume-once binding to the KIT_GATE_RESULTS_FILE delegation handoff
+
+> ISSUE-058 review follow-up (docs/review_notes/ISSUE-058.md, unresolved High finding; branch issue/ISSUE-058-delegate-test-execution, PR #100): the `KIT_GATE_RESULTS_FILE` handoff artifact has no provenance, freshness, or one-shot binding — a schema-valid forged artifact plus env-var control activates the delegated branch, and probe gating is structurally a no-op because `verify` sits permanently in `RUNTIME_BUILTIN_SKILLS`. Shape validation is not provenance. The risk is bounded while the branch is dormant (nothing sets the env var; the bypass is loud via the unconditional `GATES DELEGATED` stdout marker; the artifact cannot be a committed file), but SPEC-058's Open Questions and test-plan GAP-058a name binding as a REQUIRED precondition before any activation PR wires the delegated branch into a blocking checkpoint. The review-hardening commit 64e4401 already landed shape-validation strictness, `.claude/run/` containment, the unconditional marker, and telemetry hardening — this issue adds the missing provenance layer and keeps activation blocked until it holds.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-058.md (existing, lands with PR #100 — this issue closes its Open Questions binding precondition; no new spec)
+- PRD-Ref: none (review follow-up; review lessons "workspace-persisted state read by hooks/gates is untrusted input — validate at read time" (ISSUE-038 class) + new "delegation handoff artifacts are forgeable attestations — shape validation is not provenance" — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 1d
+- Status: done
+- Owner:
+- Branch: issue/ISSUE-065-gate-results-provenance-binding
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/110
+- PR: https://github.com/pillip/claude-dev-kit/pull/112
+- Depends-On: ISSUE-058
+
+#### Goal
+`scripts/synthesize_gate_results.py` accepts a `KIT_GATE_RESULTS_FILE` artifact only when its provenance, freshness, and single-use are verified — refusing and degrading to `verify_gates.py` otherwise — so the binding check, not env-var presence, is the enforced precondition any future activation PR must build on.
+
+#### Scope (In/Out)
+- In:
+  - Evaluate and implement the three SPEC-058-named mechanisms: (1) token/HMAC binding between the gate invoker and the artifact producer — the invoker (`scripts/verify_checkpoint.py::_run_verify_gates`) generates a per-run nonce/secret before delegation and the artifact must carry a valid MAC over its body; (2) freshness — artifact mtime >= gate-process start time; (3) consume-once — the artifact is deleted/invalidated after a successful read.
+  - Refusal guard: when `KIT_GATE_RESULTS_FILE` is set but any binding check fails (missing/invalid MAC, stale mtime, already consumed), `synthesize_gate_results.py` refuses the artifact and degrades to `verify_gates.py`, with a distinct telemetry tag (`binding-rejected` vs the existing capability-absent degradation) and a loud stdout line naming the failed check.
+  - Activation-blocked guard test: no blocking checkpoint phase consumes the delegated branch output unless the binding check sits in its path — wiring delegation into a blocking checkpoint without binding must fail the suite.
+  - SPEC-058 append (Open Questions resolution): record that binding has landed and is the activation precondition; keep the dormant/activation-trigger documentation accurate.
+- Out:
+  - Actually activating the delegated branch in any blocking checkpoint (that is the future activation PR this issue gates).
+  - Any change to `verify_gates.py` fallback behaviour or the `verify_gates.GateResult` contract consumed by checkpoints.
+  - Probe (`has_skill.py`) redesign — binding supersedes the probe as the effective gate; probe exit codes are never treated as authorization.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `KIT_GATE_RESULTS_FILE` points at a schema-valid artifact with a missing or forged MAC, when `synthesize_gate_results.py` runs, then it refuses the artifact, degrades to `verify_gates.py`, returns the degraded path's result, prints the failed binding check, and emits the `binding-rejected` telemetry event — a forged artifact never yields delegated GateResults.
+- [ ] Given a validly MACed artifact whose mtime predates the gate-process start time, when it runs, then the artifact is refused as stale and the degraded path executes, identically to the forged case except the named check.
+- [ ] Given a valid, fresh, bound artifact consumed once, when a second invocation targets the same artifact, then it is refused (consumed/invalidated after first read) and the degraded path executes.
+- [ ] Given a valid, fresh, bound artifact on first use, when synthesis runs, then the produced `GateResult` output and the `GATES DELEGATED` stdout marker are byte-identical to the pre-binding delegated path — no consumer change in `verify_checkpoint.py::_run_verify_gates`.
+- [ ] Given the repo after this issue, when the activation-blocked guard test runs, then it verifies no blocking checkpoint path consumes the delegated branch without the binding check, and a fixture simulating unbound wiring fails the test (review-lesson prevention: workspace-persisted state read by gates is untrusted input — validated at read time, in both mutation directions).
+
+#### Implementation Notes
+- Provenance of this issue (cited by content; branch files not yet on main): docs/review_notes/ISSUE-058.md High finding — "no provenance/freshness/one-shot binding on the KIT_GATE_RESULTS_FILE handoff; schema-valid forgery + env control activates the delegated branch; probe gating structurally a no-op (`verify` permanently in `RUNTIME_BUILTIN_SKILLS`); shape validation is not provenance". SPEC-058 Open Questions + test-plan GAP-058a: binding is REQUIRED before any activation PR wires the delegated branch into a blocking checkpoint.
+- Files: `scripts/synthesize_gate_results.py` (binding verification + refusal/degrade), `scripts/verify_checkpoint.py::_run_verify_gates` (nonce generation, process-start freshness reference, consume-after-read), telemetry schema (new `binding-rejected` event alongside the existing delegated/degraded tags from ISSUE-058).
+- Mechanism sketch: HMAC key is per-run and ephemeral (never persisted to the workspace — the artifact lives under `.claude/run/` per the 64e4401 containment, and `.claude/run/` contents are untrusted input at read time, per the ISSUE-038 review lesson). Freshness uses the invoker's own process start, not wall-clock heuristics. Consume-once via unlink or rename-to-`.consumed` after a successful read, checked before parse.
+- Review lessons (native memory review-lessons.md): "hook/gate-read workspace cache is untrusted input — validate at read time" (ISSUE-038 cache-poisoning class) and the new lesson from this finding, "delegation handoff artifacts are forgeable attestations — shape validation is not provenance". Mutation-test every guard in both directions (forged → refused, bound → accepted) — never validate on the positive fixture alone.
+- The delegated branch stays DORMANT throughout: no runtime sets the env var today, and this issue's guard keeps it that way until the activation PR can point at a passing binding check.
+
+#### Tests
+- [ ] Mutation pair: schema-valid artifact with forged/missing MAC → degraded path + `binding-rejected` telemetry; same artifact correctly MACed → delegated path + `GATES DELEGATED` marker.
+- [ ] Stale-mtime artifact (mtime < process start) refused; fresh artifact accepted.
+- [ ] Consume-once: second read of the same artifact refused; artifact removed/invalidated after the first successful read.
+- [ ] Degradation parity: the binding-rejected degraded run's checkpoint-visible result is identical to the capability-absent degraded run (only the telemetry tag differs).
+- [ ] Activation-blocked guard: contract test fails when a blocking checkpoint phase is wired to consume delegated results without the binding check in its path.
+
+#### Rollback
+`git revert` — binding is additive in `synthesize_gate_results.py`/`verify_checkpoint.py` and the branch is dormant either way, so revert restores the pre-binding dormant state, not an activated unsafe path. The activation-blocked guard test couples any future activation PR to the binding check, so this issue must not be reverted after an activation PR lands without reverting that PR too.

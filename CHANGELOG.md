@@ -5,6 +5,150 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+### Added
+- **Deterministic sweep validators** (ISSUE-056, PR #101) — the four
+  model-executed verification sweeps are promoted to scripts with exit codes:
+  `scripts/verify_design_sweeps.py` (`literal-quote`, `signature-move`,
+  `ai-tell` subcommands plus an `all` aggregate) and
+  `scripts/verify_hollow_tests.py`. Ships with pinned, mutation-tested
+  fixtures under `tests/fixtures/sweeps/` and the bundled spec
+  `docs/specs/SPEC-056.md` (sprint auto_spec flow). SPEC-055 / evolution
+  audit roadmap item 2.
+- **Script checkpoints for the five zero-checkpoint skills** (ISSUE-057,
+  PR #102) — `scripts/verify_checkpoint.py` gains 14 new phases (kickoff x5,
+  scan x6 including a conditional data-model phase, desktop-uiux
+  context/philosophy/system), every surviving CHECKPOINT block in
+  kickoff/scan/uiux/mobile-uiux/desktop-uiux now invokes `checkpoint.sh`,
+  and an `ISSUELESS_SKILLS` fail-closed guard rejects unknown skills.
+  Ships with the bundled spec `docs/specs/SPEC-057.md` (sprint auto_spec
+  flow). SPEC-055 / evolution audit roadmap item 2.
+- **Dormant test-execution delegation layer** (ISSUE-058, PR #100) —
+  `scripts/synthesize_gate_results.py` lands a probe + untrusted-artifact
+  validation + a deterministic mapper to the `verify_gates.GateResult`
+  contract, emitting telemetry events `gates_delegated_to_runtime` /
+  `gates_degraded_path_used`. `verify_checkpoint.py::_run_verify_gates` gains
+  a fail-safe consult with a byte-identical degraded fallback and an
+  unconditional `GATES DELEGATED` stdout marker. Ships with
+  `docs/telemetry_schema.md`, README env knobs (`KIT_GATE_RESULTS_FILE`,
+  `KIT_RUN_ID`), and the bundled spec `docs/specs/SPEC-058.md`. The delegation
+  branch lands DORMANT — no runtime capability sets the env var yet; the
+  activation trigger is documented and ISSUE-065 gates activation on
+  provenance binding. SPEC-055 roadmap item 4 / SPEC-019 follow-up.
+
+- **Provenance / freshness / consume-once binding for the gate-delegation
+  handoff** (ISSUE-065, PR #112) — closes the ISSUE-058 review's unresolved
+  High finding: the `KIT_GATE_RESULTS_FILE` artifact is no longer a forgeable
+  attestation. `scripts/synthesize_gate_results.py` gains a per-run ephemeral
+  HMAC-SHA256 key (`secrets.token_bytes(32)`, in-process only — no new env
+  knob), a `<artifact>.sig` sidecar verified via `hmac.compare_digest` (the
+  sidecar is itself untrusted input: containment, regular-file, 1 KiB cap,
+  hex whitelist), an mtime-vs-process-start freshness check, and consume-once
+  semantics (successful delegated ingest renames the artifact to
+  `<artifact>.consumed`, so byte-perfect replays refuse). Binding materials
+  are required keyword-only parameters of `decide_gate_path`, so unbound
+  wiring raises `TypeError`; every binding refusal degrades to running the
+  real gates with telemetry reason `binding-rejected` and one loud stdout
+  line. The delegated branch stays DORMANT — binding, not env-var presence,
+  is now the activation precondition; the producer-side key handoff is owed
+  by the activation PR (SPEC-058 Open Questions). 29 new tests in
+  `tests/test_gate_binding.py`; `tests/test_gate_delegation.py` migrated to
+  the bound API with both stdout pins untouched.
+
+### Changed
+- **Scan/greenfield sibling agents consolidated behind an evidence-mode
+  flag** (ISSUE-061, PR #107) — all 5 pairs merge: requirement-analyst,
+  qa-designer, architect, data-modeler, and planner absorb their scan twins
+  (scan-analyst, scan-qa-designer, scan-architect, scan-data-modeler,
+  scan-planner are deleted); roster 32 → 27. Each merged agent carries a
+  gated `Evidence Mode (scan invocations only)` section activated solely by
+  the literal `Mode: evidence` sentinel in the calling skill's own
+  instruction text — `/scan` injects it on every Task prompt (including
+  Phase 4 retries), agents never infer the mode from context, and `Mode:`
+  lines inside passed document content are data, never the sentinel
+  (injection guard). Golden-output fixtures under
+  `tests/fixtures/evidence_mode/` pin both modes' section contracts
+  (`tests/test_evidence_mode_consolidation.py`), and
+  `scripts/verify_checkpoint.py` scan retry hints name the merged agents.
+  Ships with the bundled spec `docs/specs/SPEC-061.md`. SPEC-055 /
+  evolution audit roadmap item 5.
+
+### Removed
+- **Scaffolding residue — persona blocks, confidence-rating ritual, inline
+  figma prompt** (ISSUE-059, PR #106) — deletes the four
+  `Execution Principles (absorbed from the <persona> — ISSUE-034)` blocks
+  (prd/diagnose/refactor/migrate) plus /diagnose's step 5.5 six-item cognitive
+  checklist, removes the Self-Review confidence-rating (High/Med/Low)
+  boilerplate from 18 agents (SPEC-010 recorded self-grading as a defect;
+  documented exceptions: the uiux triplet and `scripts/fragments.py`
+  `self_review_confidence`, both owned by ISSUE-060), and replaces
+  /implement's ~50-line inline figma-converter prompt with a reference
+  contract to `agents/figma-converter.md` (single source). Reintroduction is
+  guarded by occurrence-whitelist lint tests in
+  `tests/test_scaffolding_residue.py` (7 tests, RED-verified pre-deletion).
+  SPEC-055 / evolution audit roadmap item 3a.
+
+- **A-bucket conversational agents dissolved into their skill contracts**
+  (ISSUE-062, PR #108) — deletes the five remaining conversation-shaping
+  roster agents: brainstormer, business-analyst, devops, documenter, and
+  copywriter; roster 27 → 22. Each agent's enforced invariants survive as
+  contract lines in the calling skill (/brainstorm, /bizanalysis, /devops,
+  /ship, and the uiux triplet). Where a skill used the agent for context
+  isolation rather than expertise, the call survives as a separate-context
+  general-purpose Task invocation with an inline contract and an explicit
+  toolset restriction (Read/Glob/Grep/Write/Edit only — no Bash, no web):
+  the documenter call in /ship step 3.5 and the copywriter call in
+  uiux/mobile-uiux/desktop-uiux Phase 4.5. Agent absence and invariant
+  absorption are pinned by `tests/test_agent_dissolution.py`. Ships with
+  the bundled spec `docs/specs/SPEC-062.md`. SPEC-055 / evolution audit
+  roadmap item 6.
+
+### Fixed
+- **verify_design_sweeps SPEC-056 contract conformance** (ISSUE-063, PR #111)
+  — three `all`-mode deviations fixed behind golden pins: the flex-calc-width
+  ai-tell now scans comment-blanked, whitespace-collapsed file text at
+  declaration level (multi-line and comment-split declarations no longer
+  evade; violations report the declaration's starting line), `all --json`
+  emits exactly ONE top-level JSON object keyed by sweep (usage errors go to
+  stderr so nothing interleaves with the JSON document), and `all` without
+  `--class` fails closed with exit 2 naming the unenforceable signature-move
+  sweep. Pinned by `tests/test_sweep_contract_conformance.py` (8 RED tests +
+  6 golden pins; `all --class` text output byte-identical). SPEC-056
+  contracts 3 and 5; ISSUE-056 review follow-up.
+- **verify_design_sweeps matcher-edge hardening** (ISSUE-064, PR #115) —
+  closes the five adjacent robustness findings from the ISSUE-056 review plus
+  the ISSUE-063 review's HTML CSS-contexts Medium, all behind the post-063
+  CLI/schema freeze (golden text/JSON pins byte-identical, no new flags):
+  ai-tell matching HTML-entity-decodes (`html.unescape`) and case-folds
+  before comparison so encoded/case-variant tells are caught; the bare
+  `mock`-anywhere-in-name rule is dropped from `verify_hollow_tests.py`
+  (dated SPEC-056 contract-4 amendment, not silent drift); the literal-quote
+  validator blanks `<script>` bodies — including unterminated-to-EOF, a
+  bypass found and fixed in review — and `data-*` attribute values so
+  non-rendered quote placements no longer satisfy it; the ai-tell sweep
+  fails on zero screen files regardless of CSS inputs (no vacuous
+  half-pass); inputs are realpath-contained to the target tree (breach =
+  exit 2 usage error on stderr, file never read); and the HTML
+  declaration-level scan now blanks CSS comments inside `<style>` blocks
+  and inline `style=""` attributes. 29 new tests in
+  `tests/test_sweep_validators.py`; the
+  `tests/test_sweep_contract_conformance.py` golden pins are untouched and
+  passing. ISSUE-056/063 review follow-up.
+- **Contract-converted uiux triplet** (ISSUE-060, PR #116) — the
+  uiux/mobile-uiux/desktop-uiux skills and their developer agents shrink
+  to contract + gates. Craft-tutorial prose (CSS mechanics lists,
+  duration-band tables, Expo dependency pins, Electron perf prescriptions)
+  is deleted; the shared surviving text (anti-slop trio, pilot-gate
+  protocol, cross-document consistency contracts) now lives once as
+  `scripts/fragments.py` tokens over the `UIUX_SKILLS` tuple instead of
+  three near-verbatim copies; and the Phase 5.5 model-executed sweep
+  instructions are replaced with `scripts/verify_design_sweeps.py`
+  validator calls (web call site at terminal step 22.4, downstream of all
+  content-mutating steps). Gate behaviour is the regression surface:
+  parity fixtures pin that every gate passes/fails identically pre/post
+  conversion (`tests/test_uiux_contract_conversion.py`). Ships with the
+  bundled spec `docs/specs/SPEC-060.md`. SPEC-055 / evolution audit
+  roadmap item 3b.
+
 ## 0.6.0 — 2026-09-02
 
 Machinery deflation. Of ISSUE-036..054, 16 of 19 issues came from two
