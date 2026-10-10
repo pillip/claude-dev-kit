@@ -63,14 +63,40 @@ Until ISSUE-001 lands its collector, events should be appended to
 `.claude/runs/<run-id>.jsonl` (project-side, gitignored) using `O_APPEND`
 with payloads kept under 4 KB to preserve POSIX atomicity. Each event line
 must validate against this schema; future ingestion replays these files
-under the ISSUE-001 pipeline. Script-side emitters (e.g.
-`scripts/synthesize_gate_results.py`) resolve the run-id from the
-`KIT_RUN_ID` env var; unset — or no `.claude/runs/` directory — means
-emission is a silent no-op.
+under the ISSUE-001 pipeline. The shared emitter
+(`scripts/kit_telemetry.py`, ISSUE-067) resolves the run-id from the
+`KIT_RUN_ID` env var and auto-creates `.claude/runs/`; an unset or invalid
+run-id means the event is written under the explicit `unattributed` run id
+with a top-level `run_id_fallback` field naming the condition, plus one
+`[kit-telemetry]` stdout announcement naming the knob — never a silent
+no-op.
 
-When the kit's telemetry pipeline is unconfigured (no `.claude/runs/`
-directory, no run-id available), event emission is a silent no-op — never
-fail the parent skill on a telemetry write error.
+Every remaining skip path announces its named reason on stdout (containment
+violation, serialized event past the 4 KB cap, write failure). A rejected
+containment violation writes nothing anywhere, so the stdout line is its
+only signal. Telemetry stays non-blocking: never fail the parent skill on a
+telemetry write error (unchanged).
+
+## Emit-site inventory (ISSUE-067)
+
+Audit of every telemetry emit call site: each site uses the shared emitter
+(`scripts/kit_telemetry.py`) or carries a recorded justification — no
+hand-rolled appender remains unexamined.
+
+| Site | Mechanism | Status / justification |
+|------|-----------|------------------------|
+| `scripts/synthesize_gate_results.py` | `kit_telemetry.emit_event` (thin `_emit_telemetry` delegation) | Migrated to the shared helper. |
+| `skills/review/SKILL.md.tmpl` delegation/degraded emits | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
+| `skills/bizanalysis/SKILL.md.tmpl` research emits | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
+| `skills/brainstorm/SKILL.md.tmpl` degraded emit | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
+| `scripts/spec_gate.py` | printed JSON decision object + the skill's stdout "telemetry-style" bypass line per SPEC-007 | JUSTIFIED, not migrated: no JSONL appender exists there — adding one is new scope (minimality). |
+| `project/.claude/hooks/agent_state.py` | hook-trace appender to `.claude/run/events.jsonl` | JUSTIFIED: separate ISSUE-001 shape-only hook-trace stream with its own contract; ISSUE-001 analytics scope is explicitly Out. |
+| `/ship` skill, `scripts/checkpoint.sh` / `verify_checkpoint.py` | — | JUSTIFIED: no emit call sites exist today (audited; nothing to migrate). |
+| `scripts/trace_query.py` | — | Consumer, not an emitter. |
+
+Events cataloged above without a live emit instruction (e.g.
+`synthesis_*`, `research_quote_*`) have no call site to migrate; when a
+skill gains one, it must use the shared emitter CLI.
 
 ## Updating this doc
 
