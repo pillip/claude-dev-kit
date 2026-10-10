@@ -92,9 +92,21 @@ _ATX_HEADING_RE = re.compile(r"^#{1,6}\s")
 # The roster table is exactly: Issue | Status | Attempts | Last Error | Phase.
 ROSTER_COLUMN_COUNT = 5
 
+# A roster row's first cell is an issue ID. Used only to tell a row the roster
+# MEANT to carry from the record-table rows the boundary must exclude. Header and
+# separator lines never match it.
+_ROSTER_ROW_SHAPE_RE = re.compile(r"^\|\s*ISSUE-\d+\s*\|")
 
-def _issue_progress_table_lines(text: str) -> list[str]:
-    """Return the contiguous table rows directly under the Issue Progress heading.
+
+def _row_cells(line: str) -> list[str]:
+    """Split a GFM table row into stripped cells."""
+    return [c.strip() for c in line.strip("|").split("|")]
+
+
+def _scan_issue_progress(text: str) -> tuple[list[str], list[str]]:
+    """Scan the Issue Progress section once.
+
+    Returns ``(table_lines, unparsed_roster_lines)``.
 
     ISSUE-076: the boundary is the table's own end, NOT the next h2. Phase
     executors write a `### Review outcomes` subsection table under Issue
@@ -102,6 +114,29 @@ def _issue_progress_table_lines(text: str) -> list[str]:
     read as roster rows, with `cells[4]` ("High unresolved") taken as the Phase.
     A GFM table ends at the first line that is not a table row, so terminate
     there: blank line, prose, or a heading of any level.
+
+    ISSUE-076 review: both of the new defences FAIL OPEN. They are correct about
+    what to exclude but SILENT about it, and silence here is destructive, because
+    a roster row that fails to parse is not merely absent — an in-flight issue
+    keeps ``Status: backlog`` on the Board, so `augment_roster_from_board`
+    re-materializes it as a fresh backlog candidate and a completed
+    implement/review is run again from scratch (the synthesized row also resets
+    ``attempts`` to 0, so the ≥3-attempt escalation never fires). Two triggers:
+
+    * the boundary ``break`` discards EVERY row below a stray line inside the
+      roster — and the line can be whitespace-only, hence invisible in an editor;
+    * the exact-5 column guard discards a SINGLE off-shape row, e.g. one whose
+      ``Last Error`` cell contains an unescaped ``|`` (error text is executor
+      output, so this is not hypothetical).
+
+    The parse contract is unchanged — both exclusions are the issue's specified
+    behaviour. The second return value makes them loud, so a caller can refuse to
+    dispatch off an under-read roster (review lesson 5: workspace-persisted state
+    read by a gate is untrusted input, so validate on read).
+
+    Rows beyond the next heading of ANY level belong to a different table — the
+    `### Review outcomes` pattern this issue exists to exclude — and are never
+    reported.
     """
     lines = text.splitlines()
     start = next(
@@ -113,18 +148,54 @@ def _issue_progress_table_lines(text: str) -> list[str]:
         None,
     )
     if start is None:
-        return []
+        return [], []
 
+    rest = lines[start + 1 :]
     table: list[str] = []
-    for line in lines[start + 1 :]:
+    stop = len(rest)
+    for offset, line in enumerate(rest):
         stripped = line.strip()
         if stripped.startswith("|") and stripped.endswith("|"):
             table.append(stripped)
         elif table or _ATX_HEADING_RE.match(stripped):
             # The table ended — or a heading was reached before it ever began,
             # meaning this section carries no table at all.
+            stop = offset
             break
-    return table
+    if not table:
+        return [], []
+
+    # (a) off-shape rows the column guard drops from INSIDE the table.
+    unparsed = [
+        line
+        for line in table
+        if _ROSTER_ROW_SHAPE_RE.match(line)
+        and len(_row_cells(line)) != ROSTER_COLUMN_COUNT
+    ]
+    # (b) rows the boundary truncated away, up to the next heading of any level.
+    for line in rest[stop:]:
+        stripped = line.strip()
+        if _ATX_HEADING_RE.match(stripped):
+            break
+        if _ROSTER_ROW_SHAPE_RE.match(stripped):
+            unparsed.append(stripped)
+    return table, unparsed
+
+
+def _issue_progress_table_lines(text: str) -> list[str]:
+    """The contiguous table rows directly under the Issue Progress heading."""
+    return _scan_issue_progress(text)[0]
+
+
+def unparsed_roster_rows(text: str) -> list[str]:
+    """Rows the Issue Progress roster MEANT to carry that the parse dropped.
+
+    Non-empty means the parse is an under-read — the roster was truncated by a
+    stray line, or a row was off-shape — see `_scan_issue_progress`. Callers must
+    refuse to dispatch work off such a roster rather than silently acting on the
+    surviving fragment.
+    """
+    return _scan_issue_progress(text)[1]
 
 
 def parse_sprint_table(text: str) -> list[dict[str, str]]:
@@ -134,7 +205,7 @@ def parse_sprint_table(text: str) -> list[dict[str, str]]:
     """
     rows: list[dict[str, str]] = []
     for line in _issue_progress_table_lines(text):
-        cells = [c.strip() for c in line.strip("|").split("|")]
+        cells = _row_cells(line)
         # Off-shape rows are skipped, never index-read (they stay inside the
         # table, so a stray wide row does not truncate the roster).
         if len(cells) != ROSTER_COLUMN_COUNT:
@@ -682,6 +753,30 @@ def cmd_next_action(args: argparse.Namespace) -> int:
     sprint_text = sprint_path.read_text(encoding="utf-8")
     issues_text = issues_path.read_text(encoding="utf-8")
 
+    # ISSUE-076 review: an under-read roster must never be acted on — the
+    # surviving fragment re-dispatches completed work as fresh backlog.
+    unparsed = unparsed_roster_rows(sprint_text)
+    if unparsed:
+        print(
+            f"Error: {len(unparsed)} Issue Progress roster row(s) were not "
+            "parsed — refusing to dispatch off an under-read roster",
+            file=sys.stderr,
+        )
+        print(
+            "  Causes: a stray blank/whitespace-only or prose line inside the "
+            "table (it ends there, per GFM, dropping every row beneath), or a "
+            "row whose cell count is not 5 (e.g. an unescaped '|' in Last "
+            "Error).",
+            file=sys.stderr,
+        )
+        print(f"  First unparsed row: {unparsed[0]}", file=sys.stderr)
+        print(
+            "  Fix: delete the stray line, escape '|' as '\\|' inside cells, or "
+            "move non-roster rows under their own heading.",
+            file=sys.stderr,
+        )
+        return 2
+
     sprint_rows = parse_sprint_table(sprint_text)
     if not sprint_rows:
         # Distinguish between empty table and parse failure:
@@ -794,6 +889,17 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     sprint_text = sprint_path.read_text(encoding="utf-8")
     sprint_rows = parse_sprint_table(sprint_text)
+
+    # ISSUE-076 review: warn but do not change the verdict — validate already
+    # fails safe (a dropped target reports stuck). This names the cause.
+    unparsed = unparsed_roster_rows(sprint_text)
+    if unparsed:
+        print(
+            f"Warning: {len(unparsed)} Issue Progress roster row(s) were not "
+            "parsed (stray line inside the table, or a non-5-column row); "
+            f"first: {unparsed[0]}",
+            file=sys.stderr,
+        )
 
     targets = [t.strip() for t in args.targets.split(",") if t.strip()]
     if not targets:

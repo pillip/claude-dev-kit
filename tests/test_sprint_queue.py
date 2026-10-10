@@ -1775,3 +1775,290 @@ class TestRealSprintStateDocsStillParse:
             f"{sorted({i for i in ids if ids.count(i) > 1})} — rows captured from "
             "outside the Issue Progress table"
         )
+
+
+# ── ISSUE-076 review fix: a truncated roster must never be acted on ──────
+#
+# Terminating the table at the first non-table line is GFM-correct, but it is
+# SILENT: a stray blank — or whitespace-only, hence invisible — line inside the
+# roster drops every row beneath it. A dropped row is not merely absent.
+# `augment_roster_from_board` re-offers it as fresh backlog work, so the live
+# consequence measured on this branch was `next-action` flipping from
+#   {"action": "SHIP",     "targets": ["ISSUE-200"]}                    (correct)
+# to
+#   {"action": "PIPELINE", "targets": ["ISSUE-200"], "unrostered": [...]}
+# — re-implementing an already-reviewed issue from scratch, at exit 0, with no
+# warning. Review lesson 5: workspace-persisted state read by a gate is
+# untrusted input, so validate on read. The boundary is unchanged (it is the
+# issue's specified contract); the under-read is now loud.
+
+
+class TestTruncatedRosterIsDetected:
+    """`orphaned_roster_rows` — the under-read detector, both directions."""
+
+    def test_blank_line_inside_the_roster_drops_the_rows_below(self):
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "\n"
+            "| ISSUE-200 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        # The parse is an under-read ...
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+        # ... and it is now reported rather than silent.
+        orphans = sq.unparsed_roster_rows(state)
+        assert len(orphans) == 1, orphans
+        assert "ISSUE-200" in orphans[0], orphans
+
+    def test_whitespace_only_line_inside_the_roster_is_detected(self):
+        """The invisible trigger — a renderer treats `   ` as a blank line too."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "   \n"
+            "| ISSUE-200 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+        assert len(sq.unparsed_roster_rows(state)) == 1
+
+    def test_prose_line_inside_the_roster_is_detected(self):
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "(continued below)\n"
+            "| ISSUE-200 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        assert len(sq.unparsed_roster_rows(state)) == 1
+
+    def test_all_data_rows_dropped_is_detected(self):
+        """Degenerate case: the stray line sits directly under the separator."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "\n"
+            "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "\n"
+        )
+        assert sq.parse_sprint_table(state) == []
+        assert len(sq.unparsed_roster_rows(state)) == 1
+
+    # ── the over-firing direction: the excluded patterns are NOT orphans ──
+
+    def test_h3_subsection_table_is_not_reported(self):
+        """The pattern this issue exists to exclude must not trip the detector."""
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "\n"
+            "### Review outcomes\n"
+            "| Issue | PR | Verdict | Crit | High unresolved | Commit |\n"
+            "|-------|----|---------|------|-----------------|--------|\n"
+            "| ISSUE-900 | #999 | PASS | 0 | 2 | c9bc35b |\n"
+            "\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == ["ISSUE-100"]
+        assert sq.unparsed_roster_rows(state) == []
+
+    def test_next_h2_section_table_is_not_reported(self):
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "\n",
+            trailer=(
+                "## Review outcomes\n"
+                "| ISSUE-900 | active | 0 | - | backlog |\n"
+            ),
+        )
+        assert sq.unparsed_roster_rows(state) == []
+
+    def test_off_shape_roster_row_inside_the_table_is_detected(self):
+        """The column guard's own silent drop — a wide row vanishes entirely.
+
+        It does NOT truncate the roster (ISSUE-300 below it still parses), so the
+        boundary half of the detector cannot see it; it needs the in-table shape
+        check.
+        """
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | done | 1 | - | shipped |\n"
+            "| ISSUE-200 | done | 1 | - | 0 (6 Medium) | c9bc35b |\n"
+            "| ISSUE-300 | active | 1 | - | reviewed |\n"
+            "\n"
+        )
+        assert [r["issue"] for r in sq.parse_sprint_table(state)] == [
+            "ISSUE-100",
+            "ISSUE-300",
+        ]
+        unparsed = sq.unparsed_roster_rows(state)
+        assert len(unparsed) == 1, unparsed
+        assert "ISSUE-200" in unparsed[0], unparsed
+
+    def test_unescaped_pipe_in_last_error_is_detected(self):
+        """The realistic trigger: Last Error carries executor output.
+
+        A shell pipeline in an error message makes the row 6 cells wide, so the
+        issue silently leaves the roster entirely.
+        """
+        state = _sprint_state(
+            ROSTER_HEADER
+            + "| ISSUE-100 | active | 1 | pytest | head failed | reviewed |\n"
+            "\n"
+        )
+        assert sq.parse_sprint_table(state) == []
+        assert len(sq.unparsed_roster_rows(state)) == 1
+
+    def test_header_and_separator_rows_are_never_reported(self):
+        """The shape regex must not fire on an ordinary empty roster table."""
+        assert sq.unparsed_roster_rows(_sprint_state(ROSTER_HEADER)) == []
+
+    def test_clean_roster_has_no_unparsed_rows(self):
+        assert sq.unparsed_roster_rows(_make_sprint_state([
+            ("ISSUE-100", "done", "1", "-", "shipped"),
+            ("ISSUE-200", "active", "1", "-", "reviewed"),
+        ])) == []
+
+    def test_missing_section_and_empty_table_have_no_unparsed_rows(self):
+        assert sq.unparsed_roster_rows("# Sprint State\n## Meta\n") == []
+        assert sq.unparsed_roster_rows(_sprint_state(ROSTER_HEADER)) == []
+
+    def test_frozen_real_fixture_has_no_unparsed_rows(self):
+        """Load-bearing no-false-positive pin on the real executor's output.
+
+        The 2026-10-11 file is exactly the `roster → blank → ### Review outcomes
+        → 6-column table` shape, i.e. the closest real input to a false positive.
+        """
+        assert sq.unparsed_roster_rows(
+            _fixture_text("issue_progress_with_h3_subsection.md")
+        ) == []
+
+    @pytest.mark.parametrize(
+        "doc_path", REAL_SPRINT_STATE_DOCS, ids=lambda p: p.name
+    )
+    def test_real_docs_have_no_unparsed_rows(self, doc_path):
+        """Structural invariant only — never these mutable records' wording."""
+        assert sq.unparsed_roster_rows(
+            doc_path.read_text(encoding="utf-8")
+        ) == [], doc_path.name
+
+
+class TestNextActionRefusesATruncatedRoster:
+    """The destructive outcome itself: no dispatch off an under-read roster."""
+
+    TRUNCATED = _sprint_state(
+        ROSTER_HEADER
+        + "| ISSUE-100 | done | 1 | - | shipped |\n"
+        "   \n"
+        "| ISSUE-200 | active | 1 | - | reviewed |\n"
+        "\n"
+    )
+
+    def _issues(self):
+        return (
+            _make_issue(num="100", status="done")
+            + "\n"
+            + _make_issue(num="200", status="backlog")
+        )
+
+    def test_exits_2_and_emits_no_dispatch(self, tmp_path, capsys):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(self.TRUNCATED)
+        issues = tmp_path / "issues.md"
+        issues.write_text(self._issues())
+
+        exit_code = main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        captured = capsys.readouterr()
+        assert exit_code == 2, captured
+        # The regression pin: the re-implement dispatch must NOT be emitted.
+        assert captured.out.strip() == "", captured.out
+        assert "PIPELINE" not in captured.out
+        assert "were not parsed" in captured.err, captured.err
+        assert "ISSUE-200" in captured.err, captured.err
+
+    def test_same_roster_without_the_stray_line_dispatches_ship(
+        self, tmp_path, capsys
+    ):
+        """Both-direction pin: remove the invisible line and work flows again.
+
+        Also the exact behaviour this fix protects — `reviewed` must SHIP, not
+        re-enter the pipeline.
+        """
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(self.TRUNCATED.replace("   \n", ""))
+        issues = tmp_path / "issues.md"
+        issues.write_text(self._issues())
+
+        exit_code = main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        out = json.loads(capsys.readouterr().out)
+        assert exit_code == 0, out
+        assert out["action"] == "SHIP", out
+        assert out["targets"] == ["ISSUE-200"], out
+        assert "unrostered" not in out, out
+
+    def test_frozen_real_fixture_still_dispatches(self, tmp_path, capsys):
+        """No false positive through the CLI on the real executor's file."""
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(_fixture_text("issue_progress_with_h3_subsection.md"))
+        issues = tmp_path / "issues.md"
+        issues.write_text(_make_issue(num="066", status="done"))
+
+        exit_code = main([
+            "next-action",
+            "--sprint-state", str(sprint),
+            "--issues", str(issues),
+            "--no-check-merged",
+        ])
+        captured = capsys.readouterr()
+        assert "were not parsed" not in captured.err, captured.err
+        assert exit_code != 2, captured
+
+
+class TestValidateWarnsOnATruncatedRoster:
+    """`validate` keeps its verdict contract; the warning only names the cause."""
+
+    def test_warns_on_stderr_without_changing_the_verdict(self, tmp_path, capsys):
+        sprint = tmp_path / "sprint_state.md"
+        sprint.write_text(
+            _sprint_state(
+                ROSTER_HEADER
+                + "| ISSUE-100 | done | 1 | - | shipped |\n"
+                "\n"
+                "| ISSUE-200 | done | 1 | - | shipped |\n"
+                "\n"
+            )
+        )
+        exit_code = main([
+            "validate",
+            "--sprint-state", str(sprint),
+            "--action", "SHIP",
+            "--targets", "ISSUE-100,ISSUE-200",
+        ])
+        captured = capsys.readouterr()
+        # Verdict unchanged: the truncated-away target still reports stuck.
+        out = json.loads(captured.out)
+        assert out["valid"] is False, out
+        assert out["stuck"] == ["ISSUE-200"], out
+        assert exit_code == 1
+        # ... and the cause is now named instead of being a mystery.
+        assert "were not parsed" in captured.err, captured.err
+
+    def test_frozen_real_fixture_emits_no_warning(self, capsys):
+        main([
+            "validate",
+            "--sprint-state",
+            str(FIXTURES / "issue_progress_with_h3_subsection.md"),
+            "--action", "SHIP",
+            "--targets", "ISSUE-066,ISSUE-067,ISSUE-068",
+        ])
+        assert "were not parsed" not in capsys.readouterr().err
