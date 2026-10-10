@@ -70,7 +70,11 @@ Env knobs (documented here and in README's environment-variable list):
         (the model-layer handoff artifact). Unset => degraded path.
     KIT_RUN_ID — run id for best-effort telemetry appends to
         ``<project>/.claude/runs/<run-id>.jsonl`` (see docs/telemetry_schema.md).
-        Unset or no runs dir => emission is a silent no-op.
+        Resolved inside the shared emitter (``scripts/kit_telemetry.py``,
+        ISSUE-067): unset or invalid => the event is written under the
+        ``unattributed`` fallback run id with one ``[kit-telemetry]`` stdout
+        announcement naming the knob — no longer a silent no-op. The runs
+        dir is auto-created.
 """
 
 from __future__ import annotations
@@ -82,10 +86,10 @@ import math
 import os
 import re
 import secrets
-from datetime import datetime, timezone
 from pathlib import Path
 
 import has_skill
+import kit_telemetry
 import verify_gates
 
 # The prospective runtime test-execution capability (SPEC-019 follow-up
@@ -97,8 +101,10 @@ RUNTIME_TEST_SKILL = "verify"
 # invoked the runtime capability and persisted machine-readable results.
 GATE_RESULTS_ENV = "KIT_GATE_RESULTS_FILE"
 
-# Script-side run-id source for telemetry (docs/telemetry_schema.md).
-RUN_ID_ENV = "KIT_RUN_ID"
+# Script-side run-id source for telemetry (docs/telemetry_schema.md). The
+# knob's single home is the shared emitter (ISSUE-067); aliased here for the
+# existing import surface.
+RUN_ID_ENV = kit_telemetry.RUN_ID_ENV
 
 # Untrusted-input size cap for the results artifact. Gate outputs are tails
 # of <= 2000 chars each, so 1 MB is generous for any legitimate run.
@@ -124,10 +130,6 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 MAX_DURATION_S = 10**7
 
 _SCRIPT_NAME = "synthesize_gate_results"
-
-# Telemetry payload ceiling per docs/telemetry_schema.md (POSIX O_APPEND
-# atomicity for small writes).
-_MAX_EVENT_BYTES = 4096
 
 # Untrusted-input size cap for the provenance sidecar: a hex HMAC-SHA256 is
 # 64 chars, so 1 KiB tolerates whitespace padding without admitting bulk.
@@ -379,58 +381,20 @@ def _load_results_file(
     return results
 
 
-# ── telemetry (best-effort, silent no-op, never raises) ──────────────
-
-
-# Whitelist for the attacker-influenced run-id filename component.
-_RUN_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
-
-# Attacker-derived text (e.g. GateSynthesisError messages quoting unknown
-# keys) is truncated rather than allowed to pad the event past the 4 KiB
-# cap — padding would silently drop the forensic record.
-_MAX_DETAIL_CHARS = 512
+# ── telemetry (best-effort, never raises — shared emitter, ISSUE-067) ─
 
 
 def _emit_telemetry(project_path: Path, event_type: str, payload: dict) -> None:
-    """Append one schema-conformant event line; silent no-op when unconfigured.
+    """Delegate to the shared hardened emitter (``kit_telemetry.emit_event``).
 
-    Hardened as an untrusted-path write: run-id is whitelist-validated, the
-    runs dir realpath must stay inside the project, the event file is opened
-    ``O_NOFOLLOW`` so a pre-planted symlink cannot redirect the append.
+    The ISSUE-058 writer hardening (run-id whitelist, containment, detail
+    truncation, O_NOFOLLOW, 4 KiB cap) lives in its single home there. Since
+    ISSUE-067 an unconfigured ``KIT_RUN_ID`` falls back to the announced
+    ``unattributed`` run id instead of silently dropping the event.
     """
-    try:
-        run_id = os.environ.get(RUN_ID_ENV, "").strip()
-        if not _RUN_ID_RE.fullmatch(run_id):
-            return
-        runs_dir = project_path / ".claude" / "runs"
-        if not runs_dir.is_dir():
-            return
-        if not runs_dir.resolve().is_relative_to(project_path.resolve()):
-            return
-        detail = payload.get("detail")
-        if isinstance(detail, str) and len(detail) > _MAX_DETAIL_CHARS:
-            payload = {**payload, "detail": detail[:_MAX_DETAIL_CHARS] + "…[truncated]"}
-        event = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "event_type": event_type,
-            "skill_or_script": _SCRIPT_NAME,
-            "payload": payload,
-        }
-        data = (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
-        if len(data) > _MAX_EVENT_BYTES:
-            return
-        fd = os.open(
-            runs_dir / f"{run_id}.jsonl",
-            os.O_APPEND | os.O_CREAT | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0),
-            0o644,
-        )
-        try:
-            os.write(fd, data)
-        finally:
-            os.close(fd)
-    except Exception:
-        # Never fail the parent gate run on a telemetry write error.
-        return
+    kit_telemetry.emit_event(
+        event_type, payload, script_name=_SCRIPT_NAME, project_path=project_path
+    )
 
 
 # ── path decision ────────────────────────────────────────────────────
@@ -453,9 +417,11 @@ def decide_gate_path(
     Returns ``(decision, results, reason)`` where decision is ``"delegated"``
     (results is the synthesized GateResult list) or ``"degraded"`` (results is
     None; the caller runs ``verify_gates.run_applicable_gates`` unchanged).
-    Prints nothing on the dormant flavors (their stdout stays byte-identical
-    to the legacy path); a binding refusal prints ONE loud line naming the
-    failed check and the env knob.
+    Gate-decision stdout is unchanged: the dormant flavors print no GATE
+    output of their own, and a binding refusal prints ONE loud line naming
+    the failed check and the env knob. The shared emitter (ISSUE-067) may
+    additionally print its own ``[kit-telemetry]`` fallback announcement
+    when telemetry is unconfigured (``KIT_RUN_ID`` unset/invalid).
     """
     pp = Path(project_path)
 

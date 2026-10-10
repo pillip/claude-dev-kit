@@ -686,8 +686,11 @@ optional — the defaults are safe for local and CI runs:
   the checkpoint prints a `GATES DELEGATED` marker — delegated runs are
   never silent.
 - `KIT_RUN_ID` — run id for the kit's best-effort telemetry appends to
-  `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset:
-  script-side telemetry emission is a silent no-op.
+  `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset or
+  invalid: the shared emitter (`scripts/kit_telemetry.py`, ISSUE-067)
+  writes the event under the `unattributed` fallback run id and prints one
+  `[kit-telemetry]` stdout line naming the knob — script-side telemetry is
+  never a silent no-op.
 
 ### Configuring gates via `docs/test_plan.md`
 

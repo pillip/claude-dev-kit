@@ -38,7 +38,7 @@ Steps:
 
 ## Error Handling
 - If the output path is not writable: report the error and ask for an alternative path.
-- If `has_skill.py` reports exit code 2 (runtime-built-in, filesystem-invisible) and `/deep-research` returns a "skill not found" error inline, fall back to the degraded path and emit telemetry event `research_degraded_path_used`.
+- If `has_skill.py` reports exit code 2 (runtime-built-in, filesystem-invisible) and `/deep-research` returns a "skill not found" error inline, fall back to the degraded path and emit the telemetry event via the shared emitter: `python3 scripts/kit_telemetry.py --script brainstorm --event research_degraded_path_used --payload '{"reason": "skill_unknown_inline_fail"}'`.
 
 ## Quality Criteria
 
