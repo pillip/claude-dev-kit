@@ -1,7 +1,7 @@
 # SPEC-055: Reposition the kit's identity to "verification & delegation control plane"
 
 > Linked Issue: none (ad-hoc)
-> Status: `draft`
+> Status: `accepted`
 > Date: 2026-10-09
 > Author: pillip + Claude
 

@@ -911,7 +911,7 @@ def _run_verify_gates(project_path: str, blocking: bool = False) -> bool:
             binding_key=_gate_delegation.generate_binding_key(),
             process_start=_GATE_PROCESS_START,
         )
-        if decision == "delegated":
+        if decision == "delegated" and delegated is not None:
             results = delegated
             # A delegated run must never be byte-indistinguishable from a
             # real gate run — only the DEGRADED path is pinned byte-identical

@@ -5,6 +5,15 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+## 0.7.0 — 2026-10-10
+
+The SPEC-055 repositioning release: the kit's surface is reorganized around
+the verification & delegation control plane — deterministic sweep validators,
+script checkpoints for every long-prose skill, the dormant test-execution
+delegation layer with provenance binding, scaffolding deflation (agent roster
+32 → 22), and the uiux triplet converted to contract + gates. All ten sprint
+issues (ISSUE-056..065) shipped with zero unresolved Critical/High findings.
+
 ### Added
 - **Deterministic sweep validators** (ISSUE-056, PR #101) — the four
   model-executed verification sweeps are promoted to scripts with exit codes:
