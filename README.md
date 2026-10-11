@@ -542,10 +542,10 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `planner` | xhigh | Break work into issues + convert review findings to issues; evidence mode (/scan) derives improvement issues from scan observations | Read, Glob, Grep, Write, Edit |
 | `issue-writer` | medium | Natural language → issue creation + planning/design docs update | Read, Glob, Grep, Write, Edit, Bash |
 | `qa-designer` | high | Design test strategy and cases; evidence mode (/scan) audits existing coverage and gaps | Read, Glob, Grep, Write, Edit |
-| `team-lead` | xhigh | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task |
+| `team-lead` | xhigh | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task, Skill |
 | `developer` | xhigh | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
 | `test-generator` | high | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
-| `reviewer` | xhigh | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
+| `reviewer` | xhigh | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write, Skill |
 | `ui-reviewer` | high | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Bash, Write |
 | `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep |
 | `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Write, Edit, Bash |
