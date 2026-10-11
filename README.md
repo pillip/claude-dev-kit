@@ -679,6 +679,13 @@ optional — the defaults are safe for local and CI runs:
   malformed field still counts as present and still closes the gate) — a
   sprint_state with no such field keeps the pre-ISSUE-069 behaviour of
   dispatching above the re-derived `max(rostered IDs)`.
+  That fail-open belongs to the *dispatch* gate alone, and it is not a steady
+  state inside a `/sprint` run: step 4f's `scripts/sprint_queue.py validate`
+  refuses a sprint_state that declares `Status: running` while its boundary is
+  absent or malformed — `valid: false`, a `roster_boundary` object naming the
+  cause, and the distinct exit class `3`, which `/sprint` treats as a hard stop
+  even though exit `3` does print JSON. Restoring an accepted
+  `Roster-Watermark` line in `## Meta` is what clears it — this knob does not.
 - `KIT_ALLOW_BROWSER_INSTALL` — set to `1` to let the visual-diff and
   computed-styles gates auto-install Playwright + Chromium (heavy network +
   subprocess provisioning) when the browser is missing. Unset (the default) or

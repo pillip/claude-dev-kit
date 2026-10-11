@@ -12,6 +12,11 @@ Exit codes:
   0 — success (JSON output on stdout)
   1 — operational issue (nothing actionable, validation failure)
   2 — usage error (missing files, malformed input)
+  3 — `validate` only: a `running` sprint carries no ACCEPTED roster boundary
+      (ISSUE-078). A distinct class because the operator action differs from a
+      transition failure — restore the field, do NOT dispatch another iteration —
+      and `stuck` is empty, so an exit 1 would send the loop hunting for a target
+      to retry.
 
 Environment:
   KIT_SPRINT_DISPATCH_ABOVE_WATERMARK — 1/true/yes/on widens autonomous dispatch
@@ -756,6 +761,174 @@ def parse_roster_watermark(
     return num, None, True
 
 
+# ── Roster boundary enforcement (ISSUE-078) ─────────────────────────
+#
+# ISSUE-069 gates above-boundary autonomous dispatch on field PRESENCE, so every
+# CORRUPTED form of the field fails closed. The ABSENT state is a deliberate
+# fail-OPEN (AC-6, backward compatibility): with no field, above-boundary Board
+# issues are auto-TARGETED and driven through implement → review → `gh pr merge`.
+# Deleting one line from a file every phase executor rewrites therefore re-opens
+# autonomous dispatch of out-of-scope work, and until this issue the only thing
+# preventing it was model-followed prose in `skills/sprint/SKILL.md.tmpl` step 4d.
+#
+# The carrier is `validate`, not `next-action`, because of POSITION rather than
+# presence. Within one sprint iteration `next-action` runs at step 4b — BEFORE
+# the team-lead rewrites `docs/sprint_state.md` at 4d — and `validate` runs at 4f,
+# AFTER it. The rewrite IS the mutation that can drop the field, so only the 4f
+# leg sits between that mutation and the next dispatch decision (4b of iteration
+# N+1): a field dropped by iteration N's rewrite is refused at 4f of iteration N,
+# before anything is dispatched on it. A check inside `next-action` would be
+# positioned upstream of the mutation it guards. `validate` also never calls
+# `detect_circular_deps`, so this refusal stays reachable even when an `issues.md`
+# cycle makes `cmd_next_action` return early.
+
+#: `validate`'s refusal exit class. Deliberately NOT the transition-failure exit
+#: (1): `stuck` is empty on a boundary refusal, so reusing exit 1 would send the
+#: loop looking for a target to retry instead of restoring the field.
+ROSTER_BOUNDARY_EXIT = 3
+
+# Same single-leading-character-class style as `_WATERMARK_FIELD_RE`, and for the
+# same two reasons. (1) Detection is deliberately BROAD: a MISSED running status
+# is the fail-OPEN direction — the boundary check never arms, and a sprint that
+# lost its scope boundary is confirmed as healthy — so every bullet marker,
+# indentation and emphasis form an operator reads as a `Status` field must be
+# detected. Acceptance of the BOUNDARY stays narrow (`parse_roster_watermark`);
+# only the arming predicate is broad. (2) One character class for the leading run
+# means no adjacent greedy quantifiers, so the scan stays LINEAR — this runs over
+# untrusted workspace input with no timeout wrapper, exactly as documented at
+# `_WATERMARK_FIELD_RE` (a line of 80k spaces took 66s under the old nested form).
+_SPRINT_STATUS_FIELD_RE = re.compile(
+    r"^[\s\u00a0\u200b>+*\-_~`]*status[*_~`\s\u00a0]*:",
+    re.IGNORECASE,
+)
+
+# `\b` is load-bearing: it is what excludes `runnings` while still accepting an
+# annotated `running (iteration 3)`. Anchored at the start, so a value that merely
+# CONTAINS the word (`not running`) is not a running status — over-firing is what
+# AC-3 forbids, because a check that cries wolf on a `planning`/`complete` sprint
+# gets disabled.
+_SPRINT_RUNNING_VALUE_RE = re.compile(r"^running\b", re.IGNORECASE)
+
+#: Markdown decoration stripped from a `Status:` VALUE before matching, so
+#: `**running**` and `` `running` `` read as running. Whitespace is in the set so
+#: one `strip()` call handles `- Status:  running  ` too.
+_SPRINT_VALUE_DECORATION = " \t*_~`\u00a0\u200b"
+
+
+def sprint_status_is_running(sprint_text: str) -> bool:
+    """True when sprint_state declares a running sprint ANYWHERE in the document.
+
+    This is the ARMING predicate for the boundary refusal below: a boundary only
+    constrains dispatch while a sprint is dispatching, so `planning`, `complete`,
+    `completed`, `paused`, `not running` and an absent ``Status:`` field all read
+    as False (AC-3).
+
+    DOCUMENT-WIDE, deliberately NOT co-scoped with the boundary FIELD (review
+    fix). This was originally scoped to `_meta_section_bounds`' window on the
+    argument that sharing one locator "makes the two agree". They do agree on
+    LOCATION — and that is worth nothing here, because the two do not fail the
+    same WAY:
+
+    * Field PRESENT but outside the window → `parse_roster_watermark` refuses it
+      and ISSUE-069's dispatch gate closes. Fail-CLOSED.
+    * Field ABSENT and the window emptied by a heading deviation → this predicate
+      returned False, so the refusal never armed and `validate` affirmatively
+      reported ``state: "not-running"`` / ``valid: true`` / exit 0 for a file
+      whose text read ``- Status: running``, while `next-action` dispatched
+      above-boundary Board work off the same bytes. Fail-OPEN.
+
+    And those two conditions are not independent: BOTH are produced by the same
+    actor, the team-lead's step 4d rewrite of this block, whose unreliability is
+    the entire premise of this check. The file is written by an LLM every
+    iteration, not by a generator — so an executor careless enough to drop the
+    field line is equally likely to paraphrase the heading (measured: ``##
+    Sprint Meta``, ``## meta``, ``### Meta``, ``##Meta``, a leading indent, a
+    duplicate ``## Meta`` whose first block says ``paused``, a fenced ``## Meta``
+    example earlier in the file — 13 variants, every one of them disarming), and
+    the paraphrase silently disabled the check built for the drop.
+
+    So: detection is broad (a MISSED running status is the fail-open direction —
+    the same rule `_SPRINT_STATUS_FIELD_RE` and `_WATERMARK_FIELD_RE` already
+    state for the field NAME), while the boundary field's ACCEPTANCE stays narrow
+    and ``## Meta``-scoped in `parse_roster_watermark` (widening THAT window
+    would loosen acceptance, which is the wrong direction). The two now fail the
+    same SAFE way instead of agreeing on a location.
+
+    Over-firing is bounded by `_SPRINT_STATUS_FIELD_RE` being line-anchored:
+    prose (``The sprint Status: running right now``) and roster table rows
+    (``| ISSUE-011 | running | … |``) still do not match, which the suite's
+    `NOT_RUNNING_LINES` pins. AC-3's four cases (`planning`, `complete`, a
+    ``## Meta`` with no ``Status:`` field, a missing file) contain no running
+    status anywhere, so none of them arms.
+
+    Never raises; total for any ``str``.
+
+    Residual, stated rather than discovered later: the running VOCABULARY is
+    `_SPRINT_RUNNING_VALUE_RE`, so an off-template value (`in progress`,
+    `active`) still reads as not-running. `templates/sprint_state.md` and
+    `agents/team-lead.md` both pin the vocabulary to
+    ``running | paused | completed``, which bounds it without enforcing it.
+    """
+    for line in (sprint_text or "").splitlines():
+        if not _SPRINT_STATUS_FIELD_RE.match(line):
+            continue
+        value = line.partition(":")[2].strip(_SPRINT_VALUE_DECORATION)
+        # ANY running-looking Status field arms the check: a duplicated or edited
+        # block must not be able to disarm it by adding a second line.
+        if _SPRINT_RUNNING_VALUE_RE.match(value):
+            return True
+    return False
+
+
+def check_roster_boundary(
+    sprint_text: str,
+    issues_meta: dict[str, dict],
+) -> dict[str, object]:
+    """The `roster_boundary` signal `validate` emits UNCONDITIONALLY.
+
+    ``{"checked", "state", "accepted", "detail", "pinned"}``, where ``state`` is
+    exactly one of ``accepted`` / ``absent`` / ``rejected`` / ``not-running``.
+
+    Emitted on every `validate` call, including non-running states: a key that
+    appears only when it has something to say is absent exactly in the state it
+    is needed, so the consumer cannot tell "checked and fine" from "not emitted"
+    from "this build has no boundary leg".
+
+    ``state`` is DERIVED from `parse_roster_watermark`'s existing three-way
+    ``(num, rejection_detail, present)`` return rather than re-deciding anything,
+    and ``detail`` is the parser's OWN ``rejection_detail`` verbatim. A second,
+    hand-rolled explanation could describe a refusal the parser never made — and
+    the parser's string is already bounded by `_truncate_value`, so reusing it is
+    also what keeps this new output surface from re-opening the echo
+    amplification.
+    """
+    if not sprint_status_is_running(sprint_text):
+        return {
+            "checked": False,
+            "state": "not-running",
+            "accepted": False,
+            "detail": None,
+            "pinned": None,
+        }
+
+    num, detail, _present = parse_roster_watermark(sprint_text, issues_meta)
+    # `detail` alone distinguishes rejected from absent (`present` adds nothing
+    # once it does), so the mapping is read off the two values the caller acts on.
+    if detail is not None:
+        state = "rejected"
+    elif num is not None:
+        state = "accepted"
+    else:
+        state = "absent"
+    return {
+        "checked": True,
+        "state": state,
+        "accepted": num is not None,
+        "detail": detail,
+        "pinned": None if num is None else f"ISSUE-{num:03d}",
+    }
+
+
 # ISSUE-069 opt-in knob: widen autonomous dispatch to Board issues ABOVE the
 # pinned boundary (out-of-scope work). Read at CALL time, deliberately NOT via
 # the module-level import-time pattern `GH_MERGE_PROBE_TIMEOUT` uses above: a
@@ -1462,8 +1635,95 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print("Error: --targets is empty", file=sys.stderr)
         return 2
 
+    # ISSUE-078: a `running` sprint must carry an ACCEPTED roster boundary. This
+    # leg runs AFTER the `sprint_path.exists()` guard above on purpose — a missing
+    # file has nothing to check and nothing to say, so it keeps exiting 2 with no
+    # `roster_boundary` key at all.
+    #
+    # `--issues` is optional, and its absence degrades in ONE documented way:
+    # `parse_roster_watermark` uses the Board only for its range ceiling, which it
+    # already skips when no Board id is parseable, so without `--issues` the
+    # above-the-Board-max rejection class is not detected here while every other
+    # acceptance rule still applies. That is ISSUE-069's own documented ceiling
+    # skip inherited, not a new rule — which is why the sprint skill's step 4f
+    # always passes `--issues issues.md`. A non-existent path degrades the same
+    # way rather than failing: an unrelated `issues.md` problem must not cost the
+    # sprint its boundary verdict.
+    issues_arg = getattr(args, "issues", None)
+    issues_path = Path(issues_arg) if issues_arg else None
+    issues_meta = (
+        parse_issues_metadata(issues_path.read_text(encoding="utf-8"))
+        if issues_path is not None and issues_path.exists()
+        else {}
+    )
+    boundary = check_roster_boundary(sprint_text, issues_meta)
+
+    # Review fix (M4): the degradation above is a recorded decision, but it used
+    # to be SILENT — a single mistyped character in `--issues` turned a rejected
+    # above-the-Board-max boundary into exit 0 / `accepted`, while `next-action`
+    # hard-exits 2 on the identical argv. The verdict and the exit code stay
+    # exactly as the recorded decision has them; only the silence was wrong. The
+    # flag is named literally so the message is actionable (the stderr-warning
+    # precedent is the unparsed-roster warning above).
+    if boundary["checked"] and not issues_meta:
+        print(
+            "Warning: --issues not supplied or unreadable "
+            f"({issues_arg if issues_arg else 'flag omitted'}) — the Board-range "
+            "rejection class (a boundary above the highest Board id) was NOT "
+            "checked on this run",
+            file=sys.stderr,
+        )
+
     result = validate_transitions(sprint_rows, args.action, targets)
+    result["roster_boundary"] = boundary
+
+    # `stuck` and `transitioned` are deliberately NOT touched: a lost boundary is
+    # not a stuck target, and putting one there would make the loop retry a phase
+    # that succeeded. The consequences are the verdict, one error string, and the
+    # exit class — which WINS over the transition exit, because a sprint whose
+    # boundary is gone must not be reported merely as "a target is stuck".
+    boundary_refused = boundary["checked"] and not boundary["accepted"]
+    if boundary_refused:
+        # The remediation branches on the CAUSE (review fix M2). One string for
+        # both causes always said "restore the line", which on a REJECTED
+        # boundary adds a SECOND field line and makes the state strictly worse on
+        # every round: measured `rejected (not a canonical id)` → `2 field lines
+        # found` → `3 field lines found`. This string lands in `errors`, step 4f
+        # logs it into sprint_state.md, and the next iteration's agent acts on
+        # it — so it is executable advice, and advice that degrades the file it
+        # is repairing is a defect, not a wording nit.
+        detail = boundary["detail"]
+        if detail is None:
+            cause = "absent from ## Meta"
+            remediation = (
+                "ADD '- Roster-Watermark: ISSUE-<max rostered ID at sprint "
+                "start>' inside ## Meta"
+            )
+        else:
+            cause = f"rejected ({detail})"
+            remediation = (
+                "FIX the '- Roster-Watermark:' line already in ## Meta so the "
+                f"parser accepts it ({detail}) — do NOT add a second field line, "
+                "because two are refused as a duplicate and every extra copy "
+                "degrades this state further"
+            )
+        result["valid"] = False
+        result["errors"].append(
+            # "this sprint_state declares", not "## Meta declares" (review fix):
+            # the arming predicate is document-wide, so the message must not
+            # assert a location it no longer checks. `cause` still says
+            # "absent from ## Meta", which is accurate — the FIELD is
+            # ## Meta-scoped even though the Status that arms the check is not.
+            f"Roster-Watermark {cause}: this sprint_state declares Status: "
+            "running, so the sprint is dispatching with no scope boundary and "
+            "above-boundary Board issues can be auto-targeted. Do NOT dispatch "
+            f"another iteration. {remediation}. Then re-run validate. No target "
+            "is retried because of this — `stuck` is unaffected."
+        )
+
     print(json.dumps(result))
+    if boundary_refused:
+        return ROSTER_BOUNDARY_EXIT
     return 0 if result["valid"] else 1
 
 
@@ -1541,6 +1801,21 @@ def main(argv: list[str] | None = None) -> int:
         "--targets",
         required=True,
         help="Comma-separated issue IDs (e.g. ISSUE-001,ISSUE-002)",
+    )
+    # `default=None`, deliberately NOT "issues.md" (ISSUE-078): a CWD-dependent
+    # default would make the acceptance verdict depend on where the process was
+    # started. Omitting it skips only the Board-range ceiling check, exactly as
+    # `parse_roster_watermark` already skips it when no Board id is parseable.
+    va.add_argument(
+        "--issues",
+        default=None,
+        help=(
+            "Path to issues.md. Optional: supplies the Board-range check for the "
+            "ISSUE-078 `roster_boundary` leg. Without it (or with a path that "
+            "does not exist) a boundary ABOVE the highest Board id is not "
+            "detected here, while every other acceptance rule still applies — "
+            "pass it (sprint step 4f does) for full parity with `next-action`."
+        ),
     )
 
     # ship-merge-decision subcommand (ISSUE-052 idempotent merge guard)
