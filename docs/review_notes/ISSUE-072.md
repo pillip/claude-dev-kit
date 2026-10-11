@@ -59,7 +59,7 @@ _Source: runtime /code-review (findings tagged [runtime], severity verbatim) + t
   Evidence: `text.split("---", 2)[1]` stops at the first in-body `---`, which would drop a later `tools:` line and surface as the confusing "expected exactly one `tools:` line … found 0". Verified clean today: no agent file has a literal `---` inside its frontmatter body. The suite's oracle `_frontmatter` has the same shape, so this is a parity issue rather than a divergence.
   Fix: Not fixed — no live defect, and changing it would diverge from the oracle's own behaviour. Record only.
 
-- **[Low] [debt-checkpoint] Tech-debt ledger: 3 `KIT-DEBT` markers carry no `trigger=` (silent-rot risk) and 1 is malformed**
+- **[Low] [debt] Tech-debt ledger: 3 `KIT-DEBT` markers carry no `trigger=` (silent-rot risk) and 1 is malformed**
   Evidence: Source: the kit's advisory debt checkpoint, NOT runtime /code-review. `bash scripts/checkpoint.sh --skill review --phase debt --issue ISSUE-072` (advisory, exit 0): "total: 14 | no-trigger (silent-rot risk): 3 | malformed: 1". None of them are introduced by this PR.
   Fix: Pre-existing; out of ISSUE-072's scope. Recorded so the deferral does not become permanent.
 
