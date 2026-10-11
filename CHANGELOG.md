@@ -105,6 +105,55 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **The review path can reach the runtime review skills — the SPEC-019 primary
+  path now actually executes from a sub-task, and the first delegated review has
+  run** (ISSUE-072, PR #135) — no kit agent granted any skill-invocation tool, so
+  `/review`'s primary path was unreachable from every `/sprint` review and the
+  ~360-line SPEC-066 module landed dormant. SPEC-066 blamed a categorical runtime
+  limitation. That is now **refuted by a live run**, not merely by a tool listing:
+  a Task sub-agent *does* receive a `Skill` tool (listing bare, non-namespaced
+  `code-review` / `security-review`), the sub-agent's `tools:` frontmatter **wins
+  over** the invoked skill's `allowed-tools`, and the absence SPEC-066 measured was
+  the kit's own configuration. This issue's own review then ran with
+  `review_context.py decide` returning **`delegated` for both dimensions with an
+  empty reason**, invoking both runtime skills — where every prior review in the
+  sprint ran `degraded` / `context-unreachable`.
+  Per the ISSUE-014 rule the **verified matrix row landed first**:
+  `docs/cc_feature_matrix.md` row 10, Status **`partial`** — runtime capability
+  CONFIRMED, whether a *kit agent's* grant MATERIALISES still **UNVERIFIED** — with
+  its `Verified` cell naming its own probe build (CC **2.1.224**) rather than the
+  file's older global floor, which is untouched. The row deliberately records the
+  **negative** results too: `SlashCommand` is absent in every probed sub-agent
+  context (not loaded and **not even deferred**), so `Skill` — not `SlashCommand` —
+  is the grant token; `Glob`/`Grep` are granted in kit agents and provisioned in
+  neither, i.e. **a grant does not imply provisioning**; and the grant does **not**
+  re-enable the kit's own `disable-model-invocation` pipeline skills. It also keeps
+  four mutually **contradictory** observations about `Glob`/`Grep` rather than
+  averaging them, and states the conclusion that follows: *a sub-agent's narration
+  of its own tool list is unreliable evidence; an observed tool-call outcome
+  outranks a self-description.*
+  **The grant alone would have been inert.** `scripts/review_context.py` and
+  `/review` step 3.1 both asked the model whether **`SlashCommand`** was in its
+  tool list — a token that does not exist in sub-task context — so `decide` would
+  have answered `context-unreachable` forever while every file looked correct.
+  Naming `Skill` at that call site is what makes the grant live. `SlashCommand` is
+  deliberately **kept** in `skills/review/SKILL.md`'s `allowed-tools`, and step 3.1
+  still accepts it where a context has one, because the main-session path was never
+  probed. The grant is scoped to **`agents/team-lead.md` only**: review removed it
+  from `agents/reviewer.md`, which never executes step 3.1 and therefore had no
+  call site for it — a symmetry grant the issue's own hygiene clause forbids.
+  **Known gaps, carried rather than hidden:** a granted-but-unprovisioned `Skill`
+  produces a `degraded` / `context-unreachable` outcome **byte-identical** to the
+  pre-grant state, and the telemetry that would record it is a silent no-op when
+  `KIT_RUN_ID` is unset — so there is **no distinguishing signal**, recorded
+  (GAP-072b) rather than fixed with an unnamed mechanism. The `skills:` frontmatter
+  field was never probed against `tools: Skill` (GAP-072a), which matters because
+  `tools: Skill` without `skills:` could provision a Skill tool with an **empty
+  listing** — materialised but inert. A **live run from a kit agent served by the
+  installed plugin** remains unverified, because the agent registry is frozen at
+  session start and the installed plugin lags this repo; **ISSUE-082** carries that
+  re-probe and the issue's AC-2 ships honestly unchecked.
+
 - **A running sprint can no longer silently lose its roster boundary — the
   one-line deletion that re-opened autonomous dispatch is now refused**
   (ISSUE-078, PR #133) — ISSUE-069 pinned the boundary in
