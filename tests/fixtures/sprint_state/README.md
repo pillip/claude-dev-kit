@@ -7,11 +7,18 @@
   ISSUE-076 false negative live on 2026-10-11:
 
   ```
-  $ python3 scripts/sprint_queue.py validate --action SHIP \
+  $ python3 scripts/sprint_queue.py validate \
+      --sprint-state tests/fixtures/sprint_state/issue_progress_with_h3_subsection.md \
+      --issues issues.md --action SHIP \
       --targets ISSUE-066,ISSUE-067,ISSUE-068
   {"valid": false, "stuck": ["ISSUE-066","ISSUE-067","ISSUE-068"],
    "errors": ["ISSUE-066: Phase is '0 (6 medium, 8 low)', expected 'shipped'", ...]}
   ```
+
+  `--issues` is part of the command because step 4f passes it (ISSUE-078): without
+  it the `roster_boundary` leg skips its Board-range check and `validate` now says
+  so on stderr. The JSON above is the **pre-fix capture** and predates that leg, so
+  today's output also carries a `roster_boundary` key.
 
   The structural feature under test is the `### Review outcomes` h3 subsection
   table (6 columns, same `ISSUE-NNN` first cell) that sits below the 5-column

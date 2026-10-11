@@ -2880,11 +2880,22 @@ class TestAC3NoOverFiringOnNonRunningStates:
         assert sq.sprint_status_is_running(self._meta_text(line)) is False, line
 
     def test_ac3_absent_status_and_degenerate_inputs_are_not_running(self):
-        """Total for any ``str``: never raises, no ``## Meta`` → not running."""
+        """Total for any ``str``: never raises; only a running status arms.
+
+        AC-3's required cases all hold because none of them contains
+        ``Status: running`` ANYWHERE in the document — which is what the arming
+        predicate scans since the review fix (H1), so the AC-3 contract does not
+        depend on the ``## Meta`` window at all.
+        """
         assert sq.sprint_status_is_running("## Meta\n- Iteration: 1 / 20\n") is False
         assert sq.sprint_status_is_running("") is False
         assert sq.sprint_status_is_running("no headings at all") is False
-        assert sq.sprint_status_is_running("- Status: running") is False
+        # REVERSED by the review (H1, L7). This read `is False` and pinned the
+        # fail-OPEN direction as a contract, with no AC behind it: a document
+        # that declares `- Status: running` and carries no `## Meta` heading at
+        # all was certified `valid: true` while `next-action` dispatched
+        # out-of-scope work off the same bytes.
+        assert sq.sprint_status_is_running("- Status: running") is True
 
 
 # ── ISSUE-078 AC-4 ──────────────────────────────────────────────────
@@ -3175,20 +3186,29 @@ class TestBoundarySignalSurvivesAnIssuesMdCycle:
         assert out["valid"] is False
 
 
-class TestRunningStatusScopingResidual:
-    """RECORDED DECISION: a ``Status: running`` outside ``## Meta`` is not detected.
+class TestRunningStatusIsDetectedDocumentWide:
+    """REVERSED DECISION (review H1/L7): the ARMING predicate is document-wide.
 
-    ``sprint_status_is_running`` scans the ``## Meta`` section only, via the same
-    `_meta_section_bounds` window the boundary field itself uses. The two
-    therefore AGREE: a ``Roster-Watermark`` declared outside ``## Meta`` is
-    refused by `parse_roster_watermark`, and a ``Status`` declared outside
-    ``## Meta`` does not arm the check. Stating it as a residual here is cheaper
-    than discovering later that a sprint declaring its status in a ``## Notes``
-    section was never checked — and a second, broader ``## Meta`` locator would
-    be the forked-oracle failure ISSUE-069's review already paid for.
+    It previously shared `_meta_section_bounds`' window with the boundary FIELD,
+    recorded here as "the two then AGREE". That argument was wrong in the only
+    dimension that matters: the two do not fail the same WAY. With the field
+    PRESENT but outside the window, `parse_roster_watermark` refuses it and the
+    dispatch gate closes — fail-CLOSED. With the field ABSENT and the window
+    emptied by any heading deviation, the arming predicate returned False, so
+    `validate` certified `valid: true` / `state: "not-running"` for a file whose
+    text said ``- Status: running`` while `next-action` dispatched out-of-scope
+    Board work off the same bytes — fail-OPEN. A shared window made the two agree
+    on LOCATION, not on direction.
+
+    The two are therefore deliberately no longer co-scoped: the arming predicate
+    scans the WHOLE DOCUMENT (a missed running status is the fail-open direction,
+    so detection is broad — the same rule `_WATERMARK_FIELD_RE` already applies
+    to the field name), while the boundary FIELD's acceptance stays narrow and
+    ``## Meta``-scoped (widening THAT would loosen acceptance). They now fail in
+    the same SAFE direction instead of agreeing on a location.
     """
 
-    def test_status_running_outside_meta_is_not_detected_and_is_not_refused(
+    def test_status_running_outside_meta_is_detected_and_is_refused(
         self, tmp_path, capsys
     ):
         replay = _harm_b_meta_variant(
@@ -3204,14 +3224,16 @@ class TestRunningStatusScopingResidual:
             "…but NOT inside ## Meta — that is the whole point of this fixture"
         )
 
-        assert sq.sprint_status_is_running(text) is False
+        assert sq.sprint_status_is_running(text) is True
         exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
-        assert exit_code == 0
-        assert out["valid"] is True
-        assert out["roster_boundary"] == NOT_RUNNING_BOUNDARY
+        assert exit_code == sq.ROSTER_BOUNDARY_EXIT
+        assert out["valid"] is False
+        assert out["roster_boundary"]["state"] == "absent"
+        assert out["roster_boundary"]["checked"] is True
 
-        # The agreement half: the boundary field is scoped the same way, so a
-        # field declared out there is refused rather than honoured.
+        # UNCHANGED half: the boundary field's ACCEPTANCE is still ## Meta-scoped,
+        # so a field declared out there is refused rather than honoured. This is
+        # the half the review left alone — widening it would loosen acceptance.
         outside_field = _harm_b_meta_variant(
             tmp_path,
             name="residual_078_field",
@@ -3224,3 +3246,415 @@ class TestRunningStatusScopingResidual:
         )
         assert present is True
         assert detail == "field is outside the ## Meta section"
+
+
+def _mutate_meta_heading(text, replacement):
+    """Replace the first ``## Meta`` heading line with ``replacement``.
+
+    Self-checking: a silent no-op would turn every assertion below into another
+    well-formed-``## Meta`` test.
+    """
+    assert "## Meta\n" in text, "fixture is stale: no `## Meta` heading to mutate"
+    return text.replace("## Meta\n", replacement, 1)
+
+
+#: The ``## Meta`` heading mutations measured in the review (H1). Every one of
+#: them empties `_meta_section_bounds`' first exactly-``## Meta`` window or moves
+#: it off the live block, which used to disarm the whole boundary check while the
+#: file still read ``- Status: running`` to a human and to `grep`.
+_META_HEADING_MUTATIONS = [
+    ("renamed", "## Sprint Meta\n"),
+    ("mis_cased", "## meta\n"),
+    ("re_levelled", "### Meta\n"),
+    ("no_space", "##Meta\n"),
+    ("indented", "  ## Meta\n"),
+    # First-match-wins: a 2-line decoy block above the live one took the window.
+    ("duplicated_paused_first", "## Meta\n- Status: paused\n\n## Meta\n"),
+    # The failure `_unfenced` already fixed one construct over: a fenced
+    # sprint_state EXAMPLE (which `agents/team-lead.md` actually teaches) won the
+    # section outright, so the live block was never scanned.
+    ("fenced_example_first",
+     "```markdown\n## Meta\n- Status: completed\n```\n\n## Meta\n"),
+]
+
+
+class TestMetaHeadingMutationsStillArmTheCheck:
+    """REGRESSION PIN for review finding H1 — the end-to-end composite.
+
+    Nothing pinned the COMPOSITION before: a disarmed arming predicate, an open
+    `next-action` dispatch, and an affirmative ``valid: true`` over the same
+    bytes. Each case below is the harm-can-fire fixture (roster ISSUE-010/011,
+    the boundary would be ISSUE-011, five higher-ID dependency-free Board issues
+    open) with the boundary field ABSENT, ``- Status: running`` present, and one
+    ``## Meta`` heading mutation applied. Measured pre-fix: exit 0,
+    ``state: "not-running"``, ``valid: true`` — while `next-action` PIPELINEd
+    three Board issues the sprint never scoped.
+    """
+
+    @pytest.mark.parametrize("label,replacement", _META_HEADING_MUTATIONS,
+                             ids=[case[0] for case in _META_HEADING_MUTATIONS])
+    def test_heading_mutation_with_an_absent_field_is_still_refused(
+        self, tmp_path, capsys, monkeypatch, label, replacement
+    ):
+        monkeypatch.delenv(KNOB, raising=False)
+        replay = _harm_b_replay(tmp_path, watermark=None, name=f"h1_{label}")
+        replay.sprint_path.write_text(
+            _mutate_meta_heading(
+                replay.sprint_path.read_text(encoding="utf-8"), replacement
+            ),
+            encoding="utf-8",
+        )
+        text = replay.sprint_path.read_text(encoding="utf-8")
+
+        # VACUITY GUARD: the mutation must really move the running status out of
+        # the `## Meta` window this predicate used to be scoped to, or the case
+        # proves nothing about H1. `_meta_block` is the test-local oracle for
+        # that window (an exactly-`## Meta` heading, first match wins).
+        assert "- Status: running" in text, label
+        assert "- Status: running" not in _meta_block(text), (
+            f"{label}: the mutation must empty the old ## Meta window — "
+            "otherwise this case would have passed before the fix too"
+        )
+
+        # The harm half: dispatch really is open on these bytes, so the refusal
+        # below is the only thing standing between a dropped boundary and three
+        # out-of-scope merges.
+        _, na = replay.run(capsys)
+        assert na["action"] == "PIPELINE", label
+        assert na["targets"] == ["ISSUE-040", "ISSUE-055", "ISSUE-066"], label
+
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert exit_code == sq.ROSTER_BOUNDARY_EXIT, label
+        assert out["valid"] is False, label
+        assert out["roster_boundary"]["state"] == "absent", label
+        assert out["roster_boundary"]["checked"] is True, label
+
+    def test_the_real_shipped_artifacts_are_unaffected(self):
+        """Cost of going document-wide, asserted rather than assumed: zero.
+
+        The predicate's verdict on the artifacts this repo actually ships must
+        not have moved. `templates/sprint_state.md` is the one that reads
+        ``running`` — it did before the fix too (its placeholder boundary is
+        refused, which is `TestShippedTemplateCarriesTheField`'s subject) — and
+        the frozen ISSUE-076 captures are completed sprints.
+        """
+        template = REPO_ROOT / "templates" / "sprint_state.md"
+        assert template.is_file(), f"missing shipped template: {template}"
+        assert sq.sprint_status_is_running(
+            template.read_text(encoding="utf-8")
+        ) is True
+
+        fixtures = sorted((REPO_ROOT / "tests" / "fixtures" / "sprint_state").glob("*.md"))
+        assert fixtures, "the frozen ISSUE-076 captures moved"
+        for path in fixtures:
+            assert sq.sprint_status_is_running(
+                path.read_text(encoding="utf-8")
+            ) is False, path.name
+
+
+# ── Review fix M2: the remediation advice is replayable ─────────────
+
+
+#: The placeholder the engine's advice uses when it wants a field line WRITTEN.
+#: A `rejected` boundary already HAS one, so advice carrying this placeholder on
+#: that branch is an instruction to add a SECOND one.
+_ADVICE_INSERT_TEMPLATE = "ISSUE-<max rostered ID at sprint start>"
+
+
+def _field_line_count(text):
+    """How many ``Roster-Watermark``-shaped lines the file carries."""
+    return len(_FIELD_LINE_RE.findall(text))
+
+
+def _follow_advice(replay, advice, *, value="ISSUE-011"):
+    """Do to the fixture what the engine's remediation string asks for.
+
+    The branch is read off the ADVICE, never off the file: that is what makes
+    this a replay of an autonomous agent acting on the `errors` string step 4f
+    logs into sprint_state.md, rather than a re-derivation of what the advice
+    ought to have said. Advice carrying the write-a-line placeholder gets a line
+    written; any other advice is read as "repair the line that is there".
+    """
+    text = replay.sprint_path.read_text(encoding="utf-8")
+    if _ADVICE_INSERT_TEMPLATE in advice:
+        text = text.replace(
+            "- Status: running\n",
+            f"- Status: running\n- {FIELD}: {value}\n",
+            1,
+        )
+    else:
+        text = "\n".join(
+            f"- {FIELD}: {value}" if _FIELD_LINE_RE.match(line) else line
+            for line in text.splitlines()
+        ) + "\n"
+    replay.sprint_path.write_text(text, encoding="utf-8")
+    return replay
+
+
+class TestRemediationAdviceIsReplayable:
+    """Review M2: the engine's advice is EXECUTABLE, so it is tested by replay.
+
+    `errors` is logged into `sprint_state.md` by step 4f and read back by an
+    autonomous agent on the next iteration. One string served both refusal
+    causes and always said "restore '- Roster-Watermark: ISSUE-<…>' inside
+    ## Meta", which applied to a REJECTED boundary adds a SECOND field line:
+    measured ``rejected (not a canonical id)`` → ``2 field lines found`` →
+    ``3 field lines found``, i.e. the state degrades monotonically on every
+    round. Review lesson: remediation advice is tested by replaying it, not by
+    asserting its wording.
+    """
+
+    def test_absent_branch_advice_restores_an_accepted_boundary(
+        self, tmp_path, capsys
+    ):
+        """Positive control: the absent branch's advice is correct — apply it."""
+        replay = _harm_b_replay(tmp_path, watermark=None, name="m2_absent")
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert exit_code == sq.ROSTER_BOUNDARY_EXIT
+        assert out["roster_boundary"]["state"] == "absent"
+        assert _field_line_count(
+            replay.sprint_path.read_text(encoding="utf-8")
+        ) == 0
+
+        _follow_advice(replay, out["errors"][0])
+        text = replay.sprint_path.read_text(encoding="utf-8")
+        assert _field_line_count(text) == 1
+        assert f"- {FIELD}: ISSUE-011" in _meta_block(text), (
+            "the advice must place the line INSIDE ## Meta, or the parser "
+            "refuses it as 'outside the ## Meta section' on the next round"
+        )
+
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert exit_code == 0
+        assert out["valid"] is True
+        assert out["roster_boundary"]["state"] == "accepted"
+        assert out["errors"] == []
+
+    def test_rejected_branch_advice_does_not_add_a_second_field_line(
+        self, tmp_path, capsys
+    ):
+        replay = _harm_b_meta_variant(
+            tmp_path, name="m2_rejected", watermark="**ISSUE-011**"
+        )
+        assert _field_line_count(
+            replay.sprint_path.read_text(encoding="utf-8")
+        ) == 1
+
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert exit_code == sq.ROSTER_BOUNDARY_EXIT
+        assert out["roster_boundary"]["state"] == "rejected"
+        assert "is not a canonical" in out["roster_boundary"]["detail"]
+
+        _follow_advice(replay, out["errors"][0])
+        assert _field_line_count(
+            replay.sprint_path.read_text(encoding="utf-8")
+        ) == 1, (
+            "following the engine's own advice added a SECOND field line: the "
+            "next round reports '2 field lines found' and the one after that "
+            "'3 field lines found' — the advice must FIX the line, not re-add it"
+        )
+
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert out["roster_boundary"]["detail"] != (
+            "2 field lines found, expected exactly one"
+        ), "the advice degraded the state it was supposed to repair"
+        assert exit_code == 0
+        assert out["roster_boundary"]["state"] == "accepted"
+
+    def test_both_branches_name_the_field_and_the_arming_state(
+        self, tmp_path, capsys
+    ):
+        """AC-1's two substrings survive the branch (one message became two)."""
+        absent = _harm_b_replay(tmp_path, watermark=None, name="m2_sub_absent")
+        rejected = _harm_b_meta_variant(
+            tmp_path, name="m2_sub_rejected", watermark="**ISSUE-011**"
+        )
+        for replay in (absent, rejected):
+            _, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+            assert len(out["errors"]) == 1, out["errors"]
+            error = out["errors"][0]
+            assert FIELD in error, error
+            assert "running" in error, error
+
+
+# ── Review fix M4: a degraded Board is announced ────────────────────
+
+
+class TestIssuesPathDegradationIsAnnounced:
+    """Review M4: a typo'd ``--issues`` path downgraded the gate in SILENCE.
+
+    The ceiling SKIP itself is a recorded decision (see
+    ``test_ac2_out_of_range_without_issues_…``) and is unchanged here — exit code
+    and JSON stay byte-identical. What was wrong was the silence: one mistyped
+    character turned a `rejected` ``ISSUE-9999`` boundary into exit 0 /
+    ``accepted`` with nothing on stderr, while `next-action` hard-exits 2 on the
+    same argv. The warning names the FLAG literally (review lesson: print the
+    knob/flag name in its own failure message) and the path it could not read.
+    """
+
+    SKILL_TMPL = REPO_ROOT / "skills" / "sprint" / "SKILL.md.tmpl"
+    SKILL_MD = REPO_ROOT / "skills" / "sprint" / "SKILL.md"
+
+    #: The opening of the engine's own message. Quoted ONCE here and asserted
+    #: against both the engine and the doc, so the two cannot drift into
+    #: describing different warnings.
+    WARNING_PREFIX = "Warning: --issues not supplied or unreadable"
+
+    def test_typod_issues_path_warns_on_stderr_and_keeps_the_verdict(
+        self, tmp_path, capsys
+    ):
+        replay = _harm_b_meta_variant(
+            tmp_path, name="m4_typo", watermark="ISSUE-9999"
+        )
+        # Control: with the real Board, the ceiling check refuses the boundary.
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert exit_code == sq.ROSTER_BOUNDARY_EXIT
+        assert out["roster_boundary"]["state"] == "rejected"
+        assert "is above the highest Board id" in out["roster_boundary"]["detail"]
+
+        typo = tmp_path / "issues_m4_typo_TYPO.md"
+        assert not typo.exists(), "the typo'd path must not exist"
+        exit_code = sq.main([
+            "validate",
+            "--sprint-state", str(replay.sprint_path),
+            "--action", "SHIP",
+            "--targets", "ISSUE-010",
+            "--issues", str(typo),
+        ])
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+
+        # The recorded decision stands: the verdict and the exit code do not move.
+        assert exit_code == 0
+        assert out["roster_boundary"]["state"] == "accepted"
+        assert out["roster_boundary"]["pinned"] == "ISSUE-9999"
+        # …but it is no longer silent, and it names the flag and the path.
+        assert "--issues" in captured.err, captured.err
+        assert str(typo) in captured.err, captured.err
+
+    def test_omitted_flag_also_warns_and_the_recorded_verdict_is_unchanged(
+        self, tmp_path, capsys
+    ):
+        replay = _harm_b_meta_variant(
+            tmp_path, name="m4_omitted", watermark="ISSUE-1101"
+        )
+        exit_code, out = replay.run_validate(
+            capsys, "SHIP", "ISSUE-010", with_issues=False
+        )
+        assert exit_code == 0
+        assert out["roster_boundary"]["state"] == "accepted"
+        assert "--issues" in replay.last_stderr, replay.last_stderr
+
+    def test_a_readable_board_is_not_warned_about(self, tmp_path, capsys):
+        """Over-firing guard: the warning is about a Board that was NOT read."""
+        replay = _harm_b_replay(tmp_path, watermark="ISSUE-011", name="m4_clean")
+        exit_code, out = replay.run_validate(capsys, "SHIP", "ISSUE-010")
+        assert exit_code == 0
+        assert out["roster_boundary"]["state"] == "accepted"
+        assert "--issues" not in replay.last_stderr, replay.last_stderr
+
+    @pytest.mark.parametrize("which", ["tmpl", "generated"])
+    def test_the_warning_is_disclosed_where_the_operator_reads_it(
+        self, which, tmp_path, capsys
+    ):
+        """A new stderr warning gets its user-facing doc line in the same change.
+
+        The fragment is asserted against the ENGINE first, so the doc half
+        cannot pass while quoting a message the engine no longer prints.
+        """
+        replay = _harm_b_replay(
+            tmp_path, watermark="ISSUE-011", name=f"m4_doc_{which}"
+        )
+        replay.run_validate(capsys, "SHIP", "ISSUE-010", with_issues=False)
+        assert self.WARNING_PREFIX in replay.last_stderr, replay.last_stderr
+
+        path = self.SKILL_TMPL if which == "tmpl" else self.SKILL_MD
+        assert self.WARNING_PREFIX in path.read_text(encoding="utf-8"), (
+            f"{which}: step 4f must name the warning the engine prints, or an "
+            "operator reading a degraded verdict has nothing to recognise"
+        )
+
+    def test_nothing_checked_means_nothing_to_warn_about(self, tmp_path, capsys):
+        """A non-running sprint never consults the Board, so it never warns."""
+        replay = _harm_b_meta_variant(
+            tmp_path, name="m4_notrunning", watermark="ISSUE-9999",
+            status="planning",
+        )
+        exit_code, out = replay.run_validate(
+            capsys, "SHIP", "ISSUE-010", with_issues=False
+        )
+        assert exit_code == 0
+        assert out["roster_boundary"] == NOT_RUNNING_BOUNDARY
+        assert "--issues" not in replay.last_stderr, replay.last_stderr
+
+
+# ── Review fix M3: the halt instruction is not contradicted ─────────
+
+
+class TestTheHaltInstructionIsNotContradicted:
+    """Review M3: step 4f's halt was followed by an UNCONDITIONAL continue.
+
+    4f said "do not dispatch another iteration" and nine lines later the skill
+    said ``**Continue loop from step 4a.**`` with no condition on it, while the
+    skill's only mechanical stop rule covered "non-zero exit AND no JSON output"
+    — which EXCLUDES exit 3, because exit 3 does print JSON. Both halves are
+    checked on the `.tmpl` (the source an editor changes) and the generated
+    `SKILL.md` (what the model actually reads); a `.tmpl`-only guard passes while
+    the shipped instruction is stale.
+    """
+
+    SKILL_TMPL = REPO_ROOT / "skills" / "sprint" / "SKILL.md.tmpl"
+    SKILL_MD = REPO_ROOT / "skills" / "sprint" / "SKILL.md"
+    TROUBLESHOOTING = REPO_ROOT / "docs" / "troubleshooting.md"
+
+    #: The exact sentence that was removed, quoted verbatim (review lesson:
+    #: mutation-test an absence guard with the string that really left, never a
+    #: guessed phrasing blacklist).
+    UNCONDITIONAL_CONTINUE = "**Continue loop from step 4a.**"
+
+    @pytest.mark.parametrize("which", ["tmpl", "generated"])
+    def test_the_continue_is_conditional_on_the_boundary_exit(self, which):
+        path = self.SKILL_TMPL if which == "tmpl" else self.SKILL_MD
+        text = path.read_text(encoding="utf-8")
+        assert self.UNCONDITIONAL_CONTINUE not in text, (
+            f"{which}: the continue is still unconditional, so it contradicts "
+            "step 4f's 'do not dispatch another iteration' two bullets above it"
+        )
+        assert "Continue loop from step 4a" in text, (
+            f"{which}: the loop instruction must still be there — the fix is to "
+            "qualify it, not to delete it"
+        )
+
+    @pytest.mark.parametrize("which", ["tmpl", "generated"])
+    def test_the_mechanical_stop_rule_covers_the_boundary_exit(self, which):
+        """Exit 3 prints JSON, so "non-zero AND no JSON" never matched it.
+
+        Asserted on the stop-rule LINE itself, not on the surrounding step: exit
+        **3** is named several bullets away (in the residuals paragraph), so a
+        section-wide search would pass without the rule ever being broadened.
+        """
+        path = self.SKILL_TMPL if which == "tmpl" else self.SKILL_MD
+        text = path.read_text(encoding="utf-8")
+        rule_lines = [
+            line for line in text.splitlines() if "no JSON output" in line
+        ]
+        assert len(rule_lines) == 1, (
+            f"{which}: expected exactly one mechanical stop rule, got {rule_lines}"
+        )
+        assert re.search(
+            rf"\*\*{sq.ROSTER_BOUNDARY_EXIT}\*\*", rule_lines[0]
+        ), (
+            f"{which}: the hard-stop rule must name exit "
+            f"{sq.ROSTER_BOUNDARY_EXIT}, or a model following it reads 'JSON was "
+            f"printed, so this is not a hard stop' on a boundary refusal: "
+            f"{rule_lines[0]!r}"
+        )
+
+    def test_troubleshooting_states_the_same_hard_stop_rule(self):
+        """The same rule is restated for the operator — keep the two in step."""
+        text = self.TROUBLESHOOTING.read_text(encoding="utf-8")
+        assert "no JSON output as a hard stop" not in text, (
+            "docs/troubleshooting.md still states the rule in the form that "
+            "excludes exit 3"
+        )
+        assert str(sq.ROSTER_BOUNDARY_EXIT) in text

@@ -76,7 +76,7 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
       ```bash
       python3 scripts/sprint_queue.py next-action --sprint-state docs/sprint_state.md --issues issues.md --max-parallel {MAX_PARALLEL}
       ```
-      **If the script exits with non-zero and no JSON output**: STOP the sprint and report the error. This indicates a parsing failure or circular dependency — do NOT proceed.
+      **STOP the sprint and report the error** if the script exits with non-zero and no JSON output, or if step 4f's `validate` exits **3**. A non-zero exit with no JSON indicates a parsing failure or circular dependency; exit **3** means the sprint has lost its scope boundary (step 4f) — that exit DOES print JSON, so "no JSON output" alone never catches it. Either way, do NOT proceed.
 
       Parse the JSON output. The result always contains `action`, `targets`, and `reason`. When
       `issues.md` holds backlog issues that are not yet in the Issue Progress table, it also
@@ -139,14 +139,16 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
         pre-pin sprint must not change behaviour mid-flight). What changed is downstream: **step
         4f now refuses a `running` sprint whose boundary is `absent` or `rejected`** (`valid`
         false, exit **3**), so a field dropped by a 4d rewrite cannot survive to the next dispatch
-        decision. Residuals that remain, stated so you can recognise them rather than discover
-        them: a `Status: running` line declared **outside** `## Meta` is not detected, and neither
-        is a sprint_state with **no `## Meta` heading at all** (both read as `not-running`, so 4f
-        does not fire); invoking `next-action` by hand without running 4f gets no refusal; and an
-        `issues.md` `Depends-On` cycle makes `next-action` return STUCK before it parses the
-        boundary, so its own `[roster-watermark: …]` note is suppressed (the 4f `validate` leg is
-        unaffected and still refuses). Keep checking for the `[roster-watermark: absent …]` note
-        whenever a run targets something you did not scope.
+        decision. The arming check reads `Status: running` **anywhere in the document**, so a
+        renamed, re-levelled, mis-cased, indented, duplicated or fence-wrapped `## Meta` heading
+        does not disarm it. Residuals that remain, stated so you can recognise them rather than
+        discover them: the running **vocabulary** is the literal `running` (keep `Status` to
+        `running | paused | completed` — an off-template value such as `in progress` reads as
+        `not-running`, so 4f does not fire); invoking `next-action` by hand without running 4f
+        gets no refusal; and an `issues.md` `Depends-On` cycle makes `next-action` return STUCK
+        before it parses the boundary, so its own `[roster-watermark: …]` note is suppressed (the
+        4f `validate` leg is unaffected and still refuses). Keep checking for the
+        `[roster-watermark: absent …]` note whenever a run targets something you did not scope.
       - Nothing is auto-considered unless the table already holds at least one `ISSUE-NNN` row, or
         the boundary is pinned.
       - Auto-considered issues are withheld while any issue is in flight, so discovery can never
@@ -233,9 +235,12 @@ allowed-tools: Task, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint
       - Exit **3** is a distinct class from exit 1: `stuck` is unaffected by this check, so **no
         target is retried because of it**. Do not read a boundary refusal as a phase failure.
       - `--issues issues.md` is what gives this leg the same Board-range check `next-action` uses;
-        without it, a boundary above the highest ID on the Board is not detected here.
+        without it, a boundary above the highest ID on the Board is not detected here. A missing or
+        unreadable path degrades the same way rather than failing, so it says so on stderr
+        (`Warning: --issues not supplied or unreadable …`) — if you see that line, the verdict you
+        just read was computed without the Board-range rule; fix the path and re-run 4f.
 
-   **Continue loop from step 4a.**
+   **Continue loop from step 4a** — unless step 4f exited **3** (boundary refused): STOP and report.
 
 5) **Pipeline completion gate** (before exiting):
    - Read final `docs/sprint_state.md`
