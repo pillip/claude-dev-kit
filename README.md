@@ -545,7 +545,7 @@ Session-scoped safety modes for working in sensitive environments or scoping edi
 | `team-lead` | xhigh | Sprint phase executor — receives one phase (implement/review/ship), executes it, returns | Read, Glob, Grep, Write, Edit, Bash, Task, Skill |
 | `developer` | xhigh | Implement code + GH Issue/PR + report discovered findings | Read, Glob, Grep, Write, Edit, Bash |
 | `test-generator` | high | Generate missing unit/integration/E2E tests | Read, Glob, Grep, Write, Edit, Bash |
-| `reviewer` | xhigh | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write, Skill |
+| `reviewer` | xhigh | Senior code review + security audit | Read, Glob, Grep, Edit, Bash, Write |
 | `ui-reviewer` | high | UI review — state coverage, copy, tokens, a11y | Read, Glob, Grep, Edit, Bash, Write |
 | `design-auditor` | high | Design system audit — token consistency, component completeness | Read, Glob, Grep |
 | `a11y-auditor` | medium | WCAG 2.1 AA accessibility audit | Read, Glob, Grep, Write, Edit, Bash |

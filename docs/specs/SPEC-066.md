@@ -161,9 +161,13 @@ it is that **this spec's categorical claim is false**:
 settled.**
 
 1. **The runtime-limitation half: yes — refuted, and the grant is the
-   mechanism.** ISSUE-072 adds `Skill` to `agents/reviewer.md` and
-   `agents/team-lead.md`, and corrects the *detection question* those grants
-   feed: step 3.1 of `skills/review/SKILL.md{,.tmpl}` and
+   mechanism.** ISSUE-072 adds `Skill` to `agents/team-lead.md` — and to
+   that agent only, because it is the one that reads this skill and answers
+   step 3.1. `agents/reviewer.md` is dispatched *after* `decide` with its
+   dimension already chosen, so a grant there would have no call site; it
+   stays ungranted and a guard pins that (ISSUE-072 review). ISSUE-072 also
+   corrects the *detection question* the grant
+   feeds: step 3.1 of `skills/review/SKILL.md{,.tmpl}` and
    `scripts/review_context.py`'s `--invocation-tools` help both asked about
    `SlashCommand`, so with that text in place the grant would have been
    **inert** — the answer is always "absent", `decide` returns
@@ -179,8 +183,8 @@ settled.**
    reported them absent — from which the honest methodological conclusion is
    that **a sub-agent's narration of its own tool list is unreliable evidence,
    weaker than an observed tool-call outcome**. So whether the `Skill` grant
-   reaches `claude-dev-kit:reviewer` / `claude-dev-kit:team-lead` is not yet
-   known, and it could not be measured in the session that shipped the grant:
+   reaches `claude-dev-kit:team-lead` is not yet known, and it could not be
+   measured in the session that shipped the grant:
    the agent registry is frozen at session start, and the live kit agents were
    served from the installed plugin cache at **0.5.0** while the repo was at
    **0.7.0**.

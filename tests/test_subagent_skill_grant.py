@@ -14,16 +14,19 @@ and through its real consumer, not only in the arm direction at its helper"):
    turns out to be impossible, so it must not be silently droppable.
 
 2. **The grant, and the refuted token (the grant + AC-3's live clause).**
-   `agents/reviewer.md` and `agents/team-lead.md` grant `Skill`, and NO
-   review-path agent grants `SlashCommand` — the token the 2026-10-11 probe
-   refuted (absent in every probed sub-agent context on CC 2.1.224, not
-   loaded and not deferred). AC-3's own branch does not apply: its premise
-   ("the probe shows a sub-agent CANNOT invoke skills") is false. Only its
-   second clause is landed here, narrowed to the token that is actually
-   unusable. Deliberately scoped to `agents/*.md`: `skills/review/SKILL.md`
-   keeps its `SlashCommand` grant, because the probe covered sub-task
-   contexts only and the main-session path was NOT probed — do not extend
-   this guard to skill frontmatter on the strength of this evidence.
+   `agents/team-lead.md` — the one agent that executes step 3.1 — grants
+   `Skill`, and NO other agent holds `Skill` or `SlashCommand`: the first
+   because it would be a grant with no call site, the second because the
+   2026-10-11 probe refuted the token outright (absent in every probed
+   sub-agent context on CC 2.1.224, not loaded and not deferred). Both
+   directions of the same lesson, and both spellings — a YAML flow sequence
+   and a scoped `Tool(arg)` — are checked, because both were measured
+   escaping the guard. AC-3's own branch does not apply: its premise ("the
+   probe shows a sub-agent CANNOT invoke skills") is false. Deliberately
+   scoped to `agents/*.md`: `skills/review/SKILL.md` keeps its
+   `SlashCommand` grant, because the probe covered sub-task contexts only
+   and the main-session path was NOT probed — do not extend this guard to
+   skill frontmatter on the strength of this evidence.
 
 3. **The call site (AC-4).** A `Skill` grant whose only call site names a
    DIFFERENT tool is a grant with no call site: the review path would keep
@@ -67,13 +70,29 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import has_skill  # noqa: E402
 import review_context as rc  # noqa: E402
 
+# Reuse the suite's existing `tools:` splitter (same tests/ dir) instead of a
+# re-typed copy — the pattern `test_gate_binding.py` already uses. The original
+# copy here had diverged from this oracle in the HOLLOW-PASS direction: it did
+# not `strip("[]")`, so a YAML flow-sequence grant (`tools: [Read, Skill]`)
+# parsed as `["[Read", "Skill]"]` and both the no-symmetry-grant guard and the
+# refuted-token guard went green against a live grant (measured in review).
+from test_registry_lock_contract import _split_tools  # noqa: E402
+
 MATRIX = KIT_ROOT / "docs" / "cc_feature_matrix.md"
 REVIEW_TMPL = KIT_ROOT / "skills" / "review" / "SKILL.md.tmpl"
 REVIEW_SKILL = KIT_ROOT / "skills" / "review" / "SKILL.md"
 
-# The review path's two sub-agent entry points. `team-lead` dispatches the
-# review sub-task; `reviewer` runs the degraded dimensions inside it.
-REVIEW_PATH_AGENTS = ("reviewer", "team-lead")
+# The ONE agent that must carry the grant: `team-lead` reads
+# `skills/review/SKILL.md`, answers step 3.1's detection question and, on
+# `delegated`, invokes the runtime skill — the real call site.
+#
+# `reviewer` is deliberately NOT here (ISSUE-072 review). It is dispatched only
+# AFTER `decide`, with a dimension already chosen, so it never executes step
+# 3.1; a `Skill` grant on it would be a grant with no call site — the exact
+# defect this issue exists to fix, and what Scope In's "no symmetry grants ride
+# along" forbids. It is therefore covered by `test_no_agent_outside_the_call_
+# site_gains_a_grant` below, in the unused-grant-widens-privilege direction.
+GRANTED_AGENTS = ("team-lead",)
 
 # The probe's own build + date — deliberately NOT the matrix file's global
 # 2.1.185 floor (the row carries its own, which is newer).
@@ -285,13 +304,13 @@ def _frontmatter(path: Path) -> str:
 
 
 def _tool_grants(frontmatter: str, key: str = "tools") -> list[str]:
-    """Comma-split a frontmatter tool list, ignoring commas inside `Bash(...)`.
+    """The `key:` frontmatter tool list, split on the suite's shared oracle.
 
-    Not imported from `tests/test_registry_lock_contract.py`'s `_tools`: that
-    helper is agent-only (it resolves `agents/<stem>.md` itself and reads the
-    `tools:` key), while this guard must also parse the `allowed-tools:` key
-    of a SKILL file. That module's real-file pin on `agents/team-lead.md` is
-    updated in the same commit as the grant.
+    Splitting is delegated to `test_registry_lock_contract._split_tools` — a
+    key-agnostic pure string function — so this guard cannot drift from the
+    capability oracle the rest of the suite uses (review lesson: a hand-rolled
+    parser must match the oracle's edge cases). Only the key lookup is local,
+    because this guard must also read a SKILL file's `allowed-tools:`.
     """
     lines = re.findall(rf"^{key}:\s*(.+)$", frontmatter, re.MULTILINE)
     assert len(lines) == 1, (
@@ -299,30 +318,36 @@ def _tool_grants(frontmatter: str, key: str = "tools") -> list[str]:
         f"{len(lines)} — a second line is an invisible privilege grant "
         "(ISSUE-074 precedent)"
     )
-    grants, depth, current = [], 0, ""
-    for ch in lines[0]:
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        if ch == "," and depth == 0:
-            grants.append(current.strip())
-            current = ""
-        else:
-            current += ch
-    if current.strip():
-        grants.append(current.strip())
-    return grants
+    return _split_tools(lines[0])
+
+
+def _tool_names(grants: list[str]) -> list[str]:
+    """Bare tool names, dropping any `Tool(scope)` argument.
+
+    Membership must be tested on the NAME: `SlashCommand(/code-review)` is a
+    `SlashCommand` grant, and an exact-string check let that form through
+    untouched (measured in review — the refuted-token guard went green against
+    a live scoped grant).
+    """
+    return [g.split("(", 1)[0].strip() for g in grants]
+
+
+# Skill-invocation tokens no agent may hold without a call site. `Skill` is the
+# one the 2026-10-11 probe found real; `SlashCommand` is the one it refuted
+# (absent in every probed sub-agent context on CC 2.1.224, not loaded and not
+# deferred), so granting it to an agent reproduces the ISSUE-072 defect.
+INVOCATION_TOKENS = ("Skill", "SlashCommand")
 
 
 def _grant_defects(grants: list[str]) -> list[str]:
+    names = _tool_names(grants)
     defects = []
-    if "Skill" not in grants:
+    if "Skill" not in names:
         defects.append(
             "no `Skill` grant — the review path cannot reach the SPEC-019 "
             "primary path from sub-task context without it (probe finding 1)"
         )
-    if "SlashCommand" in grants:
+    if "SlashCommand" in names:
         defects.append(
             "carries a `SlashCommand` grant — the token the 2026-10-11 probe "
             "refuted (absent in every probed sub-agent context on CC "
@@ -334,27 +359,32 @@ def _grant_defects(grants: list[str]) -> list[str]:
 
 
 class TestReviewPathAgentsGrantSkillAndNotSlashCommand:
-    @pytest.mark.parametrize("stem", REVIEW_PATH_AGENTS)
+    @pytest.mark.parametrize("stem", GRANTED_AGENTS)
     def test_agent_grant_is_correct(self, stem):
         grants = _tool_grants(_frontmatter(KIT_ROOT / "agents" / f"{stem}.md"))
         assert _grant_defects(grants) == [], f"agents/{stem}.md: {_grant_defects(grants)}"
 
-    def test_no_other_agent_gains_the_grant(self):
-        """Scope In says the grant lands on the review path ONLY.
+    def test_no_agent_outside_the_call_site_gains_a_grant(self):
+        """Scope In: the grant lands only where a real call site consumes it.
 
-        A symmetry grant riding along would widen privilege with no call
-        site — the other direction of the same review lesson.
+        A symmetry grant riding along would widen privilege with no call site —
+        the other direction of the same review lesson. `reviewer` is checked
+        here, not exempted: it is dispatched after `decide` with a dimension
+        already chosen and never runs step 3.1.
         """
         offenders = []
         for path in sorted((KIT_ROOT / "agents").glob("*.md")):
-            if path.stem in REVIEW_PATH_AGENTS:
+            if path.stem in GRANTED_AGENTS:
                 continue
-            if "Skill" in _tool_grants(_frontmatter(path)):
-                offenders.append(path.name)
+            held = set(_tool_names(_tool_grants(_frontmatter(path)))) & set(
+                INVOCATION_TOKENS
+            )
+            if held:
+                offenders.append(f"{path.name}: {sorted(held)}")
         assert offenders == [], (
-            f"agents outside the review path grant `Skill`: {offenders}. "
-            "ISSUE-072's Scope Out forbids it — each grant needs its own "
-            "verified call site."
+            f"agents with no step-3.1 call site hold a skill-invocation "
+            f"grant: {offenders}. Each grant needs its own verified call "
+            "site (ISSUE-072 AC-4, both directions)."
         )
 
     @pytest.mark.parametrize(
@@ -371,6 +401,30 @@ class TestReviewPathAgentsGrantSkillAndNotSlashCommand:
     def test_grant_guard_rejects_mutations(self, grants, expected_cue):
         defects = _grant_defects(grants)
         assert any(expected_cue in d for d in defects), defects
+
+    @pytest.mark.parametrize(
+        "tools_line",
+        [
+            "Read, Glob, Grep, Write, Edit, Skill",
+            "[Read, Glob, Grep, Write, Edit, Skill]",
+            "Read, Glob, Grep, Write, Edit, SlashCommand",
+            "Read, Glob, Grep, Write, Edit, SlashCommand(/code-review)",
+            "Read, Glob, Grep, Write, Edit, Skill(code-review)",
+        ],
+        ids=["plain", "flow-sequence", "slash-plain", "slash-scoped", "skill-scoped"],
+    )
+    def test_evasive_grant_forms_are_still_caught(self, tools_line):
+        """Every spelling of a grant must be seen, not just the plain one.
+
+        Both of these were measured escaping the guard in review: a YAML
+        flow-sequence list (the local splitter did not `strip("[]")`) and a
+        scoped `SlashCommand(/code-review)` (membership was tested on the
+        whole entry, not the tool name). Either one let an un-called-for
+        skill-invocation grant ride along on an agent with no call site —
+        a defence that fails OPEN.
+        """
+        held = set(_tool_names(_split_tools(tools_line))) & set(INVOCATION_TOKENS)
+        assert held, f"{tools_line!r}: grant not seen by the guard's parser"
 
     def test_review_skill_frontmatter_keeps_slashcommand_and_gains_skill(self):
         """The SKILL's own `allowed-tools` is a different surface.
@@ -531,16 +585,28 @@ class TestDecideTableIsWhatTheGrantUnlocks:
     fixture alone". Carrier: ISSUE-082.
     """
 
-    def test_live_probe_returns_unknown_for_both_review_skills(self):
-        """Fixture-pin: the capability half is 2 for both dimensions today.
+    def test_live_probe_does_not_short_circuit_the_decision(self):
+        """The capability half must not be a definitive miss for either skill.
 
         This is why the `--invocation-tools` flag — and therefore the grant —
-        is the deciding input: exit 2 never degrades on its own (probe
-        evidence finding 7, `context-unreachable` not `capability-absent`).
+        is the deciding input: only exit 1 degrades on its own, and the probe
+        returns 2 here (probe evidence finding 7, `context-unreachable` not
+        `capability-absent`).
+
+        Asserted as `!= 1`, not `== 2`, deliberately: `find_skill` reads the
+        real `~/.claude/skills/`, `$CWD/.claude/skills/` and every installed
+        plugin's `installPath`, so a machine that genuinely ships a
+        `code-review` skill returns 0 — a green-to-red flip caused by the
+        environment, not by the code. `!= 1` is the property the decision
+        table actually depends on and it holds for both 0 and 2.
         """
         for skill in ("code-review", "security-review"):
-            code, _evidence = has_skill.find_skill(skill)
-            assert code == 2, f"{skill}: expected probe exit 2, got {code}"
+            code, evidence = has_skill.find_skill(skill)
+            assert code != 1, (
+                f"{skill}: probe reports a definitive filesystem miss (exit 1), "
+                f"so `decide` short-circuits to capability-absent regardless of "
+                f"the grant. Evidence: {evidence}"
+            )
 
     @pytest.mark.parametrize(
         "invocation_tools,expected_path,expected_reason",

@@ -14,17 +14,14 @@ combining two inputs:
   (review lesson 10): both misreport directions converge on a review that
   still runs — degraded, or inline-fail-then-degraded.
 
-  The tool to look for is ``Skill``, **not** ``SlashCommand`` (ISSUE-072,
-  probed 2026-10-11 on CC 2.1.224): an unrestricted Task sub-agent receives
-  a real ``Skill`` tool listing ``code-review`` / ``security-review``, while
-  ``SlashCommand`` was absent from every probed sub-agent context — not
-  loaded and not deferred. Inside a sub-task the *sub-agent's* ``tools:``
-  wins over the invoked skill's ``allowed-tools``, so the grant that makes
-  ``present`` reachable lives in ``agents/team-lead.md`` /
-  ``agents/reviewer.md``; the measurement is recorded in the sub-agent
-  skill-invocation row of ``docs/cc_feature_matrix.md``, and whether that
-  grant is actually *provisioned* is re-probed by ISSUE-082 (a grant does
-  not imply provisioning on this runtime).
+  In a sub-task the token is ``Skill`` (``SlashCommand`` was absent from
+  every probed sub-task context; the main-session path was not probed, so a
+  ``SlashCommand`` tool still counts where one exists). The *sub-agent's*
+  ``tools:`` wins over the invoked skill's ``allowed-tools``, so the grant
+  that makes ``present`` reachable lives in ``agents/team-lead.md`` — the
+  one agent that executes step 3.1. Full measurement, including that a
+  grant does not imply provisioning (re-probe: ISSUE-082): the sub-agent
+  skill-invocation row of ``docs/cc_feature_matrix.md``.
 
 Decision table per dimension (``decide_review_context``):
     probe exit 1                      -> degraded, reason ``capability-absent``
@@ -329,11 +326,12 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         choices=INVOCATION_TOOLS_VALUES,
         help=(
-            "Model-reported context half: is the runtime skill-invocation "
-            "tool in the current tool list? The token is `Skill` (what a "
+            "Model-reported context half: is a runtime skill-invocation "
+            "tool in the current tool list? Look for `Skill` first (what a "
             "Task sub-agent actually receives, when its `tools:` grants it); "
-            "`SlashCommand` was absent from every probed sub-agent context "
-            "on CC 2.1.224 — see ISSUE-072 and the sub-agent "
+            "a `SlashCommand` tool also counts where one exists, since only "
+            "sub-task contexts were probed on CC 2.1.224 and the "
+            "main-session path was not — see ISSUE-072 and the sub-agent "
             "skill-invocation row in docs/cc_feature_matrix.md"
         ),
     )
