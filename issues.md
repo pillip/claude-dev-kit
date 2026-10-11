@@ -3983,11 +3983,11 @@ A default gate-checkpoint run produces no telemetry fallback announcement, becau
 - PRD-Ref: none (kit self-development; ISSUE-066 review triage; ISSUE-014 "verify in the feature matrix before relying" rule; review lesson "allowed-tools grants in skill frontmatter must map to actual call sites" — general form of this finding — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-072-subagent-skill-grant
+- GH-Issue: 134
+- PR: https://github.com/pillip/claude-dev-kit/pull/135
 - Depends-On: ISSUE-066
 
 #### Goal
