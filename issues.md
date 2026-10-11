@@ -51,6 +51,7 @@
 - [ ] ISSUE-078: Make the sprint roster boundary mechanically enforced — a running sprint_state must carry an accepted `Roster-Watermark` _(track: platform, P1, 0.5d — ISSUE-069 / PR #129 review residual: the ABSENT field is a deliberate fail-OPEN, so deleting one line from a file every executor rewrites re-opens autonomous dispatch of above-boundary work; depends on 069)_
 - [ ] ISSUE-079: Give the prior-sprint carry-forward diagnosis its own acceptance criteria, or remove it _(track: platform, P2, 0.5d — ISSUE-069 / PR #129 review: unrequested surface, ~22% of the engine diff named by no AC and no test, and where both engine defects were found; depends on 069)_
 - [ ] ISSUE-080: Close the remaining fail-open classes in the sprint boundary's arming predicate — value vocabulary, structural ambiguity, and the fence-blind `## Meta` locator _(track: platform, P1, 1d — ISSUE-078 / PR #133 review (degraded path, both dimensions): two reviewers measured the new guard failing open on 22 of 23 inputs that literally contain `- Status: running`; 13 were fixed in review, the remaining 9 value/line-shape variants plus three structural holes (no indeterminate state, the U+2028 defence unreachable on the absent-field path, the fence-blind `## Meta` locator) need surface no ISSUE-078 AC names; depends on 078)_
+- [ ] ISSUE-081: Require a disarm-direction test and a composite end-to-end pin for any PR that adds a gate _(track: platform, P1, 1d — learning-loop escalation: "a newly added defence fails OPEN" reached Frequency 3 at High across three consecutive sprints (ISSUE-076 both defences, ISSUE-078 guard disarmed on 22 of 23 inputs); ISSUE-080 fixes the instance, this fixes the pattern)_
 
 ### Doing
 
@@ -4610,3 +4611,70 @@ The step-4f boundary gate can no longer be disarmed by a `Status:` value it does
 `git revert` — the change is one tri-state predicate, two widened character classes, one structural-ambiguity branch, one `_unfenced` call inside `_meta_section_bounds`, the new `state` values in the `roster_boundary` dict, and one block of step 4f text. Regenerate skills afterwards (`python3 scripts/gen_skills.py`) so `skills/sprint/SKILL.md` matches its `.tmpl`, and restore the test vocabulary sets with it. A revert **re-opens all twelve fail-open classes above** and, specifically, makes a fenced `## Meta` example able to supply the live boundary again, so if a sprint is in flight when you revert, re-check by hand that its `## Meta` carries exactly one heading, no ambiguous separator, and a canonical `- Roster-Watermark: ISSUE-NNN` line before resuming autonomous dispatch. Because the revert also removes `state` values that step 4f names, revert the skill text **together with** the engine change so no documented state is unreachable; and note that reverting does not restore any previously deleted test — the L7 inverse pins must be reverted as a pair with the predicate they pin, or the suite will assert the hardened direction against unhardened code.
 
 ---
+
+---
+
+### ISSUE-081: Require a disarm-direction test and a composite end-to-end pin for any PR that adds a gate
+
+> Learning-loop escalation filed by the orchestrator 2026-10-11, at the request of the ISSUE-078 review phase, which recorded the native-memory lesson but flagged the preventive issue as owed. The pattern **"a newly added defence fails OPEN"** has now been observed three times at High severity in three consecutive sprints, which clears the Frequency >= 3 + Critical/High bar the kit's own escalation rule sets:
+>
+> 1. **ISSUE-076 / PR #128** — *both* of the PR's new defences failed open. A roster row the tightened parser newly excluded was not treated as absent but re-materialised as fresh backlog work, resetting `attempts` to 0 (defeating escalation) and emptying `in_flight` (defeating ISSUE-068's anti-starvation guard); measured `SHIP ISSUE-200` -> `PIPELINE ISSUE-200` at exit 0 with empty stderr. Separately, no fence guard existed, so a fenced heading won the section and dispatched `PIPELINE ISSUE-999`.
+> 2. **ISSUE-078 / PR #133** — the new arming guard returned exit 0 / `valid: true` / `state: "not-running"` for **22 of 23 inputs that literally contain the line `- Status: running`**, while `next-action` on the same bytes returned `PIPELINE` on three out-of-scope issues. Reached independently three ways by two reviewers.
+> 3. **ISSUE-068 / PR #121** (the origin of the class) — the visibility control re-hid what it surfaced, and `next-action` returned a bare `DONE` on the issue's own motivating case.
+>
+> The common shape is not a coding mistake, it is a **missing test direction**. Every one of these PRs tested that its gate *fires* on the defect it was built for (the arm direction) and shipped without a test that the gate *cannot be disarmed* (the disarm direction) or that it holds **end-to-end through the real consumer** rather than only at the helper it was unit-tested against. The ISSUE-078 case is the sharpest: the helper was correct in isolation and the consumer disagreed with it on the same bytes.
+>
+> `/review` already carries the minimality axis and the learning-extraction step, and `scripts/verify_checkpoint.py` already gates review phases — so the prevention belongs in the review contract, mechanically, not as prose advice a future reviewer may or may not recall.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; learning-loop escalation per the ISSUE-033 native-memory review-lessons rule, Frequency >= 3 + High; instance carriers ISSUE-080, GAP-076*, GAP-078h..p)
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A PR that adds or tightens a gate cannot pass `/review` without evidence in both directions — that the gate fires on its target defect AND that it cannot be disarmed — plus one composite pin exercising the gate through its real consumer, so the three-sprint fail-open pattern stops recurring instead of being re-found per sprint.
+
+#### Scope (In/Out)
+- In:
+  - SPEC first: decide the enforcement seam. The candidates are a `/review` contract clause checked by a review-phase checkpoint, a `verify_checkpoint.py` review phase that detects gate-adding diffs and requires the paired evidence, or a reviewer-prompt obligation. The SPEC must argue why the chosen seam is not itself prose-only — that is this issue's whole point.
+  - A definition of "adds a gate" precise enough to act on: a diff that introduces or tightens a predicate whose false branch blocks, refuses, or withholds dispatch. Err toward over-detection with an explicit opt-out that must be justified in the PR body, rather than under-detection.
+  - The disarm-direction requirement: for each new gate, at least one test asserting the gate still refuses under adversarial-but-plausible input variation (value vocabulary, line shape, encoding, placement, fencing, duplication).
+  - The composite requirement: at least one test that drives the gate through its real consumer end to end, not only the helper under test — the ISSUE-078 helper/consumer disagreement is the motivating case.
+  - Backfill is OUT, but the SPEC should record which already-shipped gates lack the paired evidence so a later issue can carry it.
+- Out:
+  - Rewriting the existing gate implementations (ISSUE-080 owns the current instance).
+  - Any change to the minimality axis, the severity rubric, or the learning-extraction step beyond adding this obligation.
+  - A general-purpose mutation-testing framework — the requirement is evidence per gate, not a new harness.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a PR diff that adds a gate with only arm-direction tests, when `/review` runs, then the missing disarm-direction evidence is reported as a blocking finding naming the specific gate — verified by replaying ISSUE-078's pre-fix diff as a fixture and asserting the finding appears.
+- [ ] Given the same replay, when the composite requirement is evaluated, then the helper/consumer disagreement ISSUE-078 exhibited is surfaced — a gate correct in isolation and wrong through its consumer must not pass.
+- [ ] Given a PR diff that adds no gate, when `/review` runs, then no new obligation is imposed and the review output is unchanged from today (no false-positive tax on ordinary PRs; pin this with an existing non-gate PR diff as a fixture).
+- [ ] Given a PR that adds a gate WITH both directions evidenced, when `/review` runs, then it passes without the finding — the requirement is satisfiable, asserted on ISSUE-078's post-fix diff, which does carry 14/14 variant coverage.
+- [ ] Given the enforcement mechanism itself, when its own disarm direction is tested, then it cannot be silently bypassed — this issue's gate is subject to its own rule, and that test must exist (mutation-pinned in both directions).
+
+#### Implementation Notes
+- The native-memory lesson is already recorded and auto-recalls into future reviews; that is the ISSUE-033 mechanism and it is necessary but demonstrably not sufficient — the pattern recurred twice *after* the lesson family existed. This issue is the mechanical half.
+- Prefer detection over the diff to self-attestation in the PR body: the three instances all had conscientious PR bodies and still shipped the hole.
+- Review lesson 12 is the adjacent prior art ("pin gate call-site POSITION, not just presence") and ISSUE-060's review found that one by hand — the same argument applies: position, arming, and disarming are all properties a gate-adding diff should have to evidence.
+- Note the self-reference: by AC-5 this issue adds a gate, so it must evidence its own disarm direction. Do not treat that as a curiosity — it is the cheapest available test of whether the mechanism is real.
+
+#### Tests
+- [ ] Fixture replay of ISSUE-078's pre-fix diff: blocking finding present, naming the gate.
+- [ ] Fixture replay of ISSUE-078's post-fix diff: no finding (satisfiable requirement).
+- [ ] Non-gate PR diff fixture: output byte-identical to today (no false-positive tax).
+- [ ] Self-application: the enforcement mechanism's own disarm test, mutation-pinned in both directions.
+
+#### Rollback
+`git revert` — the obligation is additive to the review contract and imposes nothing on non-gate PRs, so reverting restores today's review behaviour and leaves the native-memory lesson as the only (insufficient) prevention, which is the pre-issue state.
