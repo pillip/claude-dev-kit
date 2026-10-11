@@ -16,7 +16,7 @@
 |-------|--------|----------|------------|-------|
 | ISSUE-066 | done | 1 | - | shipped |
 | ISSUE-069 | done | 1 | - | shipped |
-| ISSUE-072 | doing | 1 | - | implemented |
+| ISSUE-072 | doing | 1 | - | reviewing |
 | ISSUE-074 | done | 1 | - | shipped |
 | ISSUE-078 | done | 1 | - | shipped |
 
