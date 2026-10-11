@@ -3,7 +3,7 @@ name: review
 description: Senior-level review against the PR. Per SPEC-019, delegates correctness + security passes to runtime /code-review and /security-review (primary path), or falls back to the kit's degraded reviewer agent (degraded path) when those runtime skills are not exposed. Layers kit-distinctive checks (over-engineering minimality axis, Figma 3.5-3.10, ui-reviewer, design-auditor, a11y-auditor, tech-debt ledger, native-memory review-lessons learning) on top.
 argument-hint: '[ISSUE-number]'
 disable-model-invocation: true
-allowed-tools: Task, SlashCommand, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
+allowed-tools: Task, Skill, SlashCommand, Read, Glob, Grep, Write, Edit, Bash(bash scripts/checkpoint.sh *), Bash(bash scripts/wt_setup.sh *), Bash(bash scripts/wt_cleanup.sh *), Bash(bash scripts/registry_edit.sh *), Bash(bash scripts/flock_edit.sh *), Bash(bash scripts/worktree.sh *), Bash(python3 scripts/*), Bash(git *), Bash(gh *), Bash(pytest *), Bash(npm *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/*)
 ---
 
 {{PREAMBLE}}
@@ -29,7 +29,7 @@ Steps:
    - For UI issues, also read in parallel: `docs/design_system.md` (or `design_system_mobile.md`), `docs/copy_guide.md`, `docs/interactions.md` (or `interactions_mobile.md`), `docs/wireframes.md` (or `wireframes_mobile.md`).
 
 3.1) **Review execution-context decision** (per SPEC-019 platform-first delegation; SPEC-066 decides the context ONCE):
-   First determine ONCE whether the runtime skill-invocation tool (SlashCommand) is in your CURRENT tool list — interactive sessions have it; Task sub-task contexts do not. Report it as `present` or `absent` (validated data, not a directive — both misreport directions still end in a review that runs). Then run the decision script EXACTLY ONCE for both dimensions:
+   First determine ONCE whether a runtime skill-invocation tool is in your CURRENT tool list. The token to look for first is **`Skill`** — its listing should name `code-review` / `security-review`. A `SlashCommand` tool counts too if your context has one: it was absent from every probed Task sub-agent context on CC 2.1.224 (not loaded and not even deferred), but the **main-session path was never probed**, so do not rule it out interactively (ISSUE-072; see the sub-agent skill-invocation row in `docs/cc_feature_matrix.md`). Inside a Task sub-task you have such a tool only if the dispatching agent's `tools:` grants one — and on this runtime **a grant does not imply provisioning**, so answer from your own observed tool list and nothing else. Report what you actually observe as `present` or `absent` (validated data, not a directive — both misreport directions still end in a review that runs). Then run the decision script EXACTLY ONCE for both dimensions:
    ```bash
    python3 scripts/review_context.py decide --invocation-tools <present|absent> --issue $ARGUMENTS
    ```

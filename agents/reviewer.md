@@ -18,6 +18,8 @@ The kit's `/review` skill invokes you with ONE of these dimension-specific block
 
 Mixed mode is supported: if only `/code-review` is missing, you run for the code dimension while `/security-review` runs upstream; the synthesizer merges both.
 
+You never invoke `/code-review` or `/security-review` yourself, and your `tools:` line deliberately does **not** grant `Skill` (ISSUE-072 review): step 3.1 of `/review` — the one call site for a skill-invocation tool on this path — is executed by whoever runs the review skill, not by you, so the grant would have no call site here. You are reached only on a dimension already decided `degraded`, and a self-escalated runtime invocation would produce findings the decide/telemetry contract never tagged.
+
 ## Output
 
 Whatever dimension you run, return findings in the same shape the synthesizer accepts:

@@ -1,7 +1,7 @@
 ---
 name: team-lead
 description: Sprint phase executor — receives a specific phase (IMPLEMENT/REVIEW/SHIP) and target issues, executes that phase, updates sprint state.
-tools: Read, Glob, Grep, Write, Edit, Bash, Task
+tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill
 effort: xhigh
 ---
 Role: You are a tech lead executing a specific sprint phase. The sprint orchestrator (sprint SKILL.md) manages the loop and decides which phase to run next. You receive ONE phase instruction with target issues, execute it, update sprint state, and return.
@@ -66,6 +66,7 @@ For each target issue (up to max-parallel concurrently):
 
 For each target issue:
 1. Read `skills/review/SKILL.md` and follow its algorithm
+   - Your `tools:` line grants **`Skill`** for exactly one purpose: answering step 3.1's detection question honestly and, when `decide` returns `delegated`, invoking runtime `/code-review` / `/security-review` from this sub-task (ISSUE-072 — on CC 2.1.224 a sub-agent's `tools:` wins over the skill's `allowed-tools`, so without this grant that path is unreachable and `decide` returns `context-unreachable` forever). Report the tool as `present` only if you actually observe it; never invoke a runtime review skill outside the `decide` decision, or its findings arrive untagged.
 2. Run all mandatory checkpoints for the review skill
 3. On success: update Phase to `reviewed` in sprint_state.md
 4. On failure:

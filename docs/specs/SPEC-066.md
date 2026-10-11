@@ -57,7 +57,7 @@ Every /sprint review runs inside a Task-tool sub-task, and the 2026-10 sprint re
 - **Approach**: Add `SlashCommand` (or the Skill tool) to `agents/team-lead.md` tools and instruct PIPELINE review sub-tasks to invoke the runtime skills directly.
 - **Pros**:
   - One-line change per agent definition if it worked.
-- **Cons**:
+- **Cons** (**both superseded 2026-10-11 — read the Correction section at the end of this file before relying on either**):
   - No verified evidence the grant reaches sub-task contexts: the retro observed the tool absent in exactly that context on the current runtime, and `docs/cc_feature_matrix.md` has no row confirming sub-agent skill invocation. Relying on it violates the matrix's own "adopt behind a fallback or probe" rule.
   - If the grant silently does nothing, the kit is back to Option A with an extra line of configuration implying a capability that isn't there.
 - **Trade-off**: +1 line per agent definition; 0 verified runtime support (observed absent 2026-10-09); 100% of the benefit contingent on an undocumented capability; same detour burn as Option A until then.
@@ -130,3 +130,73 @@ re-derive a false constraint.
   split, the decide-once contract, and the no-inline-attempt behavior are all
   still correct and mutation-pinned. Only the Option D rejection *rationale* is
   corrected here, not the decision.
+
+### Upgrade entered at ISSUE-072 (2026-10-11) — "confounded" is too weak: the claim is REFUTED
+
+The correction above understated what the evidence supports. ISSUE-072 probed
+the question empirically from inside live Task sub-agents on **CC 2.1.224**
+(recorded in `docs/sprint_state.md` → `## ISSUE-072 Capability Probe Evidence`,
+and as the sub-agent skill-invocation row of `docs/cc_feature_matrix.md`), and
+the result is not merely "the measurement was confounded by our own config" —
+it is that **this spec's categorical claim is false**:
+
+- An unrestricted `general-purpose` Task sub-agent receives a **real `Skill`
+  tool**, whose listing includes `code-review` and `security-review` **bare,
+  not `claude-dev-kit:`-namespaced**. The capability therefore **exists at the
+  runtime level**, and was absent from kit review sub-tasks only because the
+  kit's own agent `tools:` allowlists omitted it. "No mechanism can make the
+  primary path execute from the sub-task review context on today's runtime" is
+  **refuted**.
+- The mechanism is Option D's lever, with **one token corrected**: the grant is
+  **`Skill`, not `SlashCommand`**. `SlashCommand` does not exist as a tool in
+  *any* probed sub-agent context on 2.1.224 — not loaded and not deferred — so
+  granting it would have reproduced the defect it was meant to fix. (The
+  main-session path was **not** probed; `skills/review/SKILL.md` keeps its
+  `SlashCommand` grant for that reason, and gains `Skill` alongside it.)
+- Confirmed again: the sub-agent's `tools:` allowlist **wins over** the invoked
+  skill's `allowed-tools`, which is why the skill-level grant never reached a
+  sub-task.
+
+**Can the dormant landing now be activated? Two halves, and only the first is
+settled.**
+
+1. **The runtime-limitation half: yes — refuted, and the grant is the
+   mechanism.** ISSUE-072 adds `Skill` to `agents/team-lead.md` — and to
+   that agent only, because it is the one that reads this skill and answers
+   step 3.1. `agents/reviewer.md` is dispatched *after* `decide` with its
+   dimension already chosen, so a grant there would have no call site; it
+   stays ungranted and a guard pins that (ISSUE-072 review). ISSUE-072 also
+   corrects the *detection question* the grant
+   feeds: step 3.1 of `skills/review/SKILL.md{,.tmpl}` and
+   `scripts/review_context.py`'s `--invocation-tools` help both asked about
+   `SlashCommand`, so with that text in place the grant would have been
+   **inert** — the answer is always "absent", `decide` returns
+   `context-unreachable`, and the primary path stays unreachable forever. With
+   the token corrected, a context that observes `Skill` routes to `delegated`
+   with **zero further kit change**, exactly as Option C promised.
+2. **The materialisation half: UNVERIFIED, and that is now a measurement, not
+   an impossibility.** On this runtime **a grant does not imply
+   provisioning**: `Glob` and `Grep` are granted in both review-path kit agents
+   and were provisioned in neither. The evidence about that pair is also
+   *self-contradictory* — one `claude-dev-kit:planner` sub-agent reported using
+   `Grep`/`Glob` successfully while a second, same session and same agent type,
+   reported them absent — from which the honest methodological conclusion is
+   that **a sub-agent's narration of its own tool list is unreliable evidence,
+   weaker than an observed tool-call outcome**. So whether the `Skill` grant
+   reaches `claude-dev-kit:team-lead` is not yet known, and it could not be
+   measured in the session that shipped the grant:
+   the agent registry is frozen at session start, and the live kit agents were
+   served from the installed plugin cache at **0.5.0** while the repo was at
+   **0.7.0**.
+
+**Durable carrier: ISSUE-082** — a post-restart, post-plugin-update re-probe
+that amends the matrix row in place and either closes ISSUE-072's AC-2 with a
+live `delegated` run or records the non-materialisation with telemetry. Until
+it reports, the module stays armed-but-unverified rather than dormant-by-
+runtime-limitation: the difference matters, because the first is closed by a
+measurement and the second was closed by nothing.
+
+One thing the probe also ruled out, so nobody re-litigates it: the grant does
+**not** re-enable the kit's own `disable-model-invocation: true` pipeline
+skills — `claude-dev-kit:review`, `:implement` and `:ship` are absent from an
+unrestricted sub-agent's `Skill` listing.

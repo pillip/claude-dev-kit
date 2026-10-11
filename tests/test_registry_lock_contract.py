@@ -401,6 +401,12 @@ class TestToolsParsing:
 
     def test_parses_real_agent_tools_lines(self):
         assert _tools("planner") == ["Read", "Glob", "Grep", "Write", "Edit"]
+        # `Skill` is appended by ISSUE-072 — the sub-agent skill-invocation
+        # grant on the review path. Updated DELIBERATELY in the same commit as
+        # the grant, not silently: this pin is both the comma parser's
+        # real-file fixture and the only place a quiet `tools:` widening on
+        # team-lead would surface. See tests/test_subagent_skill_grant.py for
+        # what the grant must map to.
         assert _tools("team-lead") == [
             "Read",
             "Glob",
@@ -409,6 +415,7 @@ class TestToolsParsing:
             "Edit",
             "Bash",
             "Task",
+            "Skill",
         ]
 
     def test_prefix_scoped_bash_keeps_its_commas(self):
