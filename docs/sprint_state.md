@@ -4,12 +4,30 @@
 - Started: 2026-10-11
 - Iteration: 2 / 20
 - Parallel: 3
-- Status: running
+- Status: completed
 - Roster-Watermark: ISSUE-078
 - Scope: **silent fail-open guards** — three defects sharing one shape: a control that does not control, with no failure to attribute. ISSUE-072 (no kit agent grants `SlashCommand`/`Skill`, so the SPEC-019 primary path is unreachable from sub-task context — the absence SPEC-066 measured was partly the kit's own config), ISSUE-074 (team-lead is forbidden to write `issues.md`, planner is told to take the `flock` lock but has no Bash — resolving as a silently unlocked write that succeeds), ISSUE-078 (ISSUE-069's boundary gate keys on field PRESENCE, so deleting one line from a file every phase executor rewrites re-opens autonomous dispatch of out-of-scope work through to `gh pr merge`).
 - Ship order: **074 → 078 → 072** (074 and 078 are disjoint from each other; 072 ships last because its grant change is the one that alters how every later review runs, and it wants a clean main to verify against).
 - Deferred to the next sprint: ISSUE-077 + ISSUE-070 + ISSUE-071 (integrity/emitter family — 077 completes ISSUE-073's partial Goal, 070 makes the emitter's no-raise contract true, 071 gives `KIT_RUN_ID` a producer), then ISSUE-075 + ISSUE-079 (cleanup — 075's migration depends on 070; 079 decides the fate of ISSUE-069's unrequested `diagnose_carry_forward_gaps` surface).
 - Boundary note: the watermark is pinned at ISSUE-078, so ISSUE-079 sits above it and is flagged-not-dispatched by the ISSUE-069 mechanism shipped last sprint. That restraint is the intended behaviour here — do not override it with `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK`.
+
+## Sprint Close-out (2026-10-12, orchestrator)
+
+Scope 3/3 shipped: ISSUE-074 (`404ef8f`), ISSUE-078 (`3b716c7`), ISSUE-072 (`e9c93a4`). Suite on main **2405 passed**. No worktrees, no open PRs. Three infra deaths during this sprint (stream watchdog x3) cost zero work — every resume came from branch/PR/registry ground truth.
+
+**The headline result: the kit executed its first delegated review.** During ISSUE-072's own review phase, the reviewer answered the review skill's step-3.1 detection question from its real tool list, had `Skill`, and `decide_review_context` returned `delegated` for BOTH dimensions with an empty reason — where every prior review in this session returned `context-unreachable`. SPEC-066's categorical claim is therefore refuted by a live run, not only by a tool listing. The reviewer correctly refused to count this as ISSUE-072's AC-2 evidence (AC-2 requires a post-restart, post-plugin-update re-probe; carrier ISSUE-082, `Manual: true`).
+
+**The grant alone would have been inert.** Both `review_context.py` and the review skill's step 3.1 asked for `SlashCommand` — a token that does not exist in sub-task context on CC 2.1.224 — so `decide` would have answered `context-unreachable` forever while every file looked correctly configured. Naming `Skill` at the call site is what AC-4 meant and what made the delegated run happen. This is review lesson 9 ("grants map to real call sites") in its sharpest form yet: the grant, the allowlist, and the detection question must all name the same token that the runtime actually provisions.
+
+**Acknowledged before closing** (the ISSUE-069/078 stranded warning): ISSUE-079, 080, 081, 083 are Board-registered above the pinned watermark and were correctly flagged-not-dispatched. `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` was never set in this sprint. ISSUE-080/081/082/083 were deliberately never rostered — a rostered backlog row becomes dispatchable once its dependency resolves regardless of the watermark.
+
+**Carried gaps:** ISSUE-072's AC-2/AC-3 ship unchecked (carrier ISSUE-082; its finalization script asserts that invariant and aborts if those boxes are ticked). ISSUE-078's M1 and the fence-blind `## Meta` locator are carried by ISSUE-080 — the ship-time re-measurement sharpened the attribution: `parse_roster_watermark` returns the same `(79, None, True)` on the pre-078 and merged engines, so the fence blindness is inherited ISSUE-069 behaviour and only the false `accepted` attestation is new. No distinguishing signal exists when a `Skill` grant fails to materialise (GAP-072b, recorded without inventing a mechanism).
+
+**The fail-open pattern reached Frequency 4.** Two of ISSUE-072's four review Highs were this sprint's own pattern recurring *inside the grant-hygiene guards it was adding* — a flow-sequence `tools:` list and a scoped `SlashCommand(/code-review)` each evaded detection with all 41 tests green. Root cause names a new sub-pattern: the guard **re-typed** the test suite's `_split_tools` oracle instead of importing it. Annotated onto ISSUE-081, which is the mechanical carrier for the pattern.
+
+**Three environment facts worth carrying forward:** `SendMessage` is disabled this session, so the "send the sub-agent back for revision" pattern is unavailable — a fresh dispatch with the task restated is the workaround. A sub-agent's narration of its own tool list is unreliable evidence: two `claude-dev-kit:planner` sub-agents in the same session gave opposite answers about `Grep`/`Glob` provisioning, and that contradiction is preserved unresolved in `docs/cc_feature_matrix.md` row 10 rather than averaged. And `wt_setup.sh` re-created a worktree for a remote-only branch from main's HEAD with no upstream while reporting success — committing from it would have been a non-fast-forward against the reviewed commits; filed as ISSUE-083.
+
+**Successor backlog:** ISSUE-077, 070, 071 (integrity/emitter), 075, 079 (cleanup), 080 (078's residual fail-open classes), 081 (the Frequency-4 pattern), 082 (the AC-2 re-probe, `Manual: true`), 083 (the worktree upstream leak).
 
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
