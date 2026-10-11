@@ -44,7 +44,7 @@
 - [ ] ISSUE-071: Give KIT_RUN_ID a producer or stop announcing its absence on every run _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High: the fallback announcement fires on 100% of runs; depends on 067)_
 - [ ] ISSUE-072: Verify sub-agent skill invocation in the feature matrix and grant it on the review path if supported _(track: platform, P1, 0.5d — ISSUE-066 review triage: the kit's own agent `tools:` frontmatter confounds SPEC-066's categorical conclusion; depends on 066)_
 - [x] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
-- [ ] ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it _(track: platform, P1, 0.5d — iter-1 review triage: team-lead is forbidden to write issues.md and planner is told to use flock_edit.sh but has no Bash, so the contract resolves as a silently unlocked write that still succeeds; mirror of ISSUE-072; depends on none)_
+- [x] ISSUE-074: Reconcile the registry-lock contract so the actor instructed to take the `issues.md` lock can actually invoke it _(track: platform, P1, 0.5d — iter-1 review triage: team-lead is forbidden to write issues.md and planner is told to use flock_edit.sh but has no Bash, so the contract resolves as a silently unlocked write that still succeeds; mirror of ISSUE-072; depends on none)_
 - [ ] ISSUE-075: Migrate review_context.py's private telemetry appender onto the shared kit_telemetry emit seam _(track: platform, P2, 0.5d — ISSUE-066 ship-time deferral: SPEC-066 pre-committed to adopting ISSUE-067's shared emitter, deferred because `emit_event`'s "NEVER raises" contract is false today (ISSUE-070) and two existing tests pin the opposite silent-skip contract; duplication debt, not a hardening regression; depends on 066, 067)_
 - [x] ISSUE-076: Scope parse_sprint_table to the Issue Progress table only — h3 subsection tables are parsed as roster rows _(track: platform, P1, 0.5d — observed 2026-10-11 by the sprint orchestrator: validate reported all three shipped issues as stuck)_
 - [ ] ISSUE-077: Bind the `gh` merge-state probe to the issue's own PR — a whitelist-conforming wrong-target `PR:` ref still forges a MERGED verdict _(track: platform, P1, 1d — ISSUE-073 / PR #127 review triage, unresolved High (GAP-073a): `#93` passes ISSUE-073's shape guard and finalizes ANY reviewed issue as `shipped`; 3 same-function Low folded in; depends on 073)_
@@ -4115,11 +4115,11 @@ A Board- or CLI-supplied PR reference can never be re-interpreted as a `gh` flag
 - PRD-Ref: none (kit self-development; sprint iter-1 review triage 2026-10-10; review lesson "allowed-tools grants in skill frontmatter must map to actual call sites" — native memory review-lessons.md — in its inverse direction; sibling ISSUE-072)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-074-registry-lock-contract
+- GH-Issue: https://github.com/pillip/claude-dev-kit/issues/130
+- PR: https://github.com/pillip/claude-dev-kit/pull/132
 - Depends-On: none
 
 #### Goal
@@ -4402,11 +4402,11 @@ The merge-state probe answers for the issue it was asked about: a ref that resol
 - PRD-Ref: none (kit self-development; ISSUE-069 / PR #129 review residual — the absent-field fail-OPEN named in the ratchet lesson "A visibility threshold derived from state the control itself mutates will ratchet shut", prevention point (4), and in "A deferred finding is only real if it has a durable carrier — a PR body is not one" — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-078-roster-boundary-enforced
+- GH-Issue: #131
+- PR: https://github.com/pillip/claude-dev-kit/pull/133
 - Depends-On: ISSUE-069
 
 #### Goal

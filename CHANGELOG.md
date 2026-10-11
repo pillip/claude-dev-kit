@@ -105,6 +105,70 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **The registry-lock contract is satisfiable by the actor it names, so an
+  `issues.md` write can no longer succeed without the lock** (ISSUE-074,
+  PR #132) — `agents/team-lead.md` forbade itself every `issues.md` write and
+  routed them all to the **planner**, whose `tools:` line carries no `Bash` —
+  so the designated lock-taker could not invoke `flock_edit.sh` /
+  `registry_edit.sh` at all. The contract resolved to a **silently unlocked
+  write**: the planner reaches for `Edit`, the lock is never taken, the write
+  **succeeds**, and nothing errors anywhere. That is the inverse of sibling
+  ISSUE-072 and strictly harder to notice, because there is no failure to
+  attribute — and concurrent `issues.md` writes can clobber each other in
+  exactly the parallel-sprint scenario the kit is built for. The invariant
+  restored: **every registry write either holds the lock or is impossible** —
+  never "succeeds without it."
+  The write now splits in two. The planner **prepares** an idempotent apply
+  script (`agents/planner.md` Append Mode step 5) whose anchor guard must match
+  **line-anchored** `^### ISSUE-NNN:` and must **announce its no-op on
+  stderr**, because a silent skip is indistinguishable from a successful write;
+  a Bash-capable caller — the invoking skill, or team-lead — **commits** it
+  under the lock via
+  `bash scripts/registry_edit.sh issues.md -- bash -c '<apply script>'`.
+  The planner stays `Bash`-free on purpose: both wrappers execute their argv
+  verbatim (`"$@"` in `scripts/flock_edit.sh`), so any prefix-scoped grant on
+  them is arbitrary code execution wearing a narrow-looking prefix.
+  Both contracts now mandate a **quoted heredoc** (`<<'KIT_EOF'` … `KIT_EOF`)
+  for the payload: the previously prescribed bare `bash -c '…'` form breaks on
+  an apostrophe — routine in issue titles and ACs — closing the argument early,
+  dropping the heredoc delimiter, and appending a **truncated** block while
+  holding the lock with no error raised, after which the truncated anchor
+  satisfies the idempotence guard on every retry.
+  `skills/issue/SKILL.md{,.tmpl}` gains **step 7c** so the handoff has a
+  receiver. It had none — `grep -rn "apply script" skills/` returned 0, and
+  batch-mode `/issue` still told the Bash-free planner to use `flock_edit.sh`,
+  so under the new no-`Edit`-fallback rule it would have written **nothing**
+  while step 10 reported the issues as created. The skill is the committing
+  actor (it already holds bare `Bash`; no grant changed) and carries the
+  rejection rule for a guardless apply script.
+  `agents/developer.md`'s registry step now names the wrapper and forbids
+  `Write`/`Edit`. The developer holds `Bash`, so the guard passed on
+  **capability, not compliance**, while the file named no lock anywhere; and an
+  `Edit` from a worktree is worse than merely unlocked — `registry_edit.sh`
+  resolves the registry against the **main** repo root while the `Edit` hits
+  the worktree copy the kit forbids committing, so the field updates are
+  silently **lost**.
+  The planner's single-writer exemption is gated on the **file's absence**
+  rather than on the invoking skill, which excludes evidence-mode `/scan` of a
+  brownfield repo: the old justification ("greenfield, so no concurrent
+  writer") was false for that path and licensed a `Write`/`Edit`-only agent to
+  overwrite a live 4,100-line registry with no lock. Its `STATUS.md` step is
+  scoped to projects that already carry one, and never creates one.
+  `tests/test_registry_lock_contract.py` derives both halves from the files —
+  capability from each agent's parsed `tools:` line, responsibility from the
+  audited instruction text — and pins whole **lines** rather than slices, so an
+  escape clause appended to an audited line cannot pass; a duplicate
+  frontmatter `tools:` key is refused, since YAML resolves a duplicate mapping
+  key to the **last** occurrence while the oracle read the **first**.
+  **Residuals, all carried:** GAP-074a was closed during review; GAP-074b..k
+  plus `GAP-074-ruff` in `docs/test_plan.md` carry eleven open items, each also
+  written up in `docs/review_notes/ISSUE-074.md`. The two that most want a
+  follow-up: the guard still keys on **capability rather than compliance**
+  (a `lock_named` assertion needs a per-occurrence operative/pointer
+  classification first), and the `bash -c` payload is **unbounded** — the
+  planner holds `Write`, so emitting the apply script to a file and committing
+  `-- bash <script-path>` would bound it and remove the quoting hazard
+  entirely.
 - **The sprint roster boundary is pinned once at sprint start, and out-of-scope
   Board work is flagged instead of auto-dispatched** (ISSUE-069, PR #129) —
   `scripts/sprint_queue.py::augment_roster_from_board` re-derived
