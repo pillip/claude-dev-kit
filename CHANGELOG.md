@@ -105,6 +105,56 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **A running sprint can no longer silently lose its roster boundary — the
+  one-line deletion that re-opened autonomous dispatch is now refused**
+  (ISSUE-078, PR #133) — ISSUE-069 pinned the boundary in
+  `docs/sprint_state.md`'s `## Meta` and gated above-boundary dispatch on field
+  **presence**, so every *corrupted* form of the field failed closed while the
+  **absent** state stayed a deliberate fail-OPEN (its AC-6 backward-compatibility
+  contract). Deleting one line from a file that every phase executor rewrites
+  every iteration therefore re-opened autonomous dispatch of out-of-scope work
+  all the way through to `gh pr merge`, and the only thing in the way was
+  model-followed prose in the sprint skill's step 4d. A new leg of
+  `scripts/sprint_queue.py validate` — `check_roster_boundary` plus the
+  `sprint_status_is_running` arming predicate — now refuses a `Status: running`
+  sprint_state carrying no **accepted** `Roster-Watermark`: `valid: false`, a
+  machine-readable `roster_boundary` object naming the cause, and a distinct
+  exit class `3` that `/sprint` treats as a hard stop even though exit 3 does
+  print JSON. The carrier was chosen for **position** — step 4b's `next-action`
+  runs before the 4d rewrite and step 4f's `validate` runs after, so 4f is the
+  only gate between the mutation that can drop the field and the next dispatch
+  decision — and `cmd_next_action`, `parse_roster_watermark` and
+  `_meta_section_bounds` are byte-identical to the previous release, so
+  ISSUE-069's AC-6 byte-identity pin holds and the *dispatch* gate's behaviour
+  (including `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK`) is unchanged. `validate`
+  gains an optional `--issues` flag supplying the Board-range check, and now
+  warns on stderr when it is omitted or unreadable instead of downgrading the
+  verdict in silence.
+  **The guard shipped once failing open on itself, and review caught it**: the
+  arming predicate was scoped to the first exactly-`## Meta` window, so 22 of 23
+  measured inputs disarmed it — exit 0 / `state: "not-running"` for files
+  containing the literal line `- Status: running`, while `next-action` on the
+  same bytes dispatched three out-of-scope issues. That is a *new false
+  attestation* rather than a new dispatch, since before this change `validate`
+  said nothing about the boundary at all. Fixed by scanning the document in the
+  arming predicate only, at zero verdict change across every real
+  `sprint_state*.md` file, the template and both fixtures; the field's
+  acceptance window is deliberately left narrow, because widening it would
+  loosen acceptance.
+  **Two fail-open classes ship open and are carried by ISSUE-080** (with
+  GAP-078h..p in `docs/test_plan.md`): an unrecognised `Status:` value still
+  yields the `not-running` attestation — its fix invents a new `state` value
+  that no ISSUE-078 criterion names — and a `## Meta` example inside a fenced
+  code block, placed above a live field-less `## Meta`, yields a false
+  **`accepted`** verdict naming a watermark the live block never declared. The
+  fence-blind locator is inherited ISSUE-069 behaviour; the attestation built on
+  top of it is what is new here. Operator docs were corrected to match: the
+  README `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` bullet and
+  `docs/troubleshooting.md` now scope the old "absent = fail-open" statement to
+  the dispatch gate and bound the residual — inside a `/sprint` run the open
+  gate survives at most one iteration, because a state file that is already
+  field-less when 4b runs can still dispatch once before 4f halts the loop.
+
 - **The registry-lock contract is satisfiable by the actor it names, so an
   `issues.md` write can no longer succeed without the lock** (ISSUE-074,
   PR #132) — `agents/team-lead.md` forbade itself every `issues.md` write and
