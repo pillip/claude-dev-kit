@@ -52,6 +52,8 @@
 - [ ] ISSUE-079: Give the prior-sprint carry-forward diagnosis its own acceptance criteria, or remove it _(track: platform, P2, 0.5d — ISSUE-069 / PR #129 review: unrequested surface, ~22% of the engine diff named by no AC and no test, and where both engine defects were found; depends on 069)_
 - [ ] ISSUE-080: Close the remaining fail-open classes in the sprint boundary's arming predicate — value vocabulary, structural ambiguity, and the fence-blind `## Meta` locator _(track: platform, P1, 1d — ISSUE-078 / PR #133 review (degraded path, both dimensions): two reviewers measured the new guard failing open on 22 of 23 inputs that literally contain `- Status: running`; 13 were fixed in review, the remaining 9 value/line-shape variants plus three structural holes (no indeterminate state, the U+2028 defence unreachable on the absent-field path, the fence-blind `## Meta` locator) need surface no ISSUE-078 AC names; depends on 078)_
 - [ ] ISSUE-081: Require a disarm-direction test and a composite end-to-end pin for any PR that adds a gate _(track: platform, P1, 1d — learning-loop escalation: "a newly added defence fails OPEN" reached Frequency 3 at High across three consecutive sprints (ISSUE-076 both defences, ISSUE-078 guard disarmed on 22 of 23 inputs); ISSUE-080 fixes the instance, this fixes the pattern)_
+- [ ] ISSUE-082: Re-probe the `Skill` grant after a session restart and plugin update — close ISSUE-072's AC-2 with a live run or record the non-materialisation _(track: platform, P1, 0.5d — ISSUE-072 ship-time deferral: AC-2 demands a live run, but the agent registry is frozen at session start and the live kit agents are served from the 0.5.0 plugin cache while this repo is at 0.7.0, so the grant's materialisation is UNVERIFIED — and `Glob`/`Grep` are granted-but-unprovisioned across 3 observations; Manual because it must not be auto-dispatched before a restart + plugin update; depends on 072)_
+- [ ] ISSUE-083: Resolve a remote-only branch to its remote tip in the worktree creator — a deleted local ref silently re-roots the worktree onto main _(track: platform, P1, 0.5d — observed first-hand during ISSUE-078's ship phase: `wt_setup.sh` reported success and returned a worktree at main's sha with no upstream for a branch whose reviewed commits were on the remote; reachable on the normal path because review cleanup deletes the local ref; depends on none)_
 
 ### Doing
 
@@ -4693,3 +4695,159 @@ A PR that adds or tightens a gate cannot pass `/review` without evidence in both
 
 #### Rollback
 `git revert` — the obligation is additive to the review contract and imposes nothing on non-gate PRs, so reverting restores today's review behaviour and leaves the native-memory lesson as the only (insufficient) prevention, which is the pre-issue state.
+
+---
+
+### ISSUE-082: Re-probe the `Skill` grant after a session restart and plugin update — close ISSUE-072's AC-2 with a live run or record the non-materialisation
+
+> ISSUE-072 ship-time deferral, filed as the durable carrier its AC-2 requires (review lesson "A deferred finding is only real if it has a durable carrier — a PR body is not one"). ISSUE-072 grants the `Skill` tool on the kit's review path; its **AC-2** demands that the grant's effect be "evidenced by a **live run** recorded in the PR" — `review_context.decide` returning `delegated` from inside a real Task sub-agent review, with runtime findings reaching `synthesize_review_notes.py`. That clause is **not satisfiable in the session that ships ISSUE-072**, for two independently measured reasons recorded in `docs/sprint_state.md` under `## ISSUE-072 Capability Probe Evidence` (finding 5): **(a) the agent registry is frozen at session start** — a project-level probe agent written to `.claude/agents/` mid-session was rejected with `Agent type not found`, so a `tools:` edit cannot take effect until a restart; and **(b) the live kit agents are served from the installed plugin cache at version 0.5.0** (`~/.claude/plugins/cache/claude-dev-kit/claude-dev-kit/0.5.0`, gitCommitSha 6140284) while this repo is at **0.7.0**, so an edit to `agents/reviewer.md` on main does not reach a running session at all until the plugin is updated. ISSUE-072 therefore ships with AC-2's box **honestly unchecked** — the way ISSUE-068's and ISSUE-066's unmet ACs were handled — and this issue is what makes that deferral real instead of a PR-body promise.
+>
+> **The second measured premise: a grant does not imply provisioning.** `Glob` and `Grep` are granted in BOTH `agents/reviewer.md` (`tools: Read, Glob, Grep, Edit, Bash, Write`) and `agents/team-lead.md` (`tools: Read, Glob, Grep, Write, Edit, Bash, Task`) and were provisioned in **neither** — now **three** independent observations on CC 2.1.224 (probe-evidence finding 4 records two, one of them first-hand; the third was self-reported by a sub-agent whose inline prose toolset contract named them). So the `Skill` grant's materialisation is **UNVERIFIED** until re-probed, and this issue is that re-probe. Folded in: **an inline prose toolset contract is unenforceable when the named tools are not provisioned** — the sub-agent does not fail, it silently falls back to whatever IS provisioned. That is the ISSUE-072 defect class one level up: a contract naming a tool nothing supplies, except here the contract is prose in a prompt rather than frontmatter.
+>
+> **Why `Manual: true`.** This issue **cannot** be executed by an autonomous sprint iteration in the same session that ships ISSUE-072. It requires a session **restart** AND a **plugin update** to a version carrying the grant (0.7.0+) before the measurement means anything. Dispatched into the wrong context it produces a **false negative** — recording "not provisioned" against a 0.5.0 cache that never carried the grant, which would retroactively re-confound the SPEC-066 conclusion the probe just refuted. The flag is the guard; the reason is stated here so a future reader does not helpfully clear it.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: true
+- Spec-Required: false
+- Spec: docs/specs/SPEC-066.md (existing — this issue records the measurement its `## Open Questions` is owed; no new spec: a re-probe is not a design)
+- PRD-Ref: none (kit self-development; ISSUE-072 AC-2 ship-time deferral; the ISSUE-014 "verify in the feature matrix before relying" rule. Native-memory review lessons: "A deferred finding is only real if it has a durable carrier — a PR body is not one" (this issue IS the carrier) and "allowed-tools grants in skill frontmatter must map to actual call sites" (applied in its third direction: a grant that maps to a call site but is never provisioned). Secondary: "A control whose legitimate quiet output is identical to its defeated output must emit counter-evidence" — the degraded path's `context-unreachable` telemetry is that counter-evidence — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-072
+
+#### Goal
+`docs/cc_feature_matrix.md`'s sub-agent skill-invocation row states, from a post-restart post-plugin-update measurement, whether the `Skill` grant ISSUE-072 added is **actually provisioned** inside the review-path sub-agents — and ISSUE-072's AC-2 is either closed by a live `delegated` run or carries a recorded, telemetry-backed non-materialisation.
+
+#### Scope (In/Out)
+- In:
+  - **The re-probe**, run from inside a `claude-dev-kit:reviewer` Task sub-agent and again from inside a `claude-dev-kit:team-lead` Task sub-agent, each reporting its **own** observed tool list verbatim, with the `claude --version` output and the date.
+  - **Updating the existing matrix row in place** — the row ISSUE-072 added for "skill / slash-command invocation from Task sub-agent context". Its verification note is amended; a **second row is not appended**.
+  - **Branch A (provisioned):** the live `/review` run inside a Task sub-agent, and checking ISSUE-072's AC-2 box retroactively in `issues.md` with the evidence referenced by commit sha (under the registry lock, via `scripts/registry_edit.sh`).
+  - **Branch B (granted but not provisioned):** recording the observable signal — `review_context.decide` yielding `degraded` / `context-unreachable` — in the matrix row and in SPEC-066's `## Open Questions`, plus an explicit recorded decision on whether the now-known-inert grant stays or is removed.
+  - **A both-directions shape guard** on the matrix row (Status + `local` note naming a probe and a date), so the row cannot be silently downgraded.
+  - **Re-measuring `Glob`/`Grep`** in the same probe, since the granted-but-unprovisioned pair is the reason this re-probe exists at all.
+  - Correcting `scripts/review_context.py`'s `--invocation-tools` help text, which still names `SlashCommand` (the token probe finding 3 refuted), **if** ISSUE-072 did not already.
+- Out:
+  - **Re-deriving ISSUE-072's probe findings.** The 7 findings and the 3-row context table in `docs/sprint_state.md` are the primary input, treated as given. This issue re-probes exactly one thing: did the grant materialise.
+  - Granting `Skill` to any agent outside the review path; changing review dimensions, the synthesizer contract, or the degraded path (SPEC-019/066 scope stands).
+  - Granting `SlashCommand` under any circumstances — it does not exist as a tool in **any** probed sub-agent context on 2.1.224, not loaded and not deferred.
+  - Making the kit's own `disable-model-invocation: true` pipeline skills invokable. `claude-dev-kit:review`, `:implement` and `:ship` are **absent** from an unrestricted sub-agent's `Skill` listing by design (probe finding 6) — do not expect them to appear and do not file their absence as a defect here.
+  - Performing the plugin update and the session restart as sprint work — that human action is what `Manual: true` names.
+  - The research delegation path (/brainstorm, /bizanalysis) — it follows whatever this measurement establishes, later.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The re-probe is recorded verbatim, in the row ISSUE-072 created rather than a second row.** Given a session **restarted** after the installed `claude-dev-kit` plugin has been updated to a version whose `agents/reviewer.md` and `agents/team-lead.md` carry ISSUE-072's `Skill` grant (confirmed by reading the **resolved plugin-cache** agent definition, not the repo working tree), when a probe runs from inside a `claude-dev-kit:reviewer` sub-agent and from inside a `claude-dev-kit:team-lead` sub-agent and each reports its own provisioned tool list, then `docs/cc_feature_matrix.md`'s sub-agent skill-invocation row records, per context, the observed tool list **verbatim**, whether `Skill` is actually provisioned, the `claude --version` string and the ISO date; and the matrix's total row count is **unchanged** from ISSUE-072's.
+- [ ] **If `Skill` IS provisioned, ISSUE-072's AC-2 closes on evidence.** Given the re-probe shows `Skill` in a review-path sub-agent's provisioned tool list, when `/review` runs for a real issue from inside a Task sub-agent and that sub-agent reports `--invocation-tools present` **because it observed the tool** (not because it was told to), then `python3 scripts/review_context.py decide` returns `path: delegated` for both dimensions, the runtime skill's findings reach `synthesize_review_notes.py` and appear in the generated review notes, and **no** `review_degraded_path_used` event is appended to the telemetry log for that run; and ISSUE-072's AC-2 checkbox is checked retroactively with the evidence referenced by commit sha.
+- [ ] **If `Skill` is granted but NOT provisioned, the observable signal is recorded rather than invented.** Given the re-probe shows `Skill` absent from a review-path sub-agent's provisioned tools **despite** the grant being present in the resolved plugin-cache definition, when that sub-agent runs `/review`, then `review_context.py decide --invocation-tools absent` yields `path: degraded` with reason exactly **`context-unreachable`** for both dimensions — **not** `capability-absent`, because `scripts/has_skill.py` exits 2 (indeterminate) for `code-review` and `security-review` — and exactly one `review_degraded_path_used` event carrying that reason is emitted per degraded dimension; and that telemetry is named in the matrix row as **the existing detection mechanism for a non-materialised grant**, with the measurement appended to both the row's verification note and SPEC-066's `## Open Questions`.
+- [ ] **The matrix row cannot be silently downgraded, asserted in both directions.** Given `docs/cc_feature_matrix.md` with the row present and complete, when the shape guard runs, then it **passes** — so the guard is satisfiable; and given the row mutated one way at a time (Status cell emptied, the `local` verification level removed, the probe name removed from the note, the date removed from the note), when the guard runs on each, then **each** mutation fails it — so the guard pins the row's shape rather than merely its existence.
+- [ ] **The granted-but-unprovisioned pair is itself re-measured, not treated as noise.** Given the same restarted, plugin-updated session, when the review-path sub-agents report their provisioned tool lists, then the status of `Glob` and `Grep` — granted in both definitions, provisioned in neither across three prior observations — is recorded in the matrix row alongside `Skill`; and given they are **still** unprovisioned, when the row is written, then that is recorded as a measurement with the observation count incremented, because it is the counter-evidence that "granted" does not imply "provisioned" on this runtime.
+- [ ] **The inline-prose-contract finding has a recorded verdict.** Given the finding that an inline prose toolset contract is unenforceable when the named tools are not provisioned (the sub-agent silently falls back instead of failing), when this issue closes, then the matrix row or SPEC-066's `## Open Questions` states which direction the runtime actually supports: whether a sub-agent can observe its own provisioned tool list reliably enough for a prose contract to be self-checking, or whether `tools:` frontmatter plus this matrix row is the only enforcement available.
+
+#### Implementation Notes
+- **Primary input, do not re-derive it:** `docs/sprint_state.md`, section `## ISSUE-072 Capability Probe Evidence (team-lead, 2026-10-11, CC 2.1.224)` — 7 findings plus a 3-row context table (`general-purpose` unrestricted: `Skill` YES; `claude-dev-kit:reviewer`: NO; `claude-dev-kit:team-lead`: NO). It is the ISSUE-014 artifact and the source for the matrix row.
+- **The correct grant token is `Skill`, not `SlashCommand`** (finding 3). `SlashCommand` does not exist as a tool in any probed sub-agent context on 2.1.224 — not loaded, not deferred. `skills/review/SKILL.md`'s existing `allowed-tools: … SlashCommand` is therefore not the usable mechanism from sub-task context (it may still be correct for the main-session path, which was **not** probed — do not overclaim). Granting `SlashCommand` would reproduce the very defect ISSUE-072 fixes.
+- **The grant does not re-enable the pipeline skills** (finding 6): `claude-dev-kit:review`/`:implement`/`:ship` are absent from an unrestricted sub-agent's `Skill` listing, consistent with their `disable-model-invocation: true`. Expecting them is a false expectation, not a bug.
+- **Verify what you are probing.** Read the resolved plugin-cache agent definition. The 0.5.0-cache-vs-0.7.0-repo gap (finding 5b) is exactly the trap that makes a naive "the grant is in `agents/reviewer.md`" check meaningless.
+- **Pin the row's shape, not its derived content.** A test that re-checks the probe's *conclusion* against the live runtime is an issue generator — it will fail on the next CC bump for reasons that are not defects. Assert Status + `local` + a named probe + a date; leave the measurement itself as a record.
+- The reason vocabulary is a closed set and the two values are **not** interchangeable: `scripts/review_context.py` documents `probe exit 1 -> capability-absent` and `probe exit 0/2 with tools absent -> context-unreachable`. `has_skill.py` exits 2 for both dimensions today, so the correct recorded reason in branch B is `context-unreachable`.
+- Files: `docs/cc_feature_matrix.md` (the ISSUE-072 row — key on the **feature name**, not on a row number, since the number depends on what ISSUE-072 assigned), `docs/specs/SPEC-066.md` `## Open Questions`, `issues.md` (ISSUE-072's AC-2 checkbox — team-lead's mechanical field work under the registry lock), the ISSUE-072 matrix-row guard test, and possibly `scripts/review_context.py`'s `--invocation-tools` help string.
+- **If the re-probe cannot run** — plugin not yet updated, or no restart available — the honest outcome is to leave this issue open and **record the blocker**, not to record a negative result. That is the whole reason for `Manual: true`.
+
+#### Tests
+- [ ] Row-shape guard, both directions: complete row -> passes; Status emptied / `local` removed / probe name removed / date removed -> each fails.
+- [ ] Row-count pin: exactly one matrix row covers sub-agent skill invocation (appending a second row instead of amending the note fails).
+- [ ] Branch A: `review_context.py decide --invocation-tools present --issue ISSUE-082` -> `delegated` for both dimensions and zero `review_degraded_path_used` events; the live-run transcript referenced by commit sha.
+- [ ] Branch B: `review_context.py decide --invocation-tools absent --issue ISSUE-082` -> `degraded` / `context-unreachable` for both dimensions and exactly one event per dimension — pinning that the detection mechanism for a non-materialised grant actually fires.
+- [ ] Reason-vocabulary mutation pin: a mutant mapping `absent` to `capability-absent` is killed, and a mutant dropping the reason field entirely is killed.
+- [ ] Grant-token guard: no review-path agent frontmatter carries a `SlashCommand` grant (the token the probe refuted), asserted in both directions — adding it fails, the current state passes.
+
+#### Rollback
+`git revert` — the deliverables are records (one amended matrix-row note, one SPEC-066 `## Open Questions` entry, one retroactively checked AC-2 box) plus one shape-guard test. **Keep the matrix measurement even on a revert:** it stays true independently of whether the kit chooses to use the grant, and discarding it returns the kit to the unmeasured state ISSUE-014's rule exists to prevent. If branch B recorded a **removal** of the now-known-inert `Skill` grant, revert that decision and its matrix note **as a pair** — reverting the note alone leaves a grant nothing provisions with no record saying so, which is the ISSUE-072 defect class returning silently.
+
+---
+
+### ISSUE-083: Resolve a remote-only branch to its remote tip in the worktree creator — a deleted local ref silently re-roots the worktree onto main
+
+> Found first-hand during **ISSUE-078's ship phase**, before it could cause harm. `bash scripts/wt_setup.sh issue/ISSUE-078-roster-boundary-enforced` was run to re-create a worktree for a branch whose **local** ref had already been deleted by the review phase's cleanup (`scripts/worktree.sh`'s `cmd_remove` ends with an unconditional `git branch -D`), but which still existed on the **remote** carrying the reviewed commits. The wrapper reported success and printed a worktree path — and created the branch from **main's HEAD** instead of from the remote tip, with **no upstream**:
+> - local `issue/ISSUE-078-roster-boundary-enforced` = `5e563a4` (identical to `main`)
+> - `origin/issue/ISSUE-078-roster-boundary-enforced` = `b2abce4` (the reviewed tip: the implement commit + review fix `d328a6c` + review notes `b2abce4`)
+> - `git rev-parse --abbrev-ref <branch>@{upstream}` -> `fatal: no upstream configured`
+>
+> **Why it matters.** The worktree looks correct and the wrapper does not complain. Committing into it and pushing would have been a non-fast-forward against the reviewed commits — **rejected** in the benign case, **destructive under `--force`** — and any `git diff` or review run against that worktree would silently report the PR's entire content as missing. This is the "a control that does not control" shape in the worktree layer, and it sits on the **normal** path: review-phase cleanup deletes the local branch, then any later phase (ship doc updates, rework, FINALIZE crash recovery) re-creates the worktree. It was caught only because the ship phase happened to diff local against remote before editing. The manual remedy applied was `git reset --hard origin/<branch>` plus `git branch --set-upstream-to`.
+>
+> **Located.** `scripts/worktree.sh`'s `cmd_create` consults only `refs/heads/$branch`; when that is absent it runs `git branch "$branch" "$default_branch"` — never looking at `refs/remotes/origin/$branch` and never setting an upstream. `scripts/wt_setup.sh` is a thin delegate (`worktree.sh create` plus the freeze-marker write), so the defect lives in the layer that owns branch resolution. Two adjacent observations to check rather than assume: the variable named `default_branch` is actually `git symbolic-ref --short HEAD`, i.e. **whatever branch the caller is on** (falling back to the literal `main` only when HEAD is detached); and `cmd_create`'s early return prints an **existing** worktree path without checking its ref at all.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; observed first-hand 2026-10-11 during ISSUE-078's ship phase, pre-harm. Native-memory review lessons: "A newly added defence must be tested in the DISARM direction and through its real consumer" (ISSUE-081's pattern — the harm here is the silent fall-through, so the refusal test is the load-bearing one) and "A control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings" (the wrapper's success output is byte-identical whether it resolved the remote tip or re-rooted onto main) — native memory review-lessons.md)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+`wt_setup.sh` on a branch that exists only on the remote produces a worktree whose HEAD **equals the remote tip** and whose branch tracks `origin/<branch>`, or refuses with a named reason — so it can no longer silently re-root a reviewed branch onto main.
+
+#### Scope (In/Out)
+- In:
+  - **Fix branch resolution in `scripts/worktree.sh`'s `cmd_create`:** resolution order `refs/heads/$branch` -> `refs/remotes/origin/$branch` -> default base, creating the local branch **at the remote tip** with tracking set, so HEAD and upstream are both correct in one step.
+  - **Fail-closed when the remote cannot be consulted** (offline, unauthenticated, `origin` absent, no such remote ref): refuse with a named reason on stderr and a non-zero exit instead of falling through to the default base.
+  - **Record the fetch decision explicitly:** whether a `git fetch` runs or only existing remote-tracking refs are consulted — and if the latter, that staleness is named in output rather than assumed away.
+  - **Name the divergence** when local and remote both exist at different shas, instead of silently resolving it either way.
+  - **Announce which source supplied the branch** (local ref / remote tip / new from base) on stderr — counter-evidence, because the defeated output and the healthy output are otherwise identical, which is what let this live undetected for the whole life of the script.
+  - **Tests in `tests/test_worktree.py`** (extend the existing `TestCreate`; add an `origin` bare-repo fixture beside the existing `git_repo` fixture so nothing touches the network), including a composite pin through the real consumer shape `WT="$(bash scripts/wt_setup.sh <branch>)"`.
+  - **Check `scripts/wt_cleanup.sh` and `cmd_remove` for the symmetric assumption** and record the verdict.
+  - **Record a verdict on the `gh pr merge --delete-branch` observation** below: same root cause, or a separate gap.
+- Out:
+  - Changing the slug scheme, `cmd_path`, `cmd_root`, or the freeze-marker write in `wt_setup.sh`.
+  - Auto-fetching on every create, if the recorded decision is against it.
+  - **Fixing `gh pr merge --delete-branch` itself.** During the same ISSUE-078 ship it deleted **neither** the local branch (the worktree still held it) nor the remote branch (deleted by hand). This issue records whether that is the same root cause; if it is separate, it gets its own carrier rather than a PR-body mention.
+  - Changing the base used for a **genuinely new** branch. The `default_branch`-is-really-HEAD sharp edge is recorded, and AC-4 pins today's base by sha precisely so this issue does not change it by accident; changing it deliberately is a separate decision with its own AC.
+  - `cmd_create`'s early return on an existing worktree directory (it prints a path without verifying the ref) — the same class one construct over. Record it; widen scope only if the resolution rewrite subsumes it.
+
+#### Acceptance Criteria (DoD)
+- [ ] **A remote-only branch resolves to the remote tip, asserted by sha.** Given a repo whose `origin` is a local bare clone carrying `issue/ISSUE-999-x` at sha `R`, and **no** `refs/heads/issue/ISSUE-999-x` (the state `cmd_remove`'s `git branch -D` leaves behind), when `bash scripts/wt_setup.sh issue/ISSUE-999-x` runs, then it exits 0, `git -C <worktree> rev-parse HEAD` equals **`R`** (and is **not** equal to `main`'s sha), and `git -C <worktree> rev-parse --abbrev-ref HEAD@{upstream}` equals `origin/issue/ISSUE-999-x` — asserted by **equality against the remote sha**, not by "a worktree exists".
+- [ ] **An unreachable remote refuses instead of re-rooting.** Given the same remote-only branch but a repo where the remote tip cannot be established (the `origin` path removed or renamed, or `origin` absent entirely), when `wt_setup.sh <branch>` runs, then it exits **non-zero**, stderr names the branch and the specific reason (remote unreachable / no such remote ref), **no** local branch is created, **no** worktree directory is left behind, and **stdout contains no path** — so a caller doing `WT="$(bash scripts/wt_setup.sh …)"` cannot proceed into a silently re-rooted tree.
+- [ ] **Divergence is named, not silently resolved.** Given `refs/heads/<branch>` at sha `L` and `refs/remotes/origin/<branch>` at a different sha `R`, in both the non-ancestor case and the fast-forwardable case where `L` is an ancestor of `R`, when `wt_setup.sh <branch>` runs, then stderr names the divergence with both short shas and which side is ahead; and whichever side the implementation resolves to, the test asserts that side **by sha equality** and the choice is documented in the script header — no divergence case passes without appearing in output.
+- [ ] **The common case is unchanged, pinned by equality.** Given a genuinely new branch — no `refs/heads/<branch>` and no `refs/remotes/origin/<branch>` — when `wt_setup.sh <branch>` runs, then it exits 0, the new branch's sha equals the base today's script creates it from (asserted by sha equality, so the fix cannot quietly change the base), stdout is the worktree path exactly as today, `.claude-kit/freeze-dir.txt` contains that path, and **no** refusal or divergence message is emitted; and given an existing **local-only** branch with no remote at all, when it runs, then it also still succeeds with HEAD at that local branch's sha.
+- [ ] **Mutation pin, both directions.** Given the mutants (i) the remote-preference branch reverted to today's `refs/heads`-only check, (ii) the upstream set but HEAD left at the default base's sha, (iii) HEAD correctly at the remote tip but the upstream **not** set, (iv) the unreachable-remote refusal downgraded to a warning that still prints a path, and (v) the remote preference **over**-applied so an existing local branch is force-reset to the remote tip (the over-reach direction), when the suite re-runs under `PYTHONDONTWRITEBYTECODE=1` with the repo fixture rebuilt between mutants, then **each** mutant kills at least one test above; mutant (ii) is killed specifically because AC-1 asserts the **sha** and not merely the upstream; and the harness is validated with one **known-killing** mutant before any `SURVIVED` verdict is trusted.
+- [ ] **The symmetric assumption and the `--delete-branch` observation carry recorded verdicts.** Given `scripts/wt_cleanup.sh` and `cmd_remove`, when they are read against this defect, then the symmetric assumption is either fixed in this change or its absence is recorded with a reason (`cmd_remove` deletes the local branch unconditionally — that deletion is what creates this defect's precondition); and given the observation that `gh pr merge --delete-branch` deleted neither the local nor the remote branch during the same ship, when this issue closes, then the PR records whether that is the same root cause or a separate gap, and a separate gap is **filed as its own issue** rather than left in a PR body.
+
+#### Implementation Notes
+- Files: `scripts/worktree.sh` — `cmd_create`, specifically the `git show-ref --verify --quiet "refs/heads/$branch"` check and the `git branch "$branch" "$default_branch"` line beneath it; `scripts/wt_setup.sh` — a thin delegate that captures `worktree.sh create`'s stdout, so **fix the layer that owns branch resolution**, not the wrapper; `tests/test_worktree.py` — extend `TestCreate`; its `git_repo` fixture already configures a local git identity for CI runners, so mirror that pattern for the bare-`origin` fixture.
+- Implement HEAD and upstream together: `git worktree add -b "$branch" "$wt_path" --track "origin/$branch"` (or `git branch --track "$branch" "origin/$branch"` before `git worktree add`). Setting the upstream without re-pointing HEAD is mutants (ii)/(iii) and must not pass.
+- `set -euo pipefail` is already on and `git show-ref --verify --quiet` returning 1 is used as **control flow** — keep the `if ! …` guard form for the new remote check so it cannot abort the script under `-e`.
+- The sharp edge in the existing code, stated so it is not discovered in review: the variable named `default_branch` is `git symbolic-ref --short HEAD`, i.e. whatever branch the caller is on. AC-4 pins today's base by sha so this issue does not change it silently.
+- **The disarm direction is the point.** The harm is a *silent* re-root, so AC-2 (refusal when the remote cannot be consulted) and mutant (iv) are the load-bearing tests. A change that only pins the happy path reproduces exactly the fail-open pattern ISSUE-081 exists to stop, in the same sprint that filed it.
+- The composite requirement applies: test through `wt_setup.sh` (the real consumer, as the skills invoke it) for at least the remote-only case, not only `worktree.sh create` in isolation. The ISSUE-078 helper/consumer disagreement is the precedent.
+- Reference this issue by ID in `docs/test_plan.md` alongside its test-case entries when it is implemented (not as part of filing it).
+- Do not use the live repo for fixtures: every case is reproducible with `git init --bare` as `origin` plus a clone, which keeps the suite offline and deterministic.
+
+#### Tests
+- [ ] Remote-only branch -> worktree HEAD sha == remote tip sha, and `!=` main's sha; upstream == `origin/<branch>`.
+- [ ] Remote-only branch with `origin` unreachable or absent -> non-zero exit, named stderr reason, no local branch, no worktree directory, no path on stdout.
+- [ ] Divergence pair (non-ancestor, and fast-forwardable) -> divergence named on stderr with both short shas; the resolved side asserted by sha.
+- [ ] Genuinely new branch (no local ref, no remote ref) -> base sha equal to today's, stdout path unchanged, freeze marker written, no refusal emitted.
+- [ ] Local-only branch with no remote configured -> succeeds at the local branch's sha, no refusal.
+- [ ] Existing `test_creates_worktree_and_returns_path`, `test_idempotent_create` and `test_slug_conversion` still pass unchanged.
+- [ ] Composite pin through the real consumer: `WT="$(bash scripts/wt_setup.sh <branch>)"` on the remote-only case -> `$WT` is the worktree path, HEAD is the remote tip, freeze marker written.
+- [ ] Source announcement: stderr names which source supplied the branch (local ref / remote tip / new from base) in each of the three cases.
+- [ ] Mutation matrix over mutants (i)-(v) under `PYTHONDONTWRITEBYTECODE=1`, fixture rebuilt between mutants, harness validated with a known-killing mutant first.
+
+#### Rollback
+`git revert` — the change is one branch-resolution block in `cmd_create` (plus its stderr announcement) and its tests. A revert **restores the silent re-root**, so before reverting, check by hand every worktree created since the fix: `git -C <wt> rev-parse HEAD` against `git rev-parse origin/<branch>`, and that an upstream is configured; otherwise the next push from such a tree is a non-fast-forward against reviewed commits, and destructive if anyone reaches for `--force`. Do **not** revert the tests separately from the resolution logic — the suite would then assert the hardened direction against unhardened code. If the `gh pr merge --delete-branch` verdict was filed as a separate issue, that issue survives the revert and stays valid.
