@@ -4683,7 +4683,7 @@ The step-4f boundary gate can no longer be disarmed by a `Status:` value it does
 - PRD-Ref: none (kit self-development; learning-loop escalation per the ISSUE-033 native-memory review-lessons rule, Frequency >= 3 + High; instance carriers ISSUE-080, GAP-076*, GAP-078h..p)
 - Priority: P1
 - Estimate: 1d
-- Status: doing
+- Status: waiting
 - Owner:
 - Branch: issue/ISSUE-081-gate-evidence
 - GH-Issue: 136

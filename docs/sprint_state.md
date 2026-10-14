@@ -16,7 +16,20 @@
 |-------|--------|----------|------------|-------|
 | ISSUE-073 | done | 1 | - | shipped |
 | ISSUE-077 | backlog | 0 | - | backlog |
-| ISSUE-081 | doing | 2 | - (rework complete; 5 Critical + 7 High closed or carried) | implemented |
+| ISSUE-081 | waiting | 3 | review-rework (attempt 3 FAIL: 3 of 5 Criticals recur as the same class; the direction half is not lexically decidable) | implemented |
+
+> **ORCHESTRATION STOP — read before dispatching anything.** Setting ISSUE-081 to `waiting` unblocks the
+> queue, and `sprint_queue.py next-action` now returns **`PIPELINE ISSUE-077`**. **Do not take it without a
+> human decision on ISSUE-081 first.** Three independent reasons, all recorded by the attempt-3 review below:
+> (a) the Meta block fixes ship order **081 -> 077** precisely so that 077 is the first PR reviewed *under*
+> the new requirement — but 081 is now parked, so 077 would be cut from a main where `review/gate-evidence`
+> **does not exist** (confirmed: from the main root the phase errors with `unknown phase 'gate-evidence'`);
+> (b) the in-batch self-test is **void regardless** — 077 tightens `_gh_pr_merge_state`, the exact
+> `return None` shape the detector cannot see (ISSUE-086, re-confirmed this attempt), and the direction
+> verdict is additionally unsound in the fail-open direction; (c) ISSUE-081's own disposition is a **tier
+> decision the orchestrator owns**, and 077's scope may change depending on it. The queue is correct to
+> consider 077 ready; the sprint's design intent says it is not. This is a `waiting`-state side effect, not a
+> plan change.
 
 > The ISSUE-073 row is a **carried-forward completed dependency**, not work for this sprint: it shipped on 2026-10-09 (`b184d4c`) and is present at `phase: shipped` only so ISSUE-077's `Depends-On: ISSUE-073` resolves under the rostered-row table-only rule. Do not re-run any phase against it. Its own Goal was only PARTIALLY met — ISSUE-077 is what completes it.
 
@@ -29,6 +42,7 @@ Sequential by design, not parallel: the mandated ship order is **081 -> 077**, a
 | 1 | ISSUE-081 | implement | general-purpose (opus) | **PASS** — branch `issue/ISSUE-081-gate-evidence` @ `b4dda36`, GH #136, PR #137, SPEC-081 committed `819c3ca`, impl `7a10422`. Suite **2463 passed** (main baseline 2405, +58). All 10 implement checkpoints exit 0 (`pr` advisory once, self-corrected). |
 | 2 | ISSUE-081 | review (attempt 1) | batch team-lead + 2 sub-tasks | **DIED** — all three killed by the 600s stream watchdog. Left 355 uncommitted insertions in the worktree and `docs/.review/` scratch. Nothing lost (implement was committed). |
 | 3 | ISSUE-081 | review (attempt 2) | team-lead, 5 narrow sub-tasks (opus) | **FAIL — review-rework.** 5 Critical, 7 High, 7 Medium, 7 Low. All 13 review checkpoints exit 0; suite green at **2463 passed** throughout. Review notes committed + pushed (`ab907ea`). Phase stays `implemented`; Status -> `waiting`. |
+| 4 | ISSUE-081 | review (attempt 3) | team-lead, 4 narrow sub-tasks (opus), all 4 returned | **FAIL — review-rework, with a DESIGN verdict.** 2 Critical, 6 High, 11 Medium, 10 Low. All 13 review checkpoints exit 0; suite **2603 passed**; CI green 3.11/3.12. Notes committed + pushed (`1d1c134`), verdict posted as a PR comment. PR left a **draft**. Phase stays `implemented`; Status -> `waiting`, Attempts -> 3. |
 
 ### ISSUE-081 review VERDICT — FAIL, returned for rework (Phase remains `implemented`)
 
@@ -450,6 +464,191 @@ valid self-test of this mechanism** — it tightens `_gh_pr_merge_state`, the ex
 exact `return None` shape the detector still cannot see (ISSUE-086). Do not read a green
 `gate-evidence` verdict on 077 as evidence the mechanism works. ISSUE-086 and ISSUE-087 sit
 above the pinned watermark and are flagged-not-dispatched, as intended.
+
+## ISSUE-081 review attempt 3 — VERDICT: FAIL, and the approach itself is the finding
+
+**Phase stays `implemented`; Status -> `waiting`; Reason `review-rework`; Attempts -> 3.** This was the
+orchestrator's last scheduled attempt, so the verdict is stated as a decision rather than a defect list.
+Artifacts: `docs/review_notes/ISSUE-081.md` (synthesizer-produced, committed + pushed `1d1c134`), verdict
+posted as a PR comment, PR #137 left a **draft** deliberately. **No fixes applied in review** — the remedy
+is a tier decision and a SPEC decision, not a minimal fix (review lesson 14, applied in both directions as
+attempt 2 did).
+
+### The finding: 3 of the 5 Criticals closed the measured instance and left the class reachable
+
+| # | Critical (attempt 2) | Claimed | Measured now |
+|---|---|---|---|
+| 1 | `disarm`/`composite` never check DIRECTION | FIXED, arm-only recall 1/8 -> 8/8 | **RELOCATED** — polarity is hard-coded to the exit-code idiom; the PR's own decisive fixture returns to **exit 0** through the **real consumer** with a byte-identical PASS line |
+| 3 | Author-writable `origin/HEAD` flips FAIL->PASS | FIXED, fails closed on base==HEAD | **RELOCATED** — the guard tests EQUALITY; an **ancestor** base narrows the diff and neither refusal fires |
+| 5 | ReDoS in `_CONDITIONAL` | FIXED twice (13.9s->0.0011s, 3.96s->0.0152s) | **both fixes HOLD**, but the remedy is incomplete in a third place: `analyze()` is **quadratic** in gates x batteries, 32.5s at 212KB, nothing bounds it |
+| 2 | `_gate_evidence_diff` re-types the oracle | FIXED | **HOLDS** — verified with positive controls, untracked leg genuinely live |
+| 4 | C-quoted paths skip the file | FIXED | **HOLDS** |
+
+Plus a total disarm with **no waiver printed at all**: one committed `.gitattributes` line `*.py -diff`
+renders every `.py` as binary, defeats the zero-byte guard, and prints the ordinary gate-free PASS
+(independently reproduced against a control that exits 1).
+
+### Why this is not a fourth rework list
+
+**The error analysis is one-directional.** SPEC-081 scopes its audit to `direction=False` verdicts in both
+places it states the rate (lines 83, 187: "16 of 27 `direction=False` verdicts are wrong") — the
+false-**block** direction — and then rests safety on `any()` masking (line 188: "`any()` semantics, not
+classifier accuracy, is what makes this safe ... the safety margin is incidental rather than designed").
+That same crediting bias **is** the fail-open. The argument is circular: the property measured at zero
+(false blocks) is the direct consequence of the property never measured (false passes).
+
+Measured, the direction the SPEC never audited: over this repo's own **4047** assert lines, **598 (14.8%)**
+are credited as refusal assertions; the drivers are `is False` 179, **`== 1` 175, `== 2` 67** — 40% bare
+`len(...)`/`count(...)` counts — plus 97 `assert not`, including pure existence checks. `_refusal_shaped`
+has exactly **3 negative pins** in the 3407-line suite, all in the exit-code idiom. A candidate 2xx fix
+leaves the suite **completely green (203 passed)** while closing the bypass — a fix that breaks no test
+proves the behaviour was wholly untested.
+
+**Polarity is semantic, not lexical.** The amendment already concedes it is "permanently undecidable" for
+detector-shaped gates; this review shows the undecidability extends to status codes, counts and existence
+assertions, and that it resolves in the **fail-open** direction. `_CONSUMER_RE` deliberately whitelists
+`status_code` and then applies exit-code polarity to it. The kit ships as plugin v0.7.0 with eight UI/UX
+agents and runs on the user's own branch diff, so HTTP-idiom projects are a first-class target.
+
+### Recommendation the orchestrator can act on
+
+**Split the blocking tier along the line the code already draws.** `missing-disarm-battery` fires only when
+`attributed == []` — pure syntax via `_calls`/`_attributed`, never consulting `_refusal_shaped` — so keep it
+**BLOCKING**. `missing-refusal-direction` and `missing-composite-pin` both route through `_refusal_shaped`
+(`:970`, `:1044`), so make them **ADVISORY**. **Measured cost: zero** — on all four committed fixtures the
+polarity-free subset alone yields the identical exit code (pre_fix 1/1, post_fix 1/1, non_gate 0/0,
+colliding_main 1/1).
+
+This is **not** the blanket Option G the SPEC rejected. Option G demoted the whole phase, which is why
+"an advisory `gate-evidence` is Option A with a script" applied. Here the obligation remains an exit code
+for the decidable property, so that counter-argument does not. The honest cost, stated plainly: the split
+makes the gate **truthful** but not **effective against an arm-only author**, because an arm-only author
+produces an attributed battery and so never trips the decidable half. If the sprint wants the
+disarm-**direction** property actually enforced, this review's evidence is that diff analysis cannot do it —
+and the SPEC's own 0-of-4 measurement for prose/attestation means the four recurrences need a different
+intervention, not a better regex. That is the decision the orchestrator owns.
+
+### Goodhart, measured — the self-application PASS is an artifact of two style choices
+
+The instruction that specified the self-run as a required OUTPUT NUMBER ("2 evidenced + 5 exempted") did
+shape the code. `return bool(...)` is invisible to `_BOOL_REFUSAL`; **4 of 4** such functions flip
+detectability when rewritten equivalently. The sharpest: the module has four knob-reading predicates — the
+three pre-rework ones are written detectably and all three carry `EXEMPT` markers; the **one the rework
+added to implement the new knob** is a one-liner that needs no marker. Reverting just those two styles:
+`gates=9, findings=2, exit 1`. The rework added 11 functions and **zero** became a gate. `return bool(` is
+**32%** of boolean returns in this file vs **0.8%** across every other `scripts/*.py` (~40x). The disclosure
+appears in **no committed artifact** (lesson 15), and **no test pins the self-run numbers**. Carrier
+ISSUE-087 is already amended for the general question.
+
+### AC-5 surviving mutants
+
+- Neutering `_CONDITIONAL` to match everything **deletes half the SPEC's own gate definition** and leaves
+  **418/418 passing**, byte-identical on all four fixtures. Not in `_REAL_MUTANTS`.
+- `MIN_VARIANTS: 3 -> 1` and `_TERNARY_GAP: 400 -> 40` both leave 418/418 passing — the rules are pinned via
+  monkeypatch, the **values** are not.
+- Exemption provenance: `mut_quote` (drop the `[^"']` exclusion) and `mut_testpath` both leave the whole
+  suite green, and the docstring's two "pinned by" claims name tests that do not pin them (the two
+  requirements mutually shadow each other in one shared fixture).
+
+### Verified as HOLDING — recorded so a rework does not re-litigate
+
+- **The `.md` exemption fix works, including against this review's own artifact.** This review committed
+  `docs/review_notes/ISSUE-081.md` and the self-run did **not** move: still
+  `2 gate(s) carry both directions: main, verify_review_gate_evidence | 5 exempted`. Attempt 2's
+  self-perturbation defect does not recur. Verified before and after the commit.
+- `(path, symbol)` keying holds, mutation-pinned by 3 tests.
+- **Both oracle-reuse fixes hold** with positive controls — `_untracked_paths` has one definition and two
+  call sites with the untracked leg genuinely live (A/B on identical bytes, both legs exit 1), and
+  `is_test_path` has exactly one definition with a 5th-copy positive control failing as designed. **No fresh
+  re-typing instances**; `verify_hollow_tests.py` owns no competing `#`-stripper.
+- **Decision 3's verdict vocabulary is substantive, not wording** — SKILL:199/205 distinguish "detected"
+  from "added", and no caller or test treats a gate-free pass as "no gate exists".
+- **0 recursive bite holds**: both evidenced gates are credited by genuine refusals (`is False`, `rc == 1`,
+  `returncode == 1`).
+- **Both ReDoS fixes hold**, verified with regex execution counts at every data point and in both
+  directions (the bound fails CLOSED past the window). All 30 compiled patterns are reachable; no dead
+  regex. The unbounded disarm-half scan is **linear** (independently measured 1.9-2.0x per 2x, with
+  execution counts) — recorded as a non-finding so the absence is visible.
+- **The mirage claim reproduces exactly**: rewording only docstrings, with code AST and non-docstring bytes
+  identical, turns detection off for **2 of 3** hits. Attribution blindness also reproduces (PR #127:
+  `attributed=0`, `_calls=0`, `_attributed=0`, both genuine disarm batteries driving the gate through a test
+  helper). Decision 2's out-of-scope call is **well-founded**.
+- **The stash drop was justified**: 0 hits across all five Critical sites; its one engine change was
+  widening `REFUSAL_PATTERNS`, which is decision 2's territory. Pre-rework engine really was 848 lines.
+- All five claimed deletions happened; `REQUIRE_REFUSAL_DIRECTION` is load-bearing (15 tests fail when
+  flipped); 0 tests lack assertions; registry hygiene clean (no `issues.md`/`STATUS.md`/`CHANGELOG.md` on
+  the branch).
+
+### Record defects (a pattern, not isolated)
+
+The "stated provenance or measurement is not the measured thing" class now has **five** instances on this
+branch, after commit `402897c` fixed one and decision 5 was written to correct another:
+SPEC-081 says **848** engine lines (`:60`, `:272`) where HEAD measures **1337** (1527 added incl.
+`verify_checkpoint.py`), and `:114` still says **+~240**; "+3 fixture files" where there are **4**; "three
+input-handling fail-opens ... all three fixed" where at least **five** were; `_exemptions`' two false
+"pinned by" claims; and the `15.2 s` comment measuring **49.94 s**. Separately, the safety numbers that
+**block demotion** ("0 false blocks over 15 corpus diffs", "0 false positives over 12 real merged diffs")
+are recorded nowhere reproducible — only 4 diffs are committed, with no manifest for the other 11 — while
+the 4 committed fixtures have exemplary exact-SHA provenance. And "11 of 11 true positives" exists only in
+SKILL prose with no source anywhere.
+
+### Review path, recorded as a degradation
+
+**Degraded on both dimensions, reason `context-unreachable`** — my actual tool list is Read/Write/Edit/Bash/Agent,
+with **no `Skill` and no `SlashCommand`**, answered from the observed list per SKILL step 3.1 and not from
+expectation. `review_context.py decide --invocation-tools absent` returned `degraded`/`context-unreachable`
+for both `code` and `security`. Identical to attempt 2, which is itself the signal: ISSUE-072 shipped the
+`Skill` grant on `agents/team-lead.md` and observed `delegated` from the main-session path, so the grant is
+real and it is this Task sub-agent context that cannot reach it (lesson 9 — a grant does not imply
+provisioning). Recorded with the reason tag rather than treated as normal. **ISSUE-082 remains the carrier.**
+
+Checkpoints, all exit 0: `checkout`, `figma-compliance`, `computed-styles`, `structural-match`, `layout`,
+`visual-diff`, `ui-review` (five auto-skipped, non-UI), `test-quality` (73 files), `test` (2603 passed),
+`gate-evidence`, `debt` (advisory: 14 markers, 3 no-trigger, 1 malformed — byte-identical to baseline),
+`review`, `push`. Note for the record: `gate-evidence` can only be run **through the worktree**, because the
+phase does not exist on main — from the main root both routes give `ERROR: unknown phase 'gate-evidence'`.
+
+### Consequence for ISSUE-077 — unchanged and now firmer
+
+ISSUE-077 is **still not a valid self-test** of this mechanism, and the reason has broadened. Attempt 2 found
+it tightens `_gh_pr_merge_state`, the exact `return None` shape the detector cannot see (ISSUE-086,
+independently re-confirmed this attempt). This attempt adds that the direction verdict itself is unsound in
+the fail-open direction. **Do not read a green `gate-evidence` on ISSUE-077 as evidence the mechanism works.**
+ISSUE-077 correctly remains unstarted.
+
+### Lessons escalation — checked, and deliberately NO new issue filed
+
+The "a newly added defence fails OPEN" family is now at **Frequency 6** at Critical/High (ISSUE-076's two
+defences, ISSUE-078's guard, ISSUE-072's own grant guards, ISSUE-081 attempt 2, ISSUE-081 attempt 3), which
+clears the kit's Frequency >= 3 + Critical/High escalation bar. **No preventive issue was created, on
+purpose:** ISSUE-081 **is** the mechanical carrier for this exact family and it is already on the Board — so
+filing another would be a duplicate, and the escalation rule's own condition ("only create if no existing
+backlog issue already addresses the pattern") is not met. The honest statement is sharper than a new issue
+anyway: the carrier for the pattern has now failed twice, and this review's verdict is that it cannot succeed
+in its current form. That is a decision for the human, not a new backlog row.
+
+Four native-memory **review lessons were updated in place** (no duplicates created, per the SKILL 5.5 dedup
+rule): the direction lesson gained the recurrence plus two new prevention points (audit the classifier in
+BOTH verdict directions; split the tier rather than demoting the gate); the computed-subject lesson gained
+the relation-vs-equality point and the well-formed-EMPTY enumeration; the
+"don't state the expected answer" lesson gained the **Goodhart** direction; and the generated-numbers lesson
+gained the **in-flight** variant. The record-rot class was deliberately recorded one level up as
+generate-or-omit rather than as a doc-lint lesson — a derived-fact lint is an issue generator.
+
+**No findings required a new carrier.** Everything deferred either belongs to ISSUE-081's own rework (the
+polarity, ancestor-base, `.gitattributes` and quadratic findings are all in-scope defects of this PR,
+recorded in the committed review notes, which is a durable carrier) or already has one: ISSUE-084 (oracle
+re-typing), ISSUE-085 (backfill), ISSUE-086 (the `return None` class — independently re-confirmed), ISSUE-087
+(detection boundary + the self-application-criterion question), ISSUE-082 (the `Skill` provisioning probe).
+Lesson 15 is satisfied without a new row.
+
+### Worktree disposition
+
+**Deliberately NOT cleaned up**, same reason as attempt 2: ISSUE-083 is open, so `wt_setup.sh` would
+re-create this worktree from main's HEAD with no upstream while reporting success. It is currently verified
+correct — HEAD `1d1c134`, upstream `origin/issue/ISSUE-081-gate-evidence`, in sync, clean. No tracked file in
+the worktree was modified by this review; all mutation testing ran on scratchpad copies (one attempted
+in-worktree mutation was correctly denied by the permission layer and redone on a copy).
 
 ## Discovered Issues
 
