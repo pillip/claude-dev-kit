@@ -733,3 +733,432 @@ class TestJsonOutputIsStable:
             "disarm": True,
             "composite": False,
         }
+
+
+# ── Diff ACQUISITION, in a real repo, through the real consumer ──────
+#
+# Everything above monkeypatches `vc._gate_evidence_diff` wholesale. That is
+# correct seam isolation for the DETECTOR, and it is exactly why diff
+# ACQUISITION shipped untested in both directions: two Critical fail-open
+# defects (an absent untracked leg, and an author-writable `origin/HEAD` that
+# disarms the phase in full) were invisible to a green suite. These tests build
+# a real git repo and drive the real `verify_review_gate_evidence`.
+
+_REPO_GATE = "refuse_unmarked"
+
+# Byte-for-byte the gate shape that `TestGateDetection` already proves is
+# detected, and whose battery it already proves is credited.
+_GATE_SOURCE = (
+    "def refuse_unmarked(text: str) -> bool:\n"
+    '    if "ZZMARK" not in text:\n'
+    "        return True\n"
+    "    return False\n"
+)
+
+_GATE_EVIDENCE = (
+    '_CASES = ["a", "bb", "ccc"]\n'
+    "\n"
+    '@pytest.mark.parametrize("case", _CASES)\n'
+    "def test_cli_refuses(case):\n"
+    '    text = f"{case}\\n"\n'
+    '    assert "ZZMARK" not in text\n'
+    "    assert refuse_unmarked(text) is True\n"
+    "    assert exit_code == 1\n"
+)
+
+# A non-gate file so the branch sits at its own commit, strictly ahead of the
+# fork point: without it `merge-base HEAD main == HEAD` and the new
+# base-is-HEAD refusal would fire, masking what these cases measure.
+_FILLER = 'VERSION = "0.0.1"\n'
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    )
+
+
+def _rev_parse(repo: Path, rev: str) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", rev],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _head_branch(repo: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _init_repo(tmp_path: Path, name: str = "repo") -> Path:
+    repo = tmp_path / name
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "tests").mkdir(parents=True)
+    _git(repo, "init", "-q")
+    _git(repo, "symbolic-ref", "HEAD", "refs/heads/main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "Tester")
+    (repo / "README.md").write_text("seed\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "A: fork point")
+    return repo
+
+
+def _branch_repo(tmp_path: Path, name: str = "repo", branch: str = "work") -> Path:
+    """Repo whose branch <branch> is one non-gate commit ahead of main."""
+    repo = _init_repo(tmp_path, name)
+    _git(repo, "checkout", "-q", "-b", branch)
+    (repo / "scripts" / "util.py").write_text(_FILLER, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "work: non-gate filler")
+    return repo
+
+
+def _consume(monkeypatch, capsys, repo: Path) -> tuple[bool, str]:
+    """Run the REAL consumer against a real repo; return (verdict, output)."""
+    monkeypatch.setattr(vc, "_find_worktree_path", lambda issue_id: str(repo))
+    verdict = vc.verify_review_gate_evidence("ISSUE-081")
+    return verdict, capsys.readouterr().out
+
+
+class TestUntrackedFilesAreAcquired:
+    """The untracked leg the module's own oracle already owned (ISSUE-048).
+
+    `/implement` step 10 does NOT precede this phase: `skills/review/SKILL.md`
+    puts "apply minimal fixes" at step 4, this checkpoint at 4.6, and the first
+    commit at step 6 — so at the moment the phase runs, a file a reviewer just
+    created is NORMALLY untracked. The asymmetry fell on the unsafe side: an
+    untracked new TEST failed closed, an untracked new SOURCE GATE failed open.
+    """
+
+    def test_an_untracked_gate_gets_the_same_verdict_as_a_committed_one(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A/B on identical bytes: tracked-ness must not change the verdict."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+        untracked = _branch_repo(tmp_path, "untracked")
+        (untracked / "scripts" / "demo_fix.py").write_text(
+            _GATE_SOURCE, encoding="utf-8"
+        )
+
+        committed = _branch_repo(tmp_path, "committed")
+        (committed / "scripts" / "demo_fix.py").write_text(
+            _GATE_SOURCE, encoding="utf-8"
+        )
+        _git(committed, "add", "-A")
+        _git(committed, "commit", "-qm", "work: add an unevidenced gate")
+
+        # Vacuity guard: the two repos must really hold the same gate bytes.
+        assert (untracked / "scripts" / "demo_fix.py").read_bytes() == (
+            committed / "scripts" / "demo_fix.py"
+        ).read_bytes()
+
+        verdict_a, out_a = _consume(monkeypatch, capsys, untracked)
+        verdict_b, out_b = _consume(monkeypatch, capsys, committed)
+
+        assert verdict_b is False, out_b
+        assert _REPO_GATE in out_b, out_b
+        assert verdict_a == verdict_b, (
+            "identical bytes, different tracked-ness, different verdict:\n"
+            f"[A untracked] {out_a}\n[B committed] {out_b}"
+        )
+        assert _REPO_GATE in out_a, out_a
+        assert "no gate-adding change in the diff" not in out_a, out_a
+
+    def test_an_untracked_gate_blocks_through_the_registered_cli(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Exit code through `verify_checkpoint.main`, not just the verifier."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        monkeypatch.setattr(vc, "_find_worktree_path", lambda issue_id: str(repo))
+
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-081"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert _REPO_GATE in out, out
+        assert "ADVISORY:" not in out, "this phase must be blocking, not advisory"
+
+    def test_an_untracked_test_is_still_credited_as_evidence(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The other side of the same asymmetry — fixing one side is not a fix.
+
+        The gate is committed; the battery that evidences it is the untracked
+        file the reviewer just wrote. It must be read, or this phase punishes
+        the reviewer for the state its own SKILL puts them in.
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "work: add a gate")
+
+        # Vacuity guard: without the untracked battery this repo FAILS, so a
+        # pass below can only come from crediting the untracked file.
+        bare_verdict, bare_out = _consume(monkeypatch, capsys, repo)
+        assert bare_verdict is False, bare_out
+        assert _REPO_GATE in bare_out, bare_out
+
+        (repo / "tests" / "test_demo_fix.py").write_text(
+            _GATE_EVIDENCE, encoding="utf-8"
+        )
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is True, out
+        assert "carry both directions" in out, out
+        assert _REPO_GATE in out, out
+
+    def test_the_untracked_leg_has_exactly_one_definition(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Both consumers must go THROUGH `_untracked_paths`, not re-type it.
+
+        Disarming the single helper must disarm BOTH the path-set oracle
+        (`_changed_files_vs_base`) and the diff-text acquisition
+        (`_gate_evidence_diff`). If either survives, there are two definitions
+        of "the untracked leg" again and this Critical can recur.
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+
+        # Armed: the one helper reports the untracked file, both consumers see it.
+        assert "scripts/demo_fix.py" in vc._untracked_paths(str(repo))
+        armed_verdict, armed_out = _consume(monkeypatch, capsys, repo)
+        assert armed_verdict is False, armed_out
+        assert "scripts/demo_fix.py" in vc._changed_files_vs_base(str(repo), "main")
+
+        # Disarmed at the single seam: both consumers must lose the file.
+        monkeypatch.setattr(vc, "_untracked_paths", lambda wt_path: [])
+        assert "scripts/demo_fix.py" not in vc._changed_files_vs_base(
+            str(repo), "main"
+        )
+        _, blind_out = _consume(monkeypatch, capsys, repo)
+        assert _REPO_GATE not in blind_out, blind_out
+
+
+class TestABaseThatEqualsHeadIsRefusedNotPassed:
+    """`refs/remotes/origin/HEAD` is author-writable, local, and never pushed.
+
+    Point it at the branch under review and the whole chain collapses:
+    merge_base == HEAD -> `git diff` exits 0 with empty stdout -> `analyze("")`
+    finds no files -> "PASS: no gate-adding change in the diff" -> exit 0,
+    byte-identical to a legitimately gate-free PR. The same accident fires with
+    no attacker at all when the branch under review IS the default branch.
+    Workspace-persisted state a gate reads is untrusted input: validate on read.
+    """
+
+    @staticmethod
+    def _with_origin(repo: Path, head_branch: str) -> Path:
+        """Give the repo a real origin and point origin/HEAD at <head_branch>."""
+        bare = repo.parent / f"{repo.name}-origin.git"
+        subprocess.run(
+            ["git", "init", "-q", "--bare", str(bare)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        _git(repo, "remote", "add", "origin", str(bare))
+        _git(repo, "push", "-q", "origin", "main", "work")
+        _git(repo, "remote", "set-head", "origin", head_branch)
+        return repo
+
+    def _repo_with_committed_gate(self, tmp_path: Path) -> Path:
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "work: add an unevidenced gate")
+        return repo
+
+    def test_origin_head_pointed_at_the_feature_branch_cannot_disarm_the_phase(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The real `_default_branch()` chain, against a real manipulated ref."""
+        repo = self._with_origin(self._repo_with_committed_gate(tmp_path), "main")
+        monkeypatch.chdir(repo)
+
+        # BASELINE: origin/HEAD -> main, the gate is charged.
+        assert vc._default_branch() == "main"
+        baseline_verdict, baseline_out = _consume(monkeypatch, capsys, repo)
+        assert baseline_verdict is False, baseline_out
+        assert _REPO_GATE in baseline_out, baseline_out
+
+        # ATTACK: one local, unpushed, PR-invisible ref write.
+        _git(repo, "remote", "set-head", "origin", "work")
+        assert vc._default_branch() == "work", "fixture pin: the attack landed"
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "no gate-adding change in the diff" not in out, out
+        assert "origin/HEAD" in out, out
+
+    def test_a_disarmed_run_does_not_read_like_a_clean_one(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The refusal must NAME the cause, or it is the same silent pass."""
+        repo = self._with_origin(self._repo_with_committed_gate(tmp_path), "work")
+        monkeypatch.chdir(repo)
+        _, out = _consume(monkeypatch, capsys, repo)
+        assert "FAIL: gate-evidence" in out, out
+        assert "REFUSED" in out, out
+        assert "IS the branch under review" in out, out
+        assert "refs/remotes/origin/HEAD" in out, out
+
+    def test_a_base_sha_that_equals_head_is_named_as_its_own_cause(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The sha-identity leg, reached without the name leg.
+
+        A branch cut from the default branch with no commit of its own has
+        `merge-base HEAD <default> == HEAD` while its NAME still differs — so
+        only the sha comparison can catch it, and it must say so.
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _init_repo(tmp_path)
+        _git(repo, "checkout", "-q", "-b", "work")
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+
+        # Fixture pins, read straight from git so this test stays RED on the
+        # real verdict rather than on a missing helper: the NAME leg cannot be
+        # what refuses here, only the sha comparison can.
+        assert _head_branch(repo) == "work"
+        assert vc._merge_base(str(repo), "main") == _rev_parse(repo, "HEAD")
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "same commit as HEAD" in out, out
+        assert "IS the branch under review" not in out, out
+        assert "no gate-adding change in the diff" not in out, out
+
+    def test_the_branch_under_review_being_the_default_branch_fails_closed(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """No attacker required: review the default branch and it self-disarms."""
+        repo = _init_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "main: add an unevidenced gate")
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "no gate-adding change in the diff" not in out, out
+
+    def test_the_default_branch_name_check_is_load_bearing_on_its_own(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Disarm direction for the name half of the refusal.
+
+        When `merge-base` is unresolvable the base falls back to the branch NAME,
+        so the sha-identity check alone does not cover it. Forcing that fallback
+        must still refuse rather than diff a branch against itself.
+        """
+        repo = self._repo_with_committed_gate(tmp_path)
+        monkeypatch.setattr(vc, "_default_branch", lambda: "work")
+        monkeypatch.setattr(vc, "_merge_base", lambda wt_path, base: None)
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "work" in out, out
+        assert "no gate-adding change in the diff" not in out, out
+
+    def test_a_zero_byte_diff_is_refused_not_passed(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """An empty diff is unobtainable evidence, not evidence of innocence."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _init_repo(tmp_path)
+        _git(repo, "checkout", "-q", "-b", "work")
+        _git(repo, "commit", "-q", "--allow-empty", "-m", "work: empty commit")
+
+        # Fixture pin: a real, non-degenerate base that is NOT HEAD, whose diff
+        # is nonetheless zero bytes — so only the empty-diff leg can refuse.
+        assert vc._merge_base(str(repo), "main") != _rev_parse(repo, "HEAD")
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "no gate-adding change in the diff" not in out, out
+
+
+class TestChangedFilesVsBaseIsUnchanged:
+    """Legacy pin: the shared oracle's observable semantics must not move.
+
+    `_changed_files_vs_base` and `_default_branch` predate ISSUE-081 and are
+    shared with the implement phases. The new refusal is scoped to the
+    gate-evidence caller; extracting `_untracked_paths` must be a pure refactor.
+    """
+
+    @pytest.fixture()
+    def four_leg_repo(self, tmp_path):
+        repo = _branch_repo(tmp_path)
+        (repo / "committed.py").write_text("a = 1\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "work: committed leg")
+        (repo / "staged.py").write_text("b = 2\n", encoding="utf-8")
+        _git(repo, "add", "staged.py")
+        (repo / "committed.py").write_text("a = 11\n", encoding="utf-8")  # unstaged
+        (repo / "untracked.py").write_text("c = 3\n", encoding="utf-8")
+        (repo / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+        _git(repo, "add", ".gitignore")
+        (repo / "ignored.py").write_text("d = 4\n", encoding="utf-8")
+        return repo
+
+    def test_all_four_legs_are_still_reported_and_ignores_still_excluded(
+        self, four_leg_repo
+    ):
+        changed = vc._changed_files_vs_base(str(four_leg_repo), "main")
+        assert changed == {
+            "scripts/util.py",   # committed on the branch (fixture filler)
+            "committed.py",      # committed + unstaged modification
+            "staged.py",         # staged, never committed
+            "untracked.py",      # untracked, not ignored
+            ".gitignore",
+        }, changed
+        assert "ignored.py" not in changed
+
+    def test_it_still_scopes_to_the_branch_delta_and_returns_a_set(
+        self, tmp_path, monkeypatch
+    ):
+        """merge-base scoping (ISSUE-048) and the None fallback both survive."""
+        repo = _branch_repo(tmp_path)
+        _git(repo, "checkout", "-q", "main")
+        (repo / "mainonly.py").write_text("m = 1\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "main: advances past the fork point")
+        _git(repo, "checkout", "-q", "work")
+
+        changed = vc._changed_files_vs_base(str(repo), "main")
+        assert changed == {"scripts/util.py"}, changed
+
+        monkeypatch.setattr(vc, "_merge_base", lambda wt_path, base: None)
+        assert isinstance(vc._changed_files_vs_base(str(repo), "main"), set)
+
+    def test_default_branch_still_prefers_origin_head(self, tmp_path, monkeypatch):
+        """`_default_branch` keeps its pre-ISSUE-081 resolution order."""
+        repo = _branch_repo(tmp_path)
+        monkeypatch.chdir(repo)
+        # No origin/HEAD -> falls back to a local main/master.
+        assert vc._default_branch() == "main"
+        _git(repo, "update-ref", "refs/remotes/origin/work", "refs/heads/work")
+        _git(
+            repo,
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/work",
+        )
+        assert vc._default_branch() == "work", (
+            "the shared helper must still resolve from origin/HEAD; the new "
+            "refusal belongs to the gate-evidence caller, not to this oracle"
+        )
