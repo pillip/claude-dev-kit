@@ -2792,3 +2792,145 @@ class TestUntrackedNonAsciiPathsAreAcquired:
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
         assert _REPO_GATE in out, out
+
+
+# ── The EVIDENCE half's regex cost is bounded too ─────────────────────
+
+
+class TestTheConsumerOutcomeScanIsBounded:
+    """`_CONSUMER_RE` backtracks quadratically, and the first fix missed it.
+
+    `_MAX_SCAN_CHARS` was applied in `detect_gates` — the SOURCE half — so the
+    EVIDENCE half stayed unbounded. `_CONSUMER_RE` opens with
+    `\\bassert\\s+[\\w.\\[\\]"'() ]*\\b(?:exit_code|…)`, a permissive char-class
+    star retried from every `assert` start on the line. Measured before the
+    bound, through `analyze()`:
+
+        12 KB -> 0.017 s | 24 KB -> 0.070 s | 48 KB -> 0.255 s
+        96 KB -> 0.99 s  | 192 KB -> 3.96 s          (4x per 2x = O(n^2))
+
+    Reachable only when the battery ALSO carries a registering vacuity guard:
+    without one, `_is_non_vacuous` is False and the `composite` conjunct
+    short-circuits before `_has_consumer_outcome`, which is why a naive probe
+    reports a flat 0.0005 s and a false all-clear. The parameter must be named
+    from `_INPUT_ROOTS` (`text`), not something like `case`, or the guard does
+    not register and the cost never appears.
+    """
+
+    @staticmethod
+    def _battery_diff(n_assert_tokens: int, outcome: str = "") -> str:
+        payload = ("assert " + "a" * 40 + " ") * n_assert_tokens
+        lines = [
+            "import pytest",
+            '@pytest.mark.parametrize("text", ["- Status: running",'
+            ' "- status: RUNNING", "-  Status:  running"])',
+            "def test_guard_refuses(text):",
+            # Vacuity guard whose root IS in `_INPUT_ROOTS`, so
+            # `_is_non_vacuous` is True and the costly call is reached.
+            '    assert "- Status: running" in text',
+            "    out = run_guard(text)",
+            "    assert out is False",
+            "    " + payload + outcome,
+        ]
+        body = "".join("+" + line + "\n" for line in lines)
+        src = (
+            "diff --git a/scripts/g.py b/scripts/g.py\n"
+            "--- a/scripts/g.py\n+++ b/scripts/g.py\n"
+            "@@ -1,0 +1,4 @@\n"
+            "+def run_guard(text):\n+    if not text:\n"
+            "+        return 1\n+    return 0\n"
+        )
+        tst = (
+            "diff --git a/tests/test_g.py b/tests/test_g.py\n"
+            "--- a/tests/test_g.py\n+++ b/tests/test_g.py\n"
+            f"@@ -1,0 +1,{len(lines)} @@\n" + body
+        )
+        return src + tst
+
+    def test_the_costly_call_is_actually_reached(self):
+        """Guard the guard: if this breaks, the timing tests go vacuous.
+
+        The whole class is meaningless unless `_has_consumer_outcome` really
+        runs on the payload line, so pin the two preconditions explicitly
+        rather than trusting them.
+        """
+        text = self._battery_diff(1)
+        blocks, module_text = vge._blocks(vge._parse(text))
+        batteries = [b for b in blocks if vge._is_battery(b, module_text)]
+        assert batteries, "no battery — _has_consumer_outcome is never called"
+        assert any(vge._is_non_vacuous(b) for b in batteries), (
+            "no registering vacuity guard — the composite conjunct "
+            "short-circuits before _has_consumer_outcome and this class "
+            "would measure nothing"
+        )
+
+    def test_a_pathological_evidence_line_stays_cheap(self):
+        import time
+
+        text = self._battery_diff(4000)
+        start = time.perf_counter()
+        vge.analyze(text)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 2.0, (
+            f"analyze() took {elapsed:.2f}s on a {len(text)}-byte diff whose "
+            f"evidence half carries one long assert-dense line (budget 2.0s); "
+            f"measured 3.96s before the evidence-half scan bound"
+        )
+
+    def test_the_cost_is_linear_not_quadratic(self):
+        import time
+
+        def cost(n):
+            text = self._battery_diff(n)
+            start = time.perf_counter()
+            vge.analyze(text)
+            return time.perf_counter() - start
+
+        small, large = cost(500), cost(4000)
+        # 8x the input. Quadratic would be ~64x; allow generous slack for a
+        # loaded runner while still failing on a quadratic regression.
+        assert large < max(small * 20, 0.5), (
+            f"8x the input cost {large / max(small, 1e-9):.1f}x the time "
+            f"({small:.4f}s -> {large:.4f}s): still super-linear"
+        )
+
+    def test_the_bound_fails_closed(self):
+        """A consumer outcome past the window is NOT credited.
+
+        Fail-closed means MORE findings, never fewer: the gate is reported as
+        missing its composite pin rather than silently passing.
+        """
+        pad = "assert " + "a" * 40 + " "
+        beyond = self._battery_diff(
+            (vge._MAX_SCAN_CHARS // len(pad)) + 40, outcome="; assert rc == 1"
+        )
+        report = vge.analyze(beyond)
+        assert report.evidence[("scripts/g.py", "run_guard")]["composite"] is False, (
+            "an outcome past the scan window was credited — the bound must "
+            "fail CLOSED"
+        )
+        assert report.findings, "fail-closed must yield a finding, not silence"
+
+    def test_an_outcome_inside_the_window_is_still_credited(self):
+        """The arm direction: truncation must not break the normal case."""
+        near = self._battery_diff(1, outcome="; assert rc == 1")
+        report = vge.analyze(near)
+        assert report.evidence[("scripts/g.py", "run_guard")]["composite"] is True, (
+            "a consumer outcome within the first _MAX_SCAN_CHARS must still "
+            "be credited"
+        )
+
+    def test_the_evidence_half_bound_is_load_bearing(self, monkeypatch):
+        """Mutation pin: widening the window must restore the quadratic cost."""
+        import time
+
+        text = self._battery_diff(4000)
+        monkeypatch.setattr(vge, "_MAX_SCAN_CHARS", 10 ** 9)
+        start = time.perf_counter()
+        vge.analyze(text)
+        elapsed = time.perf_counter() - start
+        assert elapsed > 0.5, (
+            f"mutant SURVIVED in {elapsed:.3f}s: widening _MAX_SCAN_CHARS did "
+            f"not restore the quadratic cost, so this bound is not what makes "
+            f"the evidence half cheap — find what is before trusting it"
+        )

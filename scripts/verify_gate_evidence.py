@@ -902,7 +902,23 @@ def _has_consumer_outcome(block: _Block) -> bool:
     """
     if not REQUIRE_CONSUMER_OUTCOME:
         return True
-    for line in block.lines:
+    for raw in block.lines:
+        # `_CONSUMER_RE` opens with `\bassert\s+[\w.\[\]"'() ]*\b(?:exit_code|…)`,
+        # a permissive char-class star retried from EVERY `assert` start on the
+        # line, so a line carrying many `assert` tokens and no outcome token
+        # backtracks quadratically: measured 0.017 / 0.070 / 0.255 / 0.99 /
+        # 3.96 s at 12 / 24 / 48 / 96 / 192 KB — 4x per 2x, O(n^2), reachable
+        # through `analyze()` whenever a battery also carries a registering
+        # vacuity guard (otherwise the `composite` conjunct short-circuits
+        # before this function and the cost is invisible).
+        #
+        # `_MAX_SCAN_CHARS` was applied to the SOURCE half only (`detect_gates`),
+        # so this, the EVIDENCE half, was left unbounded. Bounded here rather
+        # than in `_blocks` on purpose: truncating the shared block text would
+        # unbalance `_count_bracket_elements`' bracket scan and could miscount
+        # variants in either direction. Fails CLOSED — a consumer outcome past
+        # the window is simply not credited, which yields MORE findings.
+        line = _scannable(raw)
         match = _CONSUMER_RE.search(line)
         if not match:
             continue
