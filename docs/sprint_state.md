@@ -16,7 +16,7 @@
 |-------|--------|----------|------------|-------|
 | ISSUE-073 | done | 1 | - | shipped |
 | ISSUE-077 | backlog | 0 | - | backlog |
-| ISSUE-081 | waiting | 2 | review-rework: 5 Critical, 7 High — gate does not implement its own disarm requirement | implemented |
+| ISSUE-081 | doing | 2 | - (rework in progress; see the rework section below) | implemented |
 
 > The ISSUE-073 row is a **carried-forward completed dependency**, not work for this sprint: it shipped on 2026-10-09 (`b184d4c`) and is present at `phase: shipped` only so ISSUE-077's `Depends-On: ISSUE-073` resolves under the rostered-row table-only rule. Do not re-run any phase against it. Its own Goal was only PARTIALLY met — ISSUE-077 is what completes it.
 
@@ -210,8 +210,137 @@ Medium, adoptability only: **4 of 7** real `scripts/*.py`-touching diffs would n
 - **Duplicated-oracle sub-pattern (ISSUE-072): DECLINED with a carrier.** `_tool_grants` and `_split_tools` share no name, signature or location — the duplication is purely behavioural, so name-collision / import / parser-shaped-helper checks all miss it, and a behavioural-equivalence detector is a new analysis class no AC names (the ISSUE-079 trap). Carrier **ISSUE-084** filed.
 - **Dogfooding caught a fail-open in this gate itself at implement time:** exemption markers were read from every added line, so a test merely *quoting* the marker exempted the symbol (3 occurrences in its own suite). Fixed to source-half only and pinned. The PASS line also read identically whether a gate was evidenced or waived; it now separates `carry both directions` from `exempted, NOT evidenced`.
 
+## ISSUE-081 rework (iteration 1, IMPLEMENT — returned for rework after the FAIL review)
+
+Phase stays `implemented`; Status back to `doing`; **Attempts unchanged at 2** (a rework is
+not a new review attempt). PR #137 left a **draft** deliberately — the orchestrator owns the
+draft→ready decision.
+
+### The stash, resolved before any new code (as instructed)
+
+The watchdog-killed first review attempt left **355 insertions** across 5 files, stashed by the
+second attempt so it could review a stable tree. Diffed against the review findings and
+**DROPPED, not adopted.** Archived first: full diff at
+`scratchpad/dead-run-uncommitted-1f6d924e78bbab9c7d82b3e314ca999b1d33211e.diff`, and the stash
+commit `1f6d924` stays recoverable from the object store until gc.
+
+Reasons it was not adopted, each checkable:
+1. It contains **zero** work on any of the five Criticals.
+2. Its one substantive engine change — widening `REFUSAL_PATTERNS` with string verdicts, named
+   constant exits and negative ints — is a **detection-class change the SPEC amendment had to
+   decide**. Adopting it would have decided amendment decision 2 by code instead of by SPEC,
+   the exact ISSUE-079 trap. Its own SPEC text even argues that extending detection "is exactly
+   the unspecified-engine-surface failure ISSUE-079 was filed for" — and then does it.
+3. Its name-collision fix (fail closed when one symbol is added in >1 file) is strictly
+   superseded by the brief's `(path, symbol)` keying: it left `evidence` bare-symbol keyed and
+   left the **exemption** half — the security half — untouched.
+4. It referenced **ISSUE-086** as a carrier, which did not exist. Lesson 15: a carrier named
+   but never filed is not a carrier. Adopting the text would have shipped three dangling refs.
+5. Even its one uncontested measurement was wrong: it claimed `+862` engine lines; `wc -l` on
+   the committed tree is **848**.
+Its knob-documentation additions were the right *shape* (lesson 2) and were re-derived in the
+rework from current measured truth rather than inherited.
+
+### Commits
+
+| # | SHA | What |
+|---|-----|------|
+| 1 | `7949ccb` | Criticals 2+3 — untracked-leg oracle reuse, `origin/HEAD` fail-closed |
+| 2 | `8b86482` | **SPEC-081 amendment** — decisions 1-5, dated section, `validate_spec` green |
+
+### SPEC-081 amendment — the three decisions, each taken on measurement
+
+Recorded as a dated `## Amendment — 2026-10-14` section (SPEC-056 contract-4 discipline), with
+the amendment's own options added as **Options E/F/G inside `## Options`** so
+`validate_spec.py` actually enforces its measurable-comparator rule on them. Option C (the
+seam) is unchanged and still parses as the Decision. `validate_spec.py`: **all 1 SPEC passed**,
+7 options, every comparator measurable.
+
+**Diagnosis adopted verbatim from the review, because it is right:** the implementation measured
+**end-to-end-ness** while the requirement names **direction** — a proxy mistaken for the
+property. It separated the pre/post ISSUE-078 pair, which is why it looked right.
+
+**Decision 1 — direction detection: adopt Option E, BLOCKING, error rate disclosed.**
+Achievable where it matters: arm-only recall **1/8 → 8/8**; the decisive attack (pre-fix fixture
++ two arm-only batteries, mechanically zero refusal assertions) returns from `exit 0 / PASS — 2
+gate(s) carry both directions` to `exit 1` with the exact unattacked findings; **0 regressions
+across 15 corpus diffs**; **0 recursive bite** on this PR. Disclosed against it: **16 of 27**
+per-battery `direction=False` verdicts are wrong; **`any()` semantics, not classifier accuracy,
+is what makes this safe**; the masking is **reachable** (deleting one incidental smoke battery
+from PR #129 flips `parse_roster_watermark` to a false `missing-disarm-battery`, telling the
+reviewer to add a battery that already exists twice); and **predicate polarity is permanently
+undecidable** — for a detector-shaped gate `assert detected is True` *is* the refusal, so
+polarity follows gate semantics, not syntax. Options F (attestation only) and G (advisory) were
+rejected on **this SPEC's own prior measurements** — both reduce to Option A, recorded at
+**0 of 4** with the lesson live for 2 of them. Trading a measured 8/8 for a measured 0/4 is a
+regression.
+
+**Decision 2 — the `return None` class: explicitly OUT of scope, carrier ISSUE-086.** Four
+closures measured, not reasoned about: naive `+29` whole-tree gates (mostly ordinary accessors
+— breaches the rollback trigger at scale); parameter-guard narrowing fails recall; the
+refusal-vocabulary form **looked best and was a mirage**, killed by a both-directions mutation
+test — rewording only the docstrings with code byte-identical turned detection off for 2 of its
+3 hits, so it detects the author's vocabulary, not the refusal (lesson 4 applied to a detector);
+the surviving form is **overfit on a single negative** and still ships 2 false positives. And
+the decisive blocker: recovering the recall produces **1 false BLOCK per 2 recalls recovered** —
+PR #127 fails `missing-disarm-battery` *despite two genuine disarm batteries*, because they
+drive the gate through a test helper neither `_calls` nor `_attributed` can see. **The defect is
+in ATTRIBUTION, not direction**, so attribution must be repaired first. A fifth shape —
+refusal by **withholding** (PR #129's `cmd_next_action`, 157 added lines, zero
+`return`/`exit`/`raise`) — is out of reach of every `return None` form.
+
+**Decision 3 — blocking stands; the verdict VOCABULARY is what changes.** The SPEC's own
+demotion criterion is a measured false-positive rate and it is **not met** (0 FP over 12 real
+diffs, 0 false blocks over 15 with Option E applied). The error directions are asymmetric:
+under-detection does not halt an honest review, over-detection does, and over-detection is
+measured at zero. Demotion would delete the only property separating Option C from Option A.
+What *is* wrong is a false claim: measured with a `def`/`class` control pair, a gate is seen
+only inside an added `def` in a changed non-test `.py` file, and **module-level gates, gates in
+the kit's own eight `.sh` scripts, gates in test-named source files, and `class`-hinted hunks
+all print the byte-identical gate-free PASS line.** Carrier ISSUE-087.
+
+**Decisions 4 and 5** — the attestation path made trustworthy (see below), plus two record
+corrections (engine size wrong by 3.5x; the duplicated-oracle declination keeps its decision
+but loses its refuted reason) and one deletion (`--range`/`--repo`/`_diff_from_range`/
+`_GIT_TIMEOUT`/`--json`).
+
+### Two findings the rework discovered that the review did not
+
+**1. Finding 12 is LIVE on this branch, not latent — and the review's own artifact armed it.**
+The review recorded the exemption hole as latent because all three existing marker occurrences
+use the `<symbol>` placeholder, whose angle brackets do not match `[\w.]+`. True at `7a10422`;
+**false at `ab907ea`**, because the review then committed `docs/review_notes/ISSUE-081.md`,
+whose prose describing the cross-file leak carries a marker naming a **real** symbol. Not
+`#`-prefixed, not a `.py` file, no locality to the gate — collected anyway, and it **changed the
+gate's own verdict**:
+```
+at 7a10422 (measured by the review):  PASS — 2 gate(s) carry both directions: main, verify_review_gate_evidence | 5 exempted
+at ab907ea (committed by the review): PASS — 1 gate(s) carry both directions: verify_review_gate_evidence      | 6 exempted
+```
+`main` moved from *evidenced* to *waived* because the review wrote the finding down.
+**Documenting the vulnerability exploited it** — confirmed through the real blocking checkpoint,
+not a synthetic probe. Dropping the `.md` marker lines restores the `7a10422` state exactly,
+which also proves the five intended self-exemptions survive the fix. The `EXEMPT:` line did
+print, so the "defeating it is visible" claim half-holds — but the reason rendered as a
+truncated fragment of review prose that no reviewer would read as an accidental waiver:
+**visibility is not enough if the waiver is unrecognisable.**
+
+**2. The rework's own hardening commit is invisible to the gate it hardens.** Commit `7949ccb`
+adds **four** blocking `return None` refusals inside the pre-existing `def _gate_evidence_diff`.
+Detector verdict on that commit's own diff: `gates: []` / `PASS — no gate-adding change in the
+diff` / `exit 0`. Two gaps compose into a complete miss — refusal by `return None` (decision 2)
+and *a gate added by modifying an existing function* rather than adding a `def`, which
+**contradicts SPEC-081's own claim** that "a tightened predicate inside an existing function
+counts". Stronger evidence than the review's PR #127/#129 cases because it happened on this
+branch, on a commit authored to harden this gate, hours after the recall gap was recorded.
+**A detector that cannot see its own hardening commit cannot make the ISSUE-077 self-test
+meaningful** — which independently confirms the orchestrator's decision to leave 077 unstarted.
+
 ## Discovered Issues
 
 - [iteration 1] **ISSUE-084**: Decide whether a new guard that re-types an existing oracle is detectable, or make reuse the convention (from ISSUE-081 implement — the declined duplicated-oracle sub-pattern). Filed directly on main by the implement sub-task via `registry_edit.sh` (commit `60d64c9`), not via planner — protocol deviation recorded; `validate_issues.py` reports zero new violations from it.
 - [iteration 1] **ISSUE-085**: Backfill the paired gate evidence for the ten shipped gates SPEC-081 recorded as unevidenced (from ISSUE-081 implement; backfill is explicitly OUT of ISSUE-081's scope). Same filing route as ISSUE-084.
 - Both sit **above** the pinned `Roster-Watermark: ISSUE-081`, so the ISSUE-069/078 mechanism flags them without dispatching. That is the intended outcome — do not widen the watermark.
+- [iteration 1, ISSUE-081 rework] **ISSUE-086**: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, **after repairing attribution** (durable carrier for SPEC-081 amendment decision 2; recall 4/6, and recovering it costs 1 false BLOCK per 2 recalls until attribution can see a battery driven through a test helper). Drafted by the **planner** agent, written under the lock via `registry_edit.sh`, committed on `main` as `daae35a`.
+- [iteration 1, ISSUE-081 rework] **ISSUE-087**: Widen or honestly bound the gate detection boundary, and stop reporting a miss as "no gate-adding change" (durable carrier for amendment decision 3). Same filing route and commit.
+- Both sit **above** the pinned `Roster-Watermark: ISSUE-081`, so the ISSUE-069/078 mechanism flags them without dispatching — the intended outcome. `validate_issues.py`: 8 violations, all pre-existing, **0** from these two blocks.
