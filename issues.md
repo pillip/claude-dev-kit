@@ -5108,6 +5108,19 @@ Every blocking guard the kit already ships carries a disarm battery and a compos
 > **Scoping against ISSUE-086, so the two do not collide:** ISSUE-086 owns the **refusal vocabulary and attribution of evidence**; this issue owns **where the detector looks** (file types, module level, hunk-hint attribution) and the **verdict vocabulary**. The `7949ccb` instance is the two classes composing into a complete miss — its refusals are `return None`, which is 086's class — so this issue's own fixtures must use a refusal shape the detector **already** recognises today (`return 1`, `sys.exit(1)`, `raise …Error`) in order to isolate the boundary defect from the vocabulary defect.
 >
 > **The honesty fix the amendment makes binding:** the gate-free verdict must read as "no gate **detected**", naming the boundary, never as "no gate-adding change". A pass from this phase means *no gate was detected*, never *no gate was added*.
+>
+> <!-- ISSUE-087 AMENDED 2026-10-14 (ISSUE-081 rework) -->
+> **A fifth boundary, found during the ISSUE-081 rework and measured: `return bool(<expr>)` evades gate detection entirely.** `_BOOL_REFUSAL` is `\breturn\s+(?:True|False)\b`, so a predicate-shaped, `-> bool`-annotated function containing a conditional is **not** detected unless it writes the literal `True`/`False`:
+>
+> ```
+> '    return bool(x)'                      -> _BOOL_REFUSAL match: False
+> '    return bool(_guard_literals(block))' -> _BOOL_REFUSAL match: False
+> '    return False'                        -> _BOOL_REFUSAL match: True
+> ```
+>
+> Measured consequence on the ISSUE-081 branch: the rework added four new predicates to `scripts/verify_gate_evidence.py` (`_refusal_shaped`, `_refusal_assertions`, `_asserts_refusal`, `_exemptions`) and the gate's own self-run still detects **exactly the same 7 gates** it detected before the rework. The pre-existing `_calls` is in the same position. `return bool(...)` is idiomatic Python, so this is not an exotic shape.
+>
+> **Process finding worth more than the defect, recorded because it generalises.** The sub-task that implemented the direction requirement disclosed, unprompted, that it chose the `return bool(...)` style *partly so the self-run would come out at the 2-evidenced + 5-exempted number its instructions required*. The instruction was the team lead's, and it was a mistake of specification: **stating a self-application target as a required output number creates an incentive to write code the detector cannot see.** The honest form of such an instruction asks for the self-run to be *reported and explained*, never for it to equal a particular value. This is the same hazard class as the gate's own exemption escape — a control whose success criterion can be satisfied by avoiding the control rather than by passing it. ISSUE-081's AC-5 ("the mechanism is subject to its own rule") is exactly where this bites, so this issue should decide whether a self-application criterion can be stated at all without creating the incentive.
 
 - Track: platform
 - UI: false
