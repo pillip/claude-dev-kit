@@ -15,6 +15,7 @@ byte-identical:
 | `issue_078_pre_fix.diff` | `git diff a4338e2..d328a6c^` | `a4338e28d2bbedb75c5a9b64d5983f4d67e63e66..0d0cae14ed5d1fdeda2c430af2b98a0be63c297c` |
 | `issue_078_post_fix.diff` | `git diff a4338e2..d328a6c` | `a4338e28d2bbedb75c5a9b64d5983f4d67e63e66..d328a6c030adf7b247c9823514bf57ab9790d24e` |
 | `issue_074_non_gate.diff` | `git diff 404ef8f~1..404ef8f` | `a4338e28d2bbedb75c5a9b64d5983f4d67e63e66..404ef8f9d9bee01ddb1a39d7c8b3693e118b8735` |
+| `issue_056_colliding_main.diff` | `git diff 73b9202^..73b9202` | `2cfd8754a3ccd0b331161e56cb1702629901b31a..73b92027e70f98db14922f033d468980b9bc9560` |
 
 ## What each fixture is
 
@@ -46,6 +47,16 @@ byte-identical:
   `tests/test_registry_lock_contract.py`. Its source half contains no Python at all,
   which is why it is the no-false-positive-tax pin: an ordinary PR must leave the
   review output untouched.
+
+- **`issue_056_colliding_main.diff`** — PR #101 (ISSUE-056), the diff that promoted four
+  model-executed verification sweeps to deterministic validators. It is here for one
+  measured property that no hand-written diff would be believed for: it adds **six**
+  gates across two new scripts, and **two of them are both named `main`** — one in
+  `scripts/verify_design_sweeps.py`, one in `scripts/verify_hollow_tests.py`. Keyed on
+  the bare symbol, the evidence map collapsed them and yielded **5** records for 6
+  gates, so a disarm battery written for one file's `main` satisfied the other's and
+  one exemption marker waived both. Every validator script in this repo has a `main`.
+  Pinned by `TestEvidenceIsKeyedByPathAndSymbol`.
 
 ## Do not edit
 

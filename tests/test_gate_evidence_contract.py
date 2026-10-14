@@ -46,6 +46,10 @@ FIXTURES = ROOT / "tests" / "fixtures" / "gate_evidence"
 PRE_FIX = FIXTURES / "issue_078_pre_fix.diff"
 POST_FIX = FIXTURES / "issue_078_post_fix.diff"
 NON_GATE = FIXTURES / "issue_074_non_gate.diff"
+#: PR #101 (ISSUE-056) — a real merged diff that adds SIX gates across two new
+#: scripts, two of them both named `main`. The natural instance of the
+#: bare-symbol collision; see the fixture README.
+COLLIDING = FIXTURES / "issue_056_colliding_main.diff"
 
 # The gate ISSUE-078's review fix repaired: the ARMING predicate that returned
 # `valid: true` / exit 0 for 22 of 23 inputs containing `- Status: running`.
@@ -76,6 +80,26 @@ def _finding_for(report, symbol: str):
     matches = [f for f in report.findings if f.symbol == symbol]
     assert len(matches) <= 1, f"{symbol}: expected at most one finding, got {matches}"
     return matches[0] if matches else None
+
+
+def _verdict(report, symbol: str) -> dict:
+    """The one evidence record for <symbol>, which is keyed ``(path, symbol)``.
+
+    Path-qualified keying is what stops two same-named gates in two files from
+    collapsing into one record, so this helper asserts the symbol resolves to
+    exactly ONE key rather than silently picking a winner.
+    """
+    matches = {key: value for key, value in report.evidence.items() if key[1] == symbol}
+    assert len(matches) == 1, f"{symbol}: expected one evidence key, got {matches}"
+    return next(iter(matches.values()))
+
+
+#: The gate-free verdict is read from the module, never re-typed here. Ten of
+#: the assertions below guard it in the NEGATIVE ("a disarmed run must not read
+#: like a clean one"); a `not in` guard whose literal has drifted from the
+#: implementation passes vacuously, which is review lesson 4's second clause and
+#: lesson 16's "import the oracle rather than re-implementing it".
+GATE_FREE = vge.GATE_FREE_VERDICT
 
 
 # ── Gate detection ───────────────────────────────────────────────────
@@ -129,7 +153,12 @@ class TestGateDetection:
             "+    assert exit_code == 1\n"
         )
         report = vge.analyze(diff)
-        assert report.evidence["refuse_unmarked"] == {
+        # `is True` is NOT what credits the disarm half here — `refuse_unmarked`
+        # is detector-shaped, so its refusal reads as `True` and the direction
+        # check cannot know that. `assert exit_code == 1` is what carries the
+        # refusal direction. That asymmetry is the disclosed polarity class, and
+        # it is pinned deliberately rather than papered over.
+        assert report.evidence[("scripts/demo_cli.py", "refuse_unmarked")] == {
             "disarm": True,
             "composite": True,
         }
@@ -196,7 +225,7 @@ class TestAC2HelperConsumerDisagreementIsSurfaced:
 
     def test_helper_evidence_is_acknowledged_and_the_composite_is_not(self):
         report = vge.analyze(_diff(PRE_FIX))
-        evidence = report.evidence[ARMING_GATE]
+        evidence = _verdict(report, ARMING_GATE)
         assert evidence["disarm"] is True, (
             "the pre-fix diff DOES batter the helper (RUNNING_VALUES / "
             "RUNNING_LINES); crediting nothing would make this a trivial pass"
@@ -233,9 +262,24 @@ class TestAC3NonGateDiffPaysNoTax:
         rc = vge.main(["--diff-file", str(NON_GATE)])
         out = capsys.readouterr().out
         assert rc == 0
-        assert out == "PASS: gate-evidence — no gate-adding change in the diff\n", (
-            repr(out)
-        )
+        assert out == GATE_FREE + "\n", repr(out)
+
+    def test_the_gate_free_verdict_claims_only_detection(self):
+        """It must not claim the diff ADDED no gate — it cannot know that.
+
+        SPEC-081 amendment, decision 3: a gate is seen only inside an added
+        `def` in a changed non-test `.py` file, so four classes of real gate are
+        invisible and used to print this line byte-identically to a genuinely
+        gate-free PR. Commit `7949ccb` on this very branch added four blocking
+        refusals and this line is what the detector printed. The per-boundary
+        widen-or-bound decisions are ISSUE-087's; the wording is this PR's.
+        """
+        assert "DETECTED" in GATE_FREE, GATE_FREE
+        assert "no gate-adding change" not in GATE_FREE, GATE_FREE
+        # Points at the boundary by reference rather than inlining the list,
+        # and names the carrier so a reader can find the open decisions.
+        assert "SPEC-081" in GATE_FREE and "ISSUE-087" in GATE_FREE, GATE_FREE
+        assert GATE_FREE.count("\n") == 0, "must stay a single review line"
 
     def test_the_non_gate_fixture_is_substantial_not_empty(self):
         """Vacuity guard: an empty diff would pass for the wrong reason."""
@@ -257,7 +301,7 @@ class TestAC4BothDirectionsEvidencedPasses:
         ]
 
     def test_post_fix_evidence_is_complete_for_the_repaired_gate(self):
-        evidence = vge.analyze(_diff(POST_FIX)).evidence[ARMING_GATE]
+        evidence = _verdict(vge.analyze(_diff(POST_FIX)), ARMING_GATE)
         assert evidence == {"disarm": True, "composite": True}, evidence
 
     def test_the_fix_is_what_moved_the_needle(self):
@@ -424,7 +468,8 @@ def _c_quoted_paths(text: str) -> str:
     and the kit ships to arbitrary repos where non-ASCII filenames are
     ordinary. Measured before the fix: the leading ``"`` defeated the ``b/``
     strip, the path no longer ended in ``.py``, `detect_gates` skipped the file,
-    and this fixture reported "PASS: no gate-adding change in the diff".
+    and this fixture reported the gate-free verdict (then worded "PASS: no
+    gate-adding change in the diff"; now `vge.GATE_FREE_VERDICT`).
     """
     return _c_quote_headers(_rewrite_header_paths(text, _accent))
 
@@ -435,7 +480,7 @@ def _tab_timestamp_headers(text: str) -> str:
     Reachable through the documented ``--diff-file``. Measured before the fix:
     the whole ``scripts/gate.py\\t2026-01-02 10:00:00`` payload became the path,
     so no file ended in ``.py`` and the same bytes that FAIL with a git-style
-    header reported "PASS: no gate-adding change in the diff".
+    header reported the gate-free verdict (`vge.GATE_FREE_VERDICT`).
     """
 
     def render(path: str) -> str:
@@ -470,11 +515,49 @@ class TestAC5TheMechanismIsSubjectToItsOwnRule:
         ids=[case[0] for case in _DISARM_MUTATIONS],
     )
     def test_a_mutated_post_fix_diff_still_passes(self, label, mutate):
-        """Both directions: a mutation must not manufacture a finding either."""
+        """Both directions: a mutation must not manufacture a finding either.
+
+        The assertion is an ABSENCE, so it needs a guard that proves the
+        detector is alive — review lesson 4's second clause, and an
+        occurrence-whitelist rather than a phrasing check. The text guard below
+        only proves the gate's definition survived the MUTATION; measured, with
+        detection fully dead (`_CONDITIONAL` neutralised) the text guard still
+        held and this assertion still passed (`gates: 0 | arming-gate finding:
+        [] | PASS`). `DETECTION LIVENESS` is what closes that, and
+        `test_the_detection_liveness_guard_is_load_bearing` mutation-proves it
+        with the string actually removed.
+        """
         text = mutate(_diff(POST_FIX))
         assert "def sprint_status_is_running" in text, label
         report = vge.analyze(text)
+        # DETECTION LIVENESS: the detector must still SEE the gate, not merely
+        # the bytes that define it.
+        assert ARMING_GATE in {g.symbol for g in report.gates}, (
+            f"{label}: detection is dead — an absent finding proves nothing"
+        )
         assert _finding_for(report, ARMING_GATE) is None, label
+
+    def test_the_detection_liveness_guard_is_load_bearing(self, monkeypatch):
+        """Kill detection: the liveness guard must fail, the old guards must not.
+
+        Both halves matter. If the liveness guard survived a dead detector it
+        would be decoration; if the pre-existing guards failed too, the defect
+        would never have been reachable in the first place, and it was.
+        """
+        text = _diff(POST_FIX)
+        monkeypatch.setattr(vge, "_CONDITIONAL", _NEVER)
+        report = vge.analyze(text)
+
+        # The guards that were already there still hold with detection dead.
+        assert "def sprint_status_is_running" in text
+        assert _finding_for(report, ARMING_GATE) is None
+
+        # The new one does not. Mutation-tested with the thing actually
+        # removed, rather than asserted as prose.
+        assert ARMING_GATE not in {g.symbol for g in report.gates}, (
+            "mutant SURVIVED: neutralising `_CONDITIONAL` must make the "
+            "detection-liveness assertion fail, or it is not load-bearing"
+        )
 
 
 class TestAC5CompositePinThroughTheRealConsumer:
@@ -589,28 +672,53 @@ def _contract_holds() -> bool:
 
 
 # Pinned by the REAL ISSUE-078 / ISSUE-074 diffs.
+#
+# `("variant_floor_removed", {"MIN_VARIANTS": 0})` used to live here and no
+# longer does, because it no longer kills THIS oracle: with the direction
+# requirement in place, admitting every block as a battery still leaves
+# `cmd_validate` with no refusal-direction evidence in either real diff, so the
+# three fixtures' findings are byte-identical at MIN_VARIANTS=0. Recording the
+# survivor rather than deleting the pin: the floor is now isolated on a
+# constructed single-case diff by
+# `TestAC5MutationMatrix::test_the_variant_floor_is_load_bearing`, the same way
+# REQUIRE_CONSUMER_OUTCOME and REQUIRE_INPUT_ONLY_PARAMS already are.
+#
+# `REQUIRE_REFUSAL_DIRECTION` is likewise absent on purpose and for the inverse
+# reason — it is the amendment's measured headline that direction detection
+# changes NOTHING on the real pair (0 regressions). It is pinned in both
+# directions by `TestDirectionIsWhatIsMeasured`, on the arm-only corpus and the
+# decisive attack, which are the inputs that can see it.
 _REAL_MUTANTS = [
-    ("variant_floor_removed", {"MIN_VARIANTS": 0}),
     ("variant_floor_raised_absurdly", {"MIN_VARIANTS": 999}),
     ("vacuity_guard_requirement_dropped", {"REQUIRE_VACUITY_GUARD": False}),
     ("refusal_vocabulary_emptied", {"REFUSAL_PATTERNS": (), "_BOOL_REFUSAL": _NEVER}),
 ]
 
-# A minimal gate whose only evidence is a vacuity-guarded HELPER battery: no
-# consumer-level outcome anywhere. Isolates REQUIRE_CONSUMER_OUTCOME, which the
-# real fixtures cannot exercise (both already carry consumer batteries).
-_HELPER_ONLY_DIFF = """diff --git a/scripts/demo_gate.py b/scripts/demo_gate.py
+# The demo gate the three constructed isolating diffs below share. Written so
+# its REFUSAL reads as `False` (`blocked_marker_is_absent` returns False when
+# the forbidden marker is there), because the direction check reads polarity
+# lexically: a detector-shaped sibling whose refusal reads as `True` would make
+# every battery here indistinguishable from an arm-only one, which is the
+# disclosed limitation, not the rule under test in this section.
+_DEMO_GATE_SOURCE = """diff --git a/scripts/demo_gate.py b/scripts/demo_gate.py
 --- a/scripts/demo_gate.py
 +++ b/scripts/demo_gate.py
 @@ -0,0 +1,5 @@
-+def blocked_marker_is_present(text: str) -> bool:
++def blocked_marker_is_absent(text: str) -> bool:
 +    if "BLOCKED-MARKER" in text:
-+        return True
-+    return False
-diff --git a/tests/test_demo_gate.py b/tests/test_demo_gate.py
++        return False
++    return True
+"""
+
+_DEMO_TEST_HEADER = """diff --git a/tests/test_demo_gate.py b/tests/test_demo_gate.py
 --- a/tests/test_demo_gate.py
 +++ b/tests/test_demo_gate.py
-@@ -0,0 +1,11 @@
+"""
+
+# A minimal gate whose only evidence is a vacuity-guarded HELPER battery: no
+# consumer-level outcome anywhere. Isolates REQUIRE_CONSUMER_OUTCOME, which the
+# real fixtures cannot exercise (both already carry consumer batteries).
+_HELPER_ONLY_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,11 @@
 +_MARKER_VARIANTS = [
 +    "BLOCKED-MARKER",
 +    "  BLOCKED-MARKER  ",
@@ -618,30 +726,19 @@ diff --git a/tests/test_demo_gate.py b/tests/test_demo_gate.py
 +]
 +
 +@pytest.mark.parametrize("variant", _MARKER_VARIANTS)
-+def test_blocked_marker_is_present_still_refuses(variant):
++def test_blocked_marker_is_absent_still_refuses(variant):
 +    text = f"header\\n{variant}\\nfooter"
 +    assert "BLOCKED-MARKER" in text
-+    assert blocked_marker_is_present(text) is True
++    assert blocked_marker_is_absent(text) is False
 """
 
 # The same gate whose only evidence is an OUTCOME MAP (the expected value is
 # itself a parameter). Isolates REQUIRE_INPUT_ONLY_PARAMS.
-_OUTCOME_MAP_DIFF = """diff --git a/scripts/demo_gate.py b/scripts/demo_gate.py
---- a/scripts/demo_gate.py
-+++ b/scripts/demo_gate.py
-@@ -0,0 +1,5 @@
-+def blocked_marker_is_present(text: str) -> bool:
-+    if "BLOCKED-MARKER" in text:
-+        return True
-+    return False
-diff --git a/tests/test_demo_gate.py b/tests/test_demo_gate.py
---- a/tests/test_demo_gate.py
-+++ b/tests/test_demo_gate.py
-@@ -0,0 +1,12 @@
+_OUTCOME_MAP_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,12 @@
 +_OUTCOME_MAP = [
-+    ("BLOCKED-MARKER here", True),
-+    ("clean text here", False),
-+    ("another clean one", False),
++    ("BLOCKED-MARKER here", False),
++    ("clean text here", True),
++    ("another clean one", True),
 +]
 +
 +@pytest.mark.parametrize("variant,expected", _OUTCOME_MAP)
@@ -649,10 +746,22 @@ diff --git a/tests/test_demo_gate.py b/tests/test_demo_gate.py
 +    text = variant
 +    assert isinstance(text, str) is True
 +    assert "BLOCKED-MARKER" in text or expected is False
-+    assert blocked_marker_is_present(text) is expected
++    assert blocked_marker_is_absent(text) is expected
 """
 
-_DEMO_GATE = "blocked_marker_is_present"
+# The same gate whose only evidence is a SINGLE refusal-direction case — right
+# in every respect except that it varied nothing. Isolates MIN_VARIANTS, which
+# the real fixtures no longer can: see the note above `_REAL_MUTANTS`.
+_SINGLE_CASE_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,6 @@
++def test_blocked_marker_is_absent_refuses_the_one_case():
++    text = "header\\nBLOCKED-MARKER\\nfooter"
++    assert "BLOCKED-MARKER" in text
++    assert blocked_marker_is_absent(text) is False
++    assert exit_code == 1
+"""
+
+_DEMO_GATE = "blocked_marker_is_absent"
+_DEMO_GATE_PATH = "scripts/demo_gate.py"
 
 
 class TestAC5MutationMatrix:
@@ -693,7 +802,7 @@ class TestAC5MutationMatrix:
         """Helper-only evidence must NOT satisfy the composite half."""
         armed = vge.analyze(_HELPER_ONLY_DIFF)
         assert _DEMO_GATE in {g.symbol for g in armed.gates}, armed.gates
-        assert armed.evidence[_DEMO_GATE] == {"disarm": True, "composite": False}
+        assert _verdict(armed, _DEMO_GATE) == {"disarm": True, "composite": False}
         assert _finding_for(armed, _DEMO_GATE).kind == "missing-composite-pin"
 
         monkeypatch.setattr(vge, "REQUIRE_CONSUMER_OUTCOME", False)
@@ -707,7 +816,7 @@ class TestAC5MutationMatrix:
         """An outcome MAP is a mapping, not a direction battery."""
         armed = vge.analyze(_OUTCOME_MAP_DIFF)
         assert _DEMO_GATE in {g.symbol for g in armed.gates}, armed.gates
-        assert armed.evidence[_DEMO_GATE] == {"disarm": False, "composite": False}
+        assert _verdict(armed, _DEMO_GATE) == {"disarm": False, "composite": False}
         assert _finding_for(armed, _DEMO_GATE).kind == "missing-disarm-battery"
 
         monkeypatch.setattr(vge, "REQUIRE_INPUT_ONLY_PARAMS", False)
@@ -716,6 +825,571 @@ class TestAC5MutationMatrix:
             "mutant SURVIVED: dropping the input-only rule must let an outcome "
             "map count as a disarm battery"
         )
+
+    def test_the_variant_floor_is_load_bearing(self, monkeypatch):
+        """One perfect case is not a battery; and the floor is what says so.
+
+        Isolated on a constructed diff because the real fixtures stopped
+        separating this knob once the direction requirement landed — see the
+        note above `_REAL_MUTANTS`. The single case here is refusal-directed and
+        consumer-level, so the ONLY thing between it and a clean pass is
+        MIN_VARIANTS.
+        """
+        armed = vge.analyze(_SINGLE_CASE_DIFF)
+        assert _DEMO_GATE in {g.symbol for g in armed.gates}, armed.gates
+        assert _verdict(armed, _DEMO_GATE) == {"disarm": False, "composite": False}
+        assert _finding_for(armed, _DEMO_GATE).kind == "missing-disarm-battery"
+
+        monkeypatch.setattr(vge, "MIN_VARIANTS", 0)
+        disarmed = vge.analyze(_SINGLE_CASE_DIFF)
+        assert _finding_for(disarmed, _DEMO_GATE) is None, (
+            "mutant SURVIVED: removing the variant floor must let a single "
+            "case clear both halves"
+        )
+
+
+# ── DIRECTION: the requirement this gate is named after ──────────────
+#
+# Review lesson 16, which ISSUE-081 is the mechanical carrier for, fired on
+# ISSUE-081 itself: "a newly added defence must be tested in the DISARM
+# direction and through its real consumer, not only in the arm direction at its
+# helper." The implementation measured END-TO-END-NESS — ">= MIN_VARIANTS
+# variants that mention the gate, asserting *some* literal" — while the
+# requirement names DIRECTION. Neither half of the evidence computation looked
+# at what the battery ASSERTS, and `_LITERAL_EXPECTED_RE` matches `True`/`0`
+# as readily as `False`/`1`.
+#
+# Measured consequence, and the baseline these cases are calibrated against:
+# `disarm` was True for 7 of the 8 arm-only shapes below (the 8th is held off
+# by REQUIRE_INPUT_ONLY_PARAMS, a different rule), i.e. arm-only recall 1/8.
+# SPEC-081 amendment, decision 1 (Option E).
+
+#: The gate the arm-only corpus is built around. Written so the ACCEPT outcome
+#: reads lexically as success (`is True`) and the REFUSAL reads as `False`, so
+#: that "arm-only" and "not refusal-shaped" coincide. A detector-shaped gate
+#: would make them diverge — which is the disclosed polarity class, pinned
+#: separately by `TestTheKnownWeaknessOfDirectionDetection`.
+_ARM_GATE = "zzmark_is_present"
+_ARM_GATE_PATH = "scripts/demo_arm.py"
+
+_ARM_GATE_SOURCE = """diff --git a/scripts/demo_arm.py b/scripts/demo_arm.py
+--- a/scripts/demo_arm.py
++++ b/scripts/demo_arm.py
+@@ -0,0 +1,5 @@
++def zzmark_is_present(text: str) -> bool:
++    if "ZZMARK" not in text:
++        return False
++    return True
+"""
+
+#: The `@@` line counts here are nominal: `_parse` reads the hunk header only
+#: for its optional function hint and never for its line counts, which is
+#: pinned by the `hunk_headers_lose_their_function_hint` disarm mutation.
+_ARM_TEST_HEADER = """diff --git a/tests/test_demo_arm.py b/tests/test_demo_arm.py
+--- a/tests/test_demo_arm.py
++++ b/tests/test_demo_arm.py
+@@ -0,0 +1,40 @@
+"""
+
+
+def _arm_diff(body: str) -> str:
+    return _ARM_GATE_SOURCE + _ARM_TEST_HEADER + body
+
+
+#: Eight batteries over `zzmark_is_present`, every one of them asserting only
+#: that the gate ACCEPTS. None is evidence that it cannot be disarmed, and the
+#: first is byte-for-byte the shape of all four historical fail-opens (a
+#: variant battery, a direct call, no refusal anywhere).
+_ARM_ONLY_SHAPES = [
+    (
+        "direct_call_is_True",
+        '+_VARIANTS = ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_zzmark_is_present_accepts(case):\n"
+        '+    text = f"{case}\\n"\n'
+        "+    assert zzmark_is_present(text) is True\n",
+    ),
+    (
+        "name_attributed_guard_is_True",
+        '+_VARIANTS = ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_the_cli_accepts_marked_text(case):\n"
+        '+    text = f"{case}\\n"\n'
+        '+    assert "ZZMARK" in text\n'
+        '+    assert out["valid"] is True\n',
+    ),
+    (
+        "consumer_exit_zero",
+        '+_VARIANTS = ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_zzmark_is_present_exits_zero(case):\n"
+        '+    text = f"{case}\\n"\n'
+        '+    assert "ZZMARK" in text\n'
+        "+    assert zzmark_is_present(text) is True\n"
+        "+    assert exit_code == 0\n",
+    ),
+    (
+        # The case a naive right-hand-side check gets exactly backwards: the
+        # expected VALUE is `False`, and the assertion means "it succeeded".
+        "negated_against_False",
+        '+_VARIANTS = ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_zzmark_is_present_is_not_false(case):\n"
+        '+    text = f"{case}\\n"\n'
+        '+    assert "ZZMARK" in text\n'
+        "+    assert zzmark_is_present(text) != False\n",
+    ),
+    (
+        "success_verdict_string",
+        '+_VARIANTS = ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_zzmark_is_present_reports_valid(case):\n"
+        '+    text = f"{case}\\n"\n'
+        '+    assert "ZZMARK" in text\n'
+        "+    assert zzmark_is_present(text) is True\n"
+        '+    assert out["state"] == "valid"\n',
+    ),
+    (
+        "subprocess_returncode_zero",
+        '+_VARIANTS = ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_zzmark_is_present_through_the_cli(case):\n"
+        '+    text = f"{case}\\n"\n'
+        '+    assert "ZZMARK" in text\n'
+        "+    assert zzmark_is_present(text) is True\n"
+        "+    assert result.returncode == 0\n",
+    ),
+    (
+        "loop_battery_is_True",
+        "+def test_zzmark_is_present_accepts_each(case):\n"
+        '+    for case in ["ZZMARK a", "ZZMARK bb", "ZZMARK ccc"]:\n'
+        '+        text = f"{case}\\n"\n'
+        '+        assert "ZZMARK" in text\n'
+        "+        assert zzmark_is_present(text) is True\n",
+    ),
+    (
+        # Already caught at baseline, by REQUIRE_INPUT_ONLY_PARAMS rather than
+        # by direction — the 1 of the baseline 1-of-8. Kept in the corpus so
+        # the two rules are not confused for each other.
+        "outcome_map",
+        "+_MAP = [\n"
+        '+    ("ZZMARK a", True),\n'
+        '+    ("plain b", False),\n'
+        '+    ("plain c", False),\n'
+        "+]\n"
+        "+\n"
+        '+@pytest.mark.parametrize("case,expected", _MAP)\n'
+        "+def test_zzmark_is_present_map(case, expected):\n"
+        '+    text = f"{case}\\n"\n'
+        "+    assert zzmark_is_present(text) is expected\n",
+    ),
+]
+
+#: The same gate, battered in the REFUSAL direction, one operator form each.
+#: Without these the arm-only result above would be satisfied by a rule that
+#: returns False unconditionally (review lesson 4: mutation-test BOTH
+#: directions), and `!= 0` vs `!= False` is what proves the operator-awareness
+#: is doing work rather than decorating a value lookup.
+_REFUSAL_SHAPES = [
+    (
+        "is_False",
+        "+    assert zzmark_is_present(text) is False\n",
+    ),
+    (
+        "equals_nonzero_exit",
+        "+    assert exit_code == 1\n",
+    ),
+    (
+        "not_equal_to_zero",
+        "+    assert exit_code != 0\n",
+    ),
+    (
+        "screaming_refusal_constant",
+        "+    assert exit_code == sq.ROSTER_BOUNDARY_EXIT\n",
+    ),
+    (
+        "refusal_verdict_string",
+        '+    assert out["state"] == "rejected"\n',
+    ),
+    (
+        "assert_not",
+        "+    assert not zzmark_is_present(text)\n",
+    ),
+    (
+        "pytest_raises",
+        "+    with pytest.raises(SystemExit):\n"
+        "+        zzmark_is_present(text)\n",
+    ),
+]
+
+
+def _refusal_diff(tail: str) -> str:
+    """The gate, battered over 3 inputs, with <tail> as its ONLY refusal signal.
+
+    The `isinstance(...) is True` line is deliberate and is not the refusal: it
+    is there so the block clears `_is_battery`, which is direction-blind and
+    requires *some* constant literal expectation. Without it the `assert not`
+    and `pytest.raises` shapes would never become batteries, and the case would
+    report a direction failure caused by an unrelated rule.
+    """
+    return _arm_diff(
+        '+_VARIANTS = ["a", "bb", "ccc"]\n'
+        "+\n"
+        '+@pytest.mark.parametrize("case", _VARIANTS)\n'
+        "+def test_zzmark_is_present_refuses_unmarked(case):\n"
+        '+    text = f"{case}\\n"\n'
+        '+    assert "ZZMARK" not in text\n'
+        "+    assert isinstance(text, str) is True\n" + tail
+    )
+
+
+class TestDirectionIsWhatIsMeasured:
+    """`disarm` must mean "asserts a refusal", not "mentions the gate"."""
+
+    @pytest.mark.parametrize(
+        "label,body",
+        _ARM_ONLY_SHAPES,
+        ids=[case[0] for case in _ARM_ONLY_SHAPES],
+    )
+    def test_an_arm_only_battery_is_not_disarm_evidence(self, label, body):
+        report = vge.analyze(_arm_diff(body))
+
+        # VACUITY GUARD: a shape whose gate is not even detected would pass
+        # this case for the wrong reason.
+        assert _ARM_GATE in {g.symbol for g in report.gates}, label
+
+        assert _verdict(report, _ARM_GATE)["disarm"] is False, label
+        finding = _finding_for(report, _ARM_GATE)
+        assert finding is not None, label
+        assert finding.kind in (
+            "missing-disarm-battery",
+            "missing-refusal-direction",
+        ), (label, finding.kind)
+
+    @pytest.mark.parametrize(
+        "label,tail",
+        _REFUSAL_SHAPES,
+        ids=[case[0] for case in _REFUSAL_SHAPES],
+    )
+    def test_a_refusal_direction_battery_still_counts(self, label, tail):
+        """The other direction: the rule must not simply refuse everything."""
+        report = vge.analyze(_refusal_diff(tail))
+        assert _ARM_GATE in {g.symbol for g in report.gates}, label
+        assert _verdict(report, _ARM_GATE)["disarm"] is True, label
+
+    def test_the_operator_is_what_separates_the_two_negated_forms(self):
+        """`!= 0` is a refusal expectation; `!= False` is a success one.
+
+        Pinned at the predicate, because the two differ ONLY in the operator's
+        interaction with the value and a value-only rule gets both wrong.
+        """
+        assert vge._refusal_shaped("!=", "0") is True
+        assert vge._refusal_shaped("!=", "False") is False
+        assert vge._refusal_shaped("==", "False") is True
+        assert vge._refusal_shaped("==", "0") is False
+        assert vge._refusal_shaped("is not", "True") is True
+        assert vge._refusal_shaped("is", "True") is False
+
+    @pytest.mark.parametrize(
+        "label,body",
+        _ARM_ONLY_SHAPES,
+        ids=[case[0] for case in _ARM_ONLY_SHAPES],
+    )
+    def test_neutralising_the_direction_rule_restores_the_fail_open(
+        self, monkeypatch, label, body
+    ):
+        """Mutation, the other direction: the rule must be load-bearing.
+
+        With `REQUIRE_REFUSAL_DIRECTION` off, 7 of these 8 arm-only shapes go
+        back to `disarm=True` — the measured 1-of-8 baseline. The 8th
+        (`outcome_map`) stays False because a DIFFERENT rule holds it,
+        REQUIRE_INPUT_ONLY_PARAMS, and conflating the two would make this
+        matrix report a false survivor.
+        """
+        monkeypatch.setattr(vge, "REQUIRE_REFUSAL_DIRECTION", False)
+        verdict = _verdict(vge.analyze(_arm_diff(body)), _ARM_GATE)
+        expected = label == "outcome_map"
+        assert verdict["disarm"] is not expected, (
+            f"{label}: neutralising the direction rule must restore the "
+            f"pre-fix verdict, or the rule is not load-bearing"
+        )
+
+    def test_the_composite_half_needs_a_refusing_consumer_outcome(self):
+        """`returncode == 0` must not pin a gate through its consumer.
+
+        The composite half's whole claim is that the gate holds end to end; a
+        battery that drives the consumer and asserts SUCCESS proves the gate is
+        reachable, not that it refuses.
+        """
+        accepting = vge.analyze(
+            _refusal_diff("+    assert exit_code == 0\n")
+        )
+        assert _verdict(accepting, _ARM_GATE)["composite"] is False
+        refusing = vge.analyze(
+            _refusal_diff("+    assert exit_code == 1\n")
+        )
+        assert _verdict(refusing, _ARM_GATE)["composite"] is True
+
+
+# ── The decisive attack, through the real consumer ───────────────────
+
+#: Two purely arm-direction batteries over the two gates the committed pre-fix
+#: fixture adds: three variants each, inputs the gate must ACCEPT, `is True` /
+#: `== 0`, and mechanically ZERO refusal assertions. Measured before the fix:
+#: appending this to `issue_078_pre_fix.diff` — the diff AC-1/AC-2 require to be
+#: BLOCKED — took it to `exit 0` / `PASS — 2 gate(s) carry both directions:
+#: cmd_validate, sprint_status_is_running`.
+_ARM_ONLY_ATTACK = (
+    "diff --git a/tests/test_attack.py b/tests/test_attack.py\n"
+    "--- a/tests/test_attack.py\n"
+    "+++ b/tests/test_attack.py\n"
+    "@@ -0,0 +1,18 @@\n"
+    "+_ACCEPTED = [\n"
+    '+    "- Status: running",\n'
+    '+    "- Status: running  ",\n'
+    '+    "  - Status: running",\n'
+    "+]\n"
+    "+\n"
+    '+@pytest.mark.parametrize("variant", _ACCEPTED)\n'
+    "+def test_sprint_status_is_running_accepts_a_live_sprint(variant):\n"
+    '+    text = f"## Meta\\n{variant}\\n"\n'
+    '+    assert "- Status: running" in text\n'
+    "+    assert sprint_status_is_running(text) is True\n"
+    "+    assert exit_code == 0\n"
+    "+\n"
+    '+@pytest.mark.parametrize("variant", _ACCEPTED)\n'
+    "+def test_cmd_validate_accepts_a_live_sprint(variant):\n"
+    '+    text = f"## Meta\\n{variant}\\n"\n'
+    '+    assert "- Status: running" in text\n'
+    "+    assert cmd_validate(text) == 0\n"
+    "+    assert exit_code == 0\n"
+)
+
+
+def _attacked_pre_fix() -> str:
+    return _diff(PRE_FIX) + _ARM_ONLY_ATTACK
+
+
+class TestTheArmOnlyAttackIsBlocked:
+    """The pre-fix fixture plus arm-only noise must stay BLOCKED."""
+
+    def test_the_attack_really_adds_arm_only_batteries(self):
+        """Fixture pin: the attack must contain no refusal assertion at all.
+
+        Without this the case could pass because the attack was inert rather
+        than because the rule caught it.
+        """
+        text = _ARM_ONLY_ATTACK
+        assert text.count("is True") == 1 and "== 0" in text
+        assert "is False" not in text
+        assert "pytest.raises" not in text
+        assert "assert not " not in text
+        assert "!= 0" not in text
+        # And it must really be attributed to BOTH gates, or it could not have
+        # flipped the verdict at baseline.
+        assert f"{ARMING_GATE}(text)" in text
+        assert f"{VERDICT_GATE}(text)" in text
+
+    def test_the_attacked_pre_fix_diff_still_blocks(self):
+        report = vge.analyze(_attacked_pre_fix())
+        assert _symbols(report.findings) == {ARMING_GATE, VERDICT_GATE}, (
+            _symbols(report.findings)
+        )
+        assert _finding_for(report, ARMING_GATE).kind == "missing-composite-pin"
+        # The unattacked fixture reports `missing-disarm-battery` here, because
+        # NO battery is attributed to `cmd_validate` at all. The attack adds
+        # one — an arm-only one — so the honest kind is the second of the two
+        # separately-named modes. Same gate, same verdict, named for what is
+        # actually wrong with it.
+        assert (
+            _finding_for(report, VERDICT_GATE).kind
+            == "missing-refusal-direction"
+        )
+
+    def test_the_attack_restores_the_unattacked_evidence_verdicts(self):
+        """Per-gate `disarm`/`composite` must be exactly the pre-fix values."""
+        attacked = vge.analyze(_attacked_pre_fix())
+        clean = vge.analyze(_diff(PRE_FIX))
+        assert {
+            symbol: verdict
+            for (_, symbol), verdict in attacked.evidence.items()
+        } == {
+            symbol: verdict for (_, symbol), verdict in clean.evidence.items()
+        }
+
+    def test_the_attack_exits_non_zero_through_the_module_cli(self, tmp_path):
+        path = tmp_path / "attacked.diff"
+        path.write_text(_attacked_pre_fix(), encoding="utf-8")
+        assert vge.main(["--diff-file", str(path)]) == 1
+
+    def test_the_attack_is_refused_by_the_blocking_checkpoint(
+        self, monkeypatch, capsys
+    ):
+        """Through the REAL consumer, not `analyze` — review lesson 16."""
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _attacked_pre_fix()
+        )
+        assert vc.verify_review_gate_evidence("ISSUE-078") is False
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-078"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert "carry both directions" not in out, out
+        assert ARMING_GATE in out and VERDICT_GATE in out, out
+        assert "ADVISORY:" not in out, "this phase must be blocking"
+
+    def test_the_remedy_for_the_undirected_kind_discloses_its_error_rate(self):
+        """The 59% class must be disclosed in the output, not hidden.
+
+        SPEC-081 amendment, decision 1: the two failure modes are named apart
+        precisely because this one is unreliable, so its remedy has to say the
+        check can misread polarity AND name the escape. A remedy that reads as
+        confidently as the reliable kind's is how a reviewer gets told to add a
+        battery that already exists.
+        """
+        finding = _finding_for(vge.analyze(_attacked_pre_fix()), VERDICT_GATE)
+        message = finding.message
+        assert "16 of 27" in message, message
+        lowered = message.lower()
+        assert "lexical" in lowered, message
+        assert "detector-shaped" in lowered, message
+        assert "is none" in lowered, message
+        assert f"GATE-EVIDENCE-EXEMPT({VERDICT_GATE})" in message, message
+        assert "scripts/sprint_queue.py" in message, message
+
+    def test_the_reliable_kind_does_not_carry_the_caveat(self):
+        """The distinction is only useful if the kinds read differently."""
+        finding = _finding_for(vge.analyze(_diff(PRE_FIX)), VERDICT_GATE)
+        assert finding.kind == "missing-disarm-battery"
+        assert "16 of 27" not in finding.message, finding.message
+
+
+# ── The known weakness, pinned rather than left as prose ─────────────
+
+#: A detector-shaped gate with three attributed batteries. Two of them are
+#: GENUINE disarm batteries that this check cannot read — one asserts the
+#: refusal as `is True` (for a detector, "the decorated variant is still
+#: caught" IS the refusal, and that is not lexically decidable), the other
+#: asserts refusal by `is None`. The third is an incidental smoke battery whose
+#: `is False` the check does read.
+_POLARITY_INVERTED_DIFF_HEAD = """diff --git a/scripts/demo_detect.py b/scripts/demo_detect.py
+--- a/scripts/demo_detect.py
++++ b/scripts/demo_detect.py
+@@ -0,0 +1,5 @@
++def marker_is_detected(text: str) -> bool:
++    if "MARKER:" in text:
++        return True
++    return False
+diff --git a/tests/test_demo_detect.py b/tests/test_demo_detect.py
+--- a/tests/test_demo_detect.py
++++ b/tests/test_demo_detect.py
+@@ -0,0 +1,30 @@
++_DECORATED = [
++    "MARKER: plain",
++    "**MARKER: bold**",
++    "> MARKER: quoted",
++]
++
++@pytest.mark.parametrize("variant", _DECORATED)
++def test_marker_is_detected_survives_decoration(variant):
++    text = f"prefix\\n{variant}\\nsuffix"
++    assert "MARKER:" in text
++    assert marker_is_detected(text) is True
++
++@pytest.mark.parametrize("variant", _DECORATED)
++def test_parse_marker_withholds_a_value(variant):
++    text = f"prefix\\n{variant}\\nsuffix"
++    assert "MARKER:" in text
++    assert parse_marker(text) is None
+"""
+
+#: The one battery whose refusal the check CAN read. Deleting it is a one-line
+#: edit a real PR makes all the time.
+_INCIDENTAL_SMOKE_BATTERY = (
+    "+\n"
+    '+@pytest.mark.parametrize("variant", _DECORATED)\n'
+    "+def test_marker_is_detected_rejects_empty(variant):\n"
+    '+    text = f"prefix\\n{variant}\\nsuffix"\n'
+    '+    assert "MARKER:" in text\n'
+    '+    assert marker_is_detected("") is False\n'
+)
+
+_DETECTOR_GATE = "marker_is_detected"
+
+
+class TestTheKnownWeaknessOfDirectionDetection:
+    """A KNOWN, ACCEPTED false-block, pinned so nobody has to rediscover it.
+
+    Measured on PR #129's diff and reproduced here in miniature: the direction
+    check's 16-of-27 per-battery error rate is masked by `any()` semantics, and
+    the masking is one deleted battery away from being reachable. Deleting the
+    single incidental smoke battery leaves two genuine disarm batteries the
+    check cannot read, and the gate flips from evidenced-in-the-disarm-half to
+    not.
+
+    This is NOT a bug report. SPEC-081's amendment decided Option E *with this
+    cost disclosed*, against Option F (0 of 4) and Option G (0 of 4). What it
+    is, is the reason the two finding kinds are named apart: the flipped
+    verdict lands on `missing-refusal-direction`, whose remedy says the check
+    may be misreading polarity and names the exemption escape — rather than on
+    `missing-disarm-battery`, which would tell the author to add a battery that
+    already exists twice. The remedy, when this fires on an honest PR, is the
+    inline exemption; the durable carrier for a better answer (a per-gate
+    polarity declaration) is SPEC-081's last Open Question.
+    """
+
+    def test_the_two_genuine_batteries_are_really_genuine(self):
+        """Fixture pin: both really are disarm batteries, by construction."""
+        head = _POLARITY_INVERTED_DIFF_HEAD
+        # The detector gate's refusal IS `True` — that is what makes the first
+        # battery's `is True` the refusal direction and not the arm direction.
+        assert "+        return True\n" in head
+        assert "assert marker_is_detected(text) is True" in head
+        assert "assert parse_marker(text) is None" in head
+        assert "is False" not in head, "the smoke battery must be separable"
+
+    def test_with_the_smoke_battery_the_gate_is_credited(self):
+        report = vge.analyze(
+            _POLARITY_INVERTED_DIFF_HEAD + _INCIDENTAL_SMOKE_BATTERY
+        )
+        assert _DETECTOR_GATE in {g.symbol for g in report.gates}
+        assert _verdict(report, _DETECTOR_GATE)["disarm"] is True
+        assert _finding_for(report, _DETECTOR_GATE).kind == "missing-composite-pin"
+
+    def test_deleting_the_smoke_battery_reaches_the_false_block(self):
+        report = vge.analyze(_POLARITY_INVERTED_DIFF_HEAD)
+        assert _verdict(report, _DETECTOR_GATE)["disarm"] is False
+        finding = _finding_for(report, _DETECTOR_GATE)
+        # The mitigation that makes this an acceptable cost rather than a trap:
+        # the author is told that polarity may have been misread, and handed
+        # the escape, instead of being told to write a third disarm battery.
+        assert finding.kind == "missing-refusal-direction", finding.kind
+        assert "2 added battery" in finding.message, finding.message
+        assert "GATE-EVIDENCE-EXEMPT" in finding.message
+        assert "16 of 27" in finding.message
+
+    def test_the_named_remedy_actually_clears_it(self):
+        """The escape has to WORK, or disclosing it is worse than useless."""
+        waived = _POLARITY_INVERTED_DIFF_HEAD.replace(
+            "+def marker_is_detected(text: str) -> bool:",
+            f"+# GATE-EVIDENCE-EXEMPT({_DETECTOR_GATE}): detector-shaped — the "
+            "disarm direction is `assert marker_is_detected(text) is True` in "
+            "test_marker_is_detected_survives_decoration, which the polarity "
+            "check cannot read\n"
+            "+def marker_is_detected(text: str) -> bool:",
+            1,
+        )
+        report = vge.analyze(waived)
+        assert _finding_for(report, _DETECTOR_GATE) is None, report.findings
+        rendered = "\n".join(vge.format_report(report))
+        assert "EXEMPT: scripts/demo_detect.py:marker_is_detected" in rendered
 
 
 # ── Opt-out, and the registry wiring ────────────────────────────────
@@ -732,8 +1406,10 @@ class TestExemptionIsVisibleNotSilent:
         )
         report = vge.analyze(text)
         assert _finding_for(report, ARMING_GATE) is None
-        assert ARMING_GATE in {sym for sym, _ in report.exemptions}
-        assert all(reason for _, reason in report.exemptions)
+        assert ("scripts/sprint_queue.py", ARMING_GATE) in {
+            (path, sym) for path, sym, _ in report.exemptions
+        }, report.exemptions
+        assert all(reason for _, _, reason in report.exemptions)
 
         # The unexempted fixture is unaffected — the exemption is scoped to the
         # diff that carries it, not sticky state.
@@ -812,6 +1488,324 @@ class TestExemptionIsVisibleNotSilent:
         assert rc == 0
         assert "EXEMPT" in out
         assert "reason here" in out
+        # The waiver names the FILE as well as the symbol. The accidental
+        # waiver this provenance fix closed did print; its reason rendered as a
+        # truncated fragment of review prose that reads like nothing in
+        # particular, so visibility alone was not enough.
+        assert f"EXEMPT: scripts/sprint_queue.py:{ARMING_GATE}" in out, out
+
+
+# ── Exemption PROVENANCE (SPEC-081 amendment, decision 4) ────────────
+#
+# Decision 1 leaves a permanently undecidable class whose only escape is this
+# marker, so the marker stops being a convenience and becomes load-bearing.
+# It was not trustworthy, and on this branch it was LIVE rather than latent:
+# the exemption loop skipped test paths but applied no `.py` filter, required
+# no `#` prefix, and required no locality to the gate — only a non-empty
+# reason. Measured on this branch's own merge-base diff through the real
+# blocking checkpoint:
+#
+#   at 7a10422:  PASS — 2 gate(s) carry both directions: main, verify_review... | 5 exempted
+#   at ab907ea:  PASS — 1 gate(s) carry both directions: verify_review...      | 6 exempted
+#
+# `main` moved from evidenced to waived because the review WROTE THE FINDING
+# DOWN in `docs/review_notes/ISSUE-081.md`. Review lesson 6: shape validation
+# is not provenance.
+
+_GATE_FILE = "scripts/sprint_queue.py"
+
+
+def _with_marker_file(path: str, body: str) -> str:
+    """The pre-fix fixture plus one extra added file carrying <body>."""
+    head = (
+        f"diff --git a/{path} b/{path}\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        f"@@ -0,0 +1,{len(body.splitlines())} @@\n"
+    )
+    return _diff(PRE_FIX) + head + body
+
+
+class TestExemptionProvenance:
+    """An exemption counts only where it can have been written deliberately."""
+
+    def test_a_marker_in_a_markdown_file_does_not_exempt(self):
+        """The measured live defect: review PROSE waived a real gate.
+
+        Reproduced in the shape it actually occurred — a review-notes sentence
+        describing the hole, naming a real symbol, not `#`-prefixed.
+        """
+        text = _with_marker_file(
+            "docs/review_notes/ISSUE-999.md",
+            f"+Consequences: one `GATE-EVIDENCE-EXEMPT({ARMING_GATE}): ...` "
+            "anywhere in the source half exempts EVERY matching gate.\n",
+        )
+        report = vge.analyze(text)
+        assert report.exemptions == (), report.exemptions
+        assert ARMING_GATE in _symbols(report.findings)
+
+    def test_a_marker_inside_a_fenced_spec_block_does_not_exempt(self):
+        """A one-character reason in a code fence used to waive a real gate."""
+        text = _with_marker_file(
+            "docs/specs/SPEC-999.md",
+            "+```\n"
+            f"+# GATE-EVIDENCE-EXEMPT({ARMING_GATE}): x\n"
+            "+```\n",
+        )
+        report = vge.analyze(text)
+        assert report.exemptions == (), report.exemptions
+        assert ARMING_GATE in _symbols(report.findings)
+
+    def test_a_marker_in_a_python_docstring_does_not_exempt(self):
+        """`.py` is necessary but not sufficient — it has to be a COMMENT."""
+        text = _with_marker_file(
+            "scripts/unrelated_helper.py",
+            "+def describe() -> str:\n"
+            '+    """Explains the marker format.\n'
+            f"+    GATE-EVIDENCE-EXEMPT({ARMING_GATE}): illustrative only\n"
+            '+    """\n'
+            '+    return ""\n',
+        )
+        report = vge.analyze(text)
+        assert report.exemptions == (), report.exemptions
+        assert ARMING_GATE in _symbols(report.findings)
+
+    def test_a_marker_in_a_different_python_file_does_not_exempt(self):
+        """Locality: a `#` comment in the wrong `.py` file is still inert.
+
+        This is the cross-file leak. `docs/review_notes/ISSUE-081.md` recorded
+        it as "one marker anywhere in the source half exempts EVERY matching
+        gate", and every validator script in this repo has a `main`.
+        """
+        text = _with_marker_file(
+            "scripts/unrelated_helper.py",
+            f"+# GATE-EVIDENCE-EXEMPT({ARMING_GATE}): written in the wrong file\n"
+            "+VERSION = 1\n",
+        )
+        report = vge.analyze(text)
+        # Collected and reported — the marker is real — but NOT honoured for a
+        # gate in another file.
+        assert [
+            (path, symbol) for path, symbol, _ in report.exemptions
+        ] == [("scripts/unrelated_helper.py", ARMING_GATE)], report.exemptions
+        assert ARMING_GATE in _symbols(report.findings), (
+            "an exemption in another file must not waive this gate"
+        )
+
+    def test_a_commented_marker_in_the_gates_own_file_does_exempt(self):
+        """The other direction: the designed escape must still work.
+
+        Without this the four cases above would be satisfied by a rule that
+        honours nothing, which is review lesson 4's both-directions clause.
+        """
+        text = _diff(PRE_FIX).replace(
+            "+def sprint_status_is_running(sprint_text: str) -> bool:",
+            f"+# GATE-EVIDENCE-EXEMPT({ARMING_GATE}): detector polarity — the "
+            "disarm direction is asserted as `is True` in the heading battery\n"
+            "+def sprint_status_is_running(sprint_text: str) -> bool:",
+            1,
+        )
+        report = vge.analyze(text)
+        assert [
+            (path, symbol) for path, symbol, _ in report.exemptions
+        ] == [(_GATE_FILE, ARMING_GATE)], report.exemptions
+        assert _finding_for(report, ARMING_GATE) is None
+
+    def test_a_trailing_comment_marker_also_counts(self):
+        """`#` anywhere ahead of the marker, with no quote before it."""
+        text = _diff(PRE_FIX).replace(
+            "+ROSTER_BOUNDARY_EXIT = 3",
+            f"+ROSTER_BOUNDARY_EXIT = 3  # GATE-EVIDENCE-EXEMPT({VERDICT_GATE}): "
+            "CLI leg, covered by the boundary battery",
+            1,
+        )
+        report = vge.analyze(text)
+        assert (_GATE_FILE, VERDICT_GATE) in {
+            (path, symbol) for path, symbol, _ in report.exemptions
+        }, report.exemptions
+        assert _finding_for(report, VERDICT_GATE) is None
+
+    def test_the_five_intended_self_exemptions_are_well_formed(self):
+        """This module's own five waivers must satisfy the new provenance rule.
+
+        They are the concrete instance of SPEC-081's "a gate reached only
+        through a CLI will usually need an exemption" trade-off, and they are
+        what the branch's own blocking self-run reports. Read off the real
+        source file rather than restated, so tightening the rule without
+        updating them fails here instead of silently un-waiving five gates and
+        blocking the review that tightened it.
+        """
+        source = ROOT / "scripts" / "verify_gate_evidence.py"
+        assert source.name.endswith(".py") and not vge.is_test_path(
+            str(source.relative_to(ROOT))
+        )
+        markers = {}
+        for line in source.read_text(encoding="utf-8").splitlines():
+            match = vge._EXEMPT_RE.search(line)
+            if not match:
+                continue
+            prefix = line[: match.start()]
+            if not vge._COMMENTED_RE.match(prefix):
+                continue
+            markers[match.group(1)] = match.group("reason").strip()
+        assert set(markers) == {
+            "_is_predicate_shaped",
+            "_is_battery",
+            "_attributed",
+            "_is_non_vacuous",
+            "_has_consumer_outcome",
+        }, sorted(markers)
+        assert all(markers.values()), markers
+
+    def test_the_md_leak_is_refused_through_the_blocking_checkpoint(
+        self, monkeypatch, capsys
+    ):
+        """Through the real consumer: the `.md` waiver must not clear the gate.
+
+        The defect was confirmed through this exact path, so the fix is pinned
+        through it too rather than only at `analyze`.
+        """
+        text = _with_marker_file(
+            "docs/review_notes/ISSUE-999.md",
+            f"+prose mentioning GATE-EVIDENCE-EXEMPT({ARMING_GATE}): a reason\n",
+        )
+        monkeypatch.setattr(vc, "_gate_evidence_diff", lambda issue_id: text)
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-078"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert ARMING_GATE in out, out
+        assert "EXEMPT:" not in out, out
+
+
+# ── (path, symbol) keying ────────────────────────────────────────────
+
+#: Two `main` gates in two files, one marker, and a battery that evidences
+#: beta's. With the gates keyed on the bare symbol, the marker waived both and
+#: the summary still printed `1 exempted` — under-reporting the blast radius on
+#: the very line SPEC-081's "defeating it is visible" claim rests on.
+_TWO_MAIN_GATES = (
+    "diff --git a/scripts/alpha_tool.py b/scripts/alpha_tool.py\n"
+    "--- a/scripts/alpha_tool.py\n"
+    "+++ b/scripts/alpha_tool.py\n"
+    "@@ -0,0 +1,5 @@\n"
+    "+# GATE-EVIDENCE-EXEMPT(main): alpha's CLI leg, waived here and ONLY here\n"
+    "+def main(argv) -> int:\n"
+    "+    if not argv:\n"
+    "+        return 2\n"
+    "+    return 0\n"
+    "diff --git a/scripts/beta_tool.py b/scripts/beta_tool.py\n"
+    "--- a/scripts/beta_tool.py\n"
+    "+++ b/scripts/beta_tool.py\n"
+    "@@ -0,0 +1,4 @@\n"
+    "+def main(argv) -> int:\n"
+    "+    if not argv:\n"
+    "+        return 2\n"
+    "+    return 0\n"
+    "diff --git a/tests/test_beta_tool.py b/tests/test_beta_tool.py\n"
+    "--- a/tests/test_beta_tool.py\n"
+    "+++ b/tests/test_beta_tool.py\n"
+    "@@ -0,0 +1,9 @@\n"
+    '+_ARGVS = [[], [""], ["--"]]\n'
+    "+\n"
+    '+@pytest.mark.parametrize("argv", _ARGVS)\n'
+    "+def test_beta_main_refuses(argv):\n"
+    '+    text = "beta_tool fixture\\n"\n'
+    '+    assert "beta_tool" in text\n'
+    "+    assert main(argv) == 2\n"
+    "+    assert exit_code == 2\n"
+)
+
+_BETA_MARKER = (
+    "+++ b/scripts/beta_tool.py\n@@ -0,0 +1,4 @@\n",
+    "+++ b/scripts/beta_tool.py\n@@ -0,0 +1,5 @@\n"
+    "+# GATE-EVIDENCE-EXEMPT(main): beta's CLI leg, waived separately\n",
+)
+
+
+class TestEvidenceIsKeyedByPathAndSymbol:
+    """Two same-named gates in two files are two gates, not one."""
+
+    def test_the_two_main_gates_fixture_really_collides(self):
+        """Fixture pin: two gates, one symbol, exactly one marker."""
+        report = vge.analyze(_TWO_MAIN_GATES)
+        assert [(g.path, g.symbol) for g in report.gates] == [
+            ("scripts/alpha_tool.py", "main"),
+            ("scripts/beta_tool.py", "main"),
+        ], report.gates
+        assert len(report.evidence) == 2, report.evidence
+        assert _TWO_MAIN_GATES.count("GATE-EVIDENCE-EXEMPT") == 1
+
+    def test_one_marker_waives_exactly_one_and_the_count_says_so(self):
+        report = vge.analyze(_TWO_MAIN_GATES)
+        assert report.exemptions == (
+            (
+                "scripts/alpha_tool.py",
+                "main",
+                "alpha's CLI leg, waived here and ONLY here",
+            ),
+        ), report.exemptions
+        # beta's `main` is evidenced by the battery, alpha's is waived, so the
+        # report reaches the PASS summary — which is where the count lives.
+        assert report.findings == (), [(f.path, f.kind) for f in report.findings]
+        rendered = "\n".join(vge.format_report(report))
+        assert "1 gate(s) carry both directions: main" in rendered, rendered
+        assert "1 exempted, NOT evidenced: scripts/alpha_tool.py:main" in (
+            rendered
+        ), rendered
+        assert rendered.count("EXEMPT: ") == 1, rendered
+
+    def test_the_marker_does_not_waive_the_other_file(self):
+        """Drop beta's battery: beta must block, alpha must stay waived."""
+        text = _TWO_MAIN_GATES.split("diff --git a/tests/test_beta_tool.py")[0]
+        report = vge.analyze(text)
+        assert [(f.path, f.kind) for f in report.findings] == [
+            ("scripts/beta_tool.py", "missing-disarm-battery")
+        ], [(f.path, f.kind) for f in report.findings]
+
+    def test_two_same_named_gates_need_two_markers(self):
+        """The count tracks gates, not markers."""
+        both = vge.analyze(_TWO_MAIN_GATES.replace(*_BETA_MARKER, 1))
+        assert both.findings == (), both.findings
+        rendered = "\n".join(vge.format_report(both))
+        assert "2 exempted, NOT evidenced" in rendered, rendered
+        assert "scripts/alpha_tool.py:main" in rendered
+        assert "scripts/beta_tool.py:main" in rendered
+
+    def test_the_colliding_main_fixture_yields_one_record_per_gate(self):
+        """The natural instance: PR #101 detects 6 gates and used to yield 5.
+
+        A real merged diff rather than a constructed one, because the collision
+        is not exotic — every validator script in this repo has a `main`, and
+        this PR added two of them in one change.
+        """
+        report = vge.analyze(_diff(COLLIDING))
+        gates = [(g.path, g.symbol) for g in report.gates]
+        assert len(gates) == 6, gates
+        assert sorted(symbol for _, symbol in gates).count("main") == 2, gates
+        assert len(report.evidence) == 6, report.evidence
+        assert ("scripts/verify_design_sweeps.py", "main") in report.evidence
+        assert ("scripts/verify_hollow_tests.py", "main") in report.evidence
+
+    def test_a_marker_for_one_colliding_main_leaves_the_other_blocking(self):
+        """Measured consequence of the old keying, on the real diff."""
+        anchor = "+def main(argv: list[str] | None = None) -> int:"
+        text = _diff(COLLIDING)
+        # Fixture pin: both files really do define `main` with this signature,
+        # so the replace below has to be scoped to the FIRST occurrence.
+        assert text.count(anchor) == 2, text.count(anchor)
+        text = text.replace(
+            anchor,
+            "+# GATE-EVIDENCE-EXEMPT(main): sweeps CLI leg only\n" + anchor,
+            1,
+        )
+        report = vge.analyze(text)
+        waived = {(path, symbol) for path, symbol, _ in report.exemptions}
+        assert waived == {("scripts/verify_design_sweeps.py", "main")}, waived
+        blocked = {(f.path, f.symbol) for f in report.findings}
+        assert ("scripts/verify_hollow_tests.py", "main") in blocked, blocked
+        assert ("scripts/verify_design_sweeps.py", "main") not in blocked, blocked
 
 
 class TestPhaseIsRegisteredAndBlocking:
@@ -843,7 +1837,9 @@ class TestJsonOutputIsStable:
         payload = json.loads(capsys.readouterr().out)
         assert rc == 1
         assert ARMING_GATE in {f["symbol"] for f in payload["findings"]}
-        assert payload["evidence"][ARMING_GATE] == {
+        # Path-qualified: `(path, symbol)` is not a JSON key, and dropping the
+        # path would re-introduce the collision the keying exists to fix.
+        assert payload["evidence"][f"scripts/sprint_queue.py::{ARMING_GATE}"] == {
             "disarm": True,
             "composite": False,
         }
@@ -986,7 +1982,7 @@ class TestUntrackedFilesAreAcquired:
             f"[A untracked] {out_a}\n[B committed] {out_b}"
         )
         assert _REPO_GATE in out_a, out_a
-        assert "no gate-adding change in the diff" not in out_a, out_a
+        assert GATE_FREE not in out_a, out_a
 
     def test_an_untracked_gate_blocks_through_the_registered_cli(
         self, tmp_path, monkeypatch, capsys
@@ -1068,7 +2064,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
 
     Point it at the branch under review and the whole chain collapses:
     merge_base == HEAD -> `git diff` exits 0 with empty stdout -> `analyze("")`
-    finds no files -> "PASS: no gate-adding change in the diff" -> exit 0,
+    finds no files -> the gate-free verdict (`vge.GATE_FREE_VERDICT`) -> exit 0,
     byte-identical to a legitimately gate-free PR. The same accident fires with
     no attacker at all when the branch under review IS the default branch.
     Workspace-persisted state a gate reads is untrusted input: validate on read.
@@ -1115,7 +2111,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
 
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
         assert "origin/HEAD" in out, out
 
     def test_a_disarmed_run_does_not_read_like_a_clean_one(
@@ -1154,7 +2150,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
         assert verdict is False, out
         assert "same commit as HEAD" in out, out
         assert "IS the branch under review" not in out, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
 
     def test_the_branch_under_review_being_the_default_branch_fails_closed(
         self, tmp_path, monkeypatch, capsys
@@ -1168,7 +2164,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
 
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
 
     def test_the_default_branch_name_check_is_load_bearing_on_its_own(
         self, tmp_path, monkeypatch, capsys
@@ -1186,7 +2182,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
         assert "work" in out, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
 
     def test_a_zero_byte_diff_is_refused_not_passed(
         self, tmp_path, monkeypatch, capsys
@@ -1203,7 +2199,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
 
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
 
 
 class TestChangedFilesVsBaseIsUnchanged:
@@ -1390,7 +2386,7 @@ class TestHeaderRenderings:
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
         assert _REPO_GATE in out, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
 
     def test_the_committed_pre_fix_fixture_c_quoted_still_blocks(self):
         """The diff this whole suite exists to refuse, in git's default spelling."""
@@ -1406,7 +2402,7 @@ class TestHeaderRenderings:
             f.symbol for f in report.findings
         ]
         rendered = "\n".join(vge.format_report(report))
-        assert "no gate-adding change in the diff" not in rendered, rendered
+        assert GATE_FREE not in rendered, rendered
 
     def test_a_real_plain_diff_u_header_detects_the_gate(self, tmp_path):
         """`diff -u` appends a TAB and a timestamp to the path field."""
@@ -1744,7 +2740,7 @@ class TestUntrackedNonAsciiPathsAreAcquired:
         verdict, out = _consume(monkeypatch, capsys, repo)
         assert verdict is False, out
         assert _REPO_GATE in out, out
-        assert "no gate-adding change in the diff" not in out, out
+        assert GATE_FREE not in out, out
 
     def test_an_untracked_non_ascii_gate_blocks_through_the_registered_cli(
         self, tmp_path, monkeypatch, capsys

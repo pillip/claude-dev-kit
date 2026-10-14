@@ -18,10 +18,35 @@ the repository it came from:
    silently honoured.
 2. **Is the gate evidenced in both directions?**
    * ``disarm`` — an added test battery (>= ``MIN_VARIANTS`` input-only
-     variants, constant literal expectations) that exercises the gate.
+     variants, constant literal expectations) that exercises the gate **and
+     asserts a refusal**.
    * ``composite`` — an added battery that asserts a **consumer-level**
-     outcome (an exit code / return code / a refusal constant) and carries an
-     input-side **vacuity guard** whose literal is attributable to the gate.
+     outcome (an exit code / return code / a refusal constant) *in the refusal
+     direction under its own operator* and carries an input-side **vacuity
+     guard** whose literal is attributable to the gate.
+
+What this module measures, stated exactly (SPEC-081 amendment, decision 1 and
+decision 3 — the earlier claim was wider than the code):
+
+* It verifies that **>= MIN_VARIANTS variants exist**, that their
+  **parameters feed only the input**, and that **some assertion is
+  refusal-shaped**.
+* It does **not** verify that the variants are *adversarial-but-plausible*.
+  That is semantic, stays the author's judgement, and is only proxied by the
+  vacuity guard.
+* Direction detection is **lexical and fallible**. Hand-classified on the
+  measurement corpus, **16 of 27** ``direction=False`` verdicts were wrong —
+  the battery really did assert a refusal, in a form this module cannot read:
+  predicate polarity (for a *detector*-shaped gate ``assert detected is True``
+  **is** the refusal, and that is not lexically decidable), refusal by
+  ``is None``, by an empty collection or verdict string, by probing a
+  violation list, or by a finding-kind string. ``any()`` semantics — a gate
+  passes when *any* attributed battery is recognised — is what keeps the
+  measured false-block rate at 0, not classifier accuracy. The two failure
+  modes are therefore reported under **separate** finding kinds
+  (``missing-disarm-battery`` vs ``missing-refusal-direction``) because their
+  reliability differs enormously, and the second kind's remedy says so and
+  names the inline-exemption escape.
 
 Why the vacuity guard carries the attribution: a syntactic checker cannot infer
 input *families*, and the two real ISSUE-078 diffs are indistinguishable at
@@ -82,6 +107,17 @@ REQUIRE_INPUT_ONLY_PARAMS = True
 #: Require a composite battery to assert a consumer-level outcome (exit code,
 #: return code, or a refusal constant), not merely to mention one.
 REQUIRE_CONSUMER_OUTCOME = True
+
+#: Require a battery to assert the gate's REFUSAL, not merely to exercise it.
+#: Without this, "disarm battery" degenerates into ">= MIN_VARIANTS variants
+#: that mention the gate" — measured: `disarm` was True for 7 of 8 purely
+#: arm-only shapes, including the no-guard shape that is the shape of all four
+#: historical fail-opens, and the committed `issue_078_pre_fix.diff` reached
+#: exit 0 when the only addition was two arm-direction batteries with
+#: mechanically zero refusal assertions. The implementation measured
+#: end-to-end-ness while the requirement names DIRECTION. 1/8 -> 8/8 with this
+#: on; pinned in both directions by `TestDirectionIsWhatIsMeasured`.
+REQUIRE_REFUSAL_DIRECTION = True
 
 # ── Vocabulary ───────────────────────────────────────────────────────
 
@@ -211,15 +247,26 @@ _EXEMPT_RE = re.compile(
     r"GATE-EVIDENCE-EXEMPT\(\s*([\w.]+)\s*\)\s*:\s*(?P<reason>.*)"
 )
 
+#: What must precede the marker on its line for it to be a real attestation: a
+#: ``#`` with no quote character before it. Matched against the line PREFIX, so
+#: a dedicated comment line and a trailing comment both qualify, while a marker
+#: inside a string literal (or in running prose that happens to contain one)
+#: does not. Fails CLOSED on the ambiguous `foo("x")  # GATE-...` shape, which
+#: is the safe direction for a waiver.
+_COMMENTED_RE = re.compile(r"^[^\"'#]*#")
+
 _VACUITY_RE = re.compile(
     r"\bassert\s+(?P<q>[\"'])(?P<lit>(?:[^\"'\\]|\\.)*)(?P=q)"
     r"\s+(?:not\s+)?in\s+(?P<expr>[^,\n]+)"
 )
 
+#: The operator is CAPTURED, not discarded: the composite half has to know
+#: whether the consumer-level literal was asserted in the refusal direction,
+#: and `returncode != 0` and `returncode != False` say opposite things.
 _CONSUMER_RE = re.compile(
     r"\bassert\s+[\w.\[\]\"'() ]*\b"
     r"(?:exit_code|exitcode|returncode|return_code|status_code|rc)\b"
-    r"\s*(?:==|!=|is(?:\s+not)?)\s*(?P<expected>[^,\n]+)"
+    r"\s*(?P<op>==|!=|is(?:\s+not)?)\s*(?P<expected>[^,\n]+)"
 )
 
 _ASSERT_EXPECTED_RE = re.compile(r"(?:\bis\s+(?:not\s+)?|==|!=)\s*([^,\n]+)")
@@ -227,6 +274,62 @@ _ASSERT_EXPECTED_RE = re.compile(r"(?:\bis\s+(?:not\s+)?|==|!=)\s*([^,\n]+)")
 _LITERAL_EXPECTED_RE = re.compile(
     r"^(?:True|False|None|-?\d+|[\"'].*|[\w.]*\b[A-Z][A-Z0-9_]{2,}\b.*)$"
 )
+
+# ── Direction vocabulary ─────────────────────────────────────────────
+#
+# What a battery ASSERTS, not merely that it ran. `_is_battery` above is
+# direction-blind by design — it answers "is this a battery", and
+# `_LITERAL_EXPECTED_RE` matches `True`/`0`/`None` as readily as `False`/`1`.
+
+#: Operators that INVERT the expected side's polarity. This is the whole reason
+#: the test is operator-aware rather than a lookup on the expected value: under
+#: `!=`, a SUCCESS literal is the refusal expectation, so `!= 0` counts and
+#: `!= False` does not. A rule that inspected only the right-hand side would
+#: get the negated form exactly backwards on both.
+_NEGATING_OPERATORS = frozenset({"!=", "is not"})
+
+#: One comparison on an assert line, operator INCLUDED. `is not` is listed
+#: before `is` so the longer operator wins; `_ASSERT_EXPECTED_RE` above stays
+#: as it is because `_is_battery` needs the expected side without the operator.
+_COMPARISON_RE = re.compile(
+    r"(?P<op>\bis\s+not\b|\bis\b|==|!=)\s*(?P<expected>[^,\n]+)"
+)
+
+#: The SUCCESS side of a boolean / exit-code comparison. Under a negating
+#: operator this — and only this — is a refusal expectation.
+_SUCCESS_LITERAL_RE = re.compile(r"^(?:True|[+-]?0+)$")
+
+_FALSE_LITERAL_RE = re.compile(r"^False$")
+
+#: A non-zero integer literal: `exit 1`, `exit 3`, `return 2`.
+_NONZERO_INT_RE = re.compile(r"^[+-]?0*[1-9]\d*$")
+
+#: A SCREAMING_CASE name, same spelling `_LITERAL_EXPECTED_RE` uses.
+_SCREAMING_NAME_RE = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
+
+#: Refusal tokens inside such a name: `sq.ROSTER_BOUNDARY_EXIT`, `FAIL_EXIT`.
+_REFUSAL_TOKEN_RE = re.compile(
+    r"EXIT|FAIL|ERROR|REFUS|REJECT|BOUNDARY|INVALID|BLOCK"
+)
+
+#: A quoted literal, so the refusal vocabulary below is matched against STRING
+#: LITERALS only. Against bare expressions it would read `== failures` (a
+#: variable) as a refusal expectation on the strength of the author's naming,
+#: which is the "it detects the vocabulary, not the refusal" mistake the
+#: SPEC-081 amendment killed a candidate rule for.
+_STRING_LITERAL_RE = re.compile(r"^[\"'](?P<inner>(?:[^\"'\\]|\\.)*)[\"']$")
+
+#: A refusal VERDICT string: `== "invalid"`, `== "rejected"`.
+_REFUSAL_STRING_RE = re.compile(
+    r"invalid|rejected|blocked|refused|denied|error|fail|refus|reject",
+    re.IGNORECASE,
+)
+
+#: The two non-comparison refusal idioms. `assert not <expr>` asserts the
+#: falsey direction directly, and both exception expectations assert that the
+#: call REFUSED rather than returned.
+_ASSERT_NOT_RE = re.compile(r"\bassert\s+not\b")
+_RAISES_RE = re.compile(r"\b(?:pytest\.raises|assertRaises(?:Regex)?)\s*\(")
 
 #: `git diff` on a feature branch is local and fast; this reuses the project's
 #: documented 30 s subprocess default rather than introducing a new knob.
@@ -256,8 +359,13 @@ class Finding:
 class Report:
     gates: tuple[Gate, ...]
     findings: tuple[Finding, ...]
-    exemptions: tuple[tuple[str, str], ...]
-    evidence: dict[str, dict[str, bool]]
+    #: ``(path, symbol, reason)``. Path-qualified because an exemption is only
+    #: honoured in the file that defines the gate.
+    exemptions: tuple[tuple[str, str, str], ...]
+    #: Keyed ``(path, symbol)``. A bare-symbol key silently merged two
+    #: same-named gates in different files (measured: PR #101 detects 6 gates
+    #: and used to yield 5 records).
+    evidence: dict[tuple[str, str], dict[str, bool]]
 
 
 # ── Diff parsing ─────────────────────────────────────────────────────
@@ -714,7 +822,7 @@ def _expected_sides(block: _Block) -> list[str]:
     return sides
 
 
-# GATE-EVIDENCE-EXEMPT(_is_battery): private predicate; mutation-pinned in BOTH directions through MIN_VARIANTS=0 and MIN_VARIANTS=999, and through REQUIRE_INPUT_ONLY_PARAMS on a constructed isolating diff.
+# GATE-EVIDENCE-EXEMPT(_is_battery): private predicate; mutation-pinned in BOTH directions through MIN_VARIANTS=999 on the real fixtures and MIN_VARIANTS=0 on `_SINGLE_CASE_DIFF`, plus REQUIRE_INPUT_ONLY_PARAMS on `_OUTCOME_MAP_DIFF`. It is direction-BLIND on purpose: it answers "is this a battery", and the refusal direction is `_asserts_refusal`'s question.
 def _is_battery(block: _Block, module_text: str) -> bool:
     if _variant_count(block, module_text) < MIN_VARIANTS:
         return False
@@ -784,24 +892,156 @@ def _is_non_vacuous(block: _Block) -> bool:
     return bool(_guard_literals(block))
 
 
-# GATE-EVIDENCE-EXEMPT(_has_consumer_outcome): private predicate; mutation-pinned through REQUIRE_CONSUMER_OUTCOME on a constructed helper-only diff.
+# GATE-EVIDENCE-EXEMPT(_has_consumer_outcome): private predicate; mutation-pinned through REQUIRE_CONSUMER_OUTCOME on a constructed helper-only diff, and through REQUIRE_REFUSAL_DIRECTION by the `consumer_exit_zero` arm-only shape.
 def _has_consumer_outcome(block: _Block) -> bool:
+    """A consumer-level outcome asserted in the REFUSAL direction.
+
+    `_CONSUMER_RE` alone accepts `returncode == 0` as readily as `== 1`, so on
+    its own it measures that a consumer was driven, never that the consumer
+    refused. The literal has to pass `_refusal_shaped` under its own operator.
+    """
     if not REQUIRE_CONSUMER_OUTCOME:
         return True
     for line in block.lines:
         match = _CONSUMER_RE.search(line)
-        if match and _LITERAL_EXPECTED_RE.match(match.group("expected").strip()):
-            return True
+        if not match:
+            continue
+        expected = match.group("expected").strip()
+        if not _LITERAL_EXPECTED_RE.match(expected):
+            continue
+        if REQUIRE_REFUSAL_DIRECTION and not _refusal_shaped(
+            match.group("op"), expected
+        ):
+            continue
+        return True
     return False
+
+
+def _refusal_shaped(operator: str, expected: str) -> bool:
+    """Does this comparison assert that the gate REFUSED?
+
+    Operator-aware on purpose. Under ``==``/``is`` a refusal expectation is
+    ``False``, a non-zero int literal, a SCREAMING_CASE constant whose name
+    carries a refusal token, or a refusal verdict string. Under ``!=``/``is
+    not`` it is the opposite: a *success* literal, which is what makes
+    ``!= 0`` count and ``!= False`` not count. A rule that inspected only the
+    expected value would classify both negated forms backwards.
+
+    Lexical, and therefore fallible in one direction only — it under-credits.
+    See the module docstring for the measured 16-of-27 error rate and the five
+    mechanisms behind it; `missing-refusal-direction` is the finding kind that
+    discloses it to the reviewer, with the exemption escape named inline.
+    """
+    value = expected.strip()
+    if " ".join(operator.split()) in _NEGATING_OPERATORS:
+        return bool(_SUCCESS_LITERAL_RE.match(value))
+    literal = _STRING_LITERAL_RE.match(value)
+    return bool(
+        _FALSE_LITERAL_RE.match(value)
+        or _NONZERO_INT_RE.match(value)
+        or any(
+            _REFUSAL_TOKEN_RE.search(name)
+            for name in _SCREAMING_NAME_RE.findall(value)
+        )
+        or (literal and _REFUSAL_STRING_RE.search(literal.group("inner")))
+    )
+
+
+def _refusal_assertions(block: _Block) -> list[str]:
+    """Every assertion in this block that reads as a refusal expectation.
+
+    Scans the raw added line, so the vocabulary is matched against comments and
+    assertion messages too. Disclosed rather than closed: a trailing
+    ``# rc is 1`` on an otherwise arm-only assert line would over-credit the
+    direction. That is an **under-detection**, the error direction SPEC-081
+    declares safer (it fails to catch, it does not halt an honest review), it
+    is visible in the diff, and an author who wants this gate to pass already
+    has a one-line documented bypass in `_EXEMPT_RE` — so the vector grants
+    nothing an adversary did not already have. Not de-stringed, because
+    ``== "invalid"`` is a refusal expectation that `_destring` would keep but
+    a longer message it would blank, and mixing the two policies in one pass
+    is how the `_count_bracket_elements` index bug happened.
+    """
+    found: list[str] = []
+    for line in block.lines:
+        if _RAISES_RE.search(line) or _ASSERT_NOT_RE.search(line):
+            found.append(line.strip())
+            continue
+        if "assert" not in line:
+            continue
+        for match in _COMPARISON_RE.finditer(line):
+            if _refusal_shaped(match.group("op"), match.group("expected")):
+                found.append(line.strip())
+                break
+    return found
+
+
+def _asserts_refusal(block: _Block) -> bool:
+    """True when the battery asserts the gate's DISARM direction, not its arm.
+
+    This is the discriminator the SPEC-081 amendment adopted (Option E). The
+    knob is read at call time so the suite can neutralise it and prove the rule
+    is load-bearing in both directions.
+    """
+    return (not REQUIRE_REFUSAL_DIRECTION) or bool(_refusal_assertions(block))
 
 
 # ── Analysis ─────────────────────────────────────────────────────────
 
+#: The gate-free verdict, as ONE module constant rather than a literal re-typed
+#: at every assertion site. The suite guards it in the negative ~10 times ("a
+#: disarmed run must not read like a clean one"), and a `not in` guard whose
+#: literal has drifted from the implementation passes vacuously — review lesson
+#: 4's second clause, and lesson 16's "import the oracle, don't re-type it".
+#:
+#: It says DETECTED, not "no gate-adding change", because the detector cannot
+#: know the latter: a gate is seen only inside an added `def` in a changed
+#: non-test `.py` file, so a module-level gate, a gate in one of this kit's
+#: eight `.sh` scripts, a gate in a source file whose name matches the
+#: test-path heuristics, and a tightened predicate in a `class`-hinted hunk are
+#: all invisible — and used to print this line byte-identically. Demonstrated
+#: on this branch: commit `7949ccb`, authored to harden this very gate, adds
+#: four blocking refusals and the detector reported `gates: []` / exit 0.
+#: Widening or bounding each boundary is ISSUE-087's; saying only what is known
+#: is this PR's (SPEC-081 amendment, decision 3).
+GATE_FREE_VERDICT = (
+    "PASS: gate-evidence — no gate DETECTED in the diff. A pass means no gate "
+    "was detected, NOT that none was added: detection is bounded to an added "
+    "`def` in a changed non-test `.py` file (boundary and carrier: SPEC-081 "
+    "amendment decision 3 / ISSUE-087)."
+)
+
 _DISARM_MESSAGE = (
-    "{symbol} ({path}:{line}) adds a gate with no disarm-direction battery. "
-    "Add a test that drives {symbol} over at least {minimum} adversarial-but-"
-    "plausible input variants (value vocabulary, line shape, encoding, "
-    "placement, fencing, duplication) and asserts it still refuses every one."
+    "{symbol} ({path}:{line}) adds a gate and NO added test battery is "
+    "attributed to it at all. Add a test that drives {symbol} over at least "
+    "{minimum} input variants (value vocabulary, line shape, encoding, "
+    "placement, fencing, duplication) whose parameters feed only the input, "
+    "and assert it still REFUSES every one."
+)
+
+#: The other half of what used to be one finding. Split because the two modes
+#: have wildly different reliability: "no attributed battery at all" was 11 of
+#: 11 true positives on the measurement corpus, while THIS one carries the
+#: direction classifier's measured 16-of-27 per-battery error rate. A reviewer
+#: who cannot tell the two apart cannot calibrate either, so the message states
+#: the error rate, the mechanisms, and the escape (SPEC-081 amendment, 1).
+_UNDIRECTED_MESSAGE = (
+    "{symbol} ({path}:{line}) has {batteries} added battery/batteries "
+    "attributed to it, but none of them is recognised as asserting a REFUSAL "
+    "— every expected side reads as success (`is True`, `== 0`, `!= False`), "
+    "i.e. the gate is evidenced in the ARM direction only, which is the shape "
+    "of all four measured fail-opens. Add one assertion in the refusal "
+    "direction: `is False`, a non-zero exit code, a refusal constant, or "
+    "`pytest.raises`. CAVEAT, measured, not hypothetical: this check reads "
+    "assertion polarity LEXICALLY and misreads it often — hand-classified, 16 "
+    "of 27 such verdicts were wrong (SPEC-081 amendment, decision 1). For a "
+    "DETECTOR-shaped gate the disarm direction is correctly written `assert "
+    "detected is True`, which is not lexically decidable at all; refusal by "
+    "`is None`, by an empty collection, by probing a violation list, or by a "
+    "finding-kind string are equally invisible here. If your battery already "
+    "asserts refusal in a form this check cannot see, that is exactly what the "
+    "escape is for: add `# GATE-EVIDENCE-EXEMPT({symbol}): <reason naming the "
+    "test that carries the refusal>` as a comment in {path} itself."
 )
 
 _COMPOSITE_MESSAGE = (
@@ -815,60 +1055,113 @@ _COMPOSITE_MESSAGE = (
 )
 
 
+def _exemptions(files: list[_FileDiff]) -> tuple[tuple[str, str, str], ...]:
+    """Inline attestations, as ``(path, symbol, reason)``.
+
+    Four provenance requirements, every one of them a measured defect rather
+    than a precaution (SPEC-081 amendment, decision 4 — review lesson 6: shape
+    validation is not provenance):
+
+    * **Non-test files only.** A test that merely QUOTES the marker in a
+      fixture string silently exempted the symbol in the string. Found by
+      dogfooding this gate on its own diff; pinned by
+      `test_an_exemption_quoted_in_a_TEST_file_does_not_count`.
+    * **``.py`` files only.** There was no suffix filter at all, so the review
+      that *documented* this hole committed `docs/review_notes/ISSUE-081.md`
+      with a marker naming a real symbol in its prose — and that line waived
+      `main` on this branch's own blocking run, moving it from *evidenced* to
+      *waived*. Documenting the vulnerability exploited it.
+    * **``#``-commented only.** The marker has to sit in a comment with no
+      quote character before the ``#``, so SPEC prose inside a fenced block and
+      a docstring sentence are both inert. A one-character reason in a fenced
+      code block waived a real gate.
+    * **Same file as the gate.** The result is keyed ``(path, symbol)`` and
+      `analyze` only honours an exemption whose path is the gate's own path. A
+      marker in `NOTES.md` waived two same-named gates in two different files
+      at once; every validator script in this repo has a `main`.
+
+    The marker stays *honoured, not refused* — the claim SPEC-081 makes is that
+    defeating this gate is VISIBLE. Visibility is why the rendered line carries
+    the path as well as the symbol: the accidental waiver above did print, as a
+    truncated fragment of review prose that reads like nothing in particular.
+    """
+    found: list[tuple[str, str, str]] = []
+    for file in files:
+        if is_test_path(file.path) or not file.path.endswith(".py"):
+            continue
+        for _, text in file.added:
+            match = _EXEMPT_RE.search(text)
+            if not match or not match.group("reason").strip():
+                continue
+            if not _COMMENTED_RE.match(text[: match.start()]):
+                continue
+            found.append(
+                (file.path, match.group(1), match.group("reason").strip())
+            )
+    return tuple(found)
+
+
 def analyze(diff_text: str) -> Report:
     """Classify a unified diff: which gates it adds, and what evidences them."""
     files = _parse(diff_text)
     gates = detect_gates(files)
 
-    # Exemptions are read from the SOURCE half only. Scanning test files too
-    # was a measured fail-open in this very gate: a test that merely QUOTES the
-    # marker (this module's own suite does) silently exempted the symbol named
-    # in its fixture string. An exemption annotates a gate, and gates live in
-    # source, so that is where the marker belongs.
-    exemptions: list[tuple[str, str]] = []
-    for file in files:
-        if is_test_path(file.path):
-            continue
-        for _, text in file.added:
-            match = _EXEMPT_RE.search(text)
-            if match and match.group("reason").strip():
-                exemptions.append((match.group(1), match.group("reason").strip()))
-    exempted = {symbol for symbol, _ in exemptions}
+    exemptions = _exemptions(files)
+    exempted = {(path, symbol) for path, symbol, _ in exemptions}
 
     blocks, module_text = _blocks(files)
     batteries = [block for block in blocks if _is_battery(block, module_text)]
 
-    evidence: dict[str, dict[str, bool]] = {}
+    evidence: dict[tuple[str, str], dict[str, bool]] = {}
     findings: list[Finding] = []
     for gate in gates:
-        disarm = any(
-            _calls(block, gate.symbol) or _attributed(block, gate.symbol)
+        attributed = [
+            block
             for block in batteries
-        )
+            if _calls(block, gate.symbol) or _attributed(block, gate.symbol)
+        ]
+        # DIRECTION, not end-to-end-ness. `attributed` alone answers "is there
+        # a >= MIN_VARIANTS battery that mentions this gate", which is what
+        # `disarm` used to mean and is not what the requirement names.
+        disarm = any(_asserts_refusal(block) for block in attributed)
         composite = any(
-            (_calls(block, gate.symbol) or _attributed(block, gate.symbol))
-            and _is_non_vacuous(block)
-            and _has_consumer_outcome(block)
-            for block in batteries
+            _is_non_vacuous(block) and _has_consumer_outcome(block)
+            for block in attributed
         )
-        evidence[gate.symbol] = {"disarm": disarm, "composite": composite}
+        evidence[(gate.path, gate.symbol)] = {
+            "disarm": disarm,
+            "composite": composite,
+        }
 
-        if gate.symbol in exempted:
+        # Keyed on (path, symbol): a marker in one file must not waive a
+        # same-named gate in another. Measured naturally on PR #101, where
+        # `main` in verify_design_sweeps.py and `main` in verify_hollow_tests.py
+        # collapsed into one record — and every validator script here has a
+        # `main`.
+        if (gate.path, gate.symbol) in exempted:
             continue
         context = {
             "symbol": gate.symbol,
             "path": gate.path,
             "line": gate.line,
             "minimum": MIN_VARIANTS,
+            "batteries": len(attributed),
         }
         if not disarm:
+            # Two failure modes, named separately because their reliability is
+            # not comparable. See `_UNDIRECTED_MESSAGE`.
+            kind, template = (
+                ("missing-refusal-direction", _UNDIRECTED_MESSAGE)
+                if attributed
+                else ("missing-disarm-battery", _DISARM_MESSAGE)
+            )
             findings.append(
                 Finding(
                     gate.symbol,
                     gate.path,
                     gate.line,
-                    "missing-disarm-battery",
-                    _DISARM_MESSAGE.format(**context),
+                    kind,
+                    template.format(**context),
                 )
             )
         elif not composite:
@@ -887,17 +1180,26 @@ def analyze(diff_text: str) -> Report:
 
 def format_report(report: Report) -> list[str]:
     """Render a report as the lines the review checkpoint prints."""
+    # Path-qualified so the line reads as a deliberate waiver of a specific
+    # gate. The accidental `.md` waiver this fix closed DID print; its reason
+    # rendered as a truncated fragment of review prose that no reviewer would
+    # read as a waiver, which is why visibility alone was not enough.
     lines = [
-        f"EXEMPT: {symbol} — {reason}" for symbol, reason in report.exemptions
+        f"EXEMPT: {path}:{symbol} — {reason}"
+        for path, symbol, reason in report.exemptions
     ]
     if not report.gates:
-        lines.append("PASS: gate-evidence — no gate-adding change in the diff")
+        lines.append(GATE_FREE_VERDICT)
         return lines
     if not report.findings:
-        exempted = {symbol for symbol, _ in report.exemptions}
-        evidenced = sorted(
-            {gate.symbol for gate in report.gates} - exempted
-        )
+        exempted = {(path, symbol) for path, symbol, _ in report.exemptions}
+        # Counted per (path, symbol), so the number matches the number of gates
+        # actually waived. Keyed on the bare symbol, one marker could waive two
+        # same-named gates in two files and still print `1 exempted`,
+        # under-reporting the blast radius of the waiver — and this PASS line is
+        # the artifact SPEC-081's "defeating it is visible" claim rests on.
+        keys = {(gate.path, gate.symbol) for gate in report.gates}
+        evidenced = sorted(symbol for _, symbol in keys - exempted)
         # Say WHICH gates were evidenced and which were merely exempted. A pass
         # that reads the same whether the rule was satisfied or waived is the
         # "legitimate quiet output is identical to defeated output" failure.
@@ -905,7 +1207,9 @@ def format_report(report: Report) -> list[str]:
             f"PASS: gate-evidence — {len(evidenced)} gate(s) carry both "
             f"directions: {', '.join(evidenced) or 'none'}"
         )
-        charged = sorted(exempted & {gate.symbol for gate in report.gates})
+        charged = sorted(
+            f"{path}:{symbol}" for path, symbol in exempted & keys
+        )
         if charged:
             summary += (
                 f" | {len(charged)} exempted, NOT evidenced: "
@@ -991,9 +1295,15 @@ def main(argv: list[str] | None = None) -> int:
                         for f in report.findings
                     ],
                     "exemptions": [
-                        {"symbol": s, "reason": r} for s, r in report.exemptions
+                        {"path": p, "symbol": s, "reason": r}
+                        for p, s, r in report.exemptions
                     ],
-                    "evidence": report.evidence,
+                    # `(path, symbol)` is not a JSON key, and dropping the path
+                    # here would re-introduce the collision the keying fixes.
+                    "evidence": {
+                        f"{path}::{symbol}": verdict
+                        for (path, symbol), verdict in report.evidence.items()
+                    },
                 },
                 indent=2,
             )
