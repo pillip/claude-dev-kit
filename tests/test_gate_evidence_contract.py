@@ -69,9 +69,20 @@ ARMING_GATE = "sprint_status_is_running"
 # so the enforcement point `cmd_validate` is correctly the detected gate.)
 VERDICT_GATE = "cmd_validate"
 
-# `git diff` on a feature branch is a local, in-memory operation; the project's
-# own `verify_checkpoint._run` default (30 s, documented at its definition) is
-# reused rather than re-typed as a new constant.
+# Wall-clock ceiling for the subprocess CLI invocations in this module. A
+# test-local constant, stated plainly because the comment that stood here was
+# false in three ways: it claimed to "reuse" `verify_checkpoint._run`'s default
+# "rather than re-type a new constant", but the value is 120 and not that
+# default's 30, it IS a new constant, and that 30 is a bare parameter default
+# with no env knob — the only documented timeout knobs in README.md are
+# `KIT_CHECKPOINT_TEST_TIMEOUT` and `KIT_SPRINT_QUEUE_GH_TIMEOUT`, so nothing
+# documented was being reused.
+#
+# This is the same untrue-provenance defect as the deleted `_GIT_TIMEOUT`'s
+# (review lesson 2: a new timing constant needs a doc line where it is defined,
+# and a provenance claim has to be checkable). Kept generous rather than tuned:
+# it only has to exceed a local `git diff` plus interpreter start-up, and a
+# ceiling that is too tight turns an unrelated slow runner into a test failure.
 _CLI_TIMEOUT = 120
 
 
