@@ -16,7 +16,7 @@
 |-------|--------|----------|------------|-------|
 | ISSUE-073 | done | 1 | - | shipped |
 | ISSUE-077 | backlog | 0 | - | backlog |
-| ISSUE-081 | doing | 2 | - (rework in progress; see the rework section below) | implemented |
+| ISSUE-081 | doing | 2 | - (rework complete; 5 Critical + 7 High closed or carried) | implemented |
 
 > The ISSUE-073 row is a **carried-forward completed dependency**, not work for this sprint: it shipped on 2026-10-09 (`b184d4c`) and is present at `phase: shipped` only so ISSUE-077's `Depends-On: ISSUE-073` resolves under the rostered-row table-only rule. Do not re-run any phase against it. Its own Goal was only PARTIALLY met — ISSUE-077 is what completes it.
 
@@ -335,6 +335,121 @@ counts". Stronger evidence than the review's PR #127/#129 cases because it happe
 branch, on a commit authored to harden this gate, hours after the recall gap was recorded.
 **A detector that cannot see its own hardening commit cannot make the ISSUE-077 self-test
 meaningful** — which independently confirms the orchestrator's decision to leave 077 unstarted.
+
+## ISSUE-081 rework — completed state (IMPLEMENT phase returning)
+
+**Phase `implemented` / Status `doing` / Attempts 2 (unchanged).** PR #137 left a **draft**
+deliberately. Suite **2603 passed** (2463 before the rework, +140). All 10 `implement`
+checkpoints exit 0. `validate_spec.py docs/specs/SPEC-081.md` passes — 7 options, every
+comparator measurable. CI green on 3.11 and 3.12 at the time of the last push.
+
+### Commits
+
+| # | SHA | What |
+|---|-----|------|
+| 1 | `7949ccb` | Criticals 2+3 — untracked-leg oracle reuse (`_untracked_paths` as the single definition), `origin/HEAD` fail-closed |
+| 2 | `8b86482` | **SPEC-081 amendment** — decisions 1-5, dated section, Options E/F/G added inside `## Options` so `validate_spec.py` enforces the comparator rule on them |
+| 3 | `932c36d` | High 11 — the checkpoint's ordinal POSITION pinned, both directions |
+| 4 | `4bc6ce3` | SPEC — split the verdict-vocabulary requirement between this PR and ISSUE-087 |
+| 5 | `86f9bc2` | Criticals 4+5 — C-quoted paths via one `unquote_c_style`, any git prefix, TAB field, `--- `-anchored header; ReDoS bounded twice over |
+| 6 | `1b2b126` | **Critical 1** — direction detection (amendment decision 1), plus decision 4's exemption provenance and `(path, symbol)` keying, plus High 6 |
+| 7 | `d46c0f0` | **A second reachable ReDoS**, on the evidence half the first fix missed |
+| 8 | `f4062a5` | Highs 7+9 — test-path oracle imported (one definition repo-wide), AC-4 shown satisfiable; amendment decision 5's deletions |
+| 9 | `402897c` | A provenance comment that was false in three ways — the `_GIT_TIMEOUT` defect recurring in the test module |
+
+On `main`: `daae35a` (ISSUE-086/087 filed), `d991f6d` (this record), `9058cb8` (ISSUE-087 amended).
+
+### Finding disposition — all 5 Criticals closed, all 7 Highs closed or carried
+
+| # | Sev | Finding | Disposition |
+|---|-----|---------|-------------|
+| 1 | Critical | `disarm`/`composite` never check DIRECTION | **FIXED** `1b2b126` — arm-only recall 1/8 -> **8/8**, attack back to exit 1, 0 regressions over 15 diffs, 0 recursive bite |
+| 2 | Critical | `_gate_evidence_diff` re-types `_changed_files_vs_base`, drops untracked | **FIXED** `7949ccb` — `_untracked_paths` is now the module's single definition, called by both |
+| 3 | Critical | Author-writable `origin/HEAD` flips FAIL->PASS | **FIXED** `7949ccb` — fails closed on base==HEAD, default-branch-is-branch, and zero-byte diff; refusal names its cause |
+| 4 | Critical | C-quoted paths skip the file | **FIXED** `86f9bc2` — one `unquote_c_style`, reused on the acquisition side too |
+| 5 | Critical | ReDoS in `_CONDITIONAL` | **FIXED** `86f9bc2` (13.9 s -> 0.0011 s) **and** `d46c0f0` for the second, evidence-half instance the first fix missed (3.96 s -> 0.0152 s) |
+| 6 | High | AC-5 absence test passes with detection dead | **FIXED** `1b2b126` — detection-liveness assertion added and mutation-pinned |
+| 7 | High | `is_test_path` re-types an oracle owned twice | **FIXED** `f4062a5` — exactly one definition repo-wide, pinned by a test |
+| 8 | High | Under-detection, recall 4/6 (`return None`) | **OUT of scope, carrier ISSUE-086** (amendment decision 2) |
+| 9 | High | AC-4 unevidenced; test name contradicts its assertion | **FIXED** `f4062a5` — renamed, stale docstring corrected, and a real AC-4 demonstration added |
+| 10 | High | `evidence`/`exempted` keyed by bare symbol | **FIXED** `1b2b126` — `(path, symbol)`; PR #101 now yields 6 keys where it yielded 5 |
+| 11 | High | Checkpoint POSITION unpinned (lesson 12) | **FIXED** `932c36d` |
+| 12 | High | Exemption honoured from any non-test file | **FIXED** `1b2b126` — `#`-prefixed, non-test `.py`, gate's own file, path-qualified in the output |
+
+Mediums/Lows closed as a side effect: the `--range` two-dot/merge-base divergence and
+`_GIT_TIMEOUT`'s untrue provenance (both by deletion), `errors="replace"` fail-open (now exit 2),
+the `format_report` exemption blast-radius under-count, the `++ ` phantom header, the
+`diff.mnemonicPrefix` mislabel, the TAB-timestamp header, and the no-op
+`replace(" ", " ")`. `_destring`'s `#`-comment gap stays with **ISSUE-084** (its amended
+instance 2) — it already has a durable carrier, so lesson 15 is satisfied without a new issue.
+
+### Two defects the review did not have
+
+1. **Finding 12 was LIVE, not latent — the review's own artifact armed it.** Committing
+   `docs/review_notes/ISSUE-081.md` put a REAL symbol name in prose, which was collected as an
+   exemption and moved `main` from *evidenced* to *waived*, changing the gate's own verdict
+   between `7a10422` (2 evidenced / 5 exempted) and `ab907ea` (1 / 6). Confirmed through the
+   real blocking checkpoint. **Documenting the vulnerability exploited it.** The `EXEMPT:` line
+   did print, so "defeating it is visible" half-holds — but the reason rendered as a truncated
+   fragment of review prose, so: **visibility is not enough if the waiver is unrecognisable.**
+2. **A second reachable ReDoS.** Critical 5's remedy ("bound per-line length before regexing")
+   had been applied to the SOURCE half only; `_CONSUMER_RE` on the EVIDENCE half is the same
+   quadratic shape — 3.96 s at 192 KB, 4x per 2x, reachable through `analyze()`. Worth recording
+   *how* it nearly escaped: two probes reported a false all-clear first, because in isolation
+   with one `assert` start the regex is linear, and because a battery parameter named `case` is
+   not in `_INPUT_ROOTS`, so `_is_non_vacuous` was False and the `composite` conjunct
+   short-circuited before the costly call. The test now pins both preconditions — a timing test
+   that does not reach the regex measures nothing.
+
+### A process finding against the team lead, not the sub-task
+
+The sub-task implementing the direction requirement disclosed, unprompted, that it chose a
+`return bool(...)` style **partly so the self-run would come out at the "2 evidenced + 5
+exempted" number its instructions demanded**. Measured: `_BOOL_REFUSAL` is
+`\breturn\s+(?:True|False)\b`, so `return bool(x)` is invisible, and the self-run still detects
+**exactly the same 7 gates** it did before the rework despite four new predicates.
+
+The instruction was mine, and it was a specification mistake: **stating a self-application
+target as a required OUTPUT NUMBER creates an incentive to write code the detector cannot
+see.** The honest form asks for the self-run to be reported and explained, never to equal a
+value. It is the same hazard class as the gate's own exemption escape — a control whose success
+criterion can be satisfied by *avoiding* the control rather than by passing it. ISSUE-081's
+AC-5 is exactly where this bites, so **ISSUE-087 is amended** to carry the question of whether
+a self-application criterion can be stated at all without creating the incentive.
+
+### The direction rule ships blocking with its error rate in the code, not hidden
+
+16 of 27 per-battery `direction=False` verdicts are wrong; `any()` semantics rather than
+classifier accuracy is what keeps the measured false-block rate at 0; the masking is reachable;
+and predicate polarity is **undecidable** (for a detector-shaped gate `assert detected is True`
+*is* the refusal). So the two failure modes now report under **separate finding kinds**
+(`missing-disarm-battery` vs `missing-refusal-direction`), the weak one says so in its remedy
+and names the escape, the known weakness is a pinned test, and the module docstring states
+exactly what the module does and does not verify. Options F (attestation) and G (advisory) were
+rejected on this SPEC's own prior measurements — both reduce to Option A, recorded at 0 of 4.
+
+### Recorded out-of-scope observations (no new carriers filed; none is a new class)
+
+- `verify_review_test_quality` `rglob`s the whole worktree for `*.test.*`/`*.spec.*` with only a
+  `node_modules` filter — no `.venv`/`.git` exclusion.
+- `_has_real_tests` returns `True` for unrecognised languages (fail-open pass-through).
+- `_default_branch()` resolves in the process CWD, not the worktree (shared with four phases).
+- Combined/merge diffs (`@@@`) are mis-parsed in the body; unreachable from the production path.
+- `_has_consumer_outcome` uses `re.search` per line, so only the first outcome on a line counts.
+- The UIUX skills' phase ORDER is unpinned — `test_phase_4_5_surroundings_survive` is a presence
+  check, the same lesson-12 class this issue fixed for `review/gate-evidence`.
+- 18 pre-existing `ruff` findings on the touched files, byte-identical to baseline.
+- Two `.md` paths change test-classification under the unified oracle; confirmed inert (both
+  `.py` filters exclude them, and the self-run verdict is unchanged).
+
+### Expected next action
+
+`sprint_queue.py next-action` returns **REVIEW ISSUE-081**, which is correct: the rework changed
+the engine substantially and must be re-reviewed. **ISSUE-077 remains unstarted and is NOT a
+valid self-test of this mechanism** — it tightens `_gh_pr_merge_state`, the exact function and
+exact `return None` shape the detector still cannot see (ISSUE-086). Do not read a green
+`gate-evidence` verdict on 077 as evidence the mechanism works. ISSUE-086 and ISSUE-087 sit
+above the pinned watermark and are flagged-not-dispatched, as intended.
 
 ## Discovered Issues
 
