@@ -4,12 +4,32 @@
 - Started: 2026-10-14
 - Iteration: 1 / 20
 - Parallel: 3
-- Status: running
+- Status: paused
 - Roster-Watermark: ISSUE-081
 - Scope: **stop the recurring pattern, then close the integrity hole.** ISSUE-081 (require disarm-direction evidence and a composite end-to-end pin for any PR that adds a gate — the mechanical carrier for a pattern that has recurred at High severity in four consecutive sprints) and ISSUE-077 (bind the `gh` merge-state probe to the issue's own PR — a whitelist-conforming wrong-target `PR:` ref still forges a MERGED verdict, and a second module reads the same untrusted field).
 - Ship order: **081 -> 077**, deliberately. ISSUE-077 adds gates, so shipping 081 first makes 077 the FIRST PR reviewed under the new requirement — an in-batch self-test of whether the mechanism is real rather than prose. If 077's review completes before 081 merges, its review must be re-run or extended under the new requirement before it ships.
 - Deferred to the next sprint: ISSUE-080 (078's residual fail-open classes — also a gate-adding PR, so it benefits from landing after 081), ISSUE-070 + ISSUE-071 + ISSUE-075 (emitter family), ISSUE-079 (ISSUE-069's unrequested surface), ISSUE-083 (worktree upstream leak). ISSUE-082 is `Manual: true` — it needs a session restart plus a plugin update and cannot be dispatched autonomously.
 - Boundary note: the watermark is pinned at ISSUE-081, so ISSUE-082 and ISSUE-083 sit above it and are flagged-not-dispatched by the ISSUE-069/078 mechanism. That restraint is intended — never set `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK`.
+
+## Orchestrator Hold (2026-10-14)
+
+**Status `paused`, not `completed` — the scope was not delivered and the record must say so.**
+
+ISSUE-081 failed review three times (attempt 1 killed by the stream watchdog; attempts 2 and 3 substantive FAILs) and is at `waiting` / Attempts 3. Per the escalation contract and a commitment the orchestrator made before attempt 3, it is **handed to the user rather than entering a fourth cycle**: three substantive failures whose third concludes the design has an undecidable core is evidence about the approach, not about the implementation.
+
+ISSUE-077 is **deliberately unstarted**. `next-action` returns `PIPELINE ISSUE-077` as a side effect of the `waiting` transition — do not take it at face value. 077 would be cut from a main where `review/gate-evidence` does not exist, and the 081→077 self-test is void regardless because 077 tightens `_gh_pr_merge_state`, whose `return None` refusal is the exact shape SPEC-081's decision 2 placed OUT of scope (carrier ISSUE-086). Both review phases independently recorded this ORCHESTRATION STOP.
+
+**What the third review settled.** The blocking question is not patchable: `missing-disarm-battery` is decidable (it fires only when `attributed == []` — pure syntax, never consulting the classifier), while `missing-refusal-direction` and `missing-composite-pin` rest on predicate polarity, which is undecidable for a detector-shaped gate (`assert detected is True` *is* the refusal). SPEC-081's error analysis audited only the false-block direction and rested safety on `any()` masking — the reviewer's verdict is that the crediting bias *is* the fail-open and the argument is circular. Measured: 598 of the repo's own 4047 assert lines (14.8%) are credited as refusals, 40% of them bare `== 1`/`== 2` counts; a candidate 2xx fix left the suite completely green at 203 passed, which proves the behaviour was untested rather than correct.
+
+**The reviewer's measured recommendation, for the user to accept or reject:** keep `missing-disarm-battery` blocking and demote the other two to advisory. On all four committed fixtures the polarity-free subset yields the identical exit code, so the obligation stays an exit code for the decidable half. Honest residual, stated by the reviewer: the split makes the gate **truthful but not effective against an arm-only author** — so if that property must be enforced, diff analysis is the wrong instrument and ISSUE-081 should become an attestation-plus-reviewer-obligation mechanism instead. Either path needs a SPEC-081 amendment and changes what ISSUE-081's ACs promise, which is why it is a user decision and not an orchestrator one.
+
+**Verified as holding, so a future pass does not re-litigate them:** the `.md` exemption fix (self-run unmoved at 2 evidenced / 5 exempted, checked before and after committing the reviewer's own notes — attempt 2's self-perturbation does not recur); both oracle-reuse fixes with positive controls and no fresh instances; decision 3's verdict vocabulary as substantive; 0 recursive bite; both ReDoS fixes with execution counts; the decision-2 mirage claim reproducing exactly (2 of 3 hits die on a docstring-only reword, AST identical); and the stash drop (0 hits on all five Critical sites).
+
+**Open defects the recommendation does not cover:** `analyze()` is quadratic in gates x batteries (32.5 s at 212 KB, no wall-clock bound); one committed `.gitattributes` line `*.py -diff` disarms the gate entirely with no waiver printed; an AC-5 surviving mutant deletes half the SPEC's gate definition with 418/418 green; and a measured Goodhart effect — the self-run PASS depends on two unrecorded `return bool(...)` style choices, reverting which yields `gates=9, findings=2, exit 1` (carrier ISSUE-087).
+
+**Worktree left in place on purpose** (`.worktrees/issue-ISSUE-081-gate-evidence`, verified at the right upstream): ISSUE-083 means `wt_setup.sh` would re-create it from main's HEAD with no upstream while reporting success. PR #137 stays a **draft** so two Criticals are not one click from main. No tracked file in the worktree was modified by either review; all mutation testing ran on scratchpad copies.
+
+**Backlog untouched by this sprint:** ISSUE-070, 071, 075, 077, 079, 080, 083, 084, 085, 086, 087 remain open; ISSUE-082 is `Manual: true` (needs a session restart plus a plugin update). None was dispatched; `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` was never set.
 
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
