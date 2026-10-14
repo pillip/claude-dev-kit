@@ -16,9 +16,17 @@ AC coverage map:
 
 * AC-1 → ``TestAC1ArmOnlyGateIsRefused``
 * AC-2 → ``TestAC2HelperConsumerDisagreementIsSurfaced``
-* AC-3 → ``TestAC3NonGateDiffPaysNoTax`` (+ the phase-partition pins in
+* AC-3 → ``TestAC3NonGateDiffPaysNoTax``,
+  ``TestTheTestPathOracleIsImportedNotRetyped`` (the re-typed test-path
+  classifier charged a fabricated finding to any repo laid out with ``test/``
+  or ``__tests__/``) (+ the phase-partition pins in
   ``tests/test_verify_checkpoint_contract.py``)
-* AC-4 → ``TestAC4BothDirectionsEvidencedPasses``
+* AC-4 → ``TestAC4AGateAddingDiffPassesCleanly`` — the worked example, a
+  constructed gate-adding diff carrying both directions that reaches exit 0
+  through the real consumer. ``TestAC4BothDirectionsEvidencedPasses`` is the
+  REAL-fixture half and is weaker than its name suggests: the ISSUE-078
+  post-fix diff adds a second, genuinely unevidenced gate, so it exits 1 and
+  is not an instance of AC-4's premise at all.
 * AC-5 → ``TestAC5TheMechanismIsSubjectToItsOwnRule`` (disarm battery),
   ``TestAC5CompositePinThroughTheRealConsumer`` (composite, via the
   ``verify_checkpoint.py`` CLI), ``TestAC5MutationMatrix`` (both directions)
@@ -26,7 +34,6 @@ AC coverage map:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -288,11 +295,224 @@ class TestAC3NonGateDiffPaysNoTax:
         assert "tests/test_registry_lock_contract.py" in text
 
 
+# ── AC-3, part two: ONE definition of "test file" ────────────────────
+#
+# `is_test_path` re-typed a classifier `verify_checkpoint` already owned
+# BYTE-IDENTICALLY IN TWO PLACES, and dropped `tests?` SINGULAR and `__tests__`
+# while doing it. Review lesson 16's second clause is verbatim: "A guard that
+# re-implements an oracle the suite already owns must import it instead."
+#
+# This is an AC-3 obligation, not new scope. Measured: the IDENTICAL helper was
+# exempt under `tests/` (`is_test_path=True`, `gates=[]`) and a reported gate
+# under `test/` (`is_test_path=False`,
+# `gates=[('assert_guard','test/helpers.py')]`), so any repo laid out with
+# `test/` or `__tests__/` — standard outside Python — paid a fabricated-finding
+# tax on a diff that adds no gate. Added batteries under those directories also
+# never entered `_blocks`, so evidence for a REAL gate could go missing too.
+
+#: Distinctive fragments of the two regexes that now have exactly one home.
+#: Counted as plain substrings across `scripts/` so the pin is immune to how the
+#: one surviving definition is line-wrapped, and so a FIFTH copy fails here.
+_DIR_FRAGMENT = r"(?:tests?|__tests__)/"
+_FILE_FRAGMENT = r"(?:spec|test)\.(?:ts|tsx|js|jsx)"
+
+#: The five disagreements MEASURED between the re-typed predicate and the
+#: oracle, with the ORACLE's verdict — which is the one that now holds. The
+#: first three are the AC-3 defect above. The last two move the other way
+#: (True -> False) and are inert for gate DETECTION, because `detect_gates`
+#: filters on `.py`; recorded so the direction of each row is on the record
+#: rather than implied by a one-line summary.
+_MEASURED_DISAGREEMENTS = [
+    ("test/helpers.py", True),
+    ("__tests__/helpers.py", True),
+    ("pkg/test/gate.py", True),
+    ("config.test.yaml", False),
+    ("openapi.spec.yaml", False),
+]
+
+#: One helper file, same bytes, one directory name apart.
+_HELPER_IN = (
+    "diff --git a/{d}/helpers.py b/{d}/helpers.py\n"
+    "--- a/{d}/helpers.py\n"
+    "+++ b/{d}/helpers.py\n"
+    "@@ -0,0 +1,3 @@\n"
+    "+def assert_guard(value):\n"
+    "+    if value is None:\n"
+    '+        raise ValueError("missing")\n'
+)
+
+
+class TestTheTestPathOracleIsImportedNotRetyped:
+    """Exactly ONE definition of "test file" in the repo, and it is the oracle."""
+
+    @pytest.mark.parametrize(
+        "path,expected",
+        _MEASURED_DISAGREEMENTS,
+        ids=[case[0] for case in _MEASURED_DISAGREEMENTS],
+    )
+    def test_the_measured_disagreements_resolve_toward_the_oracle(
+        self, path, expected
+    ):
+        assert vge.is_test_path(path) is expected, path
+
+    def test_the_identical_helper_is_classified_the_same_under_test_and_tests(self):
+        """The AC-3 harm, stated as the observable it produced."""
+        plural = vge.analyze(_HELPER_IN.format(d="tests"))
+        singular = vge.analyze(_HELPER_IN.format(d="test"))
+        # Vacuity guard: the same bytes under a name NEITHER spelling exempts
+        # really are a detected gate, so "both empty" is not trivially true.
+        control = vge.analyze(_HELPER_IN.format(d="pkg"))
+        assert [g.symbol for g in control.gates] == ["assert_guard"], control.gates
+        assert plural.gates == (), plural.gates
+        assert singular.gates == plural.gates, (singular.gates, plural.gates)
+
+    def test_the_two_regexes_have_exactly_one_home_in_scripts(self):
+        counts = {}
+        for script in sorted((ROOT / "scripts").glob("*.py")):
+            text = script.read_text(encoding="utf-8")
+            for fragment in (_DIR_FRAGMENT, _FILE_FRAGMENT):
+                hit = text.count(fragment)
+                if hit:
+                    counts[(script.name, fragment)] = hit
+        assert counts == {
+            ("verify_gate_evidence.py", _DIR_FRAGMENT): 1,
+            ("verify_gate_evidence.py", _FILE_FRAGMENT): 1,
+        }, counts
+
+    def test_the_checkpoint_phases_consume_the_shared_constants(self):
+        """`verify_checkpoint` holds no local re-typing of either regex."""
+        text = (ROOT / "scripts" / "verify_checkpoint.py").read_text(
+            encoding="utf-8"
+        )
+        assert "test_pattern = re.compile" not in text
+        assert "test_dir_pattern = re.compile" not in text
+        assert "vge.TEST_FILE_PATTERN" in text and "vge.TEST_DIR_PATTERN" in text
+
+    def test_is_test_path_is_exactly_the_two_shared_regexes(self):
+        """No third rule hides inside the predicate: it IS the disjunction."""
+        corpus = [
+            "tests/helpers.py",
+            "test/helpers.py",
+            "__tests__/a.tsx",
+            "pkg/test/gate.py",
+            "scripts/verify_checkpoint.py",
+            "foo_test.py",
+            "foo.test.ts",
+            "foo.spec.tsx",
+            "config.test.yaml",
+            "docs/test_plan.md",
+            "scripts/test_runner.py",
+            "a/b/c.py",
+        ]
+        for path in corpus:
+            expected = bool(
+                vge.TEST_FILE_PATTERN.search(path)
+                or vge.TEST_DIR_PATTERN.search(path)
+            )
+            assert vge.is_test_path(path) is expected, path
+
+    def test_no_import_cycle_on_any_invocation_route(self):
+        """All three routes, empirically — `checkpoint.sh` is the hard one.
+
+        `verify_checkpoint` now imports `verify_gate_evidence` at MODULE level,
+        and `checkpoint.sh` `exec`s `verify_checkpoint.py` as a script, so the
+        importer is `__main__` with `sys.path[0] = scripts/`. The inverse
+        direction (the detector importing the checkpoint) was measured to
+        execute `verify_checkpoint`'s 2371-line module body TWICE in that route
+        — once as `__main__` and once as `verify_checkpoint`, each capturing its
+        own `_GATE_PROCESS_START` — which is why the single definition lives in
+        the detector and the dependency edge keeps the direction it already had
+        for `unquote_c_style`.
+        """
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PLUGIN_ROOT"}
+
+        detector = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify_gate_evidence.py"),
+             "--diff-file", str(NON_GATE)],
+            capture_output=True, text=True, timeout=_CLI_TIMEOUT, env=env,
+        )
+        assert detector.returncode == 0, (detector.stdout, detector.stderr)
+
+        wrapper = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "checkpoint.sh"), "--skill", "review",
+             "--phase", "gate-evidence", "--issue", "ISSUE-000"],
+            capture_output=True, text=True, timeout=_CLI_TIMEOUT, cwd=str(ROOT),
+            env=env,
+        )
+        # A missing worktree is a legitimate FAIL (exit 1); an import cycle is
+        # a traceback (exit 1 too), so the discriminator is stderr.
+        assert wrapper.returncode == 1, (wrapper.stdout, wrapper.stderr)
+        assert "Traceback" not in wrapper.stderr, wrapper.stderr
+        assert "ImportError" not in wrapper.stderr, wrapper.stderr
+
+        imported = subprocess.run(
+            [sys.executable, "-c",
+             "import verify_checkpoint as vc, verify_gate_evidence as vge; "
+             "print(vc.vge is vge)"],
+            capture_output=True, text=True, timeout=_CLI_TIMEOUT,
+            cwd=str(ROOT / "scripts"), env=env,
+        )
+        assert imported.returncode == 0, (imported.stdout, imported.stderr)
+        assert imported.stdout.strip() == "True", imported.stdout
+
+
+class TestTheTestQualityWalkerKeepsItsOwnBehaviour:
+    """`review/test-quality`'s walker is deliberately NOT unified. Measured.
+
+    Review lesson 8: "Relaxing a shared contract for a new caller class must be
+    scoped to that class, with legacy failure modes pinned." The walker inside
+    `verify_review_test_quality` is rooted at `tests/` and keeps a NAME-only
+    rule (`test_` prefix / `_test.py` suffix). Adopting the unified predicate
+    there is not a no-op: `TEST_DIR_PATTERN` matches `tests/` itself, so EVERY
+    `.py` under `tests/` would enter the hollow-test scan while `_has_real_tests`
+    requires a `def test_*`. Measured on this repo: 72 files -> 73, and the one
+    added file is `tests/conftest.py`, which has no `def test_*` and would turn
+    the blocking `review/test-quality` phase RED for every issue. That is a
+    DIFFERENT phase's observable behaviour, so it is left alone and pinned here.
+
+    Green both ways BY DESIGN: this pins behaviour ISSUE-081 does not change. It
+    fails only if a later change unifies the walker without re-measuring.
+    """
+
+    def test_a_non_test_py_file_under_tests_is_not_charged_as_hollow(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "conftest.py").write_text(
+            "import pytest\n\n\n@pytest.fixture\ndef thing():\n    return 1\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "tests" / "test_real.py").write_text(
+            "def test_real():\n    assert True\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(
+            vc, "_find_worktree_path", lambda issue_id: str(tmp_path)
+        )
+        assert vc.verify_review_test_quality("ISSUE-000") is True
+        out = capsys.readouterr().out
+        assert "conftest.py" not in out, out
+
+        # Fixture pin: the unified predicate really WOULD have charged it, so
+        # the pass above is a scoping decision rather than a coincidence.
+        assert vge.is_test_path("tests/conftest.py")
+        assert not vc._has_real_tests("tests/conftest.py", str(tmp_path))
+
+
 # ── AC-4 ─────────────────────────────────────────────────────────────
 
 
 class TestAC4BothDirectionsEvidencedPasses:
-    """The requirement is satisfiable — asserted on the real post-fix diff."""
+    """The repaired gate stops being a finding — on the REAL post-fix diff.
+
+    This class is narrower than its name: it asserts that ISSUE-078's post-fix
+    diff clears the gate ITS review repaired (`sprint_status_is_running`), and
+    the diff as a whole still exits 1 because it adds a second, genuinely
+    unevidenced gate. So it is not an instance of AC-4's premise ("a gate-adding
+    PR with both directions evidenced passes without the finding") and must not
+    be read as one. The worked example that IS an instance — a gate-adding diff
+    reaching exit 0 through the real consumer — is
+    `TestAC4AGateAddingDiffPassesCleanly`.
+    """
 
     def test_post_fix_replay_has_no_finding_for_the_repaired_gate(self):
         report = vge.analyze(_diff(POST_FIX))
@@ -316,7 +536,7 @@ class TestAC4BothDirectionsEvidencedPasses:
         assert pre - post == {ARMING_GATE}, pre - post
 
     def test_the_residual_gate_is_reported_honestly_in_both_diffs(self):
-        """`check_roster_boundary` is unevidenced before AND after the fix.
+        """`cmd_validate` is unevidenced before AND after the fix.
 
         Recorded rather than hidden: its boundary-field rejection battery is
         consumer-level but carries no input-side vacuity guard, so this phase
@@ -620,7 +840,17 @@ class TestAC5CompositePinThroughTheRealConsumer:
         assert ARMING_GATE in out, label
         assert "ADVISORY:" not in out, "this phase must be blocking, not advisory"
 
-    def test_the_checkpoint_phase_passes_a_post_fix_diff(self, monkeypatch, capsys):
+    def test_the_checkpoint_phase_still_refuses_the_residual_gate_in_a_post_fix_diff(
+        self, monkeypatch, capsys
+    ):
+        """Named for what it asserts: `rc == 1`, NOT an AC-4 demonstration.
+
+        This test used to be called `..._passes_a_post_fix_diff`, so a reader
+        scanning test names concluded AC-4 was pinned while the assertion
+        encoded a refusal. The post-fix diff is not an instance of AC-4's
+        premise — it adds a second, genuinely unevidenced gate. AC-4's actual
+        worked example is `TestAC4AGateAddingDiffPassesCleanly`.
+        """
         monkeypatch.setattr(
             vc, "_gate_evidence_diff", lambda issue_id: _diff(POST_FIX)
         )
@@ -628,8 +858,8 @@ class TestAC5CompositePinThroughTheRealConsumer:
             ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-078"]
         )
         out = capsys.readouterr().out
-        # The residual `check_roster_boundary` finding is real, so the phase
-        # still refuses — what must have changed is the arming gate's finding.
+        # The residual `cmd_validate` finding is real, so the phase still
+        # refuses — what must have changed is the arming gate's finding.
         assert ARMING_GATE not in out, out
         assert VERDICT_GATE in out, out
         assert rc == 1
@@ -762,6 +992,125 @@ _SINGLE_CASE_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,6 @@
 
 _DEMO_GATE = "blocked_marker_is_absent"
 _DEMO_GATE_PATH = "scripts/demo_gate.py"
+
+
+# ── AC-4, the worked example ─────────────────────────────────────────
+#
+# AC-4 requires that a gate-adding PR with both directions evidenced "passes
+# without the finding". The real ISSUE-078 post-fix diff is NOT an instance of
+# that premise: it adds a second gate (`cmd_validate`) that genuinely carries no
+# input-side vacuity guard, so it exits 1 — correctly. That left AC-4 with no
+# demonstration anywhere in the suite, and the test that NAMED it asserted
+# `rc == 1`. From the review: "an obligation that no example can be shown to
+# satisfy cleanly is the kind that gets routed around rather than met."
+#
+# This is that example, and it is written to be COPIED. Two batteries over one
+# shared variant list:
+#
+#   * the DISARM battery drives the gate directly and asserts it still REFUSES
+#     (`is False`) on every variant;
+#   * the COMPOSITE battery drives the gate's real CONSUMER and asserts a
+#     consumer-level refusal (`rc == 1`);
+#   * BOTH carry the input-side vacuity guard (`assert "<marker>" in text`),
+#     which is simultaneously what attributes a battery to a gate and what
+#     proves the variant still contains what the gate is supposed to catch.
+#
+# The refusal-shaped expectations are what the direction requirement that landed
+# in `1b2b126` asks for; `_ARM_ONLY_DIFF` below is the same diff with only the
+# polarity flipped, and it is refused.
+_BOTH_DIRECTIONS_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,21 @@
++_MARKER_VARIANTS = [
++    "BLOCKED-MARKER",
++    "  BLOCKED-MARKER  ",
++    "**BLOCKED-MARKER**",
++]
++
++@pytest.mark.parametrize("variant", _MARKER_VARIANTS)
++def test_blocked_marker_is_absent_cannot_be_disarmed(variant):
++    text = f"header\\n{variant}\\nfooter"
++    assert "BLOCKED-MARKER" in text
++    assert blocked_marker_is_absent(text) is False
++
++@pytest.mark.parametrize("variant", _MARKER_VARIANTS)
++def test_the_consumer_refuses_every_variant_end_to_end(variant, tmp_path):
++    text = f"header\\n{variant}\\nfooter"
++    assert "BLOCKED-MARKER" in text
++    target = tmp_path / "input.txt"
++    target.write_text(text, encoding="utf-8")
++    rc = demo_gate.main([str(target)])
++    assert rc == 1
+"""
+
+#: The same diff with ONLY the two refusal expectations flipped to the arm
+#: direction. An arm-only battery no longer passes, which is the whole point of
+#: the direction requirement — so this is what makes the example above
+#: load-bearing rather than decorative.
+_ARM_ONLY_DIFF = (
+    _BOTH_DIRECTIONS_DIFF
+    .replace("blocked_marker_is_absent(text) is False",
+             "blocked_marker_is_absent(text) is True")
+    .replace("assert rc == 1", "assert rc == 0")
+    .replace("cannot_be_disarmed", "is_armed")
+)
+
+
+class TestAC4AGateAddingDiffPassesCleanly:
+    """AC-4's premise, demonstrated end to end — the obligation IS satisfiable."""
+
+    def test_the_demo_gate_is_really_detected(self):
+        """Vacuity guard: an exit 0 over a diff with no gate proves nothing."""
+        report = vge.analyze(_BOTH_DIRECTIONS_DIFF)
+        assert (_DEMO_GATE_PATH, _DEMO_GATE) in {
+            (g.path, g.symbol) for g in report.gates
+        }, report.gates
+
+    def test_both_directions_are_evidenced_and_nothing_is_waived(self):
+        report = vge.analyze(_BOTH_DIRECTIONS_DIFF)
+        assert _verdict(report, _DEMO_GATE) == {"disarm": True, "composite": True}
+        assert report.findings == (), [f.message for f in report.findings]
+        # Not a pass bought with an exemption — the escape hatch is unused.
+        assert report.exemptions == (), report.exemptions
+
+    def test_the_module_cli_exits_zero(self, tmp_path, capsys):
+        path = tmp_path / "both_directions.diff"
+        path.write_text(_BOTH_DIRECTIONS_DIFF, encoding="utf-8")
+        rc = vge.main(["--diff-file", str(path)])
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        # It must pass because the gate is EVIDENCED, not because none was seen.
+        assert GATE_FREE not in out, out
+        assert _DEMO_GATE in out, out
+
+    def test_the_checkpoint_phase_passes_it(self, monkeypatch, capsys):
+        """Through the REAL consumer, not `analyze` — this is the AC-4 proof."""
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _BOTH_DIRECTIONS_DIFF
+        )
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-081"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "FAIL" not in out, out
+        assert GATE_FREE not in out, out
+        assert f"both directions: {_DEMO_GATE}" in out, out
+
+    def test_the_same_diff_with_the_polarity_flipped_is_refused(
+        self, monkeypatch, capsys
+    ):
+        """One-character-class difference between the pass above and a refusal."""
+        assert "is True" in _ARM_ONLY_DIFF and "is False" not in _ARM_ONLY_DIFF
+        assert "def blocked_marker_is_absent" in _ARM_ONLY_DIFF
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _ARM_ONLY_DIFF
+        )
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-081"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert "missing-refusal-direction" in out, out
+        assert _DEMO_GATE in out, out
 
 
 class TestAC5MutationMatrix:
@@ -1831,18 +2180,127 @@ class TestPhaseIsRegisteredAndBlocking:
         assert "gate-evidence" in row, row
 
 
-class TestJsonOutputIsStable:
-    def test_json_mode_emits_the_findings_machine_readably(self, capsys):
-        rc = vge.main(["--diff-file", str(PRE_FIX), "--json"])
-        payload = json.loads(capsys.readouterr().out)
-        assert rc == 1
-        assert ARMING_GATE in {f["symbol"] for f in payload["findings"]}
-        # Path-qualified: `(path, symbol)` is not a JSON key, and dropping the
-        # path would re-introduce the collision the keying exists to fix.
-        assert payload["evidence"][f"scripts/sprint_queue.py::{ARMING_GATE}"] == {
-            "disarm": True,
-            "composite": False,
-        }
+class TestTheCliIsDiffFileOnlyAndFailsClosed:
+    """SPEC-081 amendment, decision 5: the CLI is `--diff-file` and nothing else.
+
+    `--range`/`--repo`/`_diff_from_range`/`_GIT_TIMEOUT` and `--json` are
+    deleted. The range path had zero callers and zero tests while the real
+    consumer (`verify_checkpoint._gate_evidence_diff`) computes its own diff with
+    a merge-base correction that path lacked — and the module docstring
+    documented the two-dot form, which PROVABLY disagrees with the consumer (on
+    a branch where `main` deleted a gate after the fork point: two-dot `exit=1
+    FAIL` vs three-dot `exit=0 PASS` vs consumer `exit=0 PASS`). `--json`'s only
+    consumer was the test written for it, and no AC names a machine-readable
+    mode.
+    """
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--range", "main..HEAD"], id="range"),
+            pytest.param(["--range", "main..HEAD", "--repo", "."], id="range_repo"),
+            pytest.param(["--json"], id="json"),
+        ],
+    )
+    def test_the_deleted_cli_surface_stays_deleted(self, argv):
+        assert vge.main(argv) == 2, argv
+
+    def test_the_deleted_names_are_gone_from_the_module(self):
+        for name in ("_diff_from_range", "_GIT_TIMEOUT"):
+            assert not hasattr(vge, name), name
+        text = (ROOT / "scripts" / "verify_gate_evidence.py").read_text(
+            encoding="utf-8"
+        )
+        # The docstring must stop documenting a CLI surface that is gone, and
+        # the `subprocess`/`json` imports go with the legs that used them.
+        for token in ("--range", "--json", "import subprocess", "import json"):
+            assert token not in text, token
+
+    def test_diff_file_is_required(self):
+        assert vge.main([]) == 2
+
+    def test_a_real_diff_file_still_works(self):
+        assert vge.main(["--diff-file", str(NON_GATE)]) == 0
+        assert vge.main(["--diff-file", str(PRE_FIX)]) == 1
+
+    @pytest.mark.parametrize(
+        "label,payload",
+        [
+            pytest.param("utf16", None, id="utf16"),
+            pytest.param("raw_bytes", b"\x00\x01\x02\xff\xfe\x80\x81", id="raw_bytes"),
+            pytest.param("prose", b"this is not a diff at all\n", id="prose"),
+        ],
+    )
+    def test_a_file_that_does_not_decode_to_a_diff_exits_two(
+        self, tmp_path, capsys, label, payload
+    ):
+        """Fail-CLOSED, the same treatment the missing-file path already got.
+
+        `errors="replace"` turned a mis-encoded `--diff-file` into mojibake with
+        no `+++ ` header, `analyze` found no files, and the CLI printed the
+        gate-free PASS line and exited 0 — fail-OPEN on garbage input.
+        """
+        path = tmp_path / f"{label}.diff"
+        if payload is None:
+            path.write_bytes(_diff(NON_GATE).encode("utf-16"))
+        else:
+            path.write_bytes(payload)
+
+        rc = vge.main(["--diff-file", str(path)])
+        captured = capsys.readouterr()
+        assert rc == 2, (rc, captured.out, captured.err)
+        # A disarmed run must not read like a clean one.
+        assert GATE_FREE not in captured.out, captured.out
+        assert "+++" in captured.err, captured.err
+
+    def test_a_missing_file_still_exits_two(self, tmp_path, capsys):
+        """Positive control: the pre-existing fail-closed path is unchanged."""
+        rc = vge.main(["--diff-file", str(tmp_path / "nope.diff")])
+        assert rc == 2
+        assert "not found" in capsys.readouterr().err
+
+
+class TestTheNoOpSignatureBranchIsGone:
+    """`if "-> bool" in signature.replace(" ", " ")` — a literal no-op.
+
+    Both arguments were ordinary U+0020, and the next line's `replace(" ", "")`
+    strictly dominates it on every signature shape. Almost certainly an
+    unfinished edit (`.replace("  ", " ")`) shipped inside a blocking gate.
+
+    The parametrized half is green BOTH ways by design — that IS the claim being
+    made: deleting the branch changes no classification. It pins the
+    equivalence; it does not prove the deletion was necessary.
+    """
+
+    _SHAPES = [
+        ("annotated", "def f(x) -> bool:", True),
+        ("no_space", "def f(x)->bool:", True),
+        ("double_space", "def f(x) ->  bool:", True),
+        ("union", "def f(x) -> bool | None:", True),
+        ("truncated_multiline", "def f(", False),
+        ("none_return", "def f(x) -> None:", False),
+        ("unannotated", "def f(x):", False),
+        ("predicate_name_only", "def is_ready(x):", True),
+    ]
+
+    @pytest.mark.parametrize(
+        "label,signature,expected",
+        _SHAPES,
+        ids=[case[0] for case in _SHAPES],
+    )
+    def test_every_signature_shape_classifies_identically(
+        self, label, signature, expected
+    ):
+        symbol = re.match(r"def (\w*)", signature)
+        assert vge._is_predicate_shaped(
+            symbol.group(1) if symbol else "", signature
+        ) is expected, label
+
+    def test_the_no_op_replace_is_absent_from_the_source(self):
+        text = (ROOT / "scripts" / "verify_gate_evidence.py").read_text(
+            encoding="utf-8"
+        )
+        assert 'replace(" ", " ")' not in text
 
 
 # ── Diff ACQUISITION, in a real repo, through the real consumer ──────
@@ -2582,8 +3040,10 @@ _REDOS_BUDGET_SECONDS = 2.0
 class TestAPathologicalLineCannotHangTheCheckpoint:
     """`scripts/checkpoint.sh` `exec`s python3 with no wall-clock bound.
 
-    `_GIT_TIMEOUT` guards a subprocess, not `analyze` itself, so an added line
-    an author writes is enough to park the blocking review gate indefinitely.
+    Nothing bounds `analyze`'s wall clock — the module's one timeout constant
+    guarded a subprocess leg that SPEC-081's amendment then deleted — so an
+    added line an author writes is enough to park the blocking review gate
+    indefinitely.
     Three agents in this session were killed by a 600 s no-progress watchdog —
     a hangable blocking gate is an availability defect against the kit's own
     runner, not a theoretical one.

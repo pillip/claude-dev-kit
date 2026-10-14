@@ -59,11 +59,25 @@ copies of a case that already passed.
 Usage::
 
     python3 scripts/verify_gate_evidence.py --diff-file path/to.diff
-    python3 scripts/verify_gate_evidence.py --range main..HEAD --repo .
-    python3 scripts/verify_gate_evidence.py --diff-file path/to.diff --json
+
+``--diff-file`` is the ONLY input. A revision-range leg (with its own ``--repo``
+and a hard-coded git timeout) and a machine-readable mode were deleted by
+SPEC-081's 2026-10-14 amendment, decision 5. The range leg had zero callers and
+zero tests, the two-dot semantics this docstring used to advertise PROVABLY
+disagreed with the real consumer's merge-base diff (on a branch where the
+default branch deleted a gate after the fork point: two-dot ``exit=1 FAIL`` vs
+merge-base ``exit=0 PASS``), and its timeout constant carried an untrue
+provenance comment. The machine-readable mode's only consumer was the test
+written for it, and no acceptance criterion names one. The real consumer is
+``verify_checkpoint._gate_evidence_diff``, which computes its own diff with the
+merge-base correction the deleted leg lacked.
 
 Exit code: 0 when the diff adds no gate, or every added gate is evidenced or
-exempted; 1 when an added gate lacks its paired evidence; 2 on a usage error.
+exempted; 1 when an added gate lacks its paired evidence; 2 on a usage error —
+which includes a ``--diff-file`` whose decoded text holds no ``+++ `` header at
+all, because a PASS over unreadable bytes renders byte-identically to a PASS
+over a clean diff (measured: a UTF-16 file printed the gate-free verdict and
+exited 0).
 
 The diff text may be in any rendering the real tools produce: git's DEFAULT
 C-quoted path for a non-ASCII filename (``+++ "b/scripts/gat\\303\\251.py"``),
@@ -80,9 +94,7 @@ test suite mutates them one at a time to prove each rule is load-bearing
 from __future__ import annotations
 
 import argparse
-import json
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -141,11 +153,11 @@ _BOOL_REFUSAL = re.compile(r"\breturn\s+(?:True|False)\b")
 #: Longest gap a ternary's `if` and `else` may be apart. The third alternative
 #: used to be `\bif\b.+\belse\b`, which restarts `.+` from every `if` and can
 #: never succeed on a line with no `else` — measured O(n^2): 4x the time per 2x
-#: the input, 15.2 s on one 208 KB added line. `_GIT_TIMEOUT` guards a
-#: subprocess, `scripts/checkpoint.sh` `exec`s python3 with no wall-clock bound
-#: at all, so an author-written line was enough to park this blocking gate. A
-#: bounded quantifier makes the scan linear; 400 is far past any real ternary
-#: and is pinned by `TestAPathologicalLineCannotHangTheCheckpoint`.
+#: the input, 15.2 s on one 208 KB added line. Nothing bounds this module's
+#: wall clock — `scripts/checkpoint.sh` `exec`s python3 with no timeout — so an
+#: author-written line was enough to park this blocking gate. A bounded
+#: quantifier makes the scan linear; 400 is far past any real ternary and is
+#: pinned by `TestAPathologicalLineCannotHangTheCheckpoint`.
 _TERNARY_GAP = 400
 
 _CONDITIONAL = re.compile(
@@ -331,10 +343,6 @@ _REFUSAL_STRING_RE = re.compile(
 _ASSERT_NOT_RE = re.compile(r"\bassert\s+not\b")
 _RAISES_RE = re.compile(r"\b(?:pytest\.raises|assertRaises(?:Regex)?)\s*\(")
 
-#: `git diff` on a feature branch is local and fast; this reuses the project's
-#: documented 30 s subprocess default rather than introducing a new knob.
-_GIT_TIMEOUT = 30
-
 
 # ── Result types ─────────────────────────────────────────────────────
 
@@ -505,17 +513,45 @@ def _destring(line: str) -> str:
     return re.sub(r"([\"'])((?:[^\"'\\]|\\.)*?)\1", repl, line)
 
 
+#: THE definition of "a test file" in this repo, and the one
+#: ``verify_checkpoint``'s implement phases now consume as
+#: ``vge.TEST_FILE_PATTERN`` / ``vge.TEST_DIR_PATTERN``.
+#:
+#: It used to exist FOUR times: byte-identically at two ``verify_checkpoint``
+#: call sites (``implement/red`` and ``implement/tests-written``), re-typed here
+#: as a weaker copy that dropped the SINGULAR directory spelling and the
+#: ``__tests__`` convention, and once more as a name-only rule inside
+#: ``verify_review_test_quality``'s worktree walk. Measured consequence of the
+#: weaker copy: the IDENTICAL helper file was exempt under a plural test
+#: directory (``gates=[]``) and a reported GATE under the singular one
+#: (``gates=[('assert_guard','test/helpers.py')]``), so any repo laid out the
+#: singular way — standard outside Python — paid a fabricated-finding tax on a
+#: diff that adds no gate (ISSUE-081 AC-3), and added batteries under those
+#: directories never entered ``_blocks``, so evidence for a REAL gate could go
+#: missing too. The regexes below are ``verify_checkpoint``'s, verbatim:
+#: unifying on the STRONGER oracle classifies more paths as tests, which for
+#: gate detection means FEWER fabricated findings.
+#:
+#: The fourth definition is deliberately NOT unified — see the comment at its
+#: own call site in ``verify_checkpoint.verify_review_test_quality`` for the
+#: measurement that scopes it out (review lesson 8).
+#:
+#: Import direction: ``verify_checkpoint`` already depended on this module for
+#: ``unquote_c_style``, so the shared definition lives HERE and the dependency
+#: edge keeps the direction it had. The inverse was measured to execute
+#: ``verify_checkpoint``'s module body TWICE — ``scripts/checkpoint.sh`` ``exec``s
+#: it as ``__main__``, so a module-level import of it from here mints a second
+#: copy with its own ``_GATE_PROCESS_START``.
+TEST_FILE_PATTERN = re.compile(
+    r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py"
+    r"|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
+)
+TEST_DIR_PATTERN = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
+
+
 def is_test_path(path: str) -> bool:
     """True for paths the suite owns (where every assert has a refusing branch)."""
-    name = path.rsplit("/", 1)[-1]
-    return (
-        path.startswith("tests/")
-        or "/tests/" in path
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-        or ".test." in name
-        or ".spec." in name
-    )
+    return bool(TEST_FILE_PATTERN.search(path) or TEST_DIR_PATTERN.search(path))
 
 
 @dataclass
@@ -601,8 +637,14 @@ def _parse(diff_text: str) -> list[_FileDiff]:
 
 # GATE-EVIDENCE-EXEMPT(_is_predicate_shaped): private gate-detection reach; exercised in both directions by the three fixture replays (it is what admits `sprint_status_is_running` and leaves the non-gate diff empty) and killed by the `refusal_vocabulary_emptied` mutant, which disables the boolean-refusal path it guards.
 def _is_predicate_shaped(symbol: str, signature: str) -> bool:
-    if "-> bool" in signature.replace(" ", " "):
-        return True
+    # One whitespace-insensitive test, not two. The branch that used to sit
+    # above this one looked for `-> bool` in the signature after substituting
+    # U+0020 for U+0020 — a literal no-op, verified to be ordinary spaces on
+    # both sides, almost certainly an unfinished edit meant to collapse DOUBLE
+    # spaces, and shipped inside a blocking gate. The strip-all form below
+    # strictly dominates it on every signature shape (`-> bool`, `->bool`,
+    # `->  bool`, `-> bool | None`), so deleting it is behaviour-preserving;
+    # pinned shape by shape by `TestTheNoOpSignatureBranchIsGone`.
     if "->bool" in signature.replace(" ", ""):
         return True
     return bool(_PREDICATE_SHAPE.search(symbol))
@@ -1249,84 +1291,44 @@ def format_report(report: Report) -> list[str]:
 # ── CLI ──────────────────────────────────────────────────────────────
 
 
-def _diff_from_range(rev_range: str, repo: str) -> str | None:
-    result = subprocess.run(
-        ["git", "diff", rev_range, "--"],
-        capture_output=True,
-        text=True,
-        cwd=repo,
-        timeout=_GIT_TIMEOUT,
-    )
-    return result.stdout if result.returncode == 0 else None
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Verify that a diff's added gates carry paired evidence"
     )
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--diff-file", help="unified diff to analyze")
-    source.add_argument("--range", dest="rev_range", help="git revision range")
-    parser.add_argument("--repo", default=".", help="repo root for --range")
-    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--diff-file", required=True, help="unified diff to analyze"
+    )
 
     try:
         args = parser.parse_args(argv)
     except SystemExit:
         return 2
 
-    if args.diff_file:
-        path = Path(args.diff_file)
-        if not path.is_file():
-            print(f"ERROR: diff file not found: {path}", file=sys.stderr)
-            return 2
-        diff_text = path.read_text(encoding="utf-8", errors="replace")
-    else:
-        diff_text = _diff_from_range(args.rev_range, args.repo)
-        if diff_text is None:
-            print(
-                f"ERROR: `git diff {args.rev_range}` failed in {args.repo}",
-                file=sys.stderr,
-            )
-            return 2
+    path = Path(args.diff_file)
+    if not path.is_file():
+        print(f"ERROR: diff file not found: {path}", file=sys.stderr)
+        return 2
+
+    diff_text = path.read_text(encoding="utf-8", errors="replace")
+    # Fail CLOSED on input that is not a diff, the same treatment the
+    # missing-file path above already gets. `errors="replace"` cannot raise, so
+    # a UTF-16 (or raw-byte) file decoded to mojibake, `_parse` found no file
+    # headers, and this printed `GATE_FREE_VERDICT` and exited 0 — a PASS over
+    # unreadable bytes, byte-identical to a PASS over a clean diff. One `+++ `
+    # header is the minimum `_parse` needs to see any file at all, so its
+    # absence means nothing could have been detected either way.
+    if "+++ " not in diff_text:
+        print(
+            f"ERROR: {path} decoded to {len(diff_text)} characters with no "
+            f"`+++ ` header — not a unified diff (wrong encoding, or not a "
+            f"diff at all). Refusing rather than reporting no gate.",
+            file=sys.stderr,
+        )
+        return 2
 
     report = analyze(diff_text)
-
-    if args.json:
-        print(
-            json.dumps(
-                {
-                    "gates": [
-                        {"symbol": g.symbol, "path": g.path, "line": g.line}
-                        for g in report.gates
-                    ],
-                    "findings": [
-                        {
-                            "symbol": f.symbol,
-                            "path": f.path,
-                            "line": f.line,
-                            "kind": f.kind,
-                            "message": f.message,
-                        }
-                        for f in report.findings
-                    ],
-                    "exemptions": [
-                        {"path": p, "symbol": s, "reason": r}
-                        for p, s, r in report.exemptions
-                    ],
-                    # `(path, symbol)` is not a JSON key, and dropping the path
-                    # here would re-introduce the collision the keying fixes.
-                    "evidence": {
-                        f"{path}::{symbol}": verdict
-                        for (path, symbol), verdict in report.evidence.items()
-                    },
-                },
-                indent=2,
-            )
-        )
-    else:
-        for line in format_report(report):
-            print(line)
+    for line in format_report(report):
+        print(line)
 
     return 1 if report.findings else 0
 

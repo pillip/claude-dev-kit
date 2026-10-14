@@ -20,6 +20,14 @@ import sys
 import time
 from pathlib import Path
 
+# The test-path classifier and the C-quoted-pathname decoder both live in the
+# detector, which depends on nothing here — so this edge is one-way and safe at
+# module level. It was already the direction `_untracked_diff_text` and
+# `verify_review_gate_evidence` used lazily for `unquote_c_style`; ISSUE-081
+# promoted it because the implement phases need `TEST_FILE_PATTERN` /
+# `TEST_DIR_PATTERN`, which this file used to re-type byte-identically twice.
+import verify_gate_evidence as vge
+
 # ISSUE-065: the invoker's own process-start reference for the gate-handoff
 # freshness check — captured at import, not computed per call, so a handoff
 # artifact must postdate THIS checkpoint process to be ingested.
@@ -654,13 +662,11 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     base = _default_branch()
     all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
-    test_pattern = re.compile(
-        r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
-    )
-    test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
-
-    test_files = [f for f in all_files if test_pattern.search(f)]
-    test_dir_files = [f for f in all_files if test_dir_pattern.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+    # The ONE definition, imported rather than re-typed (ISSUE-081). This used
+    # to be a byte-identical copy of the pair in `verify_implement_tests_written`
+    # below, and `verify_gate_evidence` held a third, weaker re-typing.
+    test_files = [f for f in all_files if vge.TEST_FILE_PATTERN.search(f)]
+    test_dir_files = [f for f in all_files if vge.TEST_DIR_PATTERN.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
     all_test_files = sorted(set(test_files + test_dir_files))
 
     if not all_test_files:
@@ -733,15 +739,12 @@ def verify_implement_tests_written(issue_id: str, **_) -> bool:
     # path that then fails the hollow-test check (ISSUE-048).
     all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
-    # Match test files: test_*.py, *_test.py, *.spec.ts, *.test.ts, etc.
-    test_pattern = re.compile(
-        r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
-    )
-    test_files = [f for f in all_files if test_pattern.search(f)]
+    # Match test files: test_*.py, *_test.py, *.spec.ts, *.test.ts, etc. — the
+    # ONE definition, imported rather than re-typed (ISSUE-081).
+    test_files = [f for f in all_files if vge.TEST_FILE_PATTERN.search(f)]
 
     # Also match files inside tests/ or __tests__/ directories
-    test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
-    test_dir_files = [f for f in all_files if test_dir_pattern.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+    test_dir_files = [f for f in all_files if vge.TEST_DIR_PATTERN.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
 
     all_test_files = sorted(set(test_files + test_dir_files))
 
@@ -1266,7 +1269,20 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
 
     wt = Path(wt_path)
 
-    # Find all test files in worktree
+    # Find all test files in worktree.
+    #
+    # DELIBERATELY NOT unified with `vge.TEST_FILE_PATTERN` /
+    # `vge.TEST_DIR_PATTERN` (ISSUE-081, review lesson 8: relaxing a shared
+    # contract for a new caller class must be scoped to that class). This walk
+    # is rooted at `tests/`, so `TEST_DIR_PATTERN` matches every entry by
+    # construction and the unified predicate would admit EVERY `.py` under
+    # `tests/` — while `_has_real_tests` requires a `def test_*`. Measured on
+    # this repo: 72 files -> 73, and the one added file is `tests/conftest.py`,
+    # which has no `def test_*` and would turn this blocking phase RED for
+    # every issue. That is this phase's observable behaviour, not
+    # gate-evidence's, so it keeps its name-only rule and is pinned by
+    # `TestTheTestQualityWalkerKeepsItsOwnBehaviour`. Widening it needs its own
+    # measurement and its own issue.
     test_files: list[str] = []
     tests_dir = wt / "tests"
     if tests_dir.is_dir():
@@ -1341,8 +1357,6 @@ def _untracked_diff_text(wt_path: str) -> str:
     spelling, which ``_changed_files_vs_base`` has always reported and the
     implement phases have always consumed.
     """
-    import verify_gate_evidence as vge
-
     parts: list[str] = []
     for listed in _untracked_paths(wt_path):
         # `surrogateescape` so a path whose bytes are not valid UTF-8 still
@@ -1439,8 +1453,6 @@ def verify_review_gate_evidence(issue_id: str, **_) -> bool:
     test DIRECTION, not a coding mistake. ``verify_gate_evidence.analyze`` is
     the detector; this phase is its blocking consumer.
     """
-    import verify_gate_evidence as vge
-
     diff_text = _gate_evidence_diff(issue_id)
     # A PASS is only trustworthy over a non-empty subject: `analyze("")` finds
     # no files and therefore no gates, and renders the same line as a genuinely
