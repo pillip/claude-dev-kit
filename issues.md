@@ -56,6 +56,8 @@
 - [ ] ISSUE-083: Resolve a remote-only branch to its remote tip in the worktree creator — a deleted local ref silently re-roots the worktree onto main _(track: platform, P1, 0.5d — observed first-hand during ISSUE-078's ship phase: `wt_setup.sh` reported success and returned a worktree at main's sha with no upstream for a branch whose reviewed commits were on the remote; reachable on the normal path because review cleanup deletes the local ref; depends on none)_
 - [ ] ISSUE-084: Decide whether a new guard that re-types an existing oracle is detectable, or make reuse the convention _(track: platform, P2, 0.5d — durable carrier for the duplicated-oracle rule SPEC-081 declined to encode: PR #135's `_tool_grants` was re-typed from `_split_tools` with no name/signature/location overlap, so no cheap syntactic rule catches it; depends on 081)_
 - [ ] ISSUE-085: Backfill the paired gate evidence for the ten shipped gates SPEC-081 recorded as unevidenced _(track: platform, P2, 1d — ten blocking guards carry neither a disarm battery nor a composite pin, and `verify_hollow_tests.py` has no test module at all; test surface only, behaviour unchanged; depends on 081)_
+- [ ] ISSUE-086: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, after repairing attribution _(track: platform, P1, 1.5d — durable carrier for SPEC-081 amendment decision 2: recall is 4/6 genuine gate-adders, both false negatives refuse by `return None`, and recovering the recall costs 1 false BLOCK per 2 recalls because attribution cannot see a battery driven through a test helper — attribution must be repaired first; depends on 081)_
+- [ ] ISSUE-087: Widen or honestly bound the gate-evidence detection boundary, and stop reporting a miss as "no gate-adding change" _(track: platform, P2, 1d — durable carrier for SPEC-081 amendment decision 3: a gate is seen only inside an added `def` in a changed non-test `.py` file, so module-level gates, the kit's own eight `.sh` scripts, test-named source files and `class`-hinted hunks all print the byte-identical gate-free PASS line; commit 7949ccb, written to harden this gate, is invisible to it; depends on 081)_
 
 ### Doing
 
@@ -4996,5 +4998,178 @@ Every blocking guard the kit already ships carries a disarm battery and a compos
 
 #### Rollback
 `git revert`. Test-only surface, so reverting restores today's (unevidenced) state and changes no behaviour.
+
+---
+
+### ISSUE-086: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, after repairing attribution
+
+> Durable carrier for **SPEC-081 amendment decision 2** (2026-10-14), filed because a deferred finding is only real if it has a durable carrier and a PR body is not one (review lesson 15). The amendment declared the `return None` under-detection class **out of scope for ISSUE-081** and recorded its measurements rather than improvising a closure, per review lesson 14 — work added to satisfy a request for a *decision* ships without acceptance criteria, and that is where the defects are. This issue is where it gets acceptance criteria.
+>
+> **Measured recall is 4 of 6 genuine gate-adders over 12 real merged diffs.** Both false negatives refuse by `return None`: `scripts/sprint_queue.py:_gh_pr_merge_state` (PR #127) and `parse_roster_watermark` (PR #129). `REFUSAL_PATTERNS` in `scripts/verify_gate_evidence.py` does not recognise `return None`, and the `return True`/`return False` fallback requires `_PREDICATE_SHAPE` or a `-> bool` annotation, which neither symbol has. A third shape is out of reach of **any** `return None` rule: PR #129's `cmd_next_action` refuses by **withholding** — 157 added lines, a conditional, and zero `return`/`exit`/`raise` among them; it filters the dispatch list instead.
+>
+> **Four candidate closures were measured against this repo rather than reasoned about** (amendment table; whole-tree base = 124 gates):
+>
+> | form | whole-tree gates (base 124) | recovers both FNs | mutation-robust | verdict |
+> |---|---|---|---|---|
+> | naive `return None` | **+29**, overwhelmingly ordinary accessors | yes | yes | breaches SPEC-081's own rollback trigger at scale |
+> | conditional references a declared parameter | +6 | **no** (`parse_roster_watermark` guards only locals) | yes | fails recall |
+> | refusal vocabulary anywhere in the def | +3, 0 FP | yes | **no** | measurement artifact — rejected |
+> | >=3 `return None` sites OR refusal vocabulary in a non-docstring literal | +6 | yes | yes | overfit; 2 of its 3 whole-tree extras are false positives (`_remote_version`, `_read_cache`) |
+>
+> The best-looking form is a **mirage, killed by a both-directions mutation test**: rewording **only the docstrings** with the code byte-identical turned detection off for **2 of its 3** hits, so it detects the author's vocabulary rather than the refusal. That is review lesson 4 (a hand-rolled parser must match the oracle's edge cases *and* its intended boundary; mutation-test guards in **both** directions) applied to a *detector*. The surviving form's `>=3` threshold is additionally **overfit on a single negative** (`_gate_evidence_diff` has 2 sites).
+>
+> **The blocker, and the spine of this issue: recovering the recall produces 1 false BLOCK per 2 recalls recovered.** Promoting `_gh_pr_merge_state` to a gate makes PR #127 — an honest security PR — fail `missing-disarm-battery` **despite carrying two genuine disarm batteries**, because they drive the gate through a test helper `_probe_ref(value)` that neither `_calls` (a literal symbol-name regex) nor `_attributed` (the vacuity guard) can see. **The defect is in the ATTRIBUTION layer, not the direction layer.** Attribution must therefore be repaired **before, or together with,** any recall widening: an issue that widens recall alone ships false blocks.
+>
+> **Sprint consequence, recorded because it was load-bearing on a plan.** The sprint fixed ship order ISSUE-081 -> ISSUE-077 so that ISSUE-077 would be an in-batch self-test of whether the mechanism is real rather than prose. ISSUE-077 tightens `_gh_pr_merge_state` — the exact function and the exact `return None` shape scored as a false negative on its own predecessor PR #127 — so that self-test would have evaluated to a **no-op**. A green `gate-evidence` verdict on ISSUE-077 must not be read as evidence that this mechanism works.
+>
+> **Declared-vs-delivered inversion, corrected by the amendment and carried here.** SPEC-081 states that "over-detection is the chosen error direction" and accepts an exemption-writing tax over an under-detection hole. Delivered behaviour is the **inverse** — 0% false positives, 33% false negatives on genuine gate-adders. The honest statement is that the detector over-detects *within* its boundary and under-detects *at* its boundary, and the boundary is where the gate-adders it missed live.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-081 amendment decision 2 carrier. Native-memory review lessons: "a hand-rolled parser must match the oracle's edge cases AND its intended boundary — mutation-test guards in both directions", "work added to satisfy a request for a DECISION ships without acceptance criteria", "a deferred finding is only real if it has a durable carrier — a PR body is not one", "a newly added defence must be tested in the DISARM direction and through its real consumer")
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-081
+
+#### Goal
+`scripts/verify_gate_evidence.py` recognises the refusal shapes that produced its two measured false negatives, and it does so without converting the recall recovery into a false block — attribution credits a battery that reaches the gate through a test-local helper, so PR #127 stays PASS while `_gh_pr_merge_state` becomes a detected gate.
+
+#### Scope (In/Out)
+- In:
+  - A SPEC that **decides, on measurement**, which conditional-plus-refusal shapes count: `return None`, a sentinel-tuple return (`return None, "<detail>", True`), and withholding (filtering a dispatch list with no `return`/`exit`/`raise` at all). The amendment's four-row table is the starting measurement, not the answer — its numbers were taken against *today's* attribution layer, which this issue changes.
+  - **Repairing attribution first**: `_calls` and `_attributed` must credit a battery that drives the gate through an added test-local helper (PR #127's `_probe_ref(value)`). Indirection depth is a stated number pinned by a test, not an unbounded search.
+  - Re-measuring the whole-tree gate count and the 12-diff corpus after the repair, and weighing the chosen form against SPEC-081's own rollback trigger (2+ false positives on non-gate PRs in one sprint).
+  - A both-directions mutation test that kills the docstring-vocabulary mirage, and a disarm-direction mutation test for the attribution repair itself.
+  - Correcting SPEC-081's declared error direction to the re-measured numbers, and recording that ISSUE-077 was not the in-batch self-test.
+- Out:
+  - **Where the detector looks** — file types, module level, hunk-hint attribution — and the verdict vocabulary. That is ISSUE-087's. This issue owns the **refusal vocabulary and attribution**; 087 owns the **boundary and the wording**.
+  - The direction predicate's 59% per-battery misclassification rate and the undecidable detector-polarity class — SPEC-081's Open Questions assigns that to the reviewer of the 5th PR under the phase.
+  - The tier. Blocking stands (amendment decision 3); this issue must not demote the phase to work around a false block it introduces.
+  - Backfilling the ten already-unevidenced shipped gates (ISSUE-085).
+  - Widening recall **without** the attribution repair. If the SPEC's measurement shows the two halves cannot land inside this estimate, the attribution repair ships first and the widening gets its own durable carrier — a split, never an unmeasured improvisation.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given PR #127's merged diff as a committed fixture under `tests/fixtures/gate_evidence/` and `_gh_pr_merge_state` promoted to a detected gate, when `scripts/verify_gate_evidence.py --diff-file` runs, then `_gh_pr_merge_state` appears in `report.gates` **and** `missing-disarm-battery` findings for it number **0** — its two existing disarm batteries, which reach the gate only through the test helper `_probe_ref(value)`, are credited. The measured cost of recall recovery drops from **1 false block per 2 recalls** to **0 false blocks on this fixture**.
+- [ ] Given the attribution repair applied **alone**, with `REFUSAL_PATTERNS` byte-unchanged, when the 12-diff corpus is replayed, then the detected-gate count is identical on all **12** diffs and the finding set is a **subset** of the recorded pre-change set — **0** new findings. Attribution can only credit, never accuse.
+- [ ] Given PR #127's and PR #129's merged diffs as committed fixtures, when the chosen refusal-shape rule runs, then `_gh_pr_merge_state` and `parse_roster_watermark` are each reported as gates, taking PR-level recall from **4 of 6** to **6 of 6** on the 12-diff corpus. Symbol-level recall is stated as a number in the PR body; if `cmd_next_action`'s withholding shape remains uncovered, it is named as a residual with its own carrier rather than left as prose.
+- [ ] Given the chosen rule, when the whole-tree gate count is re-measured against the recorded base of **124**, then the delta is stated as a number and **every** added gate is hand-classified true/false positive in the PR body. A form admitting >=**2** false positives of the non-gate kind is rejected against SPEC-081's own rollback trigger — the naive `return None` form (**+29**) and the `>=3`-sites form (**+6**, with `_remote_version` and `_read_cache` already classified as false positives) have both already failed this and cannot ship unchanged.
+- [ ] Given the shipped rule, when a mutation rewords **only** docstrings and `#` comments and leaves executable code byte-identical, then **100%** of the corpus's gate verdicts are unchanged — the rejected refusal-vocabulary form, which lost **2 of its 3** hits under exactly this mutation, fails this criterion by construction.
+- [ ] Given the attribution repair, when the indirection-resolution step is mutated out (the helper no longer resolves to the gate), then at least **1** test fails, and at least **1** of the failing tests drives the real consumer `bash scripts/checkpoint.sh --skill review --phase gate-evidence` rather than `analyze()` alone — the new defence is pinned in the disarm direction and through its real consumer.
+- [ ] Given ISSUE-077's merged diff as a committed fixture, when the shipped rule runs, then `_gh_pr_merge_state` is reported as a gate (**>=1** gate, where today the count is **0**), and SPEC-081 plus the sprint record both state in writing that the ISSUE-081 -> ISSUE-077 in-batch self-test evaluated to a no-op and that a green verdict on ISSUE-077 was not evidence this mechanism works.
+- [ ] Given the shipped rule, when the false-positive and false-negative rates are re-measured over the 12-diff corpus, then both numbers are written into SPEC-081 and the SPEC's declared error direction matches them — replacing today's inversion (declared over-detecting; delivered **0%** FP / **33%** FN on genuine gate-adders).
+
+#### Implementation Notes
+- Order is the whole point: repair `_calls`/`_attributed` in `scripts/verify_gate_evidence.py` **before** touching `REFUSAL_PATTERNS`, and land the attribution repair with its own green corpus replay so that AC-2's "0 new findings" is measured on an isolated change. A single PR that moves both layers at once cannot attribute a regression to either.
+- Attribution repair sketch: when an added test-local helper's body calls `S(`, treat batteries calling that helper as attributed to `S`. Resolve a **stated, test-pinned** number of indirection levels (1 is the cheapest defensible choice — PR #127 needs exactly one) rather than an unbounded transitive walk. The required depth across the corpus is **unmeasured** — see Open questions.
+- This issue assumes ISSUE-081 landed decision 4's `(path, symbol)` keying for `evidence` and `exemptions`. If it did not, the bare-symbol leak will make AC-1 pass for the wrong reason (another file's `main` crediting this one); check the keying before trusting any PASS.
+- Review lesson 4's second clause governs the mutation tests here: use an **occurrence-whitelist** over the strings actually removed, not a phrasing blacklist, and validate the mutation harness with a known-killing mutant before any SURVIVED verdict is believed.
+- Review lesson 14 is why the SPEC comes first: the two engine defects ISSUE-079's review found both lived in unrequested code added to satisfy a request for a decision. Do not improvise a refusal pattern into the engine ahead of the measurement this issue's SPEC owes.
+- Do not reach for the tier as a relief valve. If the chosen form blocks an honest PR, that is an AC-4 failure to be re-measured, not a reason to add `("review", "gate-evidence")` to `ADVISORY_PHASES`.
+- Open questions, stated rather than filled in: (a) the whole-tree false-positive counts in the amendment's table were measured against **today's** attribution layer and are **not** valid for the repaired layer — re-measure all four forms before choosing; (b) how many batteries across the 12-diff corpus attribute **only** through a test-local helper is unmeasured, so the value of the repair beyond PR #127 is unknown; (c) how many of the 12 corpus diffs contain a withholding-shaped gate beyond `cmd_next_action` is unmeasured.
+
+#### Tests
+- [ ] Fixture replay, PR #127: `_gh_pr_merge_state` detected **and** evidenced — 0 `missing-disarm-battery` findings.
+- [ ] Fixture replay, PR #129: `parse_roster_watermark` detected; `cmd_next_action`'s verdict asserted at its recorded expected value either way.
+- [ ] Fixture replay, ISSUE-077's diff: >=1 gate, where the pre-change count is 0.
+- [ ] Attribution unit test plus its disarm mutation: a battery reaching the gate through an added `_probe_ref(value)`-shaped helper is credited; with the indirection resolution mutated out, the battery is no longer credited and the test fails.
+- [ ] Indirection-depth bound: a helper chain one level deeper than the pinned number is **not** credited, so the bound is load-bearing rather than incidental.
+- [ ] Docstring-and-comment-only mutation over the corpus: every gate verdict byte-identical.
+- [ ] Corpus no-regression replay of all 12 diffs against recorded expected verdicts, run once after the attribution repair alone and once after the widening.
+- [ ] ISSUE-081's AC-3 non-gate diff fixture: still 0 gates, so an ordinary PR pays nothing.
+- [ ] Consumer-level pin through `bash scripts/checkpoint.sh --skill review --phase gate-evidence` on the PR #127 fixture: exit 0.
+
+#### Rollback
+`git revert` the PR. Reverting restores **4-of-6** recall and the declared-vs-delivered inversion, which is the post-ISSUE-081 state — under-detection does not halt an honest review, so the revert is safe in the over-detection direction. **Do not revert in halves**: reverting the attribution repair while keeping the widened refusal vocabulary re-arms the measured **1 false block per 2 recalls** and will fail PR #127-shaped PRs that carry genuine disarm batteries. If only the widening must go, revert the widening and keep the repair — AC-2 pins that the repair alone introduces 0 new findings.
+
+---
+
+### ISSUE-087: Widen or honestly bound the gate-evidence detection boundary, and stop reporting a miss as "no gate-adding change"
+
+> Durable carrier for **SPEC-081 amendment decision 3** (2026-10-14), filed because a deferred finding is only real if it has a durable carrier and a PR body is not one (review lesson 15). The amendment retained the blocking tier and changed what the phase is allowed to **claim**: a gate is detected only inside an added `def` in a changed non-test `.py` file, and **a miss is currently indistinguishable from a clean pass**.
+>
+> Measured with a `def`/`class` control pair that isolates the mechanism — the `def`-hint control case **is** detected. Each of the four misses below prints the **byte-identical** line `PASS: gate-evidence — no gate-adding change in the diff`:
+>
+> 1. a gate at **module level** (no enclosing `def`);
+> 2. a gate in a **non-Python source file** — this kit itself ships **eight** `.sh` scripts under `scripts/`, including `checkpoint.sh` and `wt_setup.sh`;
+> 3. a gate in a **source file whose name matches the test-path heuristics** (e.g. `scripts/test_runner.py`);
+> 4. a tightened predicate in a hunk whose **function hint resolves to a `class`** rather than a `def`.
+>
+> **The sharpest sub-case was demonstrated on the ISSUE-081 branch, not hypothesised.** Commit `7949ccb`, authored to harden this very gate, adds **four** blocking `return None` refusals inside the pre-existing `def _gate_evidence_diff`, and the detector reports `gates: []` / `PASS — no gate-adding change in the diff` / `exit 0`. **The gate cannot see its own hardening commit.** A gate added by *modifying an existing function* is invisible unless an added `def` or a resolvable hunk hint supplies attribution — which **contradicts SPEC-081's own "What counts as adds a gate"**, where "a tightened predicate inside an existing function counts … adding one `if …: return False` line to a shipped function arms the obligation."
+>
+> **Scoping against ISSUE-086, so the two do not collide:** ISSUE-086 owns the **refusal vocabulary and attribution of evidence**; this issue owns **where the detector looks** (file types, module level, hunk-hint attribution) and the **verdict vocabulary**. The `7949ccb` instance is the two classes composing into a complete miss — its refusals are `return None`, which is 086's class — so this issue's own fixtures must use a refusal shape the detector **already** recognises today (`return 1`, `sys.exit(1)`, `raise …Error`) in order to isolate the boundary defect from the vocabulary defect.
+>
+> **The honesty fix the amendment makes binding:** the gate-free verdict must read as "no gate **detected**", naming the boundary, never as "no gate-adding change". A pass from this phase means *no gate was detected*, never *no gate was added*.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-081.md (existing — the amendment's decision 3 already states the requirement, enumerates the four boundaries with measurements, and leaves the seam untouched; per-boundary widen-or-bound is recorded as a further amendment to SPEC-081, not a new design. **Escalation trigger**: if closing boundary 2 requires a second refusal vocabulary and a shell-script analysis class of its own, that is new engine surface with no criterion naming it — flip `Spec-Required` to true and write a SPEC rather than improvising it, per review lesson 14.)
+- PRD-Ref: none (kit self-development; SPEC-081 amendment decision 3 carrier. Native-memory review lessons: "a hand-rolled parser must match the oracle's edge cases AND its intended boundary — mutation-test an absence-guard with the string actually removed, and prefer an occurrence-whitelist to a phrasing blacklist", "a deferred finding is only real if it has a durable carrier — a PR body is not one", "a newly added defence must be tested in the DISARM direction and through its real consumer")
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-081
+
+#### Goal
+The `review/gate-evidence` phase either sees a gate at module level, in a non-Python source file, in a source file whose name looks like a test, and in a modified existing function — or it says, in the verdict line itself, which of those it did not look at; a pass can no longer be read as "no gate was added".
+
+#### Scope (In/Out)
+- In:
+  - The verdict-vocabulary fix: the gate-free line names the boundary actually searched, in `scripts/verify_gate_evidence.py`'s `format_report`, in `verify_review_gate_evidence` in `scripts/verify_checkpoint.py`, and in `skills/review/SKILL.md.tmpl` (regenerated via `python3 scripts/gen_skills.py`).
+  - A per-boundary **widen or bound** decision for each of the four measured misses, with the chosen behaviour pinned by a test that asserts the exact rendered verdict string.
+  - Hunk-hint attribution, so a gate added by modifying an existing function is attributed to that function — the case SPEC-081's own "What counts as adds a gate" already claims is covered.
+  - A committed fixture replay of commit `7949ccb`'s own diff, so "the gate cannot see its own hardening commit" is a pinned regression rather than an anecdote.
+- Out:
+  - The refusal vocabulary (`return None`, sentinel tuples, withholding) and evidence attribution through test helpers — **ISSUE-086** owns both. Fixtures here use refusal shapes the detector already recognises, precisely so the two issues can be measured independently.
+  - The tier. Blocking stands per amendment decision 3; this issue changes what the phase **claims**, not whether it blocks.
+  - Which module owns `is_test_path` now that four definitions of "test file" disagree — that is ISSUE-084's amended instance 1. This issue consumes whatever oracle exists and must not add a fifth definition.
+  - Backfilling already-shipped gates (ISSUE-085) and the direction predicate's misclassification rate (SPEC-081 Open Questions).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given any diff in which **0** gates are detected, when the phase runs, then the verdict line contains "no gate **detected**" and names the boundary searched, and the literal string `no gate-adding change` occurs **0** times across `scripts/verify_gate_evidence.py`, `scripts/verify_checkpoint.py`, `skills/review/SKILL.md.tmpl` and the generated `skills/review/SKILL.md` — asserted as an occurrence count over the exact removed string, not as a phrasing check.
+- [ ] Given a diff adding a conditional plus an already-recognised refusal at **module level** in a changed non-test `.py` file, when `analyze` runs, then **exactly one** of these holds and a test asserts which, by the exact verdict string: the gate is reported with an attribution symbol, **or** the gate-free verdict names "module-level code is not searched". Today the result is **0** gates and a verdict naming neither.
+- [ ] Given a diff adding a conditional plus `exit 1` to `scripts/checkpoint.sh`, when the phase runs, then **exactly one** of these holds and a test asserts which: the gate is reported, **or** the verdict enumerates the file-type boundary and names shell sources as unsearched. The kit's own **eight** `.sh` scripts under `scripts/` — `checkpoint.sh` and `wt_setup.sh` among them — are the fixture corpus for whichever branch is chosen.
+- [ ] Given a diff adding a conditional plus an already-recognised refusal to `scripts/test_runner.py` (a **source** file whose name matches the test-path heuristics), when the phase runs, then **exactly one** of these holds and a test asserts which: the gate is reported, **or** the verdict names the test-path heuristic as the reason the file was skipped. The test must call whichever `is_test_path` oracle the repo settles on — adding a fifth definition fails this AC.
+- [ ] Given a diff that adds **one** `if …: return 1` line inside a **pre-existing** function, with no added `def` and a hunk hint resolving to a `class`, when `analyze` runs, then **1** gate is reported and attributed to the enclosing function, where today the count is **0** — closing the contradiction with SPEC-081's "a tightened predicate inside an existing function counts".
+- [ ] Given commit `7949ccb`'s own diff as a committed fixture under `tests/fixtures/gate_evidence/`, when the phase runs, then the verdict is **no longer** the byte-identical gate-free line: it reports the gate, or it names which remaining boundary suppressed it (vocabulary -> ISSUE-086, attribution -> this issue). The test asserts the exact string, so the composition of the two classes is pinned rather than narrated.
+- [ ] Given ISSUE-081's AC-3 non-gate diff fixture, when the widened detector runs, then the gate count is **0**, unchanged; and given the whole tree, the gate count is re-measured against the recorded base of **124**, the delta stated as a number, and every addition hand-classified true/false positive. A widening admitting >=**2** false positives of the non-gate kind is rejected against SPEC-081's own rollback trigger.
+- [ ] Given each widening that ships, when it is mutated out one at a time, then at least **1** test fails per widening, and at least **1** failing test drives the real consumer `bash scripts/checkpoint.sh --skill review --phase gate-evidence` rather than `analyze()` alone — every new defence pinned in the disarm direction and through its real consumer.
+
+#### Implementation Notes
+- Do the verdict-vocabulary fix **first** and ship it even if a widening is later deferred: it is the half that converts a silent miss into a disclosed boundary, and it is the amendment's binding requirement. The widenings are the optional half.
+- `scripts/verify_gate_evidence.py`'s `detect_gates` filters on `path.endswith(".py")` and attributes through added `def` lines or the hunk hint; the `def`/`class` control pair in the amendment localises the attribution defect to the hunk-hint resolution, so start there rather than in `_parse`.
+- Review lesson 4's second clause binds every assertion here: an absence-guard must be mutation-tested with the string that was actually removed, and the ISSUE-081 review already measured the failure mode — `test_a_mutated_post_fix_diff_still_passes` held with detection fully dead because it guarded only that the gate's *definition* text survived. Every new boundary test must assert **presence** in `{g.symbol for g in report.gates}`, never only the absence of a finding.
+- A deliberately vocabulary-blind fixture set is what makes this issue measurable while ISSUE-086 is still open: use `return 1` / `sys.exit(1)` / `raise …Error`, never `return None`. If a fixture here needs `return None` to fire, the fixture is testing 086's class and belongs there.
+- `skills/review/SKILL.md` is **generated**; write the wording in `skills/review/SKILL.md.tmpl` and regenerate, or `tests/test_gen_skills.py` will fail on template-to-generated drift.
+- Open questions, stated rather than filled in: (a) how many gates currently live at module level or in the kit's `.sh` scripts is **unmeasured** — only the existence of 8 `.sh` scripts is on record, so the recall value of each widening is unknown; (b) the whole-tree gate-count delta for each widening is **unmeasured** and must be taken before any widening is chosen, since the base of 124 was measured under `def`-scoped Python-only detection; (c) whether shell refusals need their own vocabulary (and therefore a SPEC) is undecided — see the escalation trigger on the `Spec:` field.
+- Split trigger: if boundary 2 (non-Python sources) turns out to need a shell-specific conditional and refusal vocabulary, land boundaries 1, 3, 4 plus the verdict fix in this issue and file a durable carrier for boundary 2 rather than growing this one past its estimate.
+
+#### Tests
+- [ ] Occurrence-count assertion: `no gate-adding change` appears 0 times across the four files named in AC-1; the generated SKILL matches its template.
+- [ ] Module-level gate fixture: asserted against the exact chosen verdict string, with `assert <symbol> in {g.symbol for g in report.gates}` on the widen branch.
+- [ ] `scripts/checkpoint.sh`-shaped shell gate fixture: asserted against the exact chosen verdict string.
+- [ ] `scripts/test_runner.py` source-file fixture: asserted against the exact chosen verdict string, calling the single `is_test_path` oracle.
+- [ ] `class`-hinted hunk fixture, single added `if …: return 1` in a pre-existing function: 1 gate, attributed to the enclosing function; `def`-hint control case still detected (the pair that isolates the mechanism).
+- [ ] Fixture replay of commit `7949ccb`: verdict is not the byte-identical gate-free line.
+- [ ] Non-gate diff fixture: 0 gates, no new obligation.
+- [ ] Per-widening disarm mutation: each widening mutated out individually, each killing >=1 test, with >=1 kill observed through `scripts/checkpoint.sh --skill review --phase gate-evidence`.
+
+#### Rollback
+`git revert` the PR. The verdict-vocabulary half is wording plus a generated-template regeneration, so reverting restores the misleading `no gate-adding change` line — which is the defect, not a safe state; prefer reverting a widening and **keeping** the wording fix. Each widening is independently revertible: reverting one restores today's silent miss for that boundary only, which under-detects and therefore cannot block an honest review. If a widening is reverted, the verdict line must be updated in the same commit to re-disclose the boundary it stops searching, or the revert reintroduces the false claim this issue exists to remove.
 
 ---
