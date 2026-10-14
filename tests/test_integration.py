@@ -1387,3 +1387,86 @@ def test_no_standalone_design_skills():
     assert not (SKILL_DIR / "design-refactor").exists(), "skills/design-refactor should not exist"
     assert not (SKILL_DIR / "a11y-audit").exists(), "skills/a11y-audit should not exist"
     assert not (AGENT_DIR / "design-refactorer.md").exists(), "agents/design-refactorer.md should not exist"
+
+
+# ── Test 60: review/gate-evidence checkpoint POSITION (ISSUE-081, lesson 12) ──
+#
+# Review lesson 12 is "pin gate call-site POSITION, not just presence". Before
+# this block only presence was pinned (`--phase gate-evidence` appearing
+# somewhere in the file), and the ISSUE-081 review measured the consequence:
+# relocating the entire step-4.6 block to after step 6/push left 296 tests
+# green. Position is load-bearing by the SKILL's own text — step 4.6 tells the
+# reviewer to record findings into `docs/.review/findings.json` "so it reaches
+# the review notes", which only holds if 4.6 runs before step 5 re-runs the
+# synthesizer.
+
+_REVIEW_SKILL_FILES = ("SKILL.md", "SKILL.md.tmpl")
+
+#: 4.5 test-quality must precede 4.6 gate-evidence, which must precede 4.7 debt.
+_GATE_EVIDENCE_NEIGHBOURS = ("test-quality", "gate-evidence", "debt")
+
+
+def _checkpoint_phase_order(text: str) -> list[str]:
+    """Every `--phase <name>` checkpoint in the order the file lists them."""
+    return re.findall(r"--phase ([a-z-]+)", text)
+
+
+def _gate_evidence_sits_between_its_neighbours(text: str) -> bool:
+    """True when 4.6 is ordinally between 4.5 and 4.7.
+
+    Deliberately an ORDER predicate over the phase sequence, not a substring
+    check: a substring check is what the review defeated by relocation.
+    """
+    order = _checkpoint_phase_order(text)
+    if not set(_GATE_EVIDENCE_NEIGHBOURS) <= set(order):
+        return False
+    before, target, after = _GATE_EVIDENCE_NEIGHBOURS
+    return order.index(before) < order.index(target) < order.index(after)
+
+
+def _relocate_step_46_to_end(text: str) -> str:
+    """Move the whole step-4.6 block (through its checkpoint) to end of file.
+
+    This reproduces the exact mutation the ISSUE-081 review applied when it
+    measured that relocation left the suite green, so the guard above is
+    mutation-tested in the DISARM direction (review lessons 4 and 16) without
+    editing the real SKILL files.
+    """
+    start = text.index("4.6) ")
+    end = text.index("4.7) ")
+    block = text[start:end]
+    assert "--phase gate-evidence" in block, "mutation did not capture the 4.6 checkpoint"
+    return text[:start] + text[end:] + "\n" + block
+
+
+@pytest.mark.parametrize("name", _REVIEW_SKILL_FILES)
+def test_review_skill_pins_gate_evidence_checkpoint_position(name):
+    """ARM: 4.6 gate-evidence sits between 4.5 test-quality and 4.7 debt."""
+    text = (SKILL_DIR / "review" / name).read_text(encoding="utf-8")
+    order = _checkpoint_phase_order(text)
+    assert _gate_evidence_sits_between_its_neighbours(text), (
+        f"skills/review/{name}: gate-evidence is not ordinally between "
+        f"test-quality and debt. Observed phase order: {order}"
+    )
+
+
+@pytest.mark.parametrize("name", _REVIEW_SKILL_FILES)
+def test_relocating_the_gate_evidence_block_is_caught(name):
+    """DISARM: the position guard must FAIL on the relocation it exists for.
+
+    Without this, the guard above could pass vacuously (e.g. if the phase
+    names were never found) and we would be back to a presence-only pin.
+    """
+    text = (SKILL_DIR / "review" / name).read_text(encoding="utf-8")
+    mutated = _relocate_step_46_to_end(text)
+
+    # The mutation must keep the checkpoint present — otherwise it would be
+    # caught by the pre-existing presence assertions instead, and would prove
+    # nothing about POSITION.
+    assert "--phase gate-evidence" in mutated, name
+    assert not _gate_evidence_sits_between_its_neighbours(mutated), (
+        f"skills/review/{name}: the position guard did NOT catch the step-4.6 "
+        f"block being relocated to the end of the file — this is the exact "
+        f"mutation that left 296 tests green before ISSUE-081's rework. "
+        f"Mutated phase order: {_checkpoint_phase_order(mutated)}"
+    )
