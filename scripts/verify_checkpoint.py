@@ -1285,6 +1285,54 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
     return True
 
 
+def _gate_evidence_diff(issue_id: str) -> str | None:
+    """The branch's own delta as unified-diff text, or None if unobtainable.
+
+    Diffed against the fork point (``git merge-base HEAD <default>``) for the
+    same reason as ``_changed_files_vs_base`` (ISSUE-048): a worktree built on a
+    stale base must not be charged with gates the base added after the fork.
+
+    Known limit, deliberate: ``git diff <base>`` sees committed and tracked
+    working-tree changes, not UNTRACKED files. By the time the review phase runs
+    the branch is committed and pushed (``/implement`` step 10 precedes
+    ``/review``), so an untracked new test is not a reachable state here; adding
+    index manipulation to a read-only verifier would be a worse trade.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        return None
+    base = _default_branch()
+    diff_base = _merge_base(wt_path, base) or base
+    result = _run(["git", "diff", diff_base, "--"], cwd=wt_path)
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def verify_review_gate_evidence(issue_id: str, **_) -> bool:
+    """Every gate the diff adds carries a disarm battery AND a composite pin.
+
+    ISSUE-081 / SPEC-081. "A newly added defence fails OPEN" was measured at
+    High severity in four consecutive sprints; the common shape was a missing
+    test DIRECTION, not a coding mistake. ``verify_gate_evidence.analyze`` is
+    the detector; this phase is its blocking consumer.
+    """
+    import verify_gate_evidence as vge
+
+    diff_text = _gate_evidence_diff(issue_id)
+    if diff_text is None:
+        print(
+            f"FAIL: gate-evidence — cannot resolve the branch diff for "
+            f"{issue_id} (no worktree, or `git diff` failed)"
+        )
+        return False
+
+    report = vge.analyze(diff_text)
+    for line in vge.format_report(report):
+        print(line)
+    return not report.findings
+
+
 def verify_review_visual_diff(issue_id: str, **_) -> bool:
     """Visual diff: compare Figma renders or prototype against implementation.
 
@@ -2059,6 +2107,7 @@ VERIFIERS = {
     ("review", "structural-match"): verify_review_structural_match,
     ("review", "layout"): verify_review_layout,
     ("review", "test-quality"): verify_review_test_quality,
+    ("review", "gate-evidence"): verify_review_gate_evidence,
     ("review", "debt"): verify_review_debt,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,

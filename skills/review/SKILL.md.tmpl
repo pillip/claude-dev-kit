@@ -145,6 +145,15 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.13 com
 > Run: `bash scripts/checkpoint.sh --skill review --phase test-quality --issue $ARGUMENTS`
 > If exit code ≠ 0: STOP immediately and report the failure. Do NOT proceed.
 
+4.6) **Gate evidence — both directions** (ISSUE-081 / SPEC-081). A PR that adds or tightens a **gate** — a predicate whose false branch blocks, refuses, or withholds dispatch — must evidence it in BOTH directions: a **disarm battery** (the gate still refuses across at least 3 adversarial-but-plausible input variants: value vocabulary, line shape, encoding, placement, fencing, duplication) AND a **composite pin** (one battery that drives the gate through its real consumer and asserts a consumer-level outcome — an exit code or a refusal constant — carrying an input-side vacuity guard that proves each variant still contains what the gate is supposed to catch). The pattern "a newly added defence fails OPEN" was measured at High severity in four consecutive sprints; in every case the arm direction was tested and the disarm direction was not. The check is over the diff, not over the PR body — all four of those PRs had conscientious bodies.
+   - Detection deliberately **over-detects**. The only opt-out is an inline `# GATE-EVIDENCE-EXEMPT(<symbol>): <reason>` in the diff, which is echoed into this phase's output; the PR body must justify every exemption, and an exemption with no reason does not count.
+   - Record any finding this phase reports as a `code_findings` entry (title prefixed `[gate-evidence]`) in `docs/.review/findings.json` so it reaches the review notes rather than living only in the terminal.
+
+> **CHECKPOINT — MANDATORY — NEVER SKIP**
+> Run: `bash scripts/checkpoint.sh --skill review --phase gate-evidence --issue $ARGUMENTS`
+> Auto-passes when the diff adds no gate (no false-positive tax on ordinary PRs).
+> If exit code ≠ 0: STOP immediately. Add the missing direction, or write a justified exemption. Do NOT proceed.
+
 4.7) **Tech-debt ledger** (advisory — harvests `KIT-DEBT` markers):
 
 > **CHECKPOINT — advisory (non-blocking)**
