@@ -27,9 +27,11 @@ AC coverage map:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -299,6 +301,14 @@ _DISARM_MUTATIONS = [
     ("extra_blank_context", lambda t: t.replace("\n@@", "\n \n@@")),
     ("index_lines_removed", lambda t: _drop_lines(t, "index ")),
     ("mode_lines_added", lambda t: t.replace("diff --git ", "old mode 100644\ndiff --git ", 1)),
+    # Everything above varies the diff's BODY. These two vary the `+++`/`---`
+    # HEADER, which is the ONLY thing `_parse` reads to decide which file a hunk
+    # belongs to — and which this matrix had never varied. A header rendering
+    # `git diff` produces BY DEFAULT (`core.quotePath` defaults to true and git
+    # then C-quotes the path INSIDE the field) made the checker skip the file
+    # entirely and PASS on this very fixture.
+    ("c_quoted_paths", lambda t: _c_quoted_paths(t)),
+    ("tab_timestamp_headers", lambda t: _tab_timestamp_headers(t)),
 ]
 
 
@@ -329,6 +339,110 @@ def _drop_lines(text: str, prefix: str) -> str:
         for line in text.splitlines(keepends=True)
         if not line.startswith(prefix)
     )
+
+
+# ── Header RENDERING, as the real tools render it ────────────────────
+#
+# `_c_quote` is a hand-rolled imitation of git's `quote_c_style`, so it is
+# pinned character-for-character against REAL `git diff` output by
+# `TestHeaderRenderings.test_the_c_quote_renderer_matches_real_git`. A
+# hand-rolled renderer that is never checked against its oracle is how the
+# defect it is pinning got in (review lesson 4).
+
+_HEADER_FIELD_RE = re.compile(r"^(--- |\+\+\+ )(a/.*|b/.*|/dev/null)$")
+_GIT_LINE_RE = re.compile(r"^diff --git a/(.*) b/\1$")
+
+
+def _c_quote(path: str) -> str:
+    """Render <path> the way git's ``quote_c_style`` renders it, quotes included.
+
+    git quotes a pathname iff some byte of it must be escaped — a byte >= 0x80
+    (so: any non-ASCII name), a control character, ``"`` or ``\\``. An
+    all-ASCII path is returned verbatim, which is why the ``c_quoted_paths``
+    mutation has to rename the path first: quoting a path git would never quote
+    would pin a rendering that cannot occur.
+    """
+    raw = path.encode("utf-8")
+    named = {0x07: "a", 0x08: "b", 0x0C: "f", 0x0A: "n", 0x0D: "r",
+             0x09: "t", 0x0B: "v", 0x22: '"', 0x5C: "\\"}
+    if not any(byte >= 0x80 or byte < 0x20 or byte in (0x22, 0x5C) for byte in raw):
+        return path
+    out = ['"']
+    for byte in raw:
+        if byte in named:
+            out.append("\\" + named[byte])
+        elif byte < 0x20 or byte >= 0x80:
+            out.append("\\%03o" % byte)
+        else:
+            out.append(chr(byte))
+    out.append('"')
+    return "".join(out)
+
+
+def _rewrite_header_paths(text: str, render) -> str:
+    """Re-render every `diff --git` / `--- ` / `+++ ` path field through <render>."""
+    out = []
+    for line in text.splitlines(keepends=True):
+        stripped = line.rstrip("\r\n")
+        newline = line[len(stripped):]
+        git_line = _GIT_LINE_RE.match(stripped)
+        if git_line:
+            path = git_line.group(1)
+            out.append(
+                f"diff --git {render('a/' + path)} {render('b/' + path)}{newline}"
+            )
+            continue
+        field = _HEADER_FIELD_RE.match(stripped)
+        if field:
+            out.append(f"{field.group(1)}{render(field.group(2))}{newline}")
+            continue
+        out.append(line)
+    return "".join(out)
+
+
+def _c_quote_headers(text: str) -> str:
+    return _rewrite_header_paths(text, _c_quote)
+
+
+def _accent(path: str) -> str:
+    """Give the path a non-ASCII basename, extension preserved."""
+    if path == "/dev/null":
+        return path
+    head, slash, name = path.rpartition("/")
+    stem, dot, ext = name.rpartition(".")
+    renamed = f"{stem}é{dot}{ext}" if dot else f"{name}é"
+    return f"{head}{slash}{renamed}"
+
+
+def _c_quoted_paths(text: str) -> str:
+    """The diff as `git diff` renders it when the paths are non-ASCII.
+
+    Two steps, both of them git's own behaviour and neither of them an exotic
+    configuration: rename each header path so it NEEDS quoting, then render
+    every header field with ``quote_c_style``. ``core.quotePath`` defaults to
+    true, so this is git's DEFAULT output for any repo holding such a file —
+    and the kit ships to arbitrary repos where non-ASCII filenames are
+    ordinary. Measured before the fix: the leading ``"`` defeated the ``b/``
+    strip, the path no longer ended in ``.py``, `detect_gates` skipped the file,
+    and this fixture reported "PASS: no gate-adding change in the diff".
+    """
+    return _c_quote_headers(_rewrite_header_paths(text, _accent))
+
+
+def _tab_timestamp_headers(text: str) -> str:
+    """Headers the way plain `diff -u` writes them: no prefix, TAB, timestamp.
+
+    Reachable through the documented ``--diff-file``. Measured before the fix:
+    the whole ``scripts/gate.py\\t2026-01-02 10:00:00`` payload became the path,
+    so no file ended in ``.py`` and the same bytes that FAIL with a git-style
+    header reported "PASS: no gate-adding change in the diff".
+    """
+
+    def render(path: str) -> str:
+        bare = path[2:] if path[:2] in ("a/", "b/") else path
+        return f"{bare}\t2026-01-02 10:00:00.000000000 +0000"
+
+    return _rewrite_header_paths(text, render)
 
 
 class TestAC5TheMechanismIsSubjectToItsOwnRule:
@@ -1162,3 +1276,523 @@ class TestChangedFilesVsBaseIsUnchanged:
             "the shared helper must still resolve from origin/HEAD; the new "
             "refusal belongs to the gate-evidence caller, not to this oracle"
         )
+
+    def test_a_non_ascii_untracked_path_keeps_its_quoted_spelling(self, tmp_path):
+        """Legacy pin: the gate-evidence unquoting must NOT leak into this set.
+
+        `_changed_files_vs_base` has always put `git ls-files`' C-quoted
+        spelling into its path set (`core.quotePath` defaults to true), and
+        `_existing()` then drops it because no file of that name exists. That is
+        a real pre-ISSUE-081 limitation of the SHARED oracle — recorded here,
+        not fixed here: relaxing a shared contract for a new caller class must
+        be scoped to that class, and the implement phases that read this set
+        have never been measured against a changed spelling.
+        """
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "démo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        changed = vc._changed_files_vs_base(str(repo), "main")
+        quoted = [path for path in changed if path.startswith('"')]
+        assert quoted, changed
+        assert re.search(r"\\\d{3}", quoted[0]), quoted
+        assert "scripts/démo_fix.py" not in changed, changed
+
+
+# ── Diff HEADER rendering, and per-line cost ─────────────────────────
+#
+# Both defects below were invisible to a green 2476-test suite because every
+# diff this module hands the detector is hand-written in the ONE rendering the
+# parser happens to handle, and because no case measured how long `analyze`
+# takes. The blocking consumer `verify_checkpoint._gate_evidence_diff` runs
+# plain `git diff`, so the header rendering is the PRODUCTION path.
+
+_NON_ASCII_GATE_FILE = "scripts/démo_fix.py"
+
+
+def _real_git_diff(repo: Path, *extra: str) -> str:
+    """Real `git diff main --` output, with the repo's own default config."""
+    return subprocess.run(
+        ["git", *extra, "diff", "main", "--"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=_CLI_TIMEOUT,
+    ).stdout
+
+
+def _repo_with_committed_non_ascii_gate(tmp_path: Path, name: str = "repo") -> Path:
+    repo = _branch_repo(tmp_path, name)
+    (repo / _NON_ASCII_GATE_FILE).write_text(_GATE_SOURCE, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "work: add an unevidenced gate in a non-ASCII file")
+    return repo
+
+
+class TestHeaderRenderings:
+    """`_parse` must find the file in every rendering the real tools produce."""
+
+    def test_the_c_quote_renderer_matches_real_git(self, tmp_path):
+        """Validate the imitation against the oracle before trusting it.
+
+        `_c_quote` is this module's hand-rolled `quote_c_style`. If it does not
+        agree with real `git diff` byte for byte, the `c_quoted_paths` mutation
+        pins a rendering git never emits and proves nothing (review lesson 4).
+        """
+        repo = _repo_with_committed_non_ascii_gate(tmp_path)
+        plain = _real_git_diff(repo, "-c", "core.quotePath=false")
+        quoted = _real_git_diff(repo, "-c", "core.quotePath=true")
+
+        # Fixture pin: the two renderings must really differ, or this test
+        # would assert that a no-op renderer is correct.
+        assert plain != quoted, "git did not quote the non-ASCII path at all"
+        assert _c_quote_headers(plain) == quoted
+
+        # ...and the ASCII filler path must come through untouched, the way git
+        # leaves it: a renderer that quotes everything is not git's.
+        assert "+++ b/scripts/util.py" in quoted, quoted
+
+    def test_a_real_git_diff_over_a_non_ascii_path_detects_the_gate(self, tmp_path):
+        """Assert on REAL git output, in git's DEFAULT configuration."""
+        repo = _repo_with_committed_non_ascii_gate(tmp_path)
+        real = _real_git_diff(repo)
+
+        # Fixture pins, read straight from git: the header really is C-quoted
+        # (so this test stays RED on the verdict, not on a guessed rendering),
+        # and the gate's source really is in the diff.
+        header = next(
+            line for line in real.split("\n")
+            if line.startswith("+++ ") and "mo_fix" in line
+        )
+        assert header.startswith('+++ "'), header
+        assert re.search(r"\\\d{3}", header), header
+        assert f"+{_GATE_SOURCE.splitlines()[0]}" in real
+
+        report = vge.analyze(real)
+        assert _REPO_GATE in {g.symbol for g in report.gates}, report.gates
+        assert _REPO_GATE in _symbols(report.findings), report.findings
+
+        # The decoded path must be the path git itself reports unquoted — the
+        # suite's own oracle for "what is this file called", not a guess.
+        truth = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "diff", "--name-only", "main"],
+            cwd=repo, check=True, capture_output=True, text=True,
+            timeout=_CLI_TIMEOUT,
+        ).stdout.split("\n")
+        gate = next(g for g in report.gates if g.symbol == _REPO_GATE)
+        assert gate.path in truth, (gate.path, truth)
+
+    def test_a_real_git_diff_over_a_non_ascii_path_blocks_the_consumer(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The disarm direction through the REAL consumer, not the helper."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _repo_with_committed_non_ascii_gate(tmp_path)
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+        assert "no gate-adding change in the diff" not in out, out
+
+    def test_the_committed_pre_fix_fixture_c_quoted_still_blocks(self):
+        """The diff this whole suite exists to refuse, in git's default spelling."""
+        text = _c_quoted_paths(_diff(PRE_FIX))
+
+        # Vacuity guards: the mutation must have really re-rendered the headers
+        # and really kept the gate definition.
+        assert '+++ "b/scripts/sprint_queue' in text, text[:400]
+        assert "+def sprint_status_is_running" in text
+
+        report = vge.analyze(text)
+        assert ARMING_GATE in _symbols(report.findings), [
+            f.symbol for f in report.findings
+        ]
+        rendered = "\n".join(vge.format_report(report))
+        assert "no gate-adding change in the diff" not in rendered, rendered
+
+    def test_a_real_plain_diff_u_header_detects_the_gate(self, tmp_path):
+        """`diff -u` appends a TAB and a timestamp to the path field."""
+        source = tmp_path / "gate.py"
+        source.write_text(_GATE_SOURCE, encoding="utf-8")
+        real = subprocess.run(
+            ["diff", "-u", os.devnull, "gate.py"],
+            cwd=tmp_path, capture_output=True, text=True, timeout=_CLI_TIMEOUT,
+        ).stdout
+
+        # Fixture pin: real `diff -u` really does put a TAB in the field.
+        header = next(l for l in real.split("\n") if l.startswith("+++ "))
+        assert "\t" in header, repr(header)
+
+        report = vge.analyze(real)
+        assert _REPO_GATE in {g.symbol for g in report.gates}, report.gates
+        gate = next(g for g in report.gates if g.symbol == _REPO_GATE)
+        assert gate.path == "gate.py", gate.path
+
+    def test_a_mnemonic_prefix_header_labels_the_path_correctly(self, tmp_path):
+        """`diff.mnemonicPrefix=true` substitutes `i/`, `w/`, `c/`, `o/`."""
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "work: add an unevidenced gate")
+        real = _real_git_diff(repo, "-c", "diff.mnemonicPrefix=true")
+
+        # Fixture pin: git really used the mnemonic prefix, not `b/`.
+        assert "+++ w/scripts/demo_fix.py" in real, real
+        assert "+++ b/scripts/demo_fix.py" not in real
+
+        report = vge.analyze(real)
+        gate = next(g for g in report.gates if g.symbol == _REPO_GATE)
+        assert gate.path == "scripts/demo_fix.py", gate.path
+        finding = _finding_for(report, _REPO_GATE)
+        assert "scripts/demo_fix.py" in finding.message, finding.message
+        assert "w/scripts" not in finding.message, finding.message
+
+    def test_a_diff_of_a_diff_mints_no_phantom_file(self):
+        """This repo COMMITS `.diff` fixtures, so this is a real PR shape.
+
+        An inner `++ b/<path>` line renders as `+++ b/<path>` once the outer
+        diff ADDS it. Read as a header it mints a file that does not exist and
+        steals the rest of the real file's hunk. Before the `--- ` anchor the
+        only thing standing in the way was the trailing space in `"+++ "`.
+        """
+        text = (
+            "diff --git a/tests/fixtures/x.diff b/tests/fixtures/x.diff\n"
+            "--- a/tests/fixtures/x.diff\n"
+            "+++ b/tests/fixtures/x.diff\n"
+            "@@ -1,0 +1,4 @@\n"
+            "+++ b/scripts/phantom.py\n"
+            "+@@ -0,0 +1,2 @@\n"
+            "++def refuse_unmarked(text):\n"
+            '++    raise ValueError("no")\n'
+            "diff --git a/scripts/g.py b/scripts/g.py\n"
+            "--- a/scripts/g.py\n"
+            "+++ b/scripts/g.py\n"
+            "@@ -0,0 +1,3 @@\n"
+            "+def real_guard(text):\n"
+            '+    if "ZZMARK" not in text:\n'
+            '+        raise ValueError("no")\n'
+        )
+        files = vge._parse(text)
+        paths = [f.path for f in files]
+        assert paths == ["tests/fixtures/x.diff", "scripts/g.py"], paths
+
+        # ...and the stolen context is given back: the inner diff's own lines
+        # belong to the fixture that contains them.
+        fixture = next(f for f in files if f.path == "tests/fixtures/x.diff")
+        bodies = [body for _, body in fixture.added]
+        assert "++ b/scripts/phantom.py" in bodies, bodies
+        assert "+def refuse_unmarked(text):" in bodies, bodies
+
+    @pytest.mark.parametrize(
+        "label,text,expected",
+        [
+            (
+                "deletion_to_dev_null",
+                "diff --git a/scripts/gone.py b/scripts/gone.py\n"
+                "--- a/scripts/gone.py\n"
+                "+++ /dev/null\n"
+                "@@ -1,2 +0,0 @@\n"
+                "-def refuse_unmarked(text):\n"
+                '-    raise ValueError("no")\n',
+                [],
+            ),
+            (
+                "binary_file",
+                "diff --git a/assets/logo.png b/assets/logo.png\n"
+                "Binary files /dev/null and b/assets/logo.png differ\n",
+                [],
+            ),
+            (
+                "no_newline_marker_inside_a_hunk",
+                "diff --git a/scripts/g.py b/scripts/g.py\n"
+                "--- a/scripts/g.py\n"
+                "+++ b/scripts/g.py\n"
+                "@@ -0,0 +1,2 @@\n"
+                "+x = 1\n"
+                "\\ No newline at end of file\n",
+                ["scripts/g.py"],
+            ),
+            (
+                "hunk_heading_whose_own_text_contains_at_at",
+                "diff --git a/scripts/g.py b/scripts/g.py\n"
+                "--- a/scripts/g.py\n"
+                "+++ b/scripts/g.py\n"
+                "@@ -1,2 +1,3 @@ def f():  # @@ marker @@\n"
+                "+x = 1\n",
+                ["scripts/g.py"],
+            ),
+        ],
+    )
+    def test_the_renderings_the_review_cleared_are_unchanged(
+        self, label, text, expected
+    ):
+        """Regression pins: green before the fix, and required to stay green."""
+        assert [f.path for f in vge._parse(text)] == expected, label
+
+    def test_a_pure_rename_contributes_no_file(self, tmp_path):
+        """Real `git diff -M` output, not a hand-written imitation.
+
+        git renders a content-free rename with `rename from`/`rename to` and NO
+        `---`/`+++` pair at all, so it contributes no file. Pinned because the
+        review cleared this rendering and the `--- ` anchor must not change it.
+        """
+        repo = _init_repo(tmp_path)
+        (repo / "scripts" / "old_name.py").write_text("x = 1\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "main: a file to rename")
+        _git(repo, "checkout", "-q", "-b", "work")
+        (repo / "scripts" / "util.py").write_text(_FILLER, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "work: non-gate filler")
+        _git(repo, "mv", "scripts/old_name.py", "scripts/new_name.py")
+        _git(repo, "commit", "-qm", "work: rename it")
+        real = _real_git_diff(repo, "-c", "diff.renames=true")
+
+        # Fixture pins: git really emitted rename headers, and really omitted
+        # the `+++ ` pair — otherwise this asserts nothing about renames.
+        assert "rename from scripts/old_name.py" in real, real
+        assert "+++ b/scripts/new_name.py" not in real, real
+        assert [f.path for f in vge._parse(real)] == ["scripts/util.py"], real
+
+
+# ── Per-line cost: a blocking gate must not be hangable ──────────────
+
+#: `if` repetitions that make one added line ~200 KB — the size the review
+#: measured `analyze` taking tens of seconds on.
+_REDOS_IFS = 21900
+
+
+def _redos_diff(n_if: int = _REDOS_IFS) -> str:
+    """One added line inside a `def`, many `if`, no `else`.
+
+    The quadratic trigger for `_CONDITIONAL`'s third alternative: an unbounded
+    `\\bif\\b.+\\belse\\b` restarts `.+` from every `if` and can never succeed,
+    so the cost is (number of `if`) x (length of line).
+    """
+    body = " ".join(f"if a{index}" for index in range(n_if))
+    return (
+        "diff --git a/scripts/x.py b/scripts/x.py\n"
+        "--- a/scripts/x.py\n"
+        "+++ b/scripts/x.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+def f(z):\n"
+        f"+    z = [{body}]\n"
+    )
+
+
+#: Generous enough that a loaded CI box cannot flake it, and still ~8x below the
+#: 15.2 s this payload measured before the fix.
+_REDOS_BUDGET_SECONDS = 2.0
+
+
+class TestAPathologicalLineCannotHangTheCheckpoint:
+    """`scripts/checkpoint.sh` `exec`s python3 with no wall-clock bound.
+
+    `_GIT_TIMEOUT` guards a subprocess, not `analyze` itself, so an added line
+    an author writes is enough to park the blocking review gate indefinitely.
+    Three agents in this session were killed by a 600 s no-progress watchdog —
+    a hangable blocking gate is an availability defect against the kit's own
+    runner, not a theoretical one.
+    """
+
+    def test_a_200kb_single_line_completes_well_inside_the_budget(self):
+        text = _redos_diff()
+
+        # Fixture pin: the payload really is one ~200 KB physical line, so a
+        # fast run cannot be a fast run over a small input.
+        longest = max(len(line) for line in text.split("\n"))
+        assert longest > 200_000, longest
+
+        start = time.perf_counter()
+        vge.analyze(text)
+        elapsed = time.perf_counter() - start
+        assert elapsed < _REDOS_BUDGET_SECONDS, (
+            f"analyze() took {elapsed:.1f}s on a {longest}-byte line "
+            f"(budget {_REDOS_BUDGET_SECONDS}s); measured 15.2s before the "
+            "bounded `if ... else` quantifier and the per-line scan window"
+        )
+
+    def test_the_real_consumer_completes_inside_the_budget_too(
+        self, monkeypatch, capsys
+    ):
+        """Through the blocking checkpoint, which is what actually hangs."""
+        text = _redos_diff()
+        monkeypatch.setattr(vc, "_gate_evidence_diff", lambda issue_id: text)
+        start = time.perf_counter()
+        verdict = vc.verify_review_gate_evidence("ISSUE-081")
+        elapsed = time.perf_counter() - start
+        capsys.readouterr()
+        assert verdict is True, "this payload adds no gate; it only costs time"
+        assert elapsed < _REDOS_BUDGET_SECONDS, f"{elapsed:.1f}s"
+
+    def test_the_cost_is_linear_in_the_line_length(self, monkeypatch):
+        """Pin the SHAPE, not only one point: 8x the input, nowhere near 64x.
+
+        A point measurement is satisfiable by a faster machine. The review
+        measured exactly 4x per 2x input before the fix.
+        """
+        def timed(n_if: int) -> float:
+            text = _redos_diff(n_if)
+            start = time.perf_counter()
+            vge.analyze(text)
+            return time.perf_counter() - start
+
+        # Warm the regex cache so the first call is not charged for it.
+        timed(100)
+        small = max(timed(1200), 1e-4)
+        large = timed(9600)
+        assert large / small < 16, (
+            f"8x the input cost {large / small:.1f}x the time: still "
+            f"super-linear ({small:.4f}s -> {large:.4f}s)"
+        )
+
+
+class TestTheScanWindowFailsTowardDetection:
+    """A line-length bound is itself a new fail-open unless its direction is
+    chosen deliberately, documented, and tested.
+
+    `_MAX_SCAN_CHARS` TRUNCATES rather than drops, so the bound fails toward
+    DETECTION: every line-anchored pattern (`^\\s*if`, `^\\s*assert`) and every
+    refusal inside the first 2 KB of a physical line still arms the gate. What
+    it cannot see is a gate whose conditional AND refusal both live past the
+    window on ONE physical line — which is not a shape hand-written Python
+    takes. Both directions are pinned here.
+    """
+
+    _PAD = " ".join(f"a{index} = {index}" for index in range(30_000))
+
+    def _diff_with(self, line: str) -> str:
+        return (
+            "diff --git a/scripts/x.py b/scripts/x.py\n"
+            "--- a/scripts/x.py\n"
+            "+++ b/scripts/x.py\n"
+            "@@ -0,0 +1,2 @@\n"
+            "+def refuse_unmarked(text):\n"
+            f"+{line}\n"
+        )
+
+    def test_a_gate_at_the_HEAD_of_a_huge_line_is_still_detected(self):
+        """The direction the bound must not break: truncation keeps the head."""
+        text = self._diff_with(
+            '    bad = 1 if "ZZMARK" not in text else 0; '
+            'raise ValueError("no"); ' + self._PAD
+        )
+        longest = max(len(line) for line in text.split("\n"))
+        assert longest > 200_000, longest       # fixture pin
+        report = vge.analyze(text)
+        assert _REPO_GATE in {g.symbol for g in report.gates}, report.gates
+
+    def test_a_gate_hidden_PAST_the_window_is_the_documented_blind_spot(self):
+        """The direction the bound DOES fail — deliberately, and recorded.
+
+        Detected before the bound existed; not detected after. Accepted because
+        the alternative is a blocking review gate an author can park for 40 s
+        with one line, and because a 200 KB physical line whose only
+        conditional and only refusal both sit past offset 2048 is a minified
+        artefact, not a gate anybody is trying to ship.
+        """
+        text = self._diff_with(
+            "    " + self._PAD
+            + '; bad = 1 if "ZZMARK" not in text else 0; raise ValueError("no")'
+        )
+        assert "raise ValueError" in text        # fixture pin: it IS in there
+        report = vge.analyze(text)
+        assert report.gates == (), (
+            "the scan window is documented as truncating, not extending; if "
+            "this now passes, update the docstring on _MAX_SCAN_CHARS"
+        )
+
+    def test_the_window_is_load_bearing(self, monkeypatch):
+        """Mutation pin: widening the window must restore the blind-spot gate."""
+        text = self._diff_with(
+            "    " + self._PAD
+            + '; bad = 1 if "ZZMARK" not in text else 0; raise ValueError("no")'
+        )
+        assert vge.analyze(text).gates == ()
+        monkeypatch.setattr(vge, "_MAX_SCAN_CHARS", 10 ** 9)
+        assert _REPO_GATE in {
+            g.symbol for g in vge.analyze(text).gates
+        }, "mutant SURVIVED: _MAX_SCAN_CHARS is not what hides the gate"
+
+
+# ── Acquisition: untracked paths git C-quotes ────────────────────────
+
+
+class TestUntrackedNonAsciiPathsAreAcquired:
+    """`git ls-files` hands back `"a\\303\\251.py"`, and `--no-index` cannot open it.
+
+    `core.quotePath` defaults to true, so an untracked source file with a
+    non-ASCII name produced an empty `git diff --no-index` and was skipped by
+    the loop — an untracked non-ASCII GATE was invisible. Fail-OPEN, on the
+    path `skills/review/SKILL.md` puts reviewers on (fixes at step 4, this
+    checkpoint at 4.6, first commit at step 6).
+    """
+
+    def test_an_untracked_non_ascii_gate_blocks_through_the_real_consumer(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _branch_repo(tmp_path)
+        (repo / _NON_ASCII_GATE_FILE).write_text(_GATE_SOURCE, encoding="utf-8")
+
+        # Fixture pin, read straight from git: the shared oracle really does
+        # hand back the QUOTED spelling, which is the spelling `--no-index`
+        # could not open. Without this the test could pass for the wrong reason.
+        untracked = vc._untracked_paths(str(repo))
+        assert len(untracked) == 1, untracked
+        assert untracked[0].startswith('"'), untracked
+        assert re.search(r"\\\d{3}", untracked[0]), untracked
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+        assert "no gate-adding change in the diff" not in out, out
+
+    def test_an_untracked_non_ascii_gate_blocks_through_the_registered_cli(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Exit code through `verify_checkpoint.main`, not just the verifier."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _branch_repo(tmp_path)
+        (repo / _NON_ASCII_GATE_FILE).write_text(_GATE_SOURCE, encoding="utf-8")
+        monkeypatch.setattr(vc, "_find_worktree_path", lambda issue_id: str(repo))
+
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-081"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert _REPO_GATE in out, out
+        assert "ADVISORY:" not in out, "this phase must be blocking, not advisory"
+
+    def test_an_untracked_non_ascii_gate_matches_a_committed_one(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A/B on identical bytes: tracked-ness must not change the verdict."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        untracked = _branch_repo(tmp_path, "untracked")
+        (untracked / _NON_ASCII_GATE_FILE).write_text(_GATE_SOURCE, encoding="utf-8")
+        committed = _repo_with_committed_non_ascii_gate(tmp_path, "committed")
+
+        assert (untracked / _NON_ASCII_GATE_FILE).read_bytes() == (
+            committed / _NON_ASCII_GATE_FILE
+        ).read_bytes()
+
+        verdict_a, out_a = _consume(monkeypatch, capsys, untracked)
+        verdict_b, out_b = _consume(monkeypatch, capsys, committed)
+        assert verdict_b is False, out_b
+        assert verdict_a == verdict_b, (
+            "identical bytes, different tracked-ness, different verdict:\n"
+            f"[A untracked] {out_a}\n[B committed] {out_b}"
+        )
+        assert _REPO_GATE in out_a, out_a
+
+    def test_an_untracked_ascii_gate_is_unaffected(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Disarm direction for the unquoting: the ASCII leg must not regress."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _branch_repo(tmp_path)
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        assert vc._untracked_paths(str(repo)) == ["scripts/demo_fix.py"]
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert _REPO_GATE in out, out

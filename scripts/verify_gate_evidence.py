@@ -40,6 +40,13 @@ Usage::
 Exit code: 0 when the diff adds no gate, or every added gate is evidenced or
 exempted; 1 when an added gate lacks its paired evidence; 2 on a usage error.
 
+The diff text may be in any rendering the real tools produce: git's DEFAULT
+C-quoted path for a non-ASCII filename (``+++ "b/scripts/gat\\303\\251.py"``),
+``diff.mnemonicPrefix``'s ``i/``/``w/`` prefixes, and plain ``diff -u``'s
+TAB-plus-timestamp field. Two bounds keep one added line from parking this
+blocking gate — ``_TERNARY_GAP`` and ``_MAX_SCAN_CHARS``, both documented at
+their definitions, including the one detection blind spot the second accepts.
+
 The tunables below are module-level and read at call time *on purpose*: the
 test suite mutates them one at a time to prove each rule is load-bearing
 (ISSUE-081 AC-5). Do not inline them into the functions that read them.
@@ -95,9 +102,34 @@ REFUSAL_PATTERNS = (
 #: A boolean return counts as a refusal only here.
 _BOOL_REFUSAL = re.compile(r"\breturn\s+(?:True|False)\b")
 
+#: Longest gap a ternary's `if` and `else` may be apart. The third alternative
+#: used to be `\bif\b.+\belse\b`, which restarts `.+` from every `if` and can
+#: never succeed on a line with no `else` — measured O(n^2): 4x the time per 2x
+#: the input, 15.2 s on one 208 KB added line. `_GIT_TIMEOUT` guards a
+#: subprocess, `scripts/checkpoint.sh` `exec`s python3 with no wall-clock bound
+#: at all, so an author-written line was enough to park this blocking gate. A
+#: bounded quantifier makes the scan linear; 400 is far past any real ternary
+#: and is pinned by `TestAPathologicalLineCannotHangTheCheckpoint`.
+_TERNARY_GAP = 400
+
 _CONDITIONAL = re.compile(
-    r"(?:^\s*(?:if|elif|while)\b)|(?:^\s*assert\b)|(?:\bif\b.+\belse\b)"
+    r"(?:^\s*(?:if|elif|while)\b)|(?:^\s*assert\b)"
+    rf"|(?:\bif\b[^\n]{{0,{_TERNARY_GAP}}}?\belse\b)"
 )
+
+#: Longest prefix of ONE added line that gate detection regexes. Belt and
+#: suspenders with `_TERNARY_GAP`: it makes the per-line cost O(1) no matter
+#: what any future pattern here does.
+#:
+#: The bound TRUNCATES rather than drops, so it fails toward DETECTION — every
+#: line-anchored pattern (`^\s*if`, `^\s*assert`) and every refusal inside the
+#: first 2 KB of a physical line still arms the gate. The deliberate blind spot
+#: it accepts: a gate whose ONLY conditional and ONLY refusal both sit past this
+#: offset on a single physical line. That is a minified artefact, not a shape
+#: hand-written Python takes, and a 2 KB source line is not a plausible gate.
+#: Both directions are pinned by `TestTheScanWindowFailsTowardDetection`;
+#: widening this constant must restore the blind-spot gate.
+_MAX_SCAN_CHARS = 2048
 
 _PREDICATE_SHAPE = re.compile(
     r"^(?:is|has|was|can|should|must|are)_"
@@ -230,6 +262,122 @@ class Report:
 
 # ── Diff parsing ─────────────────────────────────────────────────────
 
+#: C-escape sequences git's ``quote_c_style`` emits in a quoted pathname,
+#: besides the three-digit octal form it uses for every byte >= 0x80 and every
+#: control character without a named escape.
+_C_ESCAPES = {
+    "a": 0x07, "b": 0x08, "f": 0x0C, "n": 0x0A, "r": 0x0D,
+    "t": 0x09, "v": 0x0B, '"': 0x22, "\\": 0x5C,
+}
+
+#: Single-letter prefixes a diff header's path may carry. ``a/``/``b/`` are the
+#: default; ``diff.mnemonicPrefix=true`` substitutes ``i/`` (index), ``w/``
+#: (worktree), ``c/`` (commit) or ``o/`` (object), and a combined diff uses
+#: ``1/``/``2/``. Restricted to these letters so a real top-level directory
+#: (``x/thing.py``) is not silently relabelled. Inherent residual ambiguity: a
+#: repository whose top-level directory is literally named ``b`` is
+#: indistinguishable in this format — it affects the printed LABEL only, never
+#: whether the gate is detected (that keys on the ``.py`` suffix).
+_GIT_PATH_PREFIXES = frozenset("abiwco12")
+
+
+def unquote_c_style(field: str, *, errors: str = "replace") -> str:
+    """Decode one C-quoted pathname exactly as ``git`` wrote it.
+
+    With ``core.quotePath=true`` — git's DEFAULT — git wraps any pathname
+    holding a non-ASCII byte, a control character, a ``"`` or a ``\\`` in double
+    quotes and escapes it, so real ``git diff`` emits::
+
+        +++ "b/scripts/gat\\303\\251.py"
+
+    The quotes live INSIDE the header field. Anything that reads the field
+    literally sees a path that neither starts with ``b/`` nor ends in ``.py``,
+    which made `detect_gates` skip the file outright — measured on this
+    module's own pre-fix fixture, which then reported "no gate-adding change".
+
+    THE single decoder for this module and for
+    ``verify_checkpoint._untracked_diff_text``, which needs the same decoding
+    for ``git ls-files`` output. Verified against real ``git diff`` output
+    (git 2.44) for a non-ASCII name — quoted only when ``core.quotePath`` is
+    true, i.e. by default — and for names containing ``"``, ``\\`` or a tab,
+    which git quotes even when ``core.quotePath`` is false.
+
+    A field that is not quoted, or whose quoting is malformed, is returned
+    unchanged: never guess. ``errors`` is handed to the UTF-8 decode — callers
+    that only LABEL the path want ``"replace"`` (it cannot raise), the caller
+    that hands the path back to the filesystem wants ``"surrogateescape"`` so
+    the original bytes round-trip.
+    """
+    if not field.startswith('"'):
+        return field
+    out = bytearray()
+    index = 1
+    closed = False
+    while index < len(field):
+        char = field[index]
+        if char == '"':
+            closed = True
+            break
+        if char != "\\":
+            out.extend(char.encode("utf-8", errors="surrogateescape"))
+            index += 1
+            continue
+        index += 1
+        if index >= len(field):
+            break
+        escape = field[index]
+        if escape in _C_ESCAPES:
+            out.append(_C_ESCAPES[escape])
+            index += 1
+            continue
+        if escape in "01234567":
+            digits = ""
+            while (
+                len(digits) < 3
+                and index < len(field)
+                and field[index] in "01234567"
+            ):
+                digits += field[index]
+                index += 1
+            out.append(int(digits, 8) & 0xFF)
+            continue
+        # git emits no other escape; keep the character rather than drop it.
+        out.extend(escape.encode("utf-8", errors="surrogateescape"))
+        index += 1
+    if not closed:
+        return field
+    return out.decode("utf-8", errors=errors)
+
+
+def _header_path(field: str) -> str:
+    """The path a ``--- ``/``+++ `` header names, in any rendering the tools emit.
+
+    Three renderings reach this function, and the ``.py`` filter in
+    `detect_gates` keys on the result of all three:
+
+    * ``"b/scripts/gat\\303\\251.py"`` — git's DEFAULT whenever the path needs
+      quoting. Unquoted FIRST, because the leading ``"`` otherwise defeats the
+      prefix strip.
+    * ``scripts/gate.py\\t2026-01-02 10:00:00`` — plain ``diff -u`` appends a
+      TAB and a timestamp, and git appends a bare TAB when the path contains a
+      space. The field ends at the first TAB either way. (A path that itself
+      contains a TAB is quoted, so the two cases never collide.)
+    * ``w/scripts/gate.py`` — ``diff.mnemonicPrefix=true``.
+    """
+    field = field.strip()
+    if field.startswith('"'):
+        path = unquote_c_style(field)
+    else:
+        path = field.split("\t", 1)[0].strip()
+    if len(path) > 2 and path[1] == "/" and path[0] in _GIT_PATH_PREFIXES:
+        path = path[2:]
+    return path
+
+
+def _scannable(line: str) -> str:
+    """One added line, truncated to `_MAX_SCAN_CHARS` before any regex sees it."""
+    return line if len(line) <= _MAX_SCAN_CHARS else line[:_MAX_SCAN_CHARS]
+
 
 def _destring(line: str) -> str:
     """Blank string-literal *prose* while keeping identifier-like literals.
@@ -275,19 +423,32 @@ def _parse(diff_text: str) -> list[_FileDiff]:
     files: list[_FileDiff] = []
     current: _FileDiff | None = None
     enclosing: str | None = None
+    # A ``+++ `` line is a FILE HEADER only when the line before it was the
+    # matching ``--- `` header; unified diff always writes the pair adjacently.
+    # The anchor is what stops a diff-of-a-diff body line from minting a
+    # phantom file that then steals the real file's hunk: an inner ``++ <path>``
+    # line renders as ``+++ <path>`` once the outer diff ADDS it. This repo
+    # COMMITS ~4.7k lines of `.diff` fixtures, so a PR that edits one IS a
+    # diff-of-a-diff; before the anchor the only thing in the way was the
+    # trailing space in the literal ``"+++ "``.
+    src_header = False
 
     for number, raw in enumerate(diff_text.split("\n"), start=1):
         line = raw.rstrip("\r")
+        after_src_header, src_header = src_header, False
 
-        if line.startswith("+++ "):
-            target = line[4:].strip()
-            path = target[2:] if target.startswith("b/") else target
+        if line.startswith("--- "):
+            src_header = True
+            continue
+        if line.startswith("diff --git "):
+            continue
+
+        if line.startswith("+++ ") and after_src_header:
+            path = _header_path(line[4:])
             current = None if path == "/dev/null" else _FileDiff(path, [], {}, {}, {})
             if current is not None:
                 files.append(current)
             enclosing = None
-            continue
-        if line.startswith("--- ") or line.startswith("diff --git "):
             continue
         if current is None:
             continue
@@ -345,7 +506,7 @@ def detect_gates(files: list[_FileDiff]) -> tuple[Gate, ...]:
         if is_test_path(file.path) or not file.path.endswith(".py"):
             continue
         for symbol, lines in file.added_by_def.items():
-            code = [_destring(line) for line in lines]
+            code = [_destring(_scannable(line)) for line in lines]
             if not any(_CONDITIONAL.search(line) for line in code):
                 continue
             refusal = any(

@@ -1328,9 +1328,26 @@ def _untracked_diff_text(wt_path: str) -> str:
     do that: it emits exactly the ``+++ b/<path>`` header plus ``+`` lines that
     a real new-file hunk has, and it never writes to the index (``git add -N``
     would, and this is a read-only verifier).
+
+    ``git ls-files`` C-QUOTES any path holding a non-ASCII byte, a control
+    character, a ``"`` or a backslash (``core.quotePath`` defaults to true), and
+    ``--no-index`` cannot open that spelling: it exits 1 with empty stdout,
+    indistinguishable from the normal differ-exit, so the loop skipped it and an
+    untracked non-ASCII source GATE was invisible. Fail-OPEN, on exactly the
+    state ``skills/review/SKILL.md`` puts reviewers in. Decoded here with the
+    detector's own ``unquote_c_style`` rather than a second copy of a decoder.
+
+    Scoped to THIS caller: ``_untracked_paths`` keeps handing back git's quoted
+    spelling, which ``_changed_files_vs_base`` has always reported and the
+    implement phases have always consumed.
     """
+    import verify_gate_evidence as vge
+
     parts: list[str] = []
-    for rel in _untracked_paths(wt_path):
+    for listed in _untracked_paths(wt_path):
+        # `surrogateescape` so a path whose bytes are not valid UTF-8 still
+        # round-trips back to the filesystem through subprocess's fsencode.
+        rel = vge.unquote_c_style(listed, errors="surrogateescape")
         # `git diff --no-index` exits 1 when the two inputs differ, which is
         # the normal case for a new file, and ALSO exits 1 on an unreadable
         # path — so the exit code cannot discriminate. The presence of diff
