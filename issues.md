@@ -54,6 +54,8 @@
 - [ ] ISSUE-081: Require a disarm-direction test and a composite end-to-end pin for any PR that adds a gate _(track: platform, P1, 1d — learning-loop escalation: "a newly added defence fails OPEN" reached Frequency 3 at High across three consecutive sprints (ISSUE-076 both defences, ISSUE-078 guard disarmed on 22 of 23 inputs); ISSUE-080 fixes the instance, this fixes the pattern)_
 - [ ] ISSUE-082: Re-probe the `Skill` grant after a session restart and plugin update — close ISSUE-072's AC-2 with a live run or record the non-materialisation _(track: platform, P1, 0.5d — ISSUE-072 ship-time deferral: AC-2 demands a live run, but the agent registry is frozen at session start and the live kit agents are served from the 0.5.0 plugin cache while this repo is at 0.7.0, so the grant's materialisation is UNVERIFIED — and `Glob`/`Grep` are granted-but-unprovisioned across 3 observations; Manual because it must not be auto-dispatched before a restart + plugin update; depends on 072)_
 - [ ] ISSUE-083: Resolve a remote-only branch to its remote tip in the worktree creator — a deleted local ref silently re-roots the worktree onto main _(track: platform, P1, 0.5d — observed first-hand during ISSUE-078's ship phase: `wt_setup.sh` reported success and returned a worktree at main's sha with no upstream for a branch whose reviewed commits were on the remote; reachable on the normal path because review cleanup deletes the local ref; depends on none)_
+- [ ] ISSUE-084: Decide whether a new guard that re-types an existing oracle is detectable, or make reuse the convention _(track: platform, P2, 0.5d — durable carrier for the duplicated-oracle rule SPEC-081 declined to encode: PR #135's `_tool_grants` was re-typed from `_split_tools` with no name/signature/location overlap, so no cheap syntactic rule catches it; depends on 081)_
+- [ ] ISSUE-085: Backfill the paired gate evidence for the ten shipped gates SPEC-081 recorded as unevidenced _(track: platform, P2, 1d — ten blocking guards carry neither a disarm battery nor a composite pin, and `verify_hollow_tests.py` has no test module at all; test surface only, behaviour unchanged; depends on 081)_
 
 ### Doing
 
@@ -4675,15 +4677,15 @@ The step-4f boundary gate can no longer be disarmed by a `Status:` value it does
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-081.md
 - PRD-Ref: none (kit self-development; learning-loop escalation per the ISSUE-033 native-memory review-lessons rule, Frequency >= 3 + High; instance carriers ISSUE-080, GAP-076*, GAP-078h..p)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-081-gate-evidence
+- GH-Issue: 136
+- PR: https://github.com/pillip/claude-dev-kit/pull/137
 - Depends-On: none
 
 #### Goal
@@ -4890,3 +4892,98 @@ A PR that adds or tightens a gate cannot pass `/review` without evidence in both
 
 #### Rollback
 `git revert` — the change is one branch-resolution block in `cmd_create` (plus its stderr announcement) and its tests. A revert **restores the silent re-root**, so before reverting, check by hand every worktree created since the fix: `git -C <wt> rev-parse HEAD` against `git rev-parse origin/<branch>`, and that an upstream is configured; otherwise the next push from such a tree is a non-fast-forward against reviewed commits, and destructive if anyone reaches for `--force`. Do **not** revert the tests separately from the resolution logic — the suite would then assert the hardened direction against unhardened code. If the `gh pr merge --delete-branch` verdict was filed as a separate issue, that issue survives the revert and stays valid.
+
+### ISSUE-084: Decide whether a new guard that re-types an existing oracle is detectable, or make reuse the convention
+
+> Durable carrier for the decision SPEC-081 **declined** to encode (review lesson: "a deferred finding is only real if it has a durable carrier — a PR body is not one"). ISSUE-081's Implementation Notes required its SPEC to either adopt the duplicated-oracle rule or record why it declines; SPEC-081 declined, with a measured reason: the motivating instance is PR #135's `_tool_grants`, re-typed from `tests/test_registry_lock_contract.py`'s `_split_tools`, and those two functions share **no** name, no signature and no location — the duplication is purely behavioural. A name-collision check sees two distinct names; an import check sees a module that legitimately imports nothing; a "parser-shaped helper added" check fires on almost every guard and would be a pure false-positive tax on the `review/gate-evidence` phase SPEC-081 added. Detecting it needs behavioural-equivalence analysis over two function bodies, which is a new analysis class that no ISSUE-081 criterion names — the unspecified-engine-surface trap ISSUE-079 was filed for.
+>
+> The two measured evasions that motivate the rule, both leaving all 41 tests GREEN: (i) a YAML flow-sequence grant `tools: [Read, Glob, Grep, Write, Edit, Skill]` invisible to the no-symmetry-grant guard because `_split_tools`' `raw.strip().strip("[]")` was dropped; (ii) a scoped `SlashCommand(/code-review)` grant invisible to the refuted-token guard because `_split_tools`' `depth = max(depth - 1, 0)` paren clamp was dropped.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-081 declined-decision carrier. Native-memory review lessons: "a hand-rolled parser must match the oracle's edge cases AND its intended boundary" and "a guard that re-implements an oracle the suite already owns must import it instead")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-081
+
+#### Goal
+The duplicated-oracle rule is either mechanically enforced or replaced by a convention that makes re-typing unnecessary — not left as narration, which is the failure mode ISSUE-081 exists to stop.
+
+#### Scope (In/Out)
+- In: deciding between (a) a shared parser module every guard imports from, so re-typing has no motive, and (b) a detector; and whichever is chosen, landing it with a test that fails on a re-typed oracle.
+- Out: re-opening SPEC-081's seam choice; building a general behavioural-equivalence engine as an end in itself.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given PR #135's pre-fix `_tool_grants` as a fixture, when the chosen mechanism runs, then the re-typed oracle is either reported or structurally impossible (the function no longer exists because the shared parser is imported).
+- [ ] Given a guard that legitimately needs its own parser, when the mechanism runs, then it is not reported — the mechanism must not tax a guard whose parsing genuinely differs.
+- [ ] Given the decision, when this issue closes, then `tests/test_registry_lock_contract.py`'s `_split_tools` is either the single importable oracle or explicitly recorded as test-local by choice.
+
+#### Implementation Notes
+- Option (a) is likely cheaper and is the direction the "import it instead" lesson actually points. A `scripts/kit_parsers.py` holding `split_tools` would let both the suite and any guard import one implementation; the test oracle then imports it too, which is what makes the two agree by construction rather than by review diligence.
+- Do not encode this as a new `review/gate-evidence` check without measuring its false-positive rate first — SPEC-081's Open Questions already schedules that measurement for the phase itself.
+
+#### Tests
+- [ ] Fixture replay of PR #135's pre-fix `_tool_grants`.
+- [ ] A legitimately-distinct parser is not reported.
+
+#### Rollback
+`git revert`. If option (a) is taken, reverting restores the duplicated implementations, which is today's state.
+
+---
+
+### ISSUE-085: Backfill the paired gate evidence for the ten shipped gates SPEC-081 recorded as unevidenced
+
+> Durable carrier for SPEC-081's recorded-but-out-of-scope backfill list. ISSUE-081's Scope Out excludes backfill ("Backfill is OUT, but the SPEC should record which already-shipped gates lack the paired evidence so a later issue can carry it"); SPEC-081 recorded the list, measured at `b4dda36` by counting parametrized batteries and input-side vacuity guards per guard test module. Ten shipped gates carry neither a disarm battery nor a composite pin, and one blocking guard — `scripts/verify_hollow_tests.py` — has **no test module at all**.
+>
+> Recorded list (SPEC-081 §"Already-shipped gates that lack the paired evidence"): `verify_gates.py`, `review_context.py`, `spec_gate.py`, `validate_spec.py`, `validate_frontmatter.py`, `verify_checkpoint.py`, `secret_guard`, `freeze_guard`, `dangerous_command_guard`, `verify_hollow_tests.py` (no module). Partial: `review_delegation_guard` and `research_fabrication_guard` carry input-side guards but no battery. Already paired: the `sprint_queue.py` roster boundary and the registry-lock contract.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: docs/specs/SPEC-081.md (existing — this issue executes the backfill that SPEC's Open Questions records; no new spec: a backfill is not a design)
+- PRD-Ref: none (kit self-development; SPEC-081 Open Questions carrier)
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-081
+
+#### Goal
+Every blocking guard the kit already ships carries a disarm battery and a composite pin, so the ten gates that predate ISSUE-081's phase are held to the same standard as the ones that follow it.
+
+#### Scope (In/Out)
+- In: writing the missing batteries for the ten recorded gates, starting with `verify_hollow_tests.py` (a blocking guard with no test module); re-running `scripts/verify_gate_evidence.py` over each backfill PR's own diff so the backfill is itself evidenced.
+- Out: changing any guard's behaviour. This is test surface only — if a backfill battery reveals a fail-open, that is a separate issue with its own carrier.
+- Out: tuning `MIN_VARIANTS` or the refusal vocabulary. SPEC-081's Open Questions assigns that to the reviewer of the 5th PR after the phase lands.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `scripts/verify_hollow_tests.py`, when the suite runs, then a test module exists for it with at least one disarm battery and one composite pin, and the battery fails if the guard is disarmed.
+- [ ] Given each of the other nine recorded gates, when `scripts/verify_gate_evidence.py --range <base>..HEAD` runs over the backfill diff, then no `missing-disarm-battery` or `missing-composite-pin` finding remains for that gate without a justified exemption.
+- [ ] Given a fail-open discovered while writing a backfill battery, when it is found, then it is filed as its own issue rather than fixed inside the backfill — the backfill must not become an unbounded repair.
+
+#### Implementation Notes
+- Split across several PRs rather than one: ten gates in one PR makes the diff unreviewable and makes the gate-evidence phase's own output unreadable.
+- Use `tests/test_sprint_queue_watermark.py`'s `TestMetaHeadingMutationsStillArmTheCheck` as the shape reference — it is the one battery in the repo that already satisfies both halves.
+
+#### Tests
+- [ ] One disarm battery + one composite pin per recorded gate.
+- [ ] `verify_gate_evidence.py` run over each backfill PR's own diff reports no residual finding for the gate being backfilled.
+
+#### Rollback
+`git revert`. Test-only surface, so reverting restores today's (unevidenced) state and changes no behaviour.
+
+---
