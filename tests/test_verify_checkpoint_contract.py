@@ -53,6 +53,11 @@ EXPECTED_BLOCKING = {
     ("review", "structural-match"),
     ("review", "layout"),
     ("review", "test-quality"),
+    # ISSUE-081: a gate-adding diff must carry a disarm battery AND a composite
+    # pin. Blocking on purpose — SPEC-081's whole argument is that an advisory
+    # or prose-only seam reproduces the failure it exists to stop, and
+    # demoting it here is the declared (and visible) way to relax it.
+    ("review", "gate-evidence"),
     ("review", "debt"),
     ("review", "test"),
     ("ship", "checks"),

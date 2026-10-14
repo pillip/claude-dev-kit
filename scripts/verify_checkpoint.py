@@ -20,6 +20,14 @@ import sys
 import time
 from pathlib import Path
 
+# The test-path classifier and the C-quoted-pathname decoder both live in the
+# detector, which depends on nothing here — so this edge is one-way and safe at
+# module level. It was already the direction `_untracked_diff_text` and
+# `verify_review_gate_evidence` used lazily for `unquote_c_style`; ISSUE-081
+# promoted it because the implement phases need `TEST_FILE_PATTERN` /
+# `TEST_DIR_PATTERN`, which this file used to re-type byte-identically twice.
+import verify_gate_evidence as vge
+
 # ISSUE-065: the invoker's own process-start reference for the gate-handoff
 # freshness check — captured at import, not computed per call, so a handoff
 # artifact must postdate THIS checkpoint process to be ingested.
@@ -454,6 +462,27 @@ def _merge_base(wt_path: str, base: str) -> str | None:
     return None
 
 
+def _untracked_paths(wt_path: str) -> list[str]:
+    """Untracked, non-ignored paths in the worktree, relative to its root.
+
+    THE single definition of "the untracked leg" in this module. It exists
+    because ISSUE-081's review found the leg re-typed from scratch — and
+    silently dropped — by a second caller that needed the same delta in a
+    different shape. Every consumer of "what has this branch not committed yet"
+    must come through here, so that an edge case fixed once is fixed for all of
+    them (``_changed_files_vs_base`` wants paths; ``_gate_evidence_diff`` wants
+    diff text, and renders these paths into it).
+
+    Read-only: ``git ls-files --others`` never touches the index.
+    """
+    result = _run(
+        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    return result.stdout.strip().splitlines()
+
+
 def _changed_files_vs_base(wt_path: str, base: str) -> set[str]:
     """Files the branch itself changed, diffed against its merge-base with <base>.
 
@@ -474,15 +503,13 @@ def _changed_files_vs_base(wt_path: str, base: str) -> set[str]:
     diff_staged = _run(["git", "diff", "--name-only", "--cached"], cwd=wt_path)
     # Unstaged modifications
     diff_unstaged = _run(["git", "diff", "--name-only"], cwd=wt_path)
-    # Untracked files
-    untracked = _run(
-        ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt_path
-    )
 
     all_files: set[str] = set()
-    for r in (diff_committed, diff_staged, diff_unstaged, untracked):
+    for r in (diff_committed, diff_staged, diff_unstaged):
         if r.returncode == 0 and r.stdout.strip():
             all_files.update(r.stdout.strip().splitlines())
+    # Untracked files — the shared leg, not a second copy of it.
+    all_files.update(_untracked_paths(wt_path))
     return all_files
 
 
@@ -635,13 +662,11 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     base = _default_branch()
     all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
-    test_pattern = re.compile(
-        r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
-    )
-    test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
-
-    test_files = [f for f in all_files if test_pattern.search(f)]
-    test_dir_files = [f for f in all_files if test_dir_pattern.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+    # The ONE definition, imported rather than re-typed (ISSUE-081). This used
+    # to be a byte-identical copy of the pair in `verify_implement_tests_written`
+    # below, and `verify_gate_evidence` held a third, weaker re-typing.
+    test_files = [f for f in all_files if vge.TEST_FILE_PATTERN.search(f)]
+    test_dir_files = [f for f in all_files if vge.TEST_DIR_PATTERN.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
     all_test_files = sorted(set(test_files + test_dir_files))
 
     if not all_test_files:
@@ -714,15 +739,12 @@ def verify_implement_tests_written(issue_id: str, **_) -> bool:
     # path that then fails the hollow-test check (ISSUE-048).
     all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
-    # Match test files: test_*.py, *_test.py, *.spec.ts, *.test.ts, etc.
-    test_pattern = re.compile(
-        r"(?:^|/)(?:test_[^/]+\.py|[^/]+_test\.py|[^/]+\.(?:spec|test)\.(?:ts|tsx|js|jsx))$"
-    )
-    test_files = [f for f in all_files if test_pattern.search(f)]
+    # Match test files: test_*.py, *_test.py, *.spec.ts, *.test.ts, etc. — the
+    # ONE definition, imported rather than re-typed (ISSUE-081).
+    test_files = [f for f in all_files if vge.TEST_FILE_PATTERN.search(f)]
 
     # Also match files inside tests/ or __tests__/ directories
-    test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")
-    test_dir_files = [f for f in all_files if test_dir_pattern.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
+    test_dir_files = [f for f in all_files if vge.TEST_DIR_PATTERN.search(f) and f.endswith((".py", ".ts", ".tsx", ".js", ".jsx"))]
 
     all_test_files = sorted(set(test_files + test_dir_files))
 
@@ -1247,7 +1269,20 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
 
     wt = Path(wt_path)
 
-    # Find all test files in worktree
+    # Find all test files in worktree.
+    #
+    # DELIBERATELY NOT unified with `vge.TEST_FILE_PATTERN` /
+    # `vge.TEST_DIR_PATTERN` (ISSUE-081, review lesson 8: relaxing a shared
+    # contract for a new caller class must be scoped to that class). This walk
+    # is rooted at `tests/`, so `TEST_DIR_PATTERN` matches every entry by
+    # construction and the unified predicate would admit EVERY `.py` under
+    # `tests/` — while `_has_real_tests` requires a `def test_*`. Measured on
+    # this repo: 72 files -> 73, and the one added file is `tests/conftest.py`,
+    # which has no `def test_*` and would turn this blocking phase RED for
+    # every issue. That is this phase's observable behaviour, not
+    # gate-evidence's, so it keeps its name-only rule and is pinned by
+    # `TestTheTestQualityWalkerKeepsItsOwnBehaviour`. Widening it needs its own
+    # measurement and its own issue.
     test_files: list[str] = []
     tests_dir = wt / "tests"
     if tests_dir.is_dir():
@@ -1283,6 +1318,160 @@ def verify_review_test_quality(issue_id: str, **_) -> bool:
 
     print(f"PASS: {len(test_files)} test file(s) have real assertions")
     return True
+
+
+def _current_branch(wt_path: str) -> str | None:
+    """The branch name checked out in <wt_path>, or None (detached/unborn)."""
+    result = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt_path)
+    name = result.stdout.strip() if result.returncode == 0 else ""
+    return name if name and name != "HEAD" else None
+
+
+def _rev(wt_path: str, rev: str) -> str | None:
+    """Resolve <rev> to a commit sha inside <wt_path>, or None."""
+    result = _run(["git", "rev-parse", "--verify", f"{rev}^{{commit}}"], cwd=wt_path)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return None
+
+
+def _untracked_diff_text(wt_path: str) -> str:
+    """Untracked files rendered as unified-diff text (new-file hunks).
+
+    The gate-evidence detector consumes diff TEXT, while the shared untracked
+    oracle (`_untracked_paths`) yields PATHS — so the paths are materialised
+    here. ``git diff --no-index -- /dev/null <path>`` is the read-only way to
+    do that: it emits exactly the ``+++ b/<path>`` header plus ``+`` lines that
+    a real new-file hunk has, and it never writes to the index (``git add -N``
+    would, and this is a read-only verifier).
+
+    ``git ls-files`` C-QUOTES any path holding a non-ASCII byte, a control
+    character, a ``"`` or a backslash (``core.quotePath`` defaults to true), and
+    ``--no-index`` cannot open that spelling: it exits 1 with empty stdout,
+    indistinguishable from the normal differ-exit, so the loop skipped it and an
+    untracked non-ASCII source GATE was invisible. Fail-OPEN, on exactly the
+    state ``skills/review/SKILL.md`` puts reviewers in. Decoded here with the
+    detector's own ``unquote_c_style`` rather than a second copy of a decoder.
+
+    Scoped to THIS caller: ``_untracked_paths`` keeps handing back git's quoted
+    spelling, which ``_changed_files_vs_base`` has always reported and the
+    implement phases have always consumed.
+    """
+    parts: list[str] = []
+    for listed in _untracked_paths(wt_path):
+        # `surrogateescape` so a path whose bytes are not valid UTF-8 still
+        # round-trips back to the filesystem through subprocess's fsencode.
+        rel = vge.unquote_c_style(listed, errors="surrogateescape")
+        # `git diff --no-index` exits 1 when the two inputs differ, which is
+        # the normal case for a new file, and ALSO exits 1 on an unreadable
+        # path — so the exit code cannot discriminate. The presence of diff
+        # text is the signal.
+        shown = _run(
+            ["git", "diff", "--no-index", "--", os.devnull, rel], cwd=wt_path
+        )
+        if shown.stdout:
+            parts.append(shown.stdout)
+    return "".join(parts)
+
+
+def _gate_evidence_diff(issue_id: str) -> str | None:
+    """The branch's own delta as unified-diff text, or None if unobtainable.
+
+    Diffed against the fork point (``git merge-base HEAD <default>``) for the
+    same reason as ``_changed_files_vs_base`` (ISSUE-048): a worktree built on a
+    stale base must not be charged with gates the base added after the fork.
+
+    Covers committed + staged + unstaged + UNTRACKED changes, i.e. the same
+    four legs as ``_changed_files_vs_base``, and through the same untracked
+    oracle (``_untracked_paths``) rather than a second copy of it. The untracked
+    leg is not a corner case here: ``skills/review/SKILL.md`` applies fixes at
+    step 4, runs this checkpoint at step 4.6, and makes its first commit at step
+    6 — so a file the reviewer just wrote is NORMALLY untracked when this runs.
+    Omitting it was asymmetric on the unsafe side: an untracked new test (the
+    evidence) failed closed, an untracked new source gate failed OPEN.
+
+    Refuses (returns None) rather than reporting an empty delta when the base
+    cannot be trusted to be a base. ``_default_branch()`` reads
+    ``refs/remotes/origin/HEAD``, which is purely local, author-writable, never
+    pushed, and invisible in a PR; pointing it at the branch under review makes
+    ``merge_base == HEAD``, which makes ``git diff`` succeed with zero bytes,
+    which used to read as "no gate-adding change". The same state arises with no
+    attacker at all when the branch under review IS the default branch.
+    """
+    wt_path = _find_worktree_path(issue_id)
+    if not wt_path:
+        return None
+
+    base = _default_branch()
+    branch = _current_branch(wt_path)
+    # Scoped to THIS caller (ISSUE-081): `_default_branch` and
+    # `_changed_files_vs_base` are shared with the implement phases and keep
+    # their pre-existing semantics; only gate-evidence refuses on them.
+    if branch is not None and base == branch:
+        print(
+            f"FAIL: gate-evidence — REFUSED (not clean): the resolved default "
+            f"branch '{base}' IS the branch under review, so there is no base "
+            f"to diff against. Check `git symbolic-ref refs/remotes/origin/HEAD` "
+            f"— it is local, never pushed, and invisible in the PR."
+        )
+        return None
+
+    diff_base = _merge_base(wt_path, base) or base
+    base_sha, head_sha = _rev(wt_path, diff_base), _rev(wt_path, "HEAD")
+    if base_sha is not None and base_sha == head_sha:
+        print(
+            f"FAIL: gate-evidence — REFUSED (not clean): the resolved diff base "
+            f"'{diff_base}' is the same commit as HEAD ({head_sha[:12]}), which "
+            f"makes every diff empty. Check `git symbolic-ref "
+            f"refs/remotes/origin/HEAD` — it is local, never pushed, and "
+            f"invisible in the PR."
+        )
+        return None
+
+    result = _run(["git", "diff", diff_base, "--"], cwd=wt_path)
+    if result.returncode != 0:
+        return None
+
+    diff_text = result.stdout + _untracked_diff_text(wt_path)
+    if not diff_text.strip():
+        # A zero-byte diff is unobtainable evidence, not evidence of innocence:
+        # it renders byte-identically to a legitimately gate-free PR.
+        print(
+            f"FAIL: gate-evidence — REFUSED (not clean): the branch delta for "
+            f"{issue_id} vs '{diff_base}' is zero bytes, so no gate could have "
+            f"been detected either way."
+        )
+        return None
+    return diff_text
+
+
+def verify_review_gate_evidence(issue_id: str, **_) -> bool:
+    """Every gate the diff adds carries a disarm battery AND a composite pin.
+
+    ISSUE-081 / SPEC-081. "A newly added defence fails OPEN" was measured at
+    High severity in four consecutive sprints; the common shape was a missing
+    test DIRECTION, not a coding mistake. ``verify_gate_evidence.analyze`` is
+    the detector; this phase is its blocking consumer.
+    """
+    diff_text = _gate_evidence_diff(issue_id)
+    # A PASS is only trustworthy over a non-empty subject: `analyze("")` finds
+    # no files and therefore no gates, and renders the same line as a genuinely
+    # gate-free PR. Refuse instead, and name the cause distinctly so a DISARMED
+    # run cannot be read as a clean one (`_gate_evidence_diff` prints the
+    # specific cause above when it knows it).
+    if diff_text is None or not diff_text.strip():
+        print(
+            f"FAIL: gate-evidence — REFUSED (not clean): no trustworthy branch "
+            f"diff for {issue_id}, so this phase refuses rather than passing. "
+            f"Causes: no worktree for the issue; `git diff` failed; the resolved "
+            f"base is HEAD itself; or the branch has no delta vs its base."
+        )
+        return False
+
+    report = vge.analyze(diff_text)
+    for line in vge.format_report(report):
+        print(line)
+    return not report.findings
 
 
 def verify_review_visual_diff(issue_id: str, **_) -> bool:
@@ -2059,6 +2248,7 @@ VERIFIERS = {
     ("review", "structural-match"): verify_review_structural_match,
     ("review", "layout"): verify_review_layout,
     ("review", "test-quality"): verify_review_test_quality,
+    ("review", "gate-evidence"): verify_review_gate_evidence,
     ("review", "debt"): verify_review_debt,
     ("review", "test"): verify_review_test,
     ("review", "push"): verify_review_push,
