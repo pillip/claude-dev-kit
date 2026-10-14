@@ -248,7 +248,7 @@ The fourth item **contradicts this SPEC's own "What counts as adds a gate"** cla
 
 This was demonstrated on this branch, not hypothesised: commit `7949ccb`, authored to harden this very gate, adds **four** blocking `return None` refusals inside the pre-existing `def _gate_evidence_diff` and the detector reports `gates: []` / `PASS — no gate-adding change in the diff` / `exit 0`. **The gate cannot see its own hardening commit** — decision 2's class and this boundary composing into a complete miss.
 
-**Requirement:** the gate-free verdict must read as "no gate **detected**", naming the boundary, never as "no gate-adding change". A pass from this phase means *no gate was detected*, never *no gate was added*. Carried as a durable issue.
+**Requirement, split deliberately between this PR and its carrier.** The gate-free verdict must read as "no gate **detected**", naming the boundary, never as "no gate-adding change" — a pass from this phase means *no gate was detected*, never *no gate was added*. The **wording** is a false claim the gate makes about itself today, so it is corrected **in this PR**: it costs two lines plus a test update, and shipping a known-false verdict while a carrier waits would be the "legitimate quiet output is identical to defeated output" failure all over again. The **per-boundary widen-or-bound decisions** and the full boundary enumeration are the carrier's (ISSUE-087) — they need measurement per boundary and, for shell sources, possibly a refusal vocabulary of their own, which is new analysis no criterion here names.
 
 ### Decision 4 — the attestation path must be trustworthy (promoted from the review's finding 12)
 
