@@ -273,6 +273,224 @@ at ab907ea (what the review committed):
 - **`--range`/`--repo`/`_diff_from_range`/`_GIT_TIMEOUT` and `--json` are deleted**, so Option C's approach line now describes a `--diff-file`-only CLI. Justification: zero callers and zero tests for the range path, while `--json`'s sole consumer is the test written for it; the real consumer computes its own diff with a merge-base correction the deleted path lacks. Deleting it closes two further findings at no cost — the documented `--range main..HEAD` is two-dot while the consumer is merge-base and the two provably disagree, and `_GIT_TIMEOUT = 30` was hard-coded with an **untrue** provenance comment (it claimed to reuse "the project's documented 30 s subprocess default"; the only documented knobs are `KIT_CHECKPOINT_TEST_TIMEOUT` and `KIT_SPRINT_QUEUE_GH_TIMEOUT`). This is a **removal**, so it cannot be the unrequested-surface failure review lesson 14 names — an untested `subprocess` leg inside a blocking gate is.
 - **The duplicated-oracle declination keeps its decision but loses its reason.** The declination above argues that the duplication is "purely behavioural … a name-collision check sees two distinct names". Measured inside this PR, that is false for 2 of the 3 instances now on record: `scripts/verify_checkpoint.py` carried the **same regex under the same local name** `test_dir_pattern` in two places, `verify_gate_evidence.py:is_test_path` re-typed that classifier a third time while dropping `tests?` singular and `__tests__`, and a fourth, weaker name-only definition sits at `:1250-1262` — four disagreeing definitions of "test file". A same-name-across-modules collision is grep-level, not behavioural-equivalence analysis. The declination may still be right, because the *general* case does need behavioural equivalence and no AC names it; the corrected reason is that the **cheap syntactic subset is real and is ISSUE-084's to scope**, and ISSUE-084 is already amended with all three instances. `is_test_path` itself is resolved in this PR by importing the oracle rather than re-typing it, which is an AC-3 obligation (a repo laid out with `test/` or `__tests__/` currently pays a fabricated-finding tax), not new scope.
 
+## Amendment — 2026-10-24 (the tier split, what the ACs now promise, and the honest residual)
+
+> Recorded as a dated amendment rather than a silent rewrite of the Decision or of the 2026-10-14
+> amendment above, following the discipline SPEC-056's contract-4 amendment used. The **seam is not
+> amended**: Option C stands, and `("review", "gate-evidence")` stays **out** of `ADVISORY_PHASES`, so
+> the *phase* is still a blocking exit code. What is amended is **which findings block**. Raised by the
+> PR #137 review attempt 3 — the third consecutive FAIL, whose verdict was that the blocking question is
+> not patchable — and **decided by the user on 2026-10-24**, accepting the reviewer's measured
+> recommendation. This is a change of design, not a fourth attempt at the previous one.
+
+### Decision 6 — the tier split: `missing-disarm-battery` blocks, the other two advise
+
+**`missing-disarm-battery` stays BLOCKING.** It is decidable. It fires only when `attributed == []` —
+pure syntax through `_calls` (a literal symbol-name regex) and `_attributed` (a name-token match on the
+vacuity guard). It never consults `_refusal_shaped`, so no polarity judgement can make it fire or not
+fire. The property it asserts, "no added test battery mentions this gate at all", is true or false in
+the diff text and nowhere else.
+
+**`missing-refusal-direction` and `missing-composite-pin` are DEMOTED TO ADVISORY.** Both route through
+`_refusal_shaped` (`verify_gate_evidence.py:970` for the composite half, `:1044` for the direction half),
+and predicate polarity is not decidable for a detector-shaped gate: for a detector, the disarm direction
+is correctly written `assert detected is True`, so the arm-shaped expectation **is** the refusal. The
+2026-10-14 amendment already conceded that class as "permanently undecidable" and then rested safety on
+`any()` masking. The third review measured that the undecidability is much wider than the conceded class
+and that it resolves in the **fail-open** direction:
+
+- Over this repo's own **4047** assert lines, **598 (14.8%)** are credited as refusal assertions. The
+  drivers are `is False` 179, **`== 1` 175, `== 2` 67** — about 40% of the credited lines are bare
+  `len(...)`/`count(...)` comparisons that say nothing about refusal — plus 97 `assert not`, including
+  pure existence checks.
+- The committed decisive fixture returned to **exit 0 through the real consumer** on batteries whose only
+  "refusal" was `assert response.status_code == 200`. 2xx is success; `_refusal_shaped` hard-codes
+  non-zero-int-means-refusal while `_CONSUMER_RE` deliberately whitelists `status_code`. The kit ships
+  eight UI/UX agents and runs on a user's own branch diff, so HTTP-idiom projects are a first-class
+  target, not a corner case.
+- The candidate 2xx fix left the suite **completely green at 203 passed** — a fix that breaks no test
+  proves the behaviour was untested, not that it was correct.
+- `_refusal_shaped` has exactly **3** negative pins in the 3407-line suite, all in the exit-code idiom.
+
+**The measured cost of the split, and the part of it that must not be read as reassurance.** On all four
+committed fixtures the polarity-free subset yields the **identical exit code** — `issue_078_pre_fix` 1→1,
+`issue_078_post_fix` 1→1, `issue_074_non_gate` 0→0, `issue_056_colliding_main` 1→1 — so the obligation
+remains an exit code for the decidable half. Re-measured for this amendment, the per-finding breakdown is
+recorded here because the aggregate hides something:
+
+| fixture | blocking after the split | advisory after the split | exit before → after |
+|---|---|---|---|
+| `issue_078_pre_fix.diff` | `cmd_validate` (`missing-disarm-battery`) | **`sprint_status_is_running`** (`missing-composite-pin`) | 1 → 1 |
+| `issue_078_post_fix.diff` | `cmd_validate` (`missing-disarm-battery`) | — | 1 → 1 |
+| `issue_074_non_gate.diff` | — | — | 0 → 0 |
+| `issue_056_colliding_main.diff` | `run_literal_quote`, `run_signature_move`, `run_ai_tell`, `_py_function_asserts` (all `missing-disarm-battery`) | `main` ×2 (`missing-composite-pin`) | 1 → 1 |
+
+**On the motivating fixture the identical exit code is carried by a different symbol.**
+`sprint_status_is_running` is the gate that actually failed open in ISSUE-078, and after the split its
+finding is **advisory**. `issue_078_pre_fix.diff` still exits 1 only because the same diff happens to add
+a second gate, `cmd_validate`, that carries no attributed battery at all. Stating that plainly is the
+point of this table: "identical exit code on all four fixtures" is true and is not evidence that the
+motivating case is still blocked.
+
+**One source of truth for the tier, because a split is exactly where a new fail-open goes.** The finding
+kind → tier mapping lives in exactly one place in `verify_gate_evidence.py` (`BLOCKING_KINDS`). The
+rendered verdict vocabulary, the CLI exit code, and `verify_checkpoint.verify_review_gate_evidence`'s
+boolean all derive from it; none may re-state it. A kind that is advisory in the renderer and blocking in
+the consumer — or the reverse — is a new fail-open of exactly the shape this issue exists to stop.
+
+**Why this is not the blanket Option G the 2026-10-14 amendment rejected.** Option G demoted the whole
+*phase* to `ADVISORY_PHASES`, which is why "an advisory `gate-evidence` is Option A with a script"
+applied to it. Here the obligation remains a non-zero exit for the decidable property, and the phase
+stays in the blocking tier pinned by `tests/test_verify_checkpoint_contract.py`. Option G's counter-
+argument does not transfer.
+
+### Decision 7 — what the ACs now promise, restated
+
+The original ACs assumed a blocking gate for all three findings. They no longer promise that, and an AC
+that promises something the implementation deliberately does not do is worse than no AC. Restated:
+
+- **AC-1 (was: arm-only gate → blocking finding naming the gate).** Now: a gate with **no attributed
+  battery at all** is reported as a **blocking** finding naming the gate, and the phase exits non-zero.
+  Pinned by `issue_078_pre_fix.diff` (blocking on `cmd_validate`) and by a constructed arm-only diff. A
+  gate whose attributed batteries exist but read as arm-only is reported as **advisory**
+  (`missing-refusal-direction`), because that verdict rests on polarity. **AC-1 as originally written —
+  the ISSUE-078 symbol blocked — is NOT met and is not claimed.**
+- **AC-2 (was: the helper/consumer disagreement must not pass).** Now: the disagreement is **surfaced as
+  an advisory finding** naming the gate, not blocked. Pinned on `issue_078_pre_fix.diff`, where
+  `sprint_status_is_running` yields `missing-composite-pin` in the advisory tier.
+- **AC-3 (no false-positive tax on a non-gate PR).** Unchanged, and the split can only weaken the tax:
+  `issue_074_non_gate.diff` stays at 0 gates / 0 findings / exit 0.
+- **AC-4 (the obligation is satisfiable).** Unchanged. A gate with both directions evidenced passes with
+  no finding in **either** tier — not merely with no blocking finding. An advisory line on a diff that
+  satisfies the rule would make the advisory tier noise.
+- **AC-5 (the mechanism is subject to its own rule, mutation-pinned in both directions).** Unchanged in
+  intent and tightened in fact — see decision 9's AC-9.4. A surviving mutant means the AC is unevidenced.
+
+Three ACs are added by decision 9 for the input-handling work the split pulls into scope. They are
+written here rather than improvised into the code, because review lesson 14 records that work added to
+satisfy a request for a *decision* ships without acceptance criteria and that is where the defects are.
+
+### Decision 8 — the honest residual: truthful, NOT effective against an arm-only author
+
+**The split makes the gate truthful. It does not make it effective against an arm-only author.** This is
+the main limitation of what ships, and it is stated here rather than in a footnote.
+
+An author who writes only arm-direction tests still produces an *attributed* battery — their tests do
+call the gate and do carry a vacuity guard — so they never trip the decidable half. What they trip is
+`missing-refusal-direction`, which is now advisory. The exact shape that shipped four consecutive
+fail-opens therefore passes this gate with a printed note. What the blocking tier catches is the narrower
+and genuinely decidable case: a gate added with **no test mentioning it at all**.
+
+That is a real property and it is worth an exit code — it is the case where there is nothing to argue
+about. It is not the property ISSUE-081 was filed to enforce.
+
+**If the disarm-*direction* property must ever actually be enforced, diff analysis is the wrong
+instrument.** Three independent measurements now say so: the polarity undecidability above; this SPEC's
+own 0-of-4 for prose (Option A) and 0-of-4 for a PR-body checklist (Option D); and the 16-of-27
+per-battery misclassification rate recorded by the 2026-10-14 amendment. The successor mechanism is
+**attestation plus a reviewer obligation** — a per-gate declaration of which test carries the refusal and
+what polarity that test asserts, checked by a human reviewer who is *told which gates were detected*,
+with the detection half (which is decidable and already works) feeding it the list. That is a different
+mechanism with a different failure mode, and it needs its own issue and its own SPEC; it is not a
+tightening of this one.
+
+### Decision 9 — three input-handling holes move INTO scope, because the blocking half is the half we keep
+
+The 2026-10-14 amendment and the attempt-2 review treated these as candidates for separate carriers. The
+tier split changes that calculus: a **blocking** gate that one committed line silently switches off, or
+that a small diff can hang, or whose subject a local ref can quietly narrow, is precisely the
+false-assurance harm ISSUE-081 exists to prevent. They are in scope, each with an acceptance criterion.
+
+**AC-9.1 — a `.gitattributes` line must not disarm the gate in silence.** Measured for this amendment on
+a throwaway repository, against the committed detector: a two-commit repo that adds
+`scripts/guard.py` with one predicate gate and no evidence yields
+
+```
+FAIL: gate-evidence — 1 gate(s) added without paired evidence (ISSUE-081 / SPEC-081)
+  - [missing-disarm-battery] is_payload_allowed (scripts/guard.py:14) …
+exit 1
+```
+
+and the *same* repository with one added committed line `*.py -diff` yields the byte-identical ordinary
+gate-free verdict
+
+```
+PASS: gate-evidence — no gate DETECTED in the diff. …
+exit 0
+```
+
+because git renders every `.py` file as `Binary files … differ`, which `_parse` never sees — and because
+the diff still contains `+++ ` headers for the non-`.py` files, the CLI's "not a unified diff" refusal
+does not fire either. Re-rendering the same commit range with `git diff --text` restores `exit 1`.
+**Requirement, both layers:** the real consumer must render the diff with `--text` so the attribute
+cannot narrow the subject, **and** `analyze` must refuse — in the **blocking** tier, with a message
+naming `.gitattributes` and the `-diff` attribute — when any non-test `.py` path in the diff is rendered
+as binary rather than as text. The second layer is required even though the first closes the measured
+instance, because `analyze` is also reachable through `--diff-file` with text the gate did not render.
+Review lesson 5 applies verbatim: workspace-persisted state read by a gate is untrusted input, so it is
+validated on read. Review lesson 16 applies to its test: the guard must be exercised in the **disarm**
+direction and **through the real consumer**, not only at the helper.
+
+**AC-9.2 — the analysis must carry a wall-clock bound, env-configurable, named in its own failure
+message.** `analyze` is quadratic in gates × batteries: `_attributed` recomputes `_guard_literals(block)`
+for every (gate, battery) pair. Measured for this amendment on an ordinary hand-written shape — N
+predicate gates in one source file and N parametrized three-variant batteries in one test file, nothing
+pathological per line:
+
+| added diff size | gates | wall clock |
+|---|---|---|
+| 19.5 KB | 50 | 0.05 s |
+| 38.9 KB | 100 | 0.20 s |
+| 78.7 KB | 200 | 0.64 s |
+| 158.2 KB | 400 | 2.22 s |
+
+≈3.5× per 2× input, i.e. clearly super-linear and unbounded; the attempt-3 review measured **32.5 s at
+212 KB** on a heavier block shape, double the 15.2 s that had been cited as grounds for an advisory
+landing. `scripts/checkpoint.sh` `exec`s python3 with no timeout and the sprint runner's watchdog is
+600 s, so an unbounded blocking gate is hangable by its own subject. **Requirement:** bound `analyze`'s
+wall clock, fail **CLOSED** past the bound (a timed-out analysis is not a pass), make the bound an env
+knob with a documented default, print the knob's name in the failure message it remediates, and document
+it in the module docstring **and** in the user-facing env-knob documentation in the same PR — README.md
+and docs/troubleshooting.md already carry `KIT_CHECKPOINT_TEST_TIMEOUT` and are the format oracle
+(review lesson 2). Removing the quadratic itself by memoising the per-block predicates is part of the
+same change; the bound is the guarantee, the memoisation is the fix.
+
+**AC-9.3 — the diff base guard must test the ancestor RELATION, not equality.** `_gate_evidence_diff`
+refuses when the resolved default branch *is* the branch under review and when `base_sha == head_sha`.
+Both are equality tests, and the attempt-3 review reproduced the relocation independently: a base that is
+a strict **ancestor** of HEAD narrows the diff without ever being equal to it, so a gate added in an
+earlier commit of the same branch falls outside the subject and neither refusal fires.
+`refs/remotes/origin/HEAD` is purely local, author-writable, never pushed and invisible in the PR.
+**Requirement:** corroborate the resolved base against the remote-tracking trunk refs the clone already
+has, use the **more ancestral** (wider) merge-base when they disagree, and print an unmissable
+disclosure naming both the resolved ref and the corroborating one. Widening is the safe direction — it
+can only add findings, never remove them — which is why this refuses to narrow rather than refusing to
+run. **Residual, disclosed:** an author who rewrites *every* local trunk ref can still narrow the
+subject. There is no offline fix for that; what the requirement buys is that narrowing stops being
+silent and stops being a one-ref edit.
+
+**AC-9.4 — the AC-5 mutation matrix must kill the mutants that currently survive.** The attempt-3 review
+measured that neutering `_CONDITIONAL` to match everything — which deletes half of this SPEC's own
+"what counts as adds a gate" definition — leaves **418/418** green and all four fixtures byte-identical,
+and that `MIN_VARIANTS: 3 → 1` and `_TERNARY_GAP: 400 → 40` likewise survive. An AC whose mutant survives
+is unevidenced. **Requirement:** each of those three mutants must kill at least one test, isolated on a
+constructed diff where the real fixtures cannot see the knob.
+
+### Decision 10 — decision 2 is unchanged, and its mirage was independently reproduced
+
+The 2026-10-14 amendment's **decision 2** — the `return None` under-detection class is OUT of scope,
+carrier **ISSUE-086** — stands unchanged. The attempt-3 review reproduced its central measurement
+independently: rewording only the **docstrings** of the best-looking candidate rule, with the code AST and
+every non-docstring byte identical, turns detection **off for 2 of its 3 hits**. The candidate detects the
+author's vocabulary, not the refusal. Attribution blindness reproduced too (PR #127: `attributed=0`,
+`_calls=0`, `_attributed=0`, on two genuine disarm batteries that drive the gate through a test helper).
+The deferral is therefore well-founded on re-measurement, not merely carried forward, and ISSUE-086
+remains blocked behind repairing **attribution** first.
+
+The consequence this makes binding is also unchanged: **a green `gate-evidence` verdict on ISSUE-077 is
+not evidence that this mechanism works**, and ISSUE-077 is not the in-batch self-test the sprint plan
+assumed.
+
 ## Trade-offs Accepted
 
 - **The detector is syntactic, and its attribution rides on the vacuity guard.** A composite battery with no input-side vacuity guard is not credited to the gate even if a human would credit it, so the first PRs under this rule will sometimes have to *add* a guard to a test that was already adequate. Accepted deliberately: the alternative is crediting batteries that may be vacuous, which is how the arm-only diffs passed four times. The cost is bounded — one assertion per composite test.
@@ -318,4 +536,16 @@ Added by the 2026-10-14 amendment — each of these is a *durable carrier* for s
 
 - [ ] **ISSUE-086 — close the under-detection class (amendment decision 2).** Recognise refusal by `return None`, by returning a sentinel tuple, and by **withholding** (filtering a dispatch list with no `return`/`exit`/`raise` at all, which PR #129's `cmd_next_action` does across 157 added lines). Blocked behind repairing **attribution** first: the measured form that recovers both false negatives also produces 1 false block on PR #127, an honest security PR with two genuine disarm batteries, because they drive the gate through a test helper that neither `_calls` nor `_attributed` can see. Measurements to start from are in the amendment's table; note the `≥3`-sites threshold there is overfit on a single negative — owner: ISSUE-086, by: before any PR that tightens `_gh_pr_merge_state` is read as self-testing this phase.
 - [ ] **ISSUE-087 — widen or honestly bound the detection boundary (amendment decision 3).** A gate is seen only inside an added `def` in a changed non-test `.py` file; module-level gates, gates in the kit's own eight `.sh` scripts, gates in source files whose names match the test-path heuristics, and tightened predicates in `class`-hinted hunks are all invisible and print byte-identically to a gate-free PR. Includes the sub-case that commit `7949ccb` demonstrated on this branch — a gate added by *modifying an existing function* — which contradicts this SPEC's own "a tightened predicate inside an existing function counts" claim — owner: ISSUE-087, by: the sprint after ISSUE-081 ships.
+Added by the 2026-10-24 amendment:
+
+- [ ] **ISSUE-088 — decide the successor for the disarm-DIRECTION obligation (amendment decision 8).**
+  After the tier split, the direction property is advisory and the arm-only shape that shipped four
+  fail-opens passes with a printed note. Three independent measurements say diff analysis cannot carry
+  it: polarity is undecidable for a detector-shaped gate (598 of 4047 of this repo's own assert lines
+  credited, ~40% of them bare counts), Option A is 0 of 4 and Option D is 0 of 4, and the per-battery
+  misclassification rate is 16 of 27. The candidate successor is **attestation plus a reviewer
+  obligation** — a per-gate declaration naming the test that carries the refusal and the polarity it
+  asserts, fed by the *detection* half (which is decidable and works) and checked by a human — which is
+  a different mechanism with a different failure mode and needs its own SPEC. Do not re-attempt it as a
+  tightening of this phase — owner: ISSUE-088, by: the sprint after ISSUE-081 ships.
 - [ ] Re-examine the direction predicate's **59% per-battery misclassification rate** once real PRs have exercised it. `any()` semantics masks it today; the measured reachable case is one deleted smoke battery away. Specifically decide whether the undecidable **predicate-polarity** class (for a detector-shaped gate, `assert detected is True` *is* the refusal) should be handled by a per-gate polarity declaration rather than by the attestation escape — owner: the reviewer of the 5th PR under this phase, by: 5 PRs after merge.
