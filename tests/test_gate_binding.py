@@ -74,12 +74,12 @@ KEY = b"\x11" * 32
 OTHER_KEY = b"\x22" * 32
 
 
-@pytest.fixture()
-def project(tmp_path: Path) -> Path:
-    """An isolated fake project root (same shape as test_gate_delegation)."""
-    p = tmp_path / "proj"
-    p.mkdir()
-    return p
+# An isolated fake project root. Re-exported from test_gate_delegation
+# rather than re-declared: since ISSUE-070 the fixture must also establish
+# the telemetry emitter's containment root (which is derived independently
+# of the project_path handed to it), and a second hand-rolled copy is just
+# a place for the two to drift.
+project = tgd.project
 
 
 def _sign(artifact: Path, key: bytes) -> Path:
