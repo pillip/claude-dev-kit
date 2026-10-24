@@ -1335,19 +1335,59 @@ quoting the field name re-arms this. A fence/indent exclusion, or confining dete
 Meta` block, would close it — but that changes a safety detector's acceptance surface, which needs
 its own issue.
 
-**OWED, not done — the preventive carrier for this class was NOT filed.** The lessons-escalation
-check fired (Frequency 3, High, no existing carrier) and a `planner` sub-task was dispatched to add
-**ISSUE-090** for the structural decision — confine watermark detection to the `## Meta` bounds,
-exclude fenced/indented/quoted contexts (note `_unfenced()` already exists in that module and is
-applied to the `## Issue Progress` scan but not to `## Meta`), or move the field out of the narrative
-file entirely. The sub-task did not return and wrote nothing: `grep -c ISSUE-090 issues.md` = 0 and the
-registry is clean. **The orchestrator should re-dispatch it.** Constraints to restate when it does:
-`Spec-Required: true`, P2, platform, 0.5d, `Depends-On: none` (the live instance is already fixed);
-the acceptance criteria need a two-direction mutation pin — a *descriptive* sentence mentioning the
-field must not be accepted as a declaration, AND a genuine duplicate declaration must still be
-refused, so the fix does not reopen ISSUE-069's duplicate hole; and it must **not** be answered with a
-documentation lint, because a test that checks the accuracy of records is an issue generator (recorded
-project-owner preference).
+**Preventive carrier FILED: ISSUE-090.** The lessons-escalation check fired (Frequency 3, High, no
+existing carrier) and a `planner` sub-task added it — backlog line plus an 88-line block, additive
+only, 0 deletions, no other issue touched. `Spec-Required: true`, P2, platform, 0.5d,
+`Depends-On: none`, `Status: backlog`.
+
+> **Record correction, made deliberately rather than quietly.** An earlier revision of this section
+> said the carrier "was NOT filed" and asked the orchestrator to re-dispatch. That was wrong: the
+> sub-task returned after the check that produced the claim, and ISSUE-090 was already in the file.
+> Corrected in place rather than deleted, because a sprint record that silently drops a false
+> statement teaches nothing — and because "verify the slow path finished before reporting it didn't"
+> is the same lesson this review kept finding in the code.
+
+**Two caveats the orchestrator owns.**
+1. **The write was NOT lock-protected.** `agents/planner.md` has no `Bash`, so `flock_edit.sh` was not
+   invokable and the agent wrote with `Edit` — the exact ISSUE-074 safety-removal shape already in the
+   review lessons (the designated lock-taker cannot invoke the lock, so the write lands unlocked and
+   nothing errors). Both edits were append/insert-only, so a concurrent writer would have conflicted
+   rather than clobbered, but that is luck. The team-lead committed it afterwards under the lock.
+2. **`validate_issues.py` goes 8 -> 9.** The one new violation is `ISSUE-090: AC #5 not in
+   Given/When/Then format`, in family with the four pre-existing AC-format violations on ISSUE-034,
+   ISSUE-077 and ISSUE-080. Cosmetic, worth a sweep, not a blocker. Separately `ISSUE-081:
+   Spec-Required=true and Status=waiting, but Spec ... missing or unreadable` now appears **because**
+   this phase set Status to `waiting` — SPEC-081 lives on the branch, not on main, so it resolves when
+   the branch merges. Not a defect.
+
+**The planner sharpened the diagnosis in three ways the dispatching brief had wrong**, each read out
+of the source rather than restated, and all three change what the SPEC must decide:
+- **The defect is a WINDOW MISMATCH, not merely a broad regex.** In `parse_roster_watermark` the
+  `hits` comprehension enumerates **every line of the document**, while `_meta_section_bounds()` is
+  consulted only *after* the duplicate check, for the single surviving hit. So the counting window is
+  the whole file while the acceptance window is already `## Meta`-scoped. Narrative prose can
+  therefore **never be honoured — it can only veto.** The open question is whether to move the
+  *counting* window inside those bounds; `## Meta` confinement of *acceptance* already exists.
+- **Fence-awareness would overturn a recorded deliberate decision.** That function's docstring argues
+  fence-blind counting is fail-closed on purpose: fence-aware counting would let someone wrap the real
+  field in a fence, add their own beside it, and leave exactly one "real" declaration — theirs,
+  accepted, silently. `_unfenced()` exists and is applied in `parse_sprint_table`, so the in-module
+  precedent is real, but adopting it here means defeating or bounding that argument first.
+- **The hazard is WRAP-POSITION dependent, not phrasing dependent** — the four other mentions of the
+  field in this file are inert only because their lines happen to begin with other words. That is the
+  strongest available argument against answering this with a phrasing lint, and it is encoded in the
+  issue's Scope Out.
+
+The planner also recorded one hazard as an **unmeasured obligation rather than a characterised
+residual** (`cmd_validate`'s remediation string contains the field token and step 4f logs errors into
+this file; a leading quote currently prevents a line-start match, but no wrap/render path was
+measured) — correctly applying this review's own "a disclosed residual is a CLAIM" lesson. And it
+verified its own issue block does not re-arm the trap it describes: the detector's regex returns zero
+matches against `issues.md`.
+
+**Sizing risk flagged, not absorbed:** 0.5d is honest for the counting-window fix; the
+move-to-a-dedicated-file option is not, since it adds absent/unreadable/stale failure modes against
+ISSUE-078's arming predicate. Revise the estimate at spec-acceptance time.
 
 **ORCHESTRATION STOP still applies.** `next-action` returns `PIPELINE ISSUE-077` both before and
 after this fix. Do **not** take it: ISSUE-081 is `waiting`, 077 would be cut from a main where
