@@ -12,10 +12,22 @@ ISSUE-078 — pre-fix (``d328a6c^``) and post-fix (``d328a6c``) — plus a real
 non-gate PR diff (ISSUE-074 / PR #132), from frozen fixtures whose provenance is
 recorded in ``tests/fixtures/gate_evidence/README.md``.
 
+SPEC-081's 2026-10-24 amendment, decision 6, splits the finding kinds into two
+tiers: ``missing-disarm-battery`` BLOCKS (it fires only when no battery is
+attributed to the gate at all, which is decidable by syntax), while
+``missing-refusal-direction`` and ``missing-composite-pin`` ADVISE (both rest
+on assertion polarity, which is not decidable for a detector-shaped gate). The
+*phase* is unchanged and still blocking. The tier lives in exactly one place,
+``vge.BLOCKING_KINDS``, and ``TestTheTierIsStatedOnceAndDerivedEverywhere``
+fails if the renderer, the CLI exit code or the real consumer re-state it.
+
 AC coverage map:
 
-* AC-1 → ``TestAC1ArmOnlyGateIsRefused``
-* AC-2 → ``TestAC2HelperConsumerDisagreementIsSurfaced``
+* AC-1 → ``TestAC1AGateWithNoAttributedBatteryIsBlocked`` (restated by
+  amendment decision 7: the ISSUE-078 symbol is reported in the ADVISORY tier,
+  which ``TestTheMeasuredFixtureTable`` pins explicitly rather than hides)
+* AC-2 → ``TestAC2HelperConsumerDisagreementIsSurfaced`` — surfaced as an
+  advisory finding, not blocked (amendment decision 7)
 * AC-3 → ``TestAC3NonGateDiffPaysNoTax``,
   ``TestTheTestPathOracleIsImportedNotRetyped`` (the re-typed test-path
   classifier charged a fabricated finding to any repo laid out with ``test/``
@@ -34,6 +46,7 @@ AC coverage map:
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -207,15 +220,43 @@ class TestGateDetection:
 # ── AC-1 ─────────────────────────────────────────────────────────────
 
 
-class TestAC1ArmOnlyGateIsRefused:
-    """An arm-only gate-adding diff is refused, and the finding names the gate."""
+class TestAC1AGateWithNoAttributedBatteryIsBlocked:
+    """AC-1 as RESTATED by SPEC-081's 2026-10-24 amendment, decision 7.
 
-    def test_pre_fix_replay_reports_a_blocking_finding_naming_the_gate(self):
+    The original AC promised that an arm-only gate-adding diff is BLOCKED and
+    the blocking finding names the gate. After the tier split that promise is
+    narrower, and the class is named for what it now holds: a gate with **no
+    attributed battery at all** blocks (`missing-disarm-battery`, decidable by
+    pure syntax), while a gate whose attributed batteries merely read as
+    arm-only is reported in the ADVISORY tier because that verdict rests on
+    polarity. On this fixture the blocking symbol is `cmd_validate`, NOT the
+    gate ISSUE-078 actually failed open on — see
+    `TestTheMeasuredFixtureTable::test_the_motivating_ISSUE_078_gate_is_
+    ADVISORY_not_blocking`, which pins that cost rather than hiding it.
+    """
+
+    def test_pre_fix_replay_blocks_on_the_gate_with_no_attributed_battery(self):
+        report = vge.analyze(_diff(PRE_FIX))
+        finding = _finding_for(report, VERDICT_GATE)
+        assert finding is not None, _symbols(report.findings)
+        assert finding.kind == "missing-disarm-battery", finding.kind
+        assert finding.tier == "blocking", finding.tier
+        assert VERDICT_GATE in finding.message
+        assert finding.path == "scripts/sprint_queue.py"
+
+    def test_the_arming_gate_is_still_named_in_a_finding(self):
+        """Renamed: this finding is ADVISORY now, so the old name was false.
+
+        It used to be called `..._reports_a_blocking_finding_naming_the_gate`.
+        The assertion content is unchanged — the finding is still produced and
+        still names the gate and its file — only the tier claim is corrected.
+        """
         report = vge.analyze(_diff(PRE_FIX))
         assert ARMING_GATE in _symbols(report.findings), _symbols(report.findings)
         finding = _finding_for(report, ARMING_GATE)
         assert ARMING_GATE in finding.message
         assert finding.path == "scripts/sprint_queue.py"
+        assert finding.tier == "advisory", finding.tier
 
     def test_pre_fix_replay_exits_non_zero_through_the_cli(self):
         assert vge.main(["--diff-file", str(PRE_FIX)]) == 1
@@ -225,6 +266,8 @@ class TestAC1ArmOnlyGateIsRefused:
         out = capsys.readouterr().out
         assert rc == 1
         assert "FAIL" in out
+        # Both gates reach the reviewer; only one of them carries the exit code.
+        assert VERDICT_GATE in out.split("ADVISORY:")[0]
         assert ARMING_GATE in out
         assert "scripts/sprint_queue.py" in out
 
@@ -233,12 +276,19 @@ class TestAC1ArmOnlyGateIsRefused:
 
 
 class TestAC2HelperConsumerDisagreementIsSurfaced:
-    """A gate correct in isolation and wrong through its consumer must not pass.
+    """A gate correct in isolation and wrong through its consumer is SURFACED.
 
     This is the measured ISSUE-078 shape: `sprint_status_is_running`'s own unit
     assertions all passed, and `validate` / `next-action` disagreed with it on
     the same bytes. The pre-fix diff therefore has helper-level disarm evidence
     and NO composite pin, and the finding must say exactly that.
+
+    AC-2 as restated by SPEC-081's 2026-10-24 amendment, decision 7: the
+    disagreement is surfaced as an **advisory** finding naming the gate, not
+    blocked — `missing-composite-pin` routes through `_refusal_shaped` and
+    therefore rests on a polarity judgement that is not decidable for a
+    detector-shaped gate. The class used to claim the diff "must not pass";
+    it does pass, with the finding printed, and the tier is asserted below.
     """
 
     def test_helper_evidence_is_acknowledged_and_the_composite_is_not(self):
@@ -253,6 +303,7 @@ class TestAC2HelperConsumerDisagreementIsSurfaced:
     def test_the_finding_kind_is_the_missing_composite_pin(self):
         finding = _finding_for(vge.analyze(_diff(PRE_FIX)), ARMING_GATE)
         assert finding.kind == "missing-composite-pin", finding.kind
+        assert finding.tier == "advisory", finding.tier
 
     def test_the_message_names_both_halves_of_the_disagreement(self):
         finding = _finding_for(vge.analyze(_diff(PRE_FIX)), ARMING_GATE)
@@ -791,6 +842,24 @@ class TestAC5TheMechanismIsSubjectToItsOwnRule:
         )
 
 
+#: Mutations under which the pre-fix fixture keeps its ADVISORY finding and
+#: loses its BLOCKING one. Measured for the 2026-10-24 tier split, not
+#: anticipated, and written down rather than quietly dropped from the matrix.
+#:
+#: `cmd_validate` — the gate that carries the blocking `missing-disarm-battery`
+#: on this fixture — is added by MODIFYING an existing function, so a hunk
+#: header's function hint is its only source of attribution. Strip the hints
+#: and it is not detected at all (`gates == ['sprint_status_is_running']`).
+#: That detection boundary predates this change (SPEC-081 amendment
+#: 2026-10-14, decision 3; carrier ISSUE-087) and used to be MASKED, because
+#: `sprint_status_is_running`'s own finding carried the exit code. With that
+#: kind advisory the mask is gone, and the honest consequence is pinned here
+#: instead of being hidden by deleting the case.
+_MUTATIONS_WITHOUT_A_BLOCKING_GATE = frozenset(
+    {"hunk_headers_lose_their_function_hint"}
+)
+
+
 class TestAC5CompositePinThroughTheRealConsumer:
     """Drive this gate end to end through `verify_checkpoint.py`, not the helper.
 
@@ -806,9 +875,20 @@ class TestAC5CompositePinThroughTheRealConsumer:
         _DISARM_MUTATIONS,
         ids=[case[0] for case in _DISARM_MUTATIONS],
     )
-    def test_the_cli_refuses_a_mutated_arm_only_diff(self, tmp_path, label, mutate):
+    def test_the_cli_reports_every_mutated_pre_fix_diff(
+        self, tmp_path, label, mutate
+    ):
+        """Renamed from `..._refuses_an_arm_only_diff`.
+
+        Every mutation still REPORTS the arming gate. Whether it also
+        REFUSES now depends on the blocking gate surviving the mutation, and
+        one mutation measurably removes it — see
+        `_MUTATIONS_WITHOUT_A_BLOCKING_GATE`. Asserting `returncode == 1` for
+        that case would be asserting something the detector does not do.
+        """
         text = mutate(_diff(PRE_FIX))
         assert "def sprint_status_is_running" in text, label
+        blocks = label not in _MUTATIONS_WITHOUT_A_BLOCKING_GATE
 
         path = tmp_path / f"{label}.diff"
         path.write_text(text, encoding="utf-8")
@@ -819,37 +899,56 @@ class TestAC5CompositePinThroughTheRealConsumer:
             text=True,
             timeout=_CLI_TIMEOUT,
         )
-        assert result.returncode == 1, (label, result.stdout, result.stderr)
+        assert result.returncode == (1 if blocks else 0), (
+            label, result.stdout, result.stderr
+        )
         assert ARMING_GATE in result.stdout, label
+        assert (VERDICT_GATE in result.stdout) is blocks, (label, result.stdout)
+        # Blocked or not, a mutated run must never read like a clean one.
+        assert GATE_FREE not in result.stdout, (label, result.stdout)
 
         # Same bytes, in-process entry point: the helper and the CLI must not
         # disagree — that disagreement IS the ISSUE-078 defect.
-        assert vge.main(["--diff-file", str(path)]) == 1, label
+        assert vge.main(["--diff-file", str(path)]) == (1 if blocks else 0), label
 
     @pytest.mark.parametrize(
         "label,mutate",
         _DISARM_MUTATIONS,
         ids=[case[0] for case in _DISARM_MUTATIONS],
     )
-    def test_the_checkpoint_phase_refuses_an_arm_only_diff(
+    def test_the_checkpoint_phase_reports_every_mutated_pre_fix_diff(
         self, monkeypatch, capsys, label, mutate
     ):
-        """The composite through the REGISTERED phase, not the module CLI."""
+        """The composite through the REGISTERED phase, not the module CLI.
+
+        Renamed from `..._refuses_an_arm_only_diff`: after the tier split what
+        carries the refusal on this fixture is `cmd_validate`'s
+        `missing-disarm-battery`, not the arm-only-ness of
+        `sprint_status_is_running` — whose finding is advisory and is asserted
+        below in the section it actually lands in. The one mutation that
+        removes `cmd_validate` from detection therefore passes, loudly.
+        """
         text = mutate(_diff(PRE_FIX))
 
         # VACUITY GUARD: the phase can only be charged with catching a gate the
         # mutated diff still contains.
         assert "def sprint_status_is_running" in text, label
+        blocks = label not in _MUTATIONS_WITHOUT_A_BLOCKING_GATE
 
         monkeypatch.setattr(vc, "_gate_evidence_diff", lambda issue_id: text)
-        assert vc.verify_review_gate_evidence("ISSUE-078") is False, label
+        assert vc.verify_review_gate_evidence("ISSUE-078") is (not blocks), label
+        capsys.readouterr()
         rc = vc.main(
             ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-078"]
         )
         out = capsys.readouterr().out
-        assert rc == 1, (label, out)
+        assert rc == (1 if blocks else 0), (label, out)
         assert ARMING_GATE in out, label
-        assert "ADVISORY:" not in out, "this phase must be blocking, not advisory"
+        assert "ADVISORY:" in out, (label, out)
+        assert GATE_FREE not in out, (label, out)
+        blocking_half, advisory_half = out.split("ADVISORY:", 1)
+        assert ARMING_GATE in advisory_half, (label, advisory_half)
+        assert (VERDICT_GATE in blocking_half) is blocks, (label, blocking_half)
 
     def test_the_checkpoint_phase_still_refuses_the_residual_gate_in_a_post_fix_diff(
         self, monkeypatch, capsys
@@ -884,6 +983,7 @@ class TestAC5CompositePinThroughTheRealConsumer:
         )
         out = capsys.readouterr().out
         assert rc == 0, out
+        # No gate is detected at all, so neither tier has anything to print.
         assert "ADVISORY:" not in out
 
 
@@ -929,6 +1029,14 @@ def _contract_holds() -> bool:
 # changes NOTHING on the real pair (0 regressions). It is pinned in both
 # directions by `TestDirectionIsWhatIsMeasured`, on the arm-only corpus and the
 # decisive attack, which are the inputs that can see it.
+#
+# `BLOCKING_KINDS` is absent for a third reason: this oracle reads
+# `report.findings`, which the 2026-10-24 tier split leaves untouched by
+# construction, so EVERY `BLOCKING_KINDS` mutant survives it. Mutating it here
+# would record a false survivor. It is pinned in both directions — promote
+# `missing-refusal-direction`, and empty the set — by
+# `TestTheTierMappingIsLoadBearing`, against the exit code, the real consumer's
+# boolean and the rendered section.
 _REAL_MUTANTS = [
     ("variant_floor_raised_absurdly", {"MIN_VARIANTS": 999}),
     ("vacuity_guard_requirement_dropped", {"REQUIRE_VACUITY_GUARD": False}),
@@ -1106,10 +1214,19 @@ class TestAC4AGateAddingDiffPassesCleanly:
         assert GATE_FREE not in out, out
         assert f"both directions: {_DEMO_GATE}" in out, out
 
-    def test_the_same_diff_with_the_polarity_flipped_is_refused(
+    def test_the_same_diff_with_the_polarity_flipped_is_surfaced_as_advisory(
         self, monkeypatch, capsys
     ):
-        """One-character-class difference between the pass above and a refusal."""
+        """One-character-class difference, and it changes the OUTPUT, not the tier.
+
+        Renamed from `..._is_refused`: after SPEC-081's 2026-10-24 amendment,
+        decision 6, `missing-refusal-direction` is advisory, so this diff
+        reaches exit 0 with the finding printed. The assertion content is
+        unchanged — the finding is still produced and still names the gate —
+        but a test name claiming a refusal that no longer happens is exactly
+        the false record ISSUE-081 exists to stop. Decision 8 states the
+        residual plainly: the arm-only author is surfaced, not blocked.
+        """
         assert "is True" in _ARM_ONLY_DIFF and "is False" not in _ARM_ONLY_DIFF
         assert "def blocked_marker_is_absent" in _ARM_ONLY_DIFF
         monkeypatch.setattr(
@@ -1119,9 +1236,12 @@ class TestAC4AGateAddingDiffPassesCleanly:
             ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-081"]
         )
         out = capsys.readouterr().out
-        assert rc == 1, out
+        assert rc == 0, out
+        assert "ADVISORY:" in out, out
         assert "missing-refusal-direction" in out, out
         assert _DEMO_GATE in out, out
+        # And it must NOT read like the clean diff two tests above.
+        assert f"both directions: {_DEMO_GATE}" not in out, out
 
 
 class TestAC5MutationMatrix:
@@ -1536,8 +1656,25 @@ def _attacked_pre_fix() -> str:
     return _diff(PRE_FIX) + _ARM_ONLY_ATTACK
 
 
-class TestTheArmOnlyAttackIsBlocked:
-    """The pre-fix fixture plus arm-only noise must stay BLOCKED."""
+class TestTheArmOnlyAttackIsSurfacedNotBlocked:
+    """The pre-fix fixture plus arm-only noise is REPORTED and reaches exit 0.
+
+    Renamed from `TestTheArmOnlyAttackIsBlocked`, which is no longer true and
+    must not be left claiming otherwise. SPEC-081's 2026-10-24 amendment,
+    decision 8, states the residual without softening it: an author who writes
+    only arm-direction tests still produces an *attributed* battery, so they
+    never trip the decidable half. The attack below moves both gates out of
+    `missing-disarm-battery` — `sprint_status_is_running` to
+    `missing-composite-pin`, `cmd_validate` to `missing-refusal-direction` —
+    and both of those are advisory, so the whole diff passes with the findings
+    printed.
+
+    What is pinned here is therefore the honest pair: the attack is still
+    DETECTED and still NAMED (it is not silent, and it does not render like a
+    clean or gate-free diff), and it is NOT blocked. The attack directions the
+    tier split does leave blocked are pinned by
+    `TestTheMeasuredFixtureTable` and `TestTheTierAgreesThroughTheRealConsumer`.
+    """
 
     def test_the_attack_really_adds_arm_only_batteries(self):
         """Fixture pin: the attack must contain no refusal assertion at all.
@@ -1556,7 +1693,13 @@ class TestTheArmOnlyAttackIsBlocked:
         assert f"{ARMING_GATE}(text)" in text
         assert f"{VERDICT_GATE}(text)" in text
 
-    def test_the_attacked_pre_fix_diff_still_blocks(self):
+    def test_the_attacked_pre_fix_diff_still_names_both_gates(self):
+        """Renamed from `..._still_blocks`: it does not block, it reports.
+
+        The assertion content is unchanged — both gates are still found and
+        still carry the same two kinds — and the tier of each is now asserted,
+        which is the fact the old name got wrong.
+        """
         report = vge.analyze(_attacked_pre_fix())
         assert _symbols(report.findings) == {ARMING_GATE, VERDICT_GATE}, (
             _symbols(report.findings)
@@ -1565,12 +1708,18 @@ class TestTheArmOnlyAttackIsBlocked:
         # The unattacked fixture reports `missing-disarm-battery` here, because
         # NO battery is attributed to `cmd_validate` at all. The attack adds
         # one — an arm-only one — so the honest kind is the second of the two
-        # separately-named modes. Same gate, same verdict, named for what is
-        # actually wrong with it.
+        # separately-named modes. Same gate, named for what is actually wrong
+        # with it — and, after the split, no longer the blocking kind, which is
+        # precisely how the attack escapes the exit code.
         assert (
             _finding_for(report, VERDICT_GATE).kind
             == "missing-refusal-direction"
         )
+        assert report.blocking_findings == (), report.blocking_findings
+        assert {f.symbol for f in report.advisory_findings} == {
+            ARMING_GATE,
+            VERDICT_GATE,
+        }, report.advisory_findings
 
     def test_the_attack_restores_the_unattacked_evidence_verdicts(self):
         """Per-gate `disarm`/`composite` must be exactly the pre-fix values."""
@@ -1583,27 +1732,52 @@ class TestTheArmOnlyAttackIsBlocked:
             symbol: verdict for (_, symbol), verdict in clean.evidence.items()
         }
 
-    def test_the_attack_exits_non_zero_through_the_module_cli(self, tmp_path):
+    def test_the_attack_exits_zero_and_says_so_through_the_module_cli(
+        self, tmp_path, capsys
+    ):
+        """Renamed from `..._exits_non_zero_...`, because it exits 0 now.
+
+        The attack's two findings are both advisory, so the CLI passes. The
+        obligation that survives is that the pass is not SILENT: both gates
+        and both kinds are printed, under a heading that says they do not
+        block.
+        """
         path = tmp_path / "attacked.diff"
         path.write_text(_attacked_pre_fix(), encoding="utf-8")
-        assert vge.main(["--diff-file", str(path)]) == 1
+        rc = vge.main(["--diff-file", str(path)])
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "ADVISORY:" in out, out
+        assert ARMING_GATE in out and VERDICT_GATE in out, out
+        assert "missing-composite-pin" in out and "missing-refusal-direction" in out
 
-    def test_the_attack_is_refused_by_the_blocking_checkpoint(
+    def test_the_attack_passes_the_checkpoint_but_is_printed_not_hidden(
         self, monkeypatch, capsys
     ):
-        """Through the REAL consumer, not `analyze` — review lesson 16."""
+        """Through the REAL consumer, not `analyze` — review lesson 16.
+
+        Renamed from `..._is_refused_by_the_blocking_checkpoint`. The phase is
+        still in the blocking tier (`TestPhaseIsRegisteredAndBlocking`); these
+        two FINDING KINDS are not, so the exit code is 0. What must not happen
+        is a pass that reads like a clean one: the attack may not produce the
+        gate-free verdict, and it may not claim the gates carry both
+        directions.
+        """
         monkeypatch.setattr(
             vc, "_gate_evidence_diff", lambda issue_id: _attacked_pre_fix()
         )
-        assert vc.verify_review_gate_evidence("ISSUE-078") is False
+        assert vc.verify_review_gate_evidence("ISSUE-078") is True
+        capsys.readouterr()
         rc = vc.main(
             ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-078"]
         )
         out = capsys.readouterr().out
-        assert rc == 1, out
-        assert "carry both directions" not in out, out
+        assert rc == 0, out
+        assert GATE_FREE not in out, out
+        assert f"both directions: {ARMING_GATE}" not in out, out
+        assert f"both directions: {VERDICT_GATE}" not in out, out
         assert ARMING_GATE in out and VERDICT_GATE in out, out
-        assert "ADVISORY:" not in out, "this phase must be blocking"
+        assert "ADVISORY:" in out, out
 
     def test_the_remedy_for_the_undirected_kind_discloses_its_error_rate(self):
         """The 59% class must be disclosed in the output, not hidden.
@@ -1629,6 +1803,508 @@ class TestTheArmOnlyAttackIsBlocked:
         finding = _finding_for(vge.analyze(_diff(PRE_FIX)), VERDICT_GATE)
         assert finding.kind == "missing-disarm-battery"
         assert "16 of 27" not in finding.message, finding.message
+
+
+# ── The TIER SPLIT (SPEC-081 amendment 2026-10-24, decision 6) ───────
+#
+# `missing-disarm-battery` BLOCKS. It fires only when `attributed == []`, which
+# is pure syntax through `_calls` (a literal symbol-name regex) and
+# `_attributed` (a name-token match on the vacuity guard); it never consults
+# `_refusal_shaped`, so no polarity judgement can make it fire or not fire.
+#
+# `missing-refusal-direction` and `missing-composite-pin` ADVISE. Both route
+# through `_refusal_shaped`, and predicate polarity is not decidable for a
+# detector-shaped gate: `assert detected is True` IS the refusal there.
+#
+# The PHASE is unchanged and still blocking — `("review", "gate-evidence")` is
+# absent from `ADVISORY_PHASES`, pinned by `TestPhaseIsRegisteredAndBlocking`.
+# What is advisory is a FINDING KIND, not the phase.
+#
+# The property this whole section exists to hold: the tier is stated ONCE, in
+# `vge.BLOCKING_KINDS`, and the rendered section, the CLI exit code and
+# `verify_review_gate_evidence`'s boolean all derive from it. A kind that is
+# advisory in the renderer and blocking in the consumer — or the reverse — is a
+# new fail-open of exactly the shape ISSUE-081 exists to stop.
+
+
+def _engine_finding_kinds() -> set[str]:
+    """Every finding kind `analyze` can emit, read from the ENGINE's own AST.
+
+    Enumerated from the implementation rather than re-typed here. A re-typed
+    list cannot fail when a fourth kind is added, and an unclassified kind
+    silently inherits the advisory tier (`kind not in BLOCKING_KINDS`), which
+    is the fail-open direction — so the list has to come from the thing it is
+    supposed to be checking (review lesson 16: import the oracle).
+    """
+    tree = ast.parse(
+        (ROOT / "scripts" / "verify_gate_evidence.py").read_text(encoding="utf-8")
+    )
+    analyze = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "analyze"
+    )
+    return {
+        node.value
+        for node in ast.walk(analyze)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("missing-")
+    }
+
+
+#: One diff per emittable kind, each provoking exactly that kind and nothing
+#: else. The keys are asserted EQUAL to `_engine_finding_kinds()`, so a fourth
+#: kind with no entry here fails rather than going unclassified.
+_KIND_CORPUS = {
+    "missing-disarm-battery": _SINGLE_CASE_DIFF,
+    "missing-refusal-direction": _ARM_ONLY_DIFF,
+    "missing-composite-pin": _HELPER_ONLY_DIFF,
+}
+
+
+def _rendered_sections(report) -> dict[str, list[str]]:
+    """The rendered finding lines, split by the verdict heading above them."""
+    sections: dict[str, list[str]] = {"FAIL": [], "ADVISORY": [], "PASS": []}
+    current: str | None = None
+    for line in vge.format_report(report):
+        head = line.split(":", 1)[0]
+        if head in sections:
+            current = head
+            continue
+        if current and line.lstrip().startswith("- ["):
+            sections[current].append(line)
+    return sections
+
+
+class TestTheTierIsStatedOnceAndDerivedEverywhere:
+    """One source of truth: `BLOCKING_KINDS`, and nothing may re-state it."""
+
+    def test_the_corpus_covers_every_kind_the_engine_can_emit(self):
+        """Vacuity guard for the whole section: no kind may go unexercised."""
+        assert set(_KIND_CORPUS) == _engine_finding_kinds(), (
+            set(_KIND_CORPUS) ^ _engine_finding_kinds()
+        )
+
+    def test_only_the_decidable_kind_blocks(self):
+        assert vge.BLOCKING_KINDS == frozenset({"missing-disarm-battery"}), (
+            vge.BLOCKING_KINDS
+        )
+
+    @pytest.mark.parametrize("kind", sorted(_KIND_CORPUS))
+    def test_the_mapping_the_renderer_and_the_exit_code_agree(
+        self, kind, tmp_path, monkeypatch, capsys
+    ):
+        """Three independent statements of the tier must be the same statement."""
+        diff = _KIND_CORPUS[kind]
+        report = vge.analyze(diff)
+
+        # Fixture pin: this diff provokes exactly this kind, so a disagreement
+        # below cannot be another finding's.
+        assert [f.kind for f in report.findings] == [kind], report.findings
+
+        blocks = kind in vge.BLOCKING_KINDS
+        assert report.findings[0].tier == ("blocking" if blocks else "advisory")
+
+        sections = _rendered_sections(report)
+        landed, other = ("FAIL", "ADVISORY") if blocks else ("ADVISORY", "FAIL")
+        assert any(kind in line for line in sections[landed]), sections
+        assert not any(kind in line for line in sections[other]), sections
+
+        path = tmp_path / f"{kind}.diff"
+        path.write_text(diff, encoding="utf-8")
+        assert vge.main(["--diff-file", str(path)]) == (1 if blocks else 0)
+        capsys.readouterr()
+
+        monkeypatch.setattr(vc, "_gate_evidence_diff", lambda issue_id: diff)
+        assert vc.verify_review_gate_evidence("ISSUE-081") is (not blocks)
+
+    @pytest.mark.parametrize(
+        "fixture", [PRE_FIX, POST_FIX, NON_GATE, COLLIDING],
+        ids=lambda p: p.stem,
+    )
+    def test_the_two_tiers_partition_the_findings(self, fixture):
+        """`findings` is unchanged for existing callers; the tiers split it."""
+        report = vge.analyze(_diff(fixture))
+        assert (
+            list(report.blocking_findings) + list(report.advisory_findings)
+        ) == sorted(report.findings, key=lambda f: f.tier != "blocking"), report
+        assert set(report.blocking_findings) | set(report.advisory_findings) == set(
+            report.findings
+        )
+        assert not set(report.blocking_findings) & set(report.advisory_findings)
+
+    @pytest.mark.parametrize(
+        "script,function",
+        [
+            ("verify_gate_evidence.py", "format_report"),
+            ("verify_gate_evidence.py", "_pass_line"),
+            ("verify_gate_evidence.py", "main"),
+            ("verify_checkpoint.py", "verify_review_gate_evidence"),
+        ],
+        ids=lambda value: value.replace(".py", ""),
+    )
+    def test_no_tier_consumer_re_types_a_kind_name(self, script, function):
+        """A kind literal in CODE at a tier decision IS a second mapping.
+
+        Docstrings are excluded on purpose: naming the kinds in prose is how
+        the split is documented, and a check that forbade that would push the
+        explanation out of the file. What must not exist is a kind string the
+        renderer or a consumer can branch on.
+        """
+        kinds = _engine_finding_kinds()
+        # Vacuity guard: an empty kind set would make every assertion below
+        # pass without reading anything.
+        assert kinds, "no finding kinds found — the AST probe has drifted"
+
+        tree = ast.parse(
+            (ROOT / "scripts" / script).read_text(encoding="utf-8")
+        )
+        func = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == function
+        )
+        docstrings = {
+            id(node.value)
+            for node in ast.walk(func)
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+        }
+        code_literals = {
+            node.value
+            for node in ast.walk(func)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in docstrings
+        }
+        assert not code_literals & kinds, (
+            script, function, code_literals & kinds
+        )
+
+
+class TestTheTierAgreesThroughTheRealConsumer:
+    """Review lesson 16: the new defence, driven through its real consumer.
+
+    The helper is `analyze`; the real consumer is
+    `verify_checkpoint.verify_review_gate_evidence`, whose boolean is the
+    review phase's exit code. A tier that is advisory in the renderer and
+    blocking in the consumer is the fail-open this section exists to stop, so
+    both legs are asserted on the same bytes.
+    """
+
+    def test_an_advisory_only_diff_passes_and_the_advisory_is_still_printed(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A demotion that is silent is worse than no demotion at all."""
+        report = vge.analyze(_ARM_ONLY_DIFF)
+        assert [f.kind for f in report.findings] == ["missing-refusal-direction"]
+        assert report.blocking_findings == (), report.blocking_findings
+        assert len(report.advisory_findings) == 1, report.advisory_findings
+
+        path = tmp_path / "advisory_only.diff"
+        path.write_text(_ARM_ONLY_DIFF, encoding="utf-8")
+        rc = vge.main(["--diff-file", str(path)])
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "ADVISORY:" in out, out
+        assert "missing-refusal-direction" in out, out
+        assert _DEMO_GATE in out, out
+        # Nor may it read like a diff in which no gate was ever detected.
+        assert GATE_FREE not in out, out
+
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _ARM_ONLY_DIFF
+        )
+        assert vc.verify_review_gate_evidence("ISSUE-081") is True
+        consumed = capsys.readouterr().out
+        assert "ADVISORY:" in consumed, consumed
+        assert _DEMO_GATE in consumed, consumed
+
+    def test_the_advisory_block_says_why_it_does_not_block(self):
+        """Cite the amendment, or the demotion reads as an oversight."""
+        rendered = "\n".join(vge.format_report(vge.analyze(_ARM_ONLY_DIFF)))
+        heading = next(
+            line for line in rendered.split("\n") if line.startswith("ADVISORY:")
+        )
+        assert "NOT BLOCKING" in heading.upper(), heading
+        assert "SPEC-081" in heading, heading
+        assert "2026-10-24" in heading, heading
+        assert "decision 6" in heading, heading
+
+    def test_a_missing_disarm_battery_diff_blocks_at_every_layer(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        report = vge.analyze(_SINGLE_CASE_DIFF)
+        assert [f.kind for f in report.findings] == ["missing-disarm-battery"]
+        assert len(report.blocking_findings) == 1, report.blocking_findings
+        assert report.advisory_findings == (), report.advisory_findings
+
+        path = tmp_path / "blocking.diff"
+        path.write_text(_SINGLE_CASE_DIFF, encoding="utf-8")
+        rc = vge.main(["--diff-file", str(path)])
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert "FAIL:" in out, out
+        assert "ADVISORY:" not in out, "nothing advisory was found in this diff"
+
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _SINGLE_CASE_DIFF
+        )
+        assert vc.verify_review_gate_evidence("ISSUE-081") is False
+        capsys.readouterr()
+        assert (
+            vc.main(
+                ["--skill", "review", "--phase", "gate-evidence",
+                 "--issue", "ISSUE-081"]
+            )
+            == 1
+        )
+
+    def test_the_fail_line_says_the_findings_are_in_the_blocking_tier(self):
+        rendered = "\n".join(vge.format_report(vge.analyze(_SINGLE_CASE_DIFF)))
+        heading = next(
+            line for line in rendered.split("\n") if line.startswith("FAIL:")
+        )
+        assert "BLOCKING" in heading.upper(), heading
+
+    def test_a_mixed_diff_prints_both_sections_and_blocks(
+        self, monkeypatch, capsys
+    ):
+        """Both tiers at once: the advisory block prints alongside the FAIL."""
+        report = vge.analyze(_diff(PRE_FIX))
+        assert len(report.blocking_findings) == 1, report.blocking_findings
+        assert len(report.advisory_findings) == 1, report.advisory_findings
+
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _diff(PRE_FIX)
+        )
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence", "--issue", "ISSUE-078"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert "FAIL:" in out and "ADVISORY:" in out, out
+        head, tail = out.split("ADVISORY:", 1)
+        assert VERDICT_GATE in head, head
+        assert ARMING_GATE in tail, tail
+
+    def test_the_pass_line_is_not_an_unqualified_both_directions_claim(self):
+        """"N gate(s) carry both directions" is false when an advisory stands.
+
+        The gate in `_ARM_ONLY_DIFF` carries neither direction — it is merely
+        not blocked. A PASS line that reads the same as a genuinely evidenced
+        PR is the "legitimate quiet output is identical to defeated output"
+        failure this suite already refuses elsewhere.
+        """
+        advisory = "\n".join(vge.format_report(vge.analyze(_ARM_ONLY_DIFF)))
+        clean = "\n".join(vge.format_report(vge.analyze(_BOTH_DIRECTIONS_DIFF)))
+
+        # Fixture pin: the clean diff really is the evidenced one.
+        assert f"both directions: {_DEMO_GATE}" in clean, clean
+        assert "ADVISORY:" not in clean, clean
+
+        pass_line = next(
+            line for line in advisory.split("\n") if line.startswith("PASS:")
+        )
+        assert f"both directions: {_DEMO_GATE}" not in pass_line, pass_line
+        assert "advisory" in pass_line.lower(), pass_line
+
+    def test_the_exempted_suffix_survives_alongside_an_advisory(self):
+        """Both disclosures on ONE pass line: a waiver AND an advisory.
+
+        `test_the_pass_line_distinguishes_evidenced_from_exempted` already
+        pins the waiver suffix on its own. What is new under the split is that
+        a pass can now be qualified TWICE, and a renderer that overwrote one
+        clause with the other would hide the waiver the SPEC's "defeating this
+        gate is visible" claim rests on.
+        """
+        anchor = "+ROSTER_BOUNDARY_EXIT = 3"
+        assert anchor in _diff(PRE_FIX)
+        text = _diff(PRE_FIX).replace(
+            anchor,
+            f"+# GATE-EVIDENCE-EXEMPT({VERDICT_GATE}): waived for this test\n"
+            + anchor,
+            1,
+        )
+        report = vge.analyze(text)
+        assert report.blocking_findings == (), report.blocking_findings
+        assert [f.symbol for f in report.advisory_findings] == [ARMING_GATE]
+
+        pass_line = next(
+            line for line in vge.format_report(report) if line.startswith("PASS:")
+        )
+        assert "advisory" in pass_line.lower(), pass_line
+        assert "exempted, NOT evidenced" in pass_line, pass_line
+        assert VERDICT_GATE in pass_line.split("exempted, NOT evidenced")[1]
+
+
+#: The per-fixture tier breakdown recorded in SPEC-081's 2026-10-24 amendment,
+#: decision 6 — pinned here exactly as measured, because the aggregate ("the
+#: exit code is identical on all four fixtures") hides which symbol carries it.
+#: Each row is (label, fixture, blocking, advisory, exit code), and the two
+#: finding lists are in the engine's own emission order.
+_FIXTURE_TIERS = [
+    (
+        "issue_078_pre_fix",
+        PRE_FIX,
+        [("cmd_validate", "missing-disarm-battery")],
+        [("sprint_status_is_running", "missing-composite-pin")],
+        1,
+    ),
+    (
+        "issue_078_post_fix",
+        POST_FIX,
+        [("cmd_validate", "missing-disarm-battery")],
+        [],
+        1,
+    ),
+    ("issue_074_non_gate", NON_GATE, [], [], 0),
+    (
+        "issue_056_colliding_main",
+        COLLIDING,
+        [
+            ("run_literal_quote", "missing-disarm-battery"),
+            ("run_signature_move", "missing-disarm-battery"),
+            ("run_ai_tell", "missing-disarm-battery"),
+            ("_py_function_asserts", "missing-disarm-battery"),
+        ],
+        [
+            ("main", "missing-composite-pin"),
+            ("main", "missing-composite-pin"),
+        ],
+        1,
+    ),
+]
+
+
+class TestTheMeasuredFixtureTable:
+    """The amendment's table, pinned on the committed fixtures."""
+
+    @pytest.mark.parametrize(
+        "label,fixture,blocking,advisory,exit_code",
+        _FIXTURE_TIERS,
+        ids=[row[0] for row in _FIXTURE_TIERS],
+    )
+    def test_each_fixture_splits_exactly_as_measured(
+        self, label, fixture, blocking, advisory, exit_code, capsys
+    ):
+        report = vge.analyze(_diff(fixture))
+        assert [
+            (f.symbol, f.kind) for f in report.blocking_findings
+        ] == blocking, label
+        assert [
+            (f.symbol, f.kind) for f in report.advisory_findings
+        ] == advisory, label
+        assert vge.main(["--diff-file", str(fixture)]) == exit_code, label
+        capsys.readouterr()
+
+    def test_the_non_gate_fixture_detects_nothing_at_all(self):
+        """AC-3 is unchanged by the split, and can only be weakened by it."""
+        report = vge.analyze(_diff(NON_GATE))
+        assert report.gates == (), report.gates
+        assert report.findings == (), report.findings
+
+    def test_the_motivating_ISSUE_078_gate_is_ADVISORY_not_blocking(self):
+        """State the cost of the split plainly rather than let the exit code hide it.
+
+        `sprint_status_is_running` is the gate that actually failed open in
+        ISSUE-078. After the split its finding is advisory, and
+        `issue_078_pre_fix.diff` still exits 1 only because the same diff adds
+        a SECOND gate, `cmd_validate`, with no attributed battery at all.
+        "Identical exit code on all four fixtures" is true and is not evidence
+        that the motivating case is still blocked (SPEC-081 amendment,
+        decision 6; AC-1 as originally written is NOT met and is not claimed).
+        """
+        report = vge.analyze(_diff(PRE_FIX))
+        arming = _finding_for(report, ARMING_GATE)
+        assert arming is not None, report.findings
+        assert arming.tier == "advisory", arming.tier
+        assert arming not in report.blocking_findings, report.blocking_findings
+        assert arming in report.advisory_findings, report.advisory_findings
+
+        verdict = _finding_for(report, VERDICT_GATE)
+        assert verdict.tier == "blocking", verdict.tier
+        assert vge.main(["--diff-file", str(PRE_FIX)]) == 1
+
+
+class TestTheTierMappingIsLoadBearing:
+    """AC-5, both directions, on `BLOCKING_KINDS` itself.
+
+    Deliberately NOT in `_REAL_MUTANTS`: `_contract_holds()` reads
+    `report.findings`, which the split leaves untouched, so every
+    `BLOCKING_KINDS` mutant survives that oracle. Isolated here on the diffs
+    that can see the knob — the same treatment `MIN_VARIANTS`,
+    `REQUIRE_CONSUMER_OUTCOME` and `REQUIRE_INPUT_ONLY_PARAMS` already get.
+    """
+
+    def test_promoting_the_undecidable_kind_is_observable(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        path = tmp_path / "arm_only.diff"
+        path.write_text(_ARM_ONLY_DIFF, encoding="utf-8")
+
+        # Armed: an advisory-only diff passes, at the CLI and at the consumer.
+        assert vge.main(["--diff-file", str(path)]) == 0
+        capsys.readouterr()
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _ARM_ONLY_DIFF
+        )
+        assert vc.verify_review_gate_evidence("ISSUE-081") is True
+        capsys.readouterr()
+
+        monkeypatch.setattr(
+            vge,
+            "BLOCKING_KINDS",
+            frozenset({"missing-disarm-battery", "missing-refusal-direction"}),
+        )
+        assert vge.main(["--diff-file", str(path)]) == 1, (
+            "mutant SURVIVED: promoting `missing-refusal-direction` into "
+            "BLOCKING_KINDS must change the exit code, or the exit code is "
+            "not derived from the mapping"
+        )
+        capsys.readouterr()
+        assert vc.verify_review_gate_evidence("ISSUE-081") is False, (
+            "mutant SURVIVED at the real consumer: its boolean must derive "
+            "from the same mapping the CLI does"
+        )
+
+    def test_dropping_the_decidable_kind_is_observable(
+        self, monkeypatch, capsys
+    ):
+        # Armed: the real pre-fix fixture blocks on `cmd_validate`.
+        assert vge.main(["--diff-file", str(PRE_FIX)]) == 1
+        capsys.readouterr()
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _diff(PRE_FIX)
+        )
+        assert vc.verify_review_gate_evidence("ISSUE-078") is False
+        capsys.readouterr()
+
+        monkeypatch.setattr(vge, "BLOCKING_KINDS", frozenset())
+        assert vge.main(["--diff-file", str(PRE_FIX)]) == 0, (
+            "mutant SURVIVED: emptying BLOCKING_KINDS must stop the pre-fix "
+            "fixture from blocking, or something else is deciding the tier"
+        )
+        capsys.readouterr()
+        assert vc.verify_review_gate_evidence("ISSUE-078") is True, (
+            "mutant SURVIVED at the real consumer"
+        )
+
+    def test_the_rendered_section_follows_the_mapping_too(self, monkeypatch):
+        """Not just the exit code: the renderer must read the same constant."""
+        before = _rendered_sections(vge.analyze(_ARM_ONLY_DIFF))
+        assert before["ADVISORY"] and not before["FAIL"], before
+
+        monkeypatch.setattr(
+            vge,
+            "BLOCKING_KINDS",
+            frozenset({"missing-disarm-battery", "missing-refusal-direction"}),
+        )
+        after = _rendered_sections(vge.analyze(_ARM_ONLY_DIFF))
+        assert after["FAIL"] and not after["ADVISORY"], (
+            "mutant SURVIVED: the renderer must place a finding by the "
+            "mapping, not by a second statement of the tier"
+        )
 
 
 # ── The known weakness, pinned rather than left as prose ─────────────
@@ -2468,7 +3144,10 @@ class TestUntrackedFilesAreAcquired:
         out = capsys.readouterr().out
         assert rc == 1, out
         assert _REPO_GATE in out, out
-        assert "ADVISORY:" not in out, "this phase must be blocking, not advisory"
+        assert "ADVISORY:" not in out, (
+            "this gate's only finding is `missing-disarm-battery`, the "
+            "BLOCKING kind, so no advisory block may be printed"
+        )
 
     def test_an_untracked_test_is_still_credited_as_evidence(
         self, tmp_path, monkeypatch, capsys
@@ -3228,7 +3907,10 @@ class TestUntrackedNonAsciiPathsAreAcquired:
         out = capsys.readouterr().out
         assert rc == 1, out
         assert _REPO_GATE in out, out
-        assert "ADVISORY:" not in out, "this phase must be blocking, not advisory"
+        assert "ADVISORY:" not in out, (
+            "this gate's only finding is `missing-disarm-battery`, the "
+            "BLOCKING kind, so no advisory block may be printed"
+        )
 
     def test_an_untracked_non_ascii_gate_matches_a_committed_one(
         self, tmp_path, monkeypatch, capsys

@@ -1446,12 +1446,25 @@ def _gate_evidence_diff(issue_id: str) -> str | None:
 
 
 def verify_review_gate_evidence(issue_id: str, **_) -> bool:
-    """Every gate the diff adds carries a disarm battery AND a composite pin.
+    """Every gate the diff adds is mentioned by at least one added test battery.
 
     ISSUE-081 / SPEC-081. "A newly added defence fails OPEN" was measured at
     High severity in four consecutive sprints; the common shape was a missing
     test DIRECTION, not a coding mistake. ``verify_gate_evidence.analyze`` is
     the detector; this phase is its blocking consumer.
+
+    The phase stays in the BLOCKING tier (it is absent from
+    ``ADVISORY_PHASES``), but only one finding KIND can fail it. Per SPEC-081's
+    2026-10-24 amendment, decision 6, ``missing-disarm-battery`` blocks because
+    it is decidable from the diff text alone — it fires only when no added
+    battery is attributed to the gate at all — while
+    ``missing-refusal-direction`` and ``missing-composite-pin`` are reported
+    and never block, because both rest on assertion polarity and polarity is
+    not decidable for a detector-shaped gate. The boolean below is read from
+    ``report.blocking_findings``, i.e. from
+    ``verify_gate_evidence.BLOCKING_KINDS``, which is the single place the tier
+    is stated; this function must not re-state it. Decision 8 records the
+    residual honestly: an arm-only author is surfaced here, not blocked.
     """
     diff_text = _gate_evidence_diff(issue_id)
     # A PASS is only trustworthy over a non-empty subject: `analyze("")` finds
@@ -1471,7 +1484,7 @@ def verify_review_gate_evidence(issue_id: str, **_) -> bool:
     report = vge.analyze(diff_text)
     for line in vge.format_report(report):
         print(line)
-    return not report.findings
+    return not report.blocking_findings
 
 
 def verify_review_visual_diff(issue_id: str, **_) -> bool:

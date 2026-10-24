@@ -72,12 +72,31 @@ written for it, and no acceptance criterion names one. The real consumer is
 ``verify_checkpoint._gate_evidence_diff``, which computes its own diff with the
 merge-base correction the deleted leg lacked.
 
-Exit code: 0 when the diff adds no gate, or every added gate is evidenced or
-exempted; 1 when an added gate lacks its paired evidence; 2 on a usage error —
-which includes a ``--diff-file`` whose decoded text holds no ``+++ `` header at
-all, because a PASS over unreadable bytes renders byte-identically to a PASS
-over a clean diff (measured: a UTF-16 file printed the gate-free verdict and
-exited 0).
+Exit code, after the TIER SPLIT (SPEC-081 amendment 2026-10-24, decision 6):
+the three finding kinds no longer carry the same weight, and ``BLOCKING_KINDS``
+below is the single place that says which do.
+
+* **1** when an added gate carries a BLOCKING finding —
+  ``missing-disarm-battery``, i.e. no added test battery is attributed to the
+  gate at all. That property is decidable from the diff text alone, so it is an
+  exit code.
+* **0** when the diff adds no gate, when every added gate is evidenced or
+  exempted, **and also** when the only findings are ADVISORY —
+  ``missing-refusal-direction`` and ``missing-composite-pin``, both of which
+  rest on assertion polarity. They are still printed, under their own heading,
+  because a demotion that is silent is worse than no demotion; they just do not
+  fail the phase. Decision 8 records the residual without softening it: an
+  author who writes only arm-direction tests produces an *attributed* battery
+  and is therefore surfaced here, not blocked.
+* **2** on a usage error — which includes a ``--diff-file`` whose decoded text
+  holds no ``+++ `` header at all, because a PASS over unreadable bytes renders
+  byte-identically to a PASS over a clean diff (measured: a UTF-16 file printed
+  the gate-free verdict and exited 0).
+
+The PHASE is unchanged: ``("review", "gate-evidence")`` stays out of
+``verify_checkpoint.ADVISORY_PHASES``, so this is not the blanket Option G the
+2026-10-14 amendment rejected — the obligation remains a non-zero exit for the
+decidable property.
 
 The diff text may be in any rendering the real tools produce: git's DEFAULT
 C-quoted path for a non-ASCII filename (``+++ "b/scripts/gat\\303\\251.py"``),
@@ -98,6 +117,37 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+# ── The finding TIER (SPEC-081 amendment 2026-10-24, decision 6) ─────
+
+#: THE one statement of which finding kinds block. The rendered verdict
+#: vocabulary, the CLI exit code and
+#: ``verify_checkpoint.verify_review_gate_evidence``'s boolean all DERIVE from
+#: this set; none of them may re-state it. A kind that is advisory in the
+#: renderer and blocking in the consumer — or the reverse — is a new fail-open
+#: of exactly the shape ISSUE-081 exists to stop.
+#:
+#: Why this kind and ONLY this kind is decidable: ``missing-disarm-battery``
+#: fires if and only if ``attributed == []``, which is computed purely from
+#: ``_calls`` (a literal symbol-name regex) and ``_attributed`` (a name-token
+#: match on the vacuity guard). It never consults ``_refusal_shaped``, so no
+#: polarity judgement can make it fire or not fire; the property it asserts —
+#: "no added test battery mentions this gate at all" — is true or false in the
+#: diff text and nowhere else.
+#:
+#: Why the other two only advise: both route through ``_refusal_shaped``, and
+#: predicate polarity is NOT decidable for a detector-shaped gate, where the
+#: disarm direction is correctly written ``assert detected is True`` — the
+#: arm-shaped expectation IS the refusal. Measured over this repo's own 4047
+#: assert lines, 598 (14.8%) are credited as refusals, ~40% of them bare
+#: ``len()``/``count()`` comparisons; the committed decisive fixture reached
+#: exit 0 on batteries whose only "refusal" was ``status_code == 200``.
+#:
+#: The PHASE is unaffected: ``("review", "gate-evidence")`` stays OUT of
+#: ``verify_checkpoint.ADVISORY_PHASES``, so the obligation is still an exit
+#: code for the decidable half. What is advisory is a finding KIND.
+BLOCKING_KINDS = frozenset({"missing-disarm-battery"})
+
 
 # ── Tunables (mutation-pinned by tests/test_gate_evidence_contract.py) ──
 
@@ -362,10 +412,23 @@ class Finding:
     kind: str
     message: str
 
+    @property
+    def tier(self) -> str:
+        """``"blocking"`` or ``"advisory"``, DERIVED from `kind`.
+
+        Deliberately not a stored field: a tier that can be passed in at
+        construction can disagree with the kind it was computed from, and a
+        kind/tier disagreement is the fail-open the split exists to avoid.
+        """
+        return "blocking" if self.kind in BLOCKING_KINDS else "advisory"
+
 
 @dataclass(frozen=True)
 class Report:
     gates: tuple[Gate, ...]
+    #: EVERY finding, both tiers, in detection order. Unchanged by the
+    #: 2026-10-24 split so that callers which only want "what did this diff
+    #: get told about" keep working; the two properties below are the split.
     findings: tuple[Finding, ...]
     #: ``(path, symbol, reason)``. Path-qualified because an exemption is only
     #: honoured in the file that defines the gate.
@@ -374,6 +437,16 @@ class Report:
     #: same-named gates in different files (measured: PR #101 detects 6 gates
     #: and used to yield 5 records).
     evidence: dict[tuple[str, str], dict[str, bool]]
+
+    @property
+    def blocking_findings(self) -> tuple[Finding, ...]:
+        """The findings that make this phase exit non-zero."""
+        return tuple(f for f in self.findings if f.tier == "blocking")
+
+    @property
+    def advisory_findings(self) -> tuple[Finding, ...]:
+        """The findings that are reported and never block."""
+        return tuple(f for f in self.findings if f.tier == "advisory")
 
 
 # ── Diff parsing ─────────────────────────────────────────────────────
@@ -1084,6 +1157,9 @@ _DISARM_MESSAGE = (
 #: who cannot tell the two apart cannot calibrate either, so the message states
 #: the error rate, the mechanisms, and the escape (SPEC-081 amendment, 1).
 _UNDIRECTED_MESSAGE = (
+    "ADVISORY, does not block (SPEC-081 amendment 2026-10-24, decision 6): "
+    "this kind rests on assertion POLARITY, which is not decidable for a "
+    "detector-shaped gate, so it is reported and never fails the phase. "
     "{symbol} ({path}:{line}) has {batteries} added battery/batteries "
     "attributed to it, but none of them is recognised as asserting a REFUSAL "
     "— every expected side reads as success (`is True`, `== 0`, `!= False`), "
@@ -1103,6 +1179,11 @@ _UNDIRECTED_MESSAGE = (
 )
 
 _COMPOSITE_MESSAGE = (
+    "ADVISORY, does not block (SPEC-081 amendment 2026-10-24, decision 6): "
+    "the composite half asks whether the consumer-level literal is "
+    "refusal-shaped, which runs through the same lexical polarity test as the "
+    "direction half and is not decidable for a detector-shaped gate, so it is "
+    "reported and never fails the phase. "
     "{symbol} ({path}:{line}) is evidenced at the HELPER only — no composite "
     "battery drives it through its real CONSUMER. ISSUE-078 is the motivating "
     "case: the helper's own assertions all passed while `validate` and "
@@ -1236,8 +1317,51 @@ def analyze(diff_text: str) -> Report:
     return Report(gates, tuple(findings), tuple(exemptions), evidence)
 
 
+def _pass_line(report: Report) -> str:
+    """The PASS summary, qualified by everything that makes it less than clean.
+
+    "N gate(s) carry both directions" is a FALSE claim about a gate that only
+    escaped the exit code because its finding is advisory, and about a gate
+    that was waived. Both are therefore excluded from the count and named in
+    their own suffix — a pass that reads the same whether the rule was
+    satisfied, merely advised, or waived is the "legitimate quiet output is
+    identical to defeated output" failure.
+    """
+    exempted = {(path, symbol) for path, symbol, _ in report.exemptions}
+    # Counted per (path, symbol), so the numbers match the number of gates
+    # actually waived / advised. Keyed on the bare symbol, one marker could
+    # waive two same-named gates in two files and still print `1 exempted`,
+    # under-reporting the blast radius of the waiver — and this PASS line is
+    # the artifact SPEC-081's "defeating it is visible" claim rests on.
+    keys = {(gate.path, gate.symbol) for gate in report.gates}
+    advised = {(f.path, f.symbol) for f in report.advisory_findings}
+    evidenced = sorted(symbol for _, symbol in keys - exempted - advised)
+    summary = (
+        f"PASS: gate-evidence — no BLOCKING finding. {len(evidenced)} gate(s) "
+        f"carry both directions: {', '.join(evidenced) or 'none'}"
+    )
+    noted = sorted(f"{path}:{symbol}" for path, symbol in advised & keys)
+    if noted:
+        summary += (
+            f" | {len(noted)} ADVISORY, NOT blocking and NOT evidenced: "
+            f"{', '.join(noted)}"
+        )
+    charged = sorted(f"{path}:{symbol}" for path, symbol in exempted & keys)
+    if charged:
+        summary += (
+            f" | {len(charged)} exempted, NOT evidenced: {', '.join(charged)}"
+        )
+    return summary
+
+
 def format_report(report: Report) -> list[str]:
-    """Render a report as the lines the review checkpoint prints."""
+    """Render a report as the lines the review checkpoint prints.
+
+    Two sections, and which section a finding lands in is read from
+    `BLOCKING_KINDS` through `Finding.tier` — never re-decided here. A kind
+    that renders as advisory and exits non-zero (or the reverse) would be a
+    new fail-open; the renderer therefore names no kind of its own.
+    """
     # Path-qualified so the line reads as a deliberate waiver of a specific
     # gate. The accidental `.md` waiver this fix closed DID print; its reason
     # rendered as a truncated fragment of review prose that no reviewer would
@@ -1249,42 +1373,38 @@ def format_report(report: Report) -> list[str]:
     if not report.gates:
         lines.append(GATE_FREE_VERDICT)
         return lines
-    if not report.findings:
-        exempted = {(path, symbol) for path, symbol, _ in report.exemptions}
-        # Counted per (path, symbol), so the number matches the number of gates
-        # actually waived. Keyed on the bare symbol, one marker could waive two
-        # same-named gates in two files and still print `1 exempted`,
-        # under-reporting the blast radius of the waiver — and this PASS line is
-        # the artifact SPEC-081's "defeating it is visible" claim rests on.
-        keys = {(gate.path, gate.symbol) for gate in report.gates}
-        evidenced = sorted(symbol for _, symbol in keys - exempted)
-        # Say WHICH gates were evidenced and which were merely exempted. A pass
-        # that reads the same whether the rule was satisfied or waived is the
-        # "legitimate quiet output is identical to defeated output" failure.
-        summary = (
-            f"PASS: gate-evidence — {len(evidenced)} gate(s) carry both "
-            f"directions: {', '.join(evidenced) or 'none'}"
+
+    blocking, advisory = report.blocking_findings, report.advisory_findings
+
+    if blocking:
+        # The kind names come from `BLOCKING_KINDS`, not from prose: a heading
+        # that described the one blocking kind in words would go stale the
+        # moment the set changed, and a stale verdict is the defect this
+        # amendment is correcting.
+        lines.append(
+            f"FAIL: gate-evidence — {len(blocking)} gate(s) in the BLOCKING "
+            f"tier ({', '.join(sorted(BLOCKING_KINDS))}) (ISSUE-081 / SPEC-081)"
         )
-        charged = sorted(
-            f"{path}:{symbol}" for path, symbol in exempted & keys
+        lines.extend(f"  - [{f.kind}] {f.message}" for f in blocking)
+        lines.append(
+            "  Opt out only with an inline `# GATE-EVIDENCE-EXEMPT(<symbol>): "
+            "<reason>` in the diff, justified in the PR body."
         )
-        if charged:
-            summary += (
-                f" | {len(charged)} exempted, NOT evidenced: "
-                f"{', '.join(charged)}"
-            )
-        lines.append(summary)
-        return lines
-    lines.append(
-        f"FAIL: gate-evidence — {len(report.findings)} gate(s) added without "
-        "paired evidence (ISSUE-081 / SPEC-081)"
-    )
-    for finding in report.findings:
-        lines.append(f"  - [{finding.kind}] {finding.message}")
-    lines.append(
-        "  Opt out only with an inline `# GATE-EVIDENCE-EXEMPT(<symbol>): "
-        "<reason>` in the diff, justified in the PR body."
-    )
+    else:
+        lines.append(_pass_line(report))
+
+    # Printed whether or not the blocking tier fired: an advisory finding that
+    # only appears on an otherwise-clean run would be invisible exactly when a
+    # reviewer is already reading a failure.
+    if advisory:
+        lines.append(
+            f"ADVISORY: gate-evidence — {len(advisory)} finding(s), REPORTED "
+            f"and NOT BLOCKING. These kinds rest on assertion polarity, which "
+            f"is not decidable for a detector-shaped gate (there, `assert "
+            f"detected is True` IS the refusal), so they advise rather than "
+            f"block — SPEC-081 amendment 2026-10-24, decision 6."
+        )
+        lines.extend(f"  - [{f.kind}] {f.message}" for f in advisory)
     return lines
 
 
@@ -1330,7 +1450,10 @@ def main(argv: list[str] | None = None) -> int:
     for line in format_report(report):
         print(line)
 
-    return 1 if report.findings else 0
+    # Derived from `BLOCKING_KINDS` via `Finding.tier`, exactly like the
+    # rendered section above and like the real consumer's boolean. Three
+    # readings of one constant, never three statements of the tier.
+    return 1 if report.blocking_findings else 0
 
 
 if __name__ == "__main__":
