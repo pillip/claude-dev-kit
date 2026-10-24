@@ -169,11 +169,14 @@ def print_summary(summary: dict) -> None:
         evs = ", ".join(f"{k}×{v}" for k, v in sorted(s["script_events"].items())) or "—"
         print(f"  script events:       {evs}")
         # The aggregate that replaced ISSUE-067's per-emit stdout line
-        # (ISSUE-071): named here so the remediation is discoverable.
-        print(
-            f"  unattributed events: {s['unattributed_events']}"
-            f"  (set {kit_telemetry.RUN_ID_ENV} to attribute them)"
-        )
+        # (ISSUE-071). The remediation names the knob only when there is
+        # something to remediate — printing "set KIT_RUN_ID" next to a zero
+        # would re-introduce, inside the fix, the always-on noise the fix
+        # removes (review lesson 2 reads "name the knob in the failure
+        # message", not "in every message").
+        unattributed = s["unattributed_events"]
+        hint = f"  (set {kit_telemetry.RUN_ID_ENV} to attribute them)" if unattributed else ""
+        print(f"  unattributed events: {unattributed}{hint}")
 
 
 def main() -> None:

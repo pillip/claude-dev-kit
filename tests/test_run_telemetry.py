@@ -229,3 +229,28 @@ def test_trace_query_cli_reports_the_emitter_stream_by_default(tmp_path):
     summary = json.loads(result.stdout)["(no-session)"]
     assert summary["script_events"] == {"gates_degraded_path_used": 1}
     assert summary["unattributed_events"] == 1
+
+
+def test_the_knob_hint_appears_only_when_there_is_something_to_remediate(capsys):
+    """Both directions. Review lesson 2 says name the knob in the failure
+    message it remediates — printing `set KIT_RUN_ID` beside a zero would
+    rebuild, inside this fix, the always-on line the fix removes."""
+    noisy = summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": "e",
+         "skill_or_script": "s", "payload": {}, "run_id_fallback": "KIT_RUN_ID unset"},
+    ])
+    trace_query.print_summary(noisy)
+    out = capsys.readouterr().out
+    assert "unattributed events: 1" in out
+    assert f"set {kt.RUN_ID_ENV}" in out, "a real gap must name the knob"
+
+    clean = summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": "e",
+         "skill_or_script": "s", "payload": {}},
+    ])
+    trace_query.print_summary(clean)
+    out = capsys.readouterr().out
+    assert "unattributed events: 0" in out
+    assert kt.RUN_ID_ENV not in out, (
+        "with nothing to remediate the knob must not be mentioned"
+    )
