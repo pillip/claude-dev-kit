@@ -61,6 +61,10 @@
 - [ ] ISSUE-088: Decide the successor mechanism for the disarm-DIRECTION obligation, or decline the property outright _(track: platform, P1, 1d — durable carrier for SPEC-081 amendment decision 8: after the 2026-10-24 tier split the direction property is advisory, so the arm-only shape that shipped four consecutive fail-opens passes with a printed note; polarity is undecidable for a detector-shaped gate (598 of 4047 assert lines credited, ~40% bare counts), Option A and Option D are each 0 of 4, and the per-battery misclassification rate is 16 of 27 — decision issue, SPEC required, not a tightening of the direction predicate; depends on 081)_
 - [ ] ISSUE-089: Decide what corroboration makes it safe to resolve trunk through the remote-tracking ref — a bare branch name binds to the stale LOCAL `main` _(track: platform, P2, 1d — ISSUE-081 2026-10-24 rework residual: `_default_branch()` strips `refs/remotes/origin/main` to the bare `main`, which git DWIMs to `refs/heads/main`, so a branch forked from `origin/main`'s tip while the local trunk lags is diffed against the STALE LOCAL trunk and charged with commits it did not author — a wrong subject for the blocking `_gate_evidence_diff` AND for `_changed_files_vs_base`, shared with implement/red + implement/tests-written; the obvious fix NARROWS, which AC-9.3 forbids, so it needs a decision no ISSUE-081 AC names; decision issue, SPEC required; depends on 081)_
 - [ ] ISSUE-090: Decide how a record ABOUT a detector's trigger can live in the file that detector parses — three self-disarms in one issue _(track: platform, P2, 0.5d — learning-loop escalation: the review lesson "in a file a detector reads, never quote the detector's own trigger verbatim" reached Frequency 3 at High inside ISSUE-081 with no carrier (committed review notes' exemption marker moved a gate from evidenced to waived; a prior phase's descriptive prose parsed as a SECOND watermark declaration and `next-action` reported `rejected (2 field lines found, expected exactly one)`, disarming the sprint boundary silently across phases; the reviewer's own fix note re-armed it immediately); the live instance is fixed, the STRUCTURAL cause is not — in `parse_roster_watermark` the duplicate-count window is the whole file while acceptance is `## Meta`-scoped, so narrative prose can never be honoured but can always veto; decision issue, SPEC required, NOT a documentation lint; depends on none)_
+- [ ] ISSUE-091: Make the ship path delete both branch refs — `gh pr merge --delete-branch` deleted neither _(track: platform, P2, 0.5d — ISSUE-083 implement-phase discovery, mandated by ISSUE-083's AC-6 ("filed as its own issue rather than left in a PR body"), so ISSUE-083 cannot close until this exists; separate root cause from 083's resolution defect — worktree tenancy plus an unsurfaced remote-delete step, and no script-level call site to verify either; depends on 083)_
+- [ ] ISSUE-092: Decide what the worktree branch resolver keys on — the ladder reads a cache artifact of one hard-coded remote _(track: platform, P1, 1d — ISSUE-083 / PR #139 review: the ISSUE-083 harm verbatim at four seams on paths the kit itself walks, two of them empirically reproduced (a branch on origin with no cached tracking ref, and a remote not named `origin`, both silently re-root onto HEAD at exit 0 announcing `source=new-from-base`); plus a stale-cache hard refusal and a pre-existing early return that bypasses the refusal while PR #139's header newly states the fail-closed guarantee ABSOLUTELY; decision issue, SPEC required; depends on 083)_
+- [ ] ISSUE-093: Harden the worktree fail-closed path's own failure modes — a defeated knob validator, an unnamed escape, an invisible hang, and two untested refusals _(track: platform, P2, 1d — ISSUE-083 / PR #139 review: five findings against the refusal machinery itself, the theme being a fail-closed guard whose failure modes are unguarded or misreported (a multi-line `KIT_WORKTREE_FETCH_TIMEOUT` passes `grep -q`, exits 125 and is reported as `reason=remote-unreachable` on a healthy remote — and the obvious `grep -Exq` fix was measured NOT to close it); depends on 083)_
+- [ ] ISSUE-094: Stop the hollow-test predicate from failing `tests/conftest.py` — editing it reddens a blocking implement gate _(track: platform, P2, 0.5d — ISSUE-083 implement discovered and review confirmed: `test_dir_pattern` classifies every `tests/*.py` as a test file and `_has_real_tests("tests/conftest.py", wt)` returns False, so the blocking `implement/tests-written` gate goes red on any branch that touches conftest.py — in direct conflict with the standing review lesson that tells implementers to put hermetic env guards there; ISSUE-083 had to route around it and the review accepted that only as narrower-not-tighter, conditional on this fix; depends on none)_
 
 ### Doing
 
@@ -4839,11 +4843,11 @@ A PR that adds or tightens a gate cannot pass `/review` without evidence in both
 - PRD-Ref: none (kit self-development; observed first-hand 2026-10-11 during ISSUE-078's ship phase, pre-harm. Native-memory review lessons: "A newly added defence must be tested in the DISARM direction and through its real consumer" (ISSUE-081's pattern — the harm here is the silent fall-through, so the refusal test is the load-bearing one) and "A control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings" (the wrapper's success output is byte-identical whether it resolved the remote tip or re-rooted onto main) — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-083-worktree-remote-resolve
+- GH-Issue: #138
+- PR: https://github.com/pillip/claude-dev-kit/pull/139
 - Depends-On: none
 
 #### Goal
@@ -5467,5 +5471,296 @@ Where the roster-watermark detector will **recognise a declaration** is decided 
 
 #### Rollback
 `git revert` the PR. The revert direction is safe for **acceptance**: it restores the wider counting window, which can only refuse more declarations and fall back to the max-rostered-ID derivation — it cannot cause a forged boundary to be honoured. What it restores is the standing veto this issue exists to remove, so the cost of reverting is a recurrence of the silent self-disarm, not a widened dispatch. **Do not revert in halves**: if the recognition change is reverted, revert the `present`-contract change with it, because a narrowed `present` paired with a wide counting window would report "no declaration found" over a document that contains one — the one combination that turns the gate off instead of refusing. A revert must leave `_WATERMARK_FIELD_RE`, `_meta_section_bounds`, ISSUE-069's duplicate refusal and ISSUE-078's arming predicate at their pre-PR behaviour; a revert that moves any of them has reverted another issue's accepted decision by accident.
+
+---
+
+### ISSUE-091: Make the ship path delete both branch refs — `gh pr merge --delete-branch` deleted neither
+
+> **Mandated carrier.** ISSUE-083's AC-6 requires that a separate gap be "**filed as its own issue** rather than left in a PR body", and the iter-1 ship gate recorded ISSUE-083 as blocked until it exists. PR #139's body already asserts the filing in the past tense for something that had not happened, so this issue is also what makes that sentence true.
+>
+> **Measured, during ISSUE-078's ship.** `gh pr merge --delete-branch` deleted **neither** the local branch (the kit's own worktree still held it) **nor** the remote branch (deleted by hand afterwards). Reproduced in a scratch fixture rather than recalled: both `git branch -d <name>` and `git branch -D <name>` exit **1** with `error: cannot delete branch '<name>' used by worktree at '<path>'`, and the ref is still present afterwards. `gh pr merge --help` documents `-d` as "Delete the local and remote branch after merge" — **measured** against the installed `gh`.
+>
+> **Separate root cause — the verdict ISSUE-083's AC-6 asked for, recorded here as this issue's premise.** Different mechanism (worktree tenancy on the local side, plus a remote-delete step that produced no surfaced error), different layer (the ship path's `gh` invocation, not `scripts/worktree.sh`'s branch resolution), different remedy. ISSUE-083 fixes how a branch is *resolved*; nothing in it touches how a branch is *deleted*.
+>
+> **The datum that shapes the fix: there is no script-level call site.** `grep -rn 'delete-branch'` over `scripts/` and `skills/` returns **nothing** — **measured**. The deletion lives as prose in `skills/ship/SKILL.md.tmpl:45` ("merge via `gh pr merge` … and delete the branch as usual"), regenerated into `skills/ship/SKILL.md:93`, so it is model-executed and nothing verifies it happened. `verify_ship_cleanup` (`scripts/verify_checkpoint.py:1666`) inspects only `git worktree list --porcelain` for the issue slug and never reads a ref, so a run with both refs surviving prints `PASS: worktree cleaned up for <ID>` — **measured by reading the verifier**.
+>
+> **Not cosmetic.** A surviving remote branch plus the local ref that `wt_cleanup.sh` → `cmd_remove` then deletes unconditionally is exactly ISSUE-083's precondition — a remote-only branch — manufactured on the next re-create. Both steps of that chain are measured individually; the **composed** chain is **inferred**, and AC-5 exists to measure it.
+>
+> **The ordering conflict, stated rather than resolved here.** The natural fix — clean the worktree before merging, so the local delete can succeed — conflicts with the skill's current step order (merge is step 4, `wt_cleanup.sh` is step 5). Which order wins is part of this issue's work; the ACs below measure the **end state** so they hold whichever order is chosen.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-083 AC-6 mandated carrier, observed 2026-10-11 during ISSUE-078's ship and re-measured 2026-10-25 in a scratch fixture. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier — a PR body is not one"; "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings" — the ship path reports success with both refs still present)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-083
+
+#### Goal
+After the ship path runs, neither `refs/heads/<branch>` nor `origin`'s `refs/heads/<branch>` survives — or the run exits non-zero naming which one did, so a silently undeleted branch can no longer manufacture ISSUE-083's precondition.
+
+#### Scope (In/Out)
+- In:
+  - Give the branch deletion a **verified** execution point instead of the prose at `skills/ship/SKILL.md.tmpl:45`, and decide where it sits relative to worktree cleanup (step 4 vs step 5) — the decision is demonstrated by AC-2/AC-3, not by the step numbering.
+  - Make the **remote** deletion observable: today its failure produced no surfaced error at all.
+  - Tests in `tests/test_worktree.py` (bare-`origin` fixture, already present) and/or `tests/test_verify_checkpoint.py`, offline, with the pre-fix states committed as fixtures.
+- Out:
+  - `gh pr merge`'s merge strategy, `ship-merge-decision`, and the FINALIZE crash-recovery path (ISSUE-052/073/077 surface).
+  - ISSUE-083's branch **resolution** logic and ISSUE-092's resolver decision. This issue changes deletion only.
+  - Repos/credentials where the head branch is **not** deletable by policy or lives on a fork — AC-2's named refusal is the correct outcome there; tuning that case is separate.
+  - `cmd_remove`'s unconditional `git branch -D` (no merged-check, no remote consult) — recorded by ISSUE-083's AC-6 and carried by ISSUE-092.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The premise is pinned, not recalled.** Given a fixture repo with a bare `origin`, a branch `issue/ISSUE-999-x` pushed to it, and a worktree under `.worktrees/` holding that branch, when `git branch -d issue/ISSUE-999-x` and then `git branch -D issue/ISSUE-999-x` are each run from the main checkout, then each exits **1**, each stderr contains `used by worktree at`, and `git show-ref --verify refs/heads/issue/ISSUE-999-x` still exits **0** afterwards.
+- [ ] **The end state is both refs gone, or a named refusal.** Given that fixture after the PR is merged, when the ship path's branch-deletion step runs to completion, then `git show-ref --verify refs/heads/issue/ISSUE-999-x` exits **1** **and** `git ls-remote --exit-code origin refs/heads/issue/ISSUE-999-x` exits **2**; or the step exits **non-zero** and stderr names the surviving ref by its full `refs/…` spelling. Exit 0 with either ref still present fails this AC.
+- [ ] **Worktree tenancy no longer silently defeats it.** Given the branch is still held by a worktree at the moment deletion is attempted, when the ship path runs, then AC-2's end state still holds, asserted by the same two commands — so the chosen ordering is demonstrated by execution and not by the order of the steps in `skills/ship/SKILL.md.tmpl`.
+- [ ] **No new failure on the ordinary path.** Given a merged PR whose branch has no worktree and whose remote ref `gh` already deleted, when the ship path runs, then it exits **0**, emits no refusal line, and `bash scripts/checkpoint.sh --skill ship --phase cleanup --issue <ID>` still prints exactly `PASS: worktree cleaned up for <ID>` and exits 0.
+- [ ] **The chain into ISSUE-083's precondition is measured, not inferred.** Given the fixture left in today's post-ship state (local ref present, remote ref present), when `bash scripts/wt_cleanup.sh issue/ISSUE-999-x` then `bash scripts/worktree.sh create issue/ISSUE-999-x` run in sequence, then **today** stderr contains `source=remote-tip` and the new worktree's HEAD sha equals the already-merged remote tip; and with this issue's change live the same sequence cannot reach that state — `git show-ref --verify refs/remotes/origin/issue/ISSUE-999-x` exits **1** and stderr contains `source=new-from-base`. Both halves asserted by sha and by the exact `source=` token.
+
+#### Implementation Notes
+- `skills/ship/SKILL.md` is **auto-generated** (its line 7 says so). Edit `skills/ship/SKILL.md.tmpl` and regenerate with `scripts/gen_skills.py`; `tests/test_gen_skills.py` asserts generated content, so an edit to the generated file alone will be reverted by the next regeneration.
+- `verify_ship_cleanup` at `scripts/verify_checkpoint.py:1666` is slug-matched against `git worktree list --porcelain` only. If the end state of AC-2 is to be enforced at the checkpoint, that is where it goes — but note the kit-wide constraint that the same verifier runs in repos with no `origin` at all, so an unconditional `ls-remote` there is a new network consult on every ship (the same cost ISSUE-092 must price).
+- Ordering matters mechanically: `git branch -D` cannot remove a ref a worktree holds (AC-1). `wt_cleanup.sh` → `worktree.sh remove` already removes the worktree **and** deletes the local ref, so one defensible shape is to let cleanup own the local side entirely and make only the remote delete the ship step's job. That is a candidate, not a mandate — AC-2 holds either way.
+- Keep the fixtures offline: `git init --bare` as `origin` plus a clone, mirroring `tests/test_worktree.py`'s existing `remote_repo` fixture. Do not probe against the live repo — the ISSUE-083 review's own self-inflicted incident (two stray worktrees created on `main`) is the precedent.
+- Make PR #139's body true as part of this work, or confirm it has already been corrected: it states the filing in the past tense, which is the forged-attestation shape review lesson 6 names.
+
+#### Tests
+- [ ] Pre-fix fixture: `git branch -d` and `git branch -D` against a worktree-held branch → exit 1 each, `used by worktree at` in stderr, ref still present.
+- [ ] Post-fix end state: local ref absent (`show-ref` exit 1) and remote ref absent (`ls-remote --exit-code` exit 2) after the deletion step.
+- [ ] Refusal direction: with the remote ref made undeletable, the step exits non-zero and names the surviving ref — the disarm direction, so a silent skip cannot pass.
+- [ ] No-op path: no worktree, remote ref already gone → exit 0, no refusal, `PASS: worktree cleaned up for <ID>` unchanged.
+- [ ] Chain pin (AC-5): `wt_cleanup.sh` then `worktree.sh create` → `source=remote-tip` + merged-tip sha today; `source=new-from-base` and no cached remote ref after the fix.
+- [ ] Existing `TestRemove` cases in `tests/test_worktree.py` pass unmodified.
+
+#### Rollback
+`git revert`. The revert direction is safe in the data sense: it restores today's leftover refs, and nothing that was already deleted is recreated or lost. The **irreversible** direction belongs to the fix — a deleted remote branch cannot be recovered from a clone that no longer carries the ref — so if AC-2's refusal arm is firing in practice, prefer tuning the refusal over adding a force-delete. Do not revert the deletion step while keeping a checkpoint that asserts the end state: that combination turns every ship red.
+
+---
+
+### ISSUE-092: Decide what the worktree branch resolver keys on — the ladder reads a cache artifact of one hard-coded remote
+
+> Durable carrier for the most important follow-up from the ISSUE-083 review: **the ISSUE-083 harm, verbatim, on paths the kit itself walks.** One design defect seen at four seams, all in `scripts/worktree.sh` as PR #139 leaves it. The generalizable form, which is this issue's framing: **when a fix enumerates states, the `else` arm's behaviour for every unenumerated state is the pre-fix behaviour — which makes the fix a special case rather than a resolver.**
+>
+> 1. **Never-fetched branch — empirically reproduced.** `cmd_create` gates the whole remote path on `git show-ref --verify --quiet refs/remotes/origin/$branch`. A branch that exists on `origin` but has **no** cached remote-tracking ref (`git clone --single-branch`, `actions/checkout`, after `git remote prune origin`, or a branch another agent pushed that this checkout never fetched) therefore takes the `new-from-base` arm: it re-roots onto the caller's HEAD, exits **0**, and announces `source=new-from-base` for a branch that does exist on the remote. Stated honestly: this is **spec-conformant** — ISSUE-083's Scope In defines the resolution order over the cached ref, and its AC-1 pins exactly the post-`git branch -D` state — so the implementation did not miss its criteria. The *intent* was wrong, not the code.
+> 2. **Remote not named `origin` — empirically reproduced.** `git remote rename origin upstream`, with `refs/remotes/upstream/<branch>` carrying the reviewed tip: `has_remote_ref=0`, output `source=new-from-base base='main' <sha>`, exit 0, worktree at the base sha, no upstream. Fork workflows (origin = your fork, upstream = canonical) get the pre-fix behaviour with no refusal and no warning, while the script header states the resolution order as fixed.
+> 3. **Stale cached ref after a genuine remote delete — the refusal itself is measured; its frequency on the kit's own path is not.** Once `refs/heads/<branch>` is gone from `origin` but a stale `refs/remotes/origin/<branch>` survives, `create` exits 1 with `reason=no-such-remote-ref` where it previously created a fresh branch from base. The refusal is **measured** — `tests/test_worktree.py` parametrizes `("delete-remote-branch", "reason=no-such-remote-ref")`. That the kit's own ship flow routinely reaches that state is **inferred** from the ship sequence, and ISSUE-091's measurement (the remote delete did not happen at all during ISSUE-078's ship) argues the frequency is currently unknown. AC-4 settles it by execution rather than by either claim.
+> 4. **The pre-existing `[ -d "$wt_path" ]` early return bypasses the refusal entirely.** With a stale `.worktrees/<slug>` directory present, `cmd_create` prints a path and returns 0 before any ref is consulted; `wt_setup.sh` then runs `mkdir -p "$WT/.claude-kit"` and writes the freeze marker into whatever that directory is — **inferred from code** (`scripts/wt_setup.sh:31-32`), not yet executed. The *code* is deliberately deferred by ISSUE-083's Scope Out. What is new is that PR #139 states the guarantee **absolutely** in the script header ("NOTHING on stdout, so a caller cannot proceed") and in its PR body. A false absolute inside a fail-closed contract is worse than the gap: it tells the next reader the case is handled.
+>
+> **The cleanup-side half of the same ref-space blindness, folded in here.** `cmd_remove` consults only `refs/heads/<branch>` and then runs an unconditional `git branch -D` with no merged-check and no remote consult. That deletion is what manufactures ISSUE-083's precondition in the first place. ISSUE-083's AC-6 required only a **recorded verdict** for it, which exists; this carrier is where a behaviour change would live if the decision calls for one.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-083 / PR #139 review residual — the resolution-**key** half of ISSUE-083's fix, which it could not close without a decision. Native-memory review lessons: "work added to satisfy a request for a DECISION ships without acceptance criteria, and that is where the defects are"; "a deferred finding is only real if it has a durable carrier — a PR body is not one"; "a hand-rolled parser must match the oracle's edge cases AND its intended boundary"; "a newly added defence must be tested in the DISARM direction and through its real consumer")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-083
+
+#### Goal
+What `worktree.sh create` keys on when resolving a branch — the remote itself, or a cached artifact of one hard-coded remote name — is decided and written down, and every state the current ladder leaves to its `else` arm has a behaviour someone chose.
+
+#### Scope (In/Out)
+- In:
+  - **A SPEC whose Decision names exactly one resolution rule**, weighing at least these candidates with the consequence of each stated as a **measurement** rather than a preference: (a) consult the **configured remote(s) by name** rather than the literal `origin`, including which remote wins when several carry the branch; (b) **fetch-on-demand** when no cached remote-tracking ref exists, versus **refusing**, versus keeping today's silent base fall-through — priced with the offline/CI cost of any new network consult on the genuinely-new-branch path, which is today the single most common create; (c) whether the **early return** on an existing `.worktrees/<slug>` directory must verify that directory's ref before printing it.
+  - **An explicit decision on `cmd_remove`**: whether the unconditional `git branch -D` gains a merged-check or a remote consult, or stays as is with the reason recorded. Whichever is chosen is pinned by a test.
+  - The chosen rule implemented at the **resolution** seam in `scripts/worktree.sh::cmd_create` (and `resolve_from_remote`), with the script header's claims brought into agreement with what the code guarantees.
+  - Real-git tests, offline, extending `tests/test_worktree.py`'s bare-`origin` fixtures, with each pre-fix state committed as a fixture first.
+- Out:
+  - **ISSUE-083's accepted behaviours**: the local-ref-wins divergence rule, the five refusal codes' fail-closed direction, and the `default_branch`-is-really-HEAD base for a genuinely new branch. Changing the base is a separate decision with its own AC, as ISSUE-083's Scope Out already records.
+  - **ISSUE-093's robustness gaps** in the refusal machinery itself (knob validation, the unnamed `--track` escape, prompt hangs, shallow clones, untested refusals). This issue decides what the resolver keys on; 093 hardens the path it refuses through.
+  - **ISSUE-091's branch deletion.** Related by the ref-space blindness, but a different operation.
+  - `slug()`, `cmd_path`, `cmd_root`, and the freeze-marker write itself.
+  - A repo-wide `ruff`/shell-lint sweep.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given SPEC-092 at `Status: accepted`, when its Decision section is read, then it names **exactly one** resolution rule, records each rejected candidate with the measurement that rejected it, and states the offline/CI cost of the chosen rule as a **number** (consultations added per create, per path). `python3 scripts/validate_spec.py docs/specs/SPEC-092.md` exits 0. A Decision that defers the choice to a further carrier fails this AC.
+- [ ] **Never-fetched branch, both directions.** Given a clone where `origin` carries `refs/heads/issue/ISSUE-999-x` at sha `R` and the local `refs/remotes/origin/issue/ISSUE-999-x` has been deleted (`git update-ref -d`), then **before** any change `bash scripts/worktree.sh create issue/ISSUE-999-x` exits **0**, stderr contains `source=new-from-base`, and the worktree HEAD is **not** `R` — committed as a pre-fix fixture; and with the chosen rule live, exactly one of these holds and a test asserts which: HEAD equals **`R`** with upstream set, **or** exit is non-zero with a named `reason=` and **empty stdout**. `source=new-from-base` must be absent in the post-rule run either way.
+- [ ] **Remote not named `origin`, both directions.** Given the same repo after `git remote rename origin upstream`, then before any change `create` exits **0** with `source=new-from-base base='main' <base-sha>` and no upstream (pre-fix fixture); and with the chosen rule live, the outcome matches the same disjunction as AC-2, asserted by sha and by exact `source=`/`reason=` token.
+- [ ] **Offline cost is bounded by execution, not by prose.** Given a genuinely new branch (no local ref, no remote-tracking ref for any remote) in a repo whose `origin` URL points at a path that does not exist, when `create` runs with `KIT_WORKTREE_FETCH_TIMEOUT=1`, then its exit code and stdout match the value SPEC-092 records for the offline new-branch case, and the test asserts that value — so a rule that quietly turns every new-branch create into a network round trip cannot pass unnoticed.
+- [ ] **Stale cached ref after a genuine remote delete.** Given the existing `delete-remote-branch` fixture (remote ref gone, cached ref present) which today yields exit 1 and `reason=no-such-remote-ref`, when the chosen rule runs, then the outcome equals the exact rendered string SPEC-092 records for that input and the test cites the SPEC line it pins. Whichever way the decision goes, this input stops being an accident of which fixture happens to exist.
+- [ ] **The early return stops claiming more than it does.** Given a stale `.worktrees/issue-ISSUE-999-x` directory that is not a live worktree, when `WT="$(bash scripts/wt_setup.sh issue/ISSUE-999-x)"` runs, then exactly one of these holds and a test asserts which: stdout is **empty** with a non-zero exit and a named `reason=`, **or** the observed behaviour (stdout = the path, exit 0, `.claude-kit/freeze-dir.txt` written inside a non-git directory) is pinned by a test **and** `scripts/worktree.sh`'s FAIL-CLOSED header paragraph and `docs/troubleshooting.md` no longer state the guarantee without that precondition — asserted by the absence of the exact current absolute sentence and the presence of the qualified one.
+- [ ] **`cmd_remove`'s deletion is a decision with a test.** Given a local branch carrying a commit that is on no remote and in no merged history, when `bash scripts/worktree.sh remove <branch>` runs, then the outcome matches what SPEC-092 decides — asserted by `git show-ref --verify refs/heads/<branch>`'s exit code and by the exact stderr line — rather than by today's unconditional `git branch -D … || true`.
+- [ ] **No regression on ISSUE-083's accepted surface.** Given the existing `tests/test_worktree.py` suite, when it runs after the change, then every pre-existing `TestCreate` case and all four parametrized refusal codes pass **unmodified**; if the chosen rule requires editing one, the PR names it and the edit is reviewed as a change to an ISSUE-083 acceptance criterion.
+
+#### Implementation Notes
+- Read `scripts/worktree.sh`'s header (the resolution-order, FETCH DECISION and FAIL-CLOSED paragraphs) and `cmd_create`'s `has_local`/`has_remote_ref` ladder before touching anything. The ladder is at `cmd_create`'s two `git show-ref --verify --quiet` probes; every state it does not enumerate falls to the `new-from-base` arm.
+- The review's own altitude note sketches a `resolve_start_point <branch>` asking, in order, `refs/heads/<b>` → each configured remote's tracking ref → a live `ls-remote` across configured remotes → base, with one refusal path and one counter-evidence line. **That is a candidate for the SPEC to weigh, not a pre-made decision** — in particular the live-`ls-remote` leg is the one that costs offline users, which is why AC-4 measures it.
+- `git remote` enumerates configured remotes; there is no "the" remote. Decide what happens when two remotes carry the same branch at different shas, and pin it — an unenumerated state here is the same defect one level up.
+- The counter-evidence line is load-bearing: in seams 1 and 2 the output `source=new-from-base` is not merely missing information, it is **wrong**. Any rule that leaves a state unenumerated must at minimum stop mislabelling it.
+- Do not fix ISSUE-093's items in this diff (knob validation, the unnamed `--track` escape, `GIT_TERMINAL_PROMPT`, shallow-clone ancestry, the two untested refusals). Two issues editing the same ~60 lines is a merge hazard; if they are scheduled together, land 093 first since it changes no resolution behaviour.
+- Fixtures stay offline: `git init --bare` as the remote plus a clone, as `remote_repo` already does. `git update-ref -d refs/remotes/<remote>/<branch>` reproduces the never-fetched state without `--single-branch` cloning.
+- Review lesson 14 is why the SPEC is the first deliverable: these ACs exist so the decision's artifact has acceptance criteria before any resolution code is written.
+- Open questions, stated rather than filled in: (a) how often a kit worktree is created in a checkout with no cached tracking ref is **unmeasured** — a one-off count across the team's clones is useful input, not a deliverable; (b) whether any kit caller other than `wt_setup.sh`/`wt_cleanup.sh` depends on today's silent base fall-through is **unmeasured**; (c) whether the early-return path can write a freeze marker into a non-git directory is **inferred from code only** and AC-6 is what settles it.
+
+#### Tests
+- [ ] `python3 scripts/validate_spec.py docs/specs/SPEC-092.md` exits 0 — at least 2 options, each with a measurable trade-off line.
+- [ ] Never-fetched branch: pre-fix `source=new-from-base` + HEAD ≠ `R`; post-rule the SPEC's chosen outcome, asserted by sha or by exit code + `reason=`.
+- [ ] Renamed remote (`origin` → `upstream`): pre-fix `source=new-from-base base='main'` + exit 0; post-rule the same disjunction.
+- [ ] Offline new-branch create under `KIT_WORKTREE_FETCH_TIMEOUT=1` with an unreachable `origin`: exit code and stdout equal to the SPEC's recorded values.
+- [ ] Stale-cache-after-remote-delete: exact rendered verdict pinned to the SPEC line.
+- [ ] Stale `.worktrees/<slug>` directory through the real consumer `WT="$(bash scripts/wt_setup.sh <branch>)"`: stdout/exit asserted, plus the header/troubleshooting text assertion for whichever arm is chosen.
+- [ ] `cmd_remove` on an unmerged, unpushed local branch: `show-ref` exit code and exact stderr pinned.
+- [ ] Resolution-rule disarm mutation: mutate the chosen rule out and observe at least 1 kill, at least one of them through `bash scripts/wt_setup.sh <branch>` rather than `worktree.sh create` alone.
+- [ ] Full pre-existing `tests/test_worktree.py` suite passes unmodified.
+
+#### Rollback
+`git revert` the PR. The revert direction is **not** uniformly safe: reverting restores the silent re-root in seams 1 and 2 — a worktree that looks correct, reports success, and is rooted on the wrong commit with no upstream — so before reverting, check every worktree created since the fix with `git -C <wt> rev-parse HEAD` against the branch's real remote tip and confirm an upstream is configured. If the rule is reverted, revert the header and `docs/troubleshooting.md` wording **with** it: a header promising remote-aware resolution over code that does not do it is the false-absolute defect this issue exists to remove, pointed the other way. A revert must leave ISSUE-083's divergence rule and its five refusal codes at their post-#139 behaviour; a revert that moves either has reverted an ISSUE-083 acceptance criterion by accident.
+
+---
+
+### ISSUE-093: Harden the worktree fail-closed path's own failure modes — a defeated knob validator, an unnamed escape, an invisible hang, and two untested refusals
+
+> Five findings against the refusal machinery PR #139 adds to `scripts/worktree.sh`. The theme: **a fail-closed guard whose own failure modes are unguarded or misreported.** None of these change what the resolver keys on — that is ISSUE-092 — so the two can be scheduled independently, and this one should land first if they are adjacent, since it changes no resolution behaviour.
+>
+> 1. **A multi-line `KIT_WORKTREE_FETCH_TIMEOUT` defeats validation — measured.** `remote_timeout()` validates with `printf '%s' "$v" | grep -Eq …`, and `grep -q` succeeds if **any line** matches. Reproduced by the reviewing agent: with `V=$'junk\n60'`, `printf '%s' "$V" | grep -Eq '^[0-9]+(\.[0-9]+)?$'` **passes**. The malformed value reaches `timeout`, which exits **125**; 125 falls into the `*)` arm and is reported as `reason=remote-unreachable … (git ls-remote exit 125)` against a perfectly healthy remote — contradicting what README tells the user that reason means, and pointing the operator at the wrong subsystem. The same arm folds 125/126/127 (timeout failed / not executable / not found) into "unreachable". **The measured negative result matters as much as the positive one:** the obvious fix `grep -Exq` was tested and **does not** close it, because `-x` anchors each *line*, not the whole string; only a whole-string test (a `case` statement) was measured to reject it. That same change also resolves the `[native]` minimality finding (six fewer process spawns per remote-only create), so the two coincide.
+> 2. **A `git branch --track` failure escapes `resolve_from_remote` with no `reason=` at all — and it is reachable.** The `git branch --quiet --track "$branch" "origin/$branch"` call is the function's last statement, and the function is invoked as `resolve_from_remote "$branch" || return 1`, a `||` context that suppresses `set -e` inside the callee. Worth recording **how this was established**: the reviewer first filed it Low believing it unreachable; a runtime code pass disproved that in one command — with a local branch `issue` present (a directory/file ref conflict) and `refs/remotes/origin/issue/ISSUE-999-x` cached, `create` reaches `fatal: cannot lock ref 'refs/heads/issue/ISSUE-999-x': 'refs/heads/issue' exists`, rc=1, and prints none of the five `reason=` refusals. "Unreachable in practice" is a claim, not an exemption. The fail-closed direction survives (stdout stays empty, nothing is created) — this is a message-contract defect, and `docs/troubleshooting.md` tells users the symptom *is* a `reason=` line.
+> 3. **No `GIT_TERMINAL_PROMPT=0`, no ssh `BatchMode`, and no `timeout -k`.** When `timeout_bin` is empty, `run_bounded` executes the command bare — on a stock macOS box with no coreutils, exactly the platform the script's own note names. There, an unattended agent against an HTTPS origin whose credential helper prompts, or an SSH origin with an unknown host key, blocks while `git ls-remote`'s stdout **and** stderr go to `/dev/null`: an **invisible indefinite hang**, strictly worse than the loud refusal this whole change exists to produce, and the same hang-beats-exception hazard the sprint is treating elsewhere. Even where `timeout` exists, no `-k` means a child ignoring SIGTERM keeps `timeout` waiting.
+> 4. **Shallow or partial clones misreport divergence — measured.** `git clone --depth 1 --no-single-branch`, then a local branch at `22bc9d7` with `refs/remotes/origin/issue/X` at `b91cf5c` whose real parent **is** `22bc9d7`: both `merge-base --is-ancestor` calls fail inside the shallow graft, the `else` fires, and stderr reads `diverged (neither side is an ancestor of the other)` for a genuinely fast-forwardable pair. `docs/troubleshooting.md`'s divergence entry then sends the reader to merge/rebase/`reset --hard` on a false premise. Separately, `--is-ancestor` exits 128 on a bad object and the `if` treats any non-zero as "not an ancestor", so "cannot classify" is indistinguishable from "not an ancestor".
+> 5. **Two documented user-facing behaviours have zero coverage.** No test reaches the post-`ls-remote` fetch-failure branch (`reason=remote-fetch-failed`), and the unbounded-consult note's only test is `skipif`-ed on exactly the configuration where the note fires. Both are advertised in `docs/troubleshooting.md` as diagnosable. A regression inverting the `[ "$rc" -eq 124 ]` / `-ne 0` ordering, or dropping the `>&2`, ships green. Folded in here because it is the same note: that note is also **emitted before** the `git remote get-url origin` guard, so on the `no-remote-configured` path it announces an unbounded consultation that never happens.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-083 / PR #139 review — five findings against the newly added refusal machinery. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer"; "a hand-rolled parser must match the oracle's edge cases AND its intended boundary" — here the oracle is `merge-base --is-ancestor` and the unmatched edge case is a truncated history; "env-var knobs and timing constants must be documented and bounded"; "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence")
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-083
+
+#### Goal
+Every failure mode of the new refusal path either produces a named `reason=` within a bound, or is reported as the thing it actually is — so the guard added to stop a silent re-root cannot itself fail silently, hang invisibly, or name the wrong subsystem.
+
+#### Scope (In/Out)
+- In: whole-string validation of `KIT_WORKTREE_FETCH_TIMEOUT` and classification of the bounding binary's own exit codes away from `remote-unreachable`; a named refusal for a failing branch creation inside `resolve_from_remote`; a bound that holds on the platform with no `timeout`/`gtimeout`; a relation verdict that does not assert "diverged" on a truncated history and distinguishes `--is-ancestor` exit 1 from exit >1; tests for `reason=remote-fetch-failed` and for the unbounded-consult note, including its placement; the matching `docs/troubleshooting.md` and `README.md` text.
+- Out:
+  - **What the resolver keys on** (unfetched branches, non-`origin` remotes, the early return, `cmd_remove`) — ISSUE-092.
+  - **Branch deletion on the ship path** — ISSUE-091.
+  - ISSUE-083's accepted local-ref-wins divergence rule. This issue changes how the **relation** is reported, never which side is resolved to.
+  - The ~18 hard-coded subprocess timeouts measured in `scripts/kit_update_check.py`, `verify_computed_styles.py`, `verify_visual_diff.py`, `capture_source.py`, `capture_reference.py`, `screenshot_pilot.py` — pre-existing, outside this module, and explicitly their own carrier.
+  - Adding retries, backoff, or a second remote consultation.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The knob validator rejects what the measured bypass accepts.** Given `KIT_WORKTREE_FETCH_TIMEOUT` set to the literal two-line value `junk\n60` (and to `60\njunk`) on the remote-only create path against a healthy bare `origin`, then **before** the fix `create` exits non-zero and stderr contains `reason=remote-unreachable` and `exit 125` — committed as a pre-fix fixture; and **after** the fix the same input succeeds with `source=remote-tip`, HEAD equal to the remote tip, and `reason=remote-unreachable` **absent** from stderr. A unit-level assertion additionally pins that the shipped validator rejects `junk\n60` while recording that both `grep -Eq` and `grep -Exq` accept it, so the known-insufficient fix cannot be reintroduced.
+- [ ] **The bounding binary's own failures are not reported as an unreachable remote.** Given a run in which the bounding binary exits **125**, **126** or **127**, when `create` refuses, then the `reason=` token is **not** `remote-unreachable`, and the rendered line matches the exact string the PR records for that class — asserted per exit code.
+- [ ] **No refusal path leaves stderr without a `reason=`.** Given the measured directory/file-conflict fixture — a local branch `issue`, a cached `refs/remotes/origin/issue/ISSUE-999-x`, a healthy origin — then **before** the fix `bash scripts/worktree.sh create issue/ISSUE-999-x` exits non-zero with `cannot lock ref` on stderr and **zero** occurrences of the substring `reason=` (pre-fix fixture); and **after** the fix the exit is still non-zero, stdout is still **empty**, and stderr contains **exactly one** `reason=` token.
+- [ ] **The consultation is bounded even where no bounding binary exists.** Given the remote-only create path run with `PATH` containing neither `timeout` nor `gtimeout` and with git driven into a credential prompt (a `GIT_ASKPASS` helper that sleeps), then **before** the fix the process does not return within a 30s test cap — the hang is observed and recorded as the pre-fix fixture; and **after** the fix the same input exits **non-zero within the cap** with a named `reason=` on stderr.
+- [ ] **A truncated history is reported as unclassifiable, not as divergence.** Given the measured shallow fixture (`git clone --depth 1 --no-single-branch`; local ref at the shallow tip, cached remote ref at a commit whose real parent is that tip), when `create` runs after the fix, then stderr does **not** contain `diverged (neither side is an ancestor of the other)`, it contains the exact relation string the PR records for a history-truncated repo, and `docs/troubleshooting.md`'s divergence entry contains that same string; and given a `merge-base --is-ancestor` invocation that exits **>1** (bad object), the rendered relation differs from the one rendered on exit **1**.
+- [ ] **The two uncovered behaviours are covered, in the arm and the disarm direction.** Given a fixture where `ls-remote` succeeds and the subsequent `fetch` fails, when `create` runs, then it exits non-zero and stderr contains `reason=remote-fetch-failed`; and given a `PATH` with neither bounding binary (no `skipif`), then the unbounded-consult note appears on stderr on a run that **does** consult the remote and is **absent** from the `reason=no-remote-configured` run, which consults nothing.
+- [ ] **ISSUE-083's accepted behaviour is unchanged.** Given the existing `tests/test_worktree.py` suite, when it runs after the change, then all four parametrized refusal codes, both divergence cases on a **full** clone, the `source=` announcements and the composite `wt_setup.sh` pin pass **unmodified**; and `KIT_WORKTREE_FETCH_TIMEOUT` still appears in both the script header and `README.md` (the existing documentation test still passes).
+
+#### Implementation Notes
+- Files: `scripts/worktree.sh` — `remote_timeout()`, `run_bounded()`, `resolve_from_remote()` (the final `git branch --quiet --track` line and the note emitted before the `git remote get-url origin` guard), `announce_divergence()`; `tests/test_worktree.py`; `docs/troubleshooting.md` (the refusal-codes and divergence entries); `README.md` (the knob paragraph).
+- The validator's measured-correct shape is a bash-native whole-string test (`case "$v" in ''|*[!0-9]*) …`). It also matches the integer-only convention of the sibling the header cites, `verify_checkpoint.py::_test_timeout`. Note the sibling convention is integer-only while the current regex accepts decimals — decide and document which, since the README states the accepted form.
+- The refusal wrapper for the failing branch creation already exists twice in the same function (`rc=0; … || rc=$?` then `refuse_create`). Reuse that shape rather than inventing a third. Pair it with the D/F-conflict fixture so the new arm is not hollow — an arm with no reaching test is the shape finding 5 is about.
+- `git ls-remote`'s stderr is discarded by `>/dev/null 2>&1`, so `reason=remote-unreachable` carries only a numeric exit code. Capturing the last stderr line into the refusal detail costs nothing and is what makes the fail-closed refusal actionable — adjacent to AC-2 and cheap to do in the same pass.
+- `GIT_ASKPASS` pointed at a sleeping script reproduces the prompt-block hermetically and offline; no credential server is needed. The AC measures the **outcome** (non-zero within the cap, named reason), so exporting prompt-disabling environment, adding a kill-after, or bounding at the shell level are all acceptable — pick one and say which in the PR.
+- Mutation pins that matter here, because every item is a guard: invert the `[ "$rc" -eq 124 ]` / `-ne 0` ordering; drop the `>&2` on the note; revert the validator to `grep -Eq`; revert the validator to `grep -Exq` (this mutant must also be killed, since it is the plausible wrong fix); delete the new `reason=` on the branch-creation failure. Validate the harness with one known-killing mutant before trusting any `SURVIVED`.
+- Keep this diff out of `cmd_create`'s `has_local`/`has_remote_ref` ladder. If ISSUE-092 is in flight, that ladder is its seam and a shared edit there is a merge conflict with a safety contract inside it.
+
+#### Tests
+- [ ] Multi-line knob, both directions: pre-fix `reason=remote-unreachable` + `exit 125`; post-fix success at the remote tip; plus the explicit `grep -Eq` / `grep -Exq` accept-vs-reject assertions.
+- [ ] Bounding-binary exit 125/126/127 each render a reason that is not `remote-unreachable`.
+- [ ] D/F-conflict fixture: pre-fix zero `reason=` occurrences; post-fix exactly one, with empty stdout.
+- [ ] Prompt-block under a stripped `PATH` and a sleeping `GIT_ASKPASS`: pre-fix no return within a 30s cap; post-fix non-zero with a named reason inside the cap.
+- [ ] Shallow-clone relation: `diverged (neither side is an ancestor of the other)` absent, the recorded string present in stderr and in `docs/troubleshooting.md`; `--is-ancestor` exit >1 renders differently from exit 1.
+- [ ] `reason=remote-fetch-failed` reached via a succeeding `ls-remote` and a failing `fetch`.
+- [ ] Unbounded-consult note: present on a run that consults, absent on the `no-remote-configured` run; the test runs with a stripped `PATH` rather than being skipped.
+- [ ] Mutation matrix over the five mutants above, harness validated with a known-killing mutant first.
+- [ ] Full pre-existing `tests/test_worktree.py` suite passes unmodified.
+
+#### Rollback
+`git revert` the PR. The revert direction is safe for **resolution** — no branch is resolved differently before or after — but it is not safe for **diagnosis**: it restores a knob whose malformed value is reported as a healthy remote being unreachable, a refusal path that can exit with no `reason=`, and an unbounded consultation with all output discarded. Prefer re-landing a narrower fix over reverting the bound. **Do not revert in halves**: if the knob validator is reverted, revert its README/header wording with it, and if the relation verdict is reverted, revert the matching `docs/troubleshooting.md` entry — documentation that describes a behaviour the code no longer has is the defect ISSUE-092's AC-6 exists to remove, in miniature. A revert must leave ISSUE-083's local-ref-wins divergence rule and the five refusal codes' fail-closed direction untouched.
+
+---
+
+### ISSUE-094: Stop the hollow-test predicate from failing `tests/conftest.py` — editing it reddens a blocking implement gate
+
+> **Measured twice.** `scripts/verify_checkpoint.py`'s `test_dir_pattern = re.compile(r"(?:^|/)(?:tests?|__tests__)/")` classifies **every** `tests/*.py` file as a test file, and `_has_real_tests` then fails any such file that carries no `def test_*` with an assertion. `tests/conftest.py` by design carries neither. Observed first-hand at **exit 1** during ISSUE-083's implement phase, and independently confirmed during its review: `verify_checkpoint._has_real_tests("tests/conftest.py", wt)` returns `False`.
+>
+> **The consequence is behavioural, not documentary.** The project's **standing review lesson** directs implementers to put hermetic env-knob guards in `conftest.py` — `tests/conftest.py`'s own docstrings argue the suite-wide scope explicitly, twice, and reject the narrower per-file alternative by name. So a **blocking** gate is in direct conflict with a standing convention: any branch that follows the lesson reddens `implement/tests-written`, which is not in `ADVISORY_PHASES` (**measured**). ISSUE-083 routed around it by relocating its guard into `tests/test_worktree.py`, the implement sub-task violated its stop-on-blocking-exit instruction doing so, and the review accepted the relocation only as **narrower, not tighter** — explicitly conditional on this issue being fixed, after which the two `delenv` calls move back.
+>
+> **`implement/red` shares the predicate — measured by reading, not by execution.** `verify_implement_red` builds `all_test_files` from the same two patterns and calls the same `_has_real_tests` before it ever runs pytest, and `("implement", "red")` is likewise absent from `ADVISORY_PHASES`. No run of `implement/red` on a conftest-touching branch has been observed, so the second red is **inferred**; AC-2 settles it by execution.
+>
+> **The disarm direction is the risk.** An exemption that is too wide lets a genuinely hollow `test_*.py` through the gate, and an exemption written as a substring match would launder a hollow `tests/test_conftest_loading.py`. Suggested direction, **not a mandate**: exempt `conftest.py` and `__init__.py` from the hollow-test predicate. Note that `tests/__init__.py` does **not** exist in this repo today (measured), so any `__init__.py` behaviour has to be fixture-created rather than assumed.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-083 implement-phase discovery, confirmed in its review as GAP-083a. Native-memory review lessons: "hermetic env-knob guards belong in conftest.py, suite-wide, because the consult sits in a shared helper" — the convention this gate contradicts; "a newly added defence must be tested in the DISARM direction"; "an absence-guard must be mutation-tested with the actual removed string, and a boundary must be matched rather than a substring")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A branch that edits `tests/conftest.py` alongside real tests passes the blocking `implement/tests-written` and `implement/red` gates, while a genuinely hollow test file still fails them.
+
+#### Scope (In/Out)
+- In: the hollow-test predicate's treatment of assertion-free support modules under `tests/`, at both call sites in `scripts/verify_checkpoint.py` (`verify_implement_tests_written` and `verify_implement_red`); tests in `tests/test_verify_checkpoint.py`; the exemption's boundary, tested in the laundering direction.
+- Out:
+  - Changing `test_dir_pattern`, `test_pattern`, the AC-coverage check, the e2e/integration requirements, or anything else the two verifiers do.
+  - `scripts/verify_hollow_tests.py` — a separate blocking guard with no test module at all, carried by ISSUE-085.
+  - Reconciling the four disagreeing definitions of "test file" across `verify_checkpoint.py` and `verify_gate_evidence.py` — ISSUE-084's open question. Do **not** fold an oracle-unification into this diff.
+  - Moving ISSUE-083's relocated `_env()` guard back into `tests/conftest.py`. The review recorded that as the follow-on this fix unblocks; it is a test-side move with its own reachability argument and belongs in its own change.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The defect is reproduced before it is fixed.** Given a worktree whose delta versus the merge base is a real `tests/test_<x>.py` containing `def test_*` with an `assert` **and** a `tests/conftest.py` containing fixtures but no test function, when `bash scripts/checkpoint.sh --skill implement --phase tests-written --issue <ID>` runs on today's code, then it exits **1** and stdout contains `FAIL: test files exist but contain no real assertions: tests/conftest.py`; and `verify_checkpoint._has_real_tests("tests/conftest.py", wt)` returns `False`. Committed as a pre-fix fixture.
+- [ ] **The `red`-phase question is settled by execution.** Given that same worktree, when `bash scripts/checkpoint.sh --skill implement --phase red --issue <ID>` runs on today's code, then the observed exit code and the exact rendered line are pinned by a test — whether or not it also fails at `FAIL: test files have no real assertions: tests/conftest.py`. The shared-predicate claim stops being an inference from reading the source.
+- [ ] **The gate goes green without trading one red for another.** Given the same fixture with the change live, when both phases run, then each exits **0**, and **both** of the strings `contain no real assertions` and `no test files were created or modified` are **absent** from stdout — an exemption that drops `conftest.py` out of the collected file set instead of out of the hollow predicate swaps one failure message for the other and fails this AC.
+- [ ] **Disarm direction, including the laundering shape.** Given a worktree containing a genuinely hollow `tests/test_hollow.py` (`def test_x(): pass`, no assertion and no mock/raises token), when `tests-written` runs after the change, then it still exits **1** naming `tests/test_hollow.py`; and given a hollow `tests/test_conftest_loading.py` — a real test file whose **name contains** `conftest` — then it also still exits **1** naming that file, pinning that the exemption matches the file's basename exactly rather than a substring.
+- [ ] **`__init__.py` behaviour is chosen and pinned, not assumed.** Given a fixture-created `tests/__init__.py` with no assertions alongside a real test file — the file does not exist in this repo today — when `tests-written` runs after the change, then the exit code and the exact rendered line match what the PR records, asserted by a test.
+
+#### Implementation Notes
+- Two call sites, one predicate: `scripts/verify_checkpoint.py` — `verify_implement_tests_written` (the `shallow_files` comprehension over `_has_real_tests`) and `verify_implement_red` (the `shallow` comprehension, which runs **before** pytest). Change both or neither; a fix at one site leaves the other red and reproduces the defect one phase later.
+- The ordering trap AC-3 exists for: these verifiers first require `all_test_files` to be non-empty, then require none of them to be hollow. Removing `conftest.py` from the **collection** makes a conftest-only branch fail with `FAIL: no test files were created or modified` instead — still exit 1, different message. Exempt it from the **hollow predicate**, keeping it collected, unless the PR argues otherwise and pins the chosen message.
+- Match the basename exactly (`Path(filepath).name == "conftest.py"`), not `"conftest" in filepath`. The substring form exempts `tests/test_conftest_loading.py`, which is AC-4's laundering case and the exact boundary-matching failure recorded in the ISSUE-040/042 lesson.
+- Nested conftests are real: pytest honours `tests/<subdir>/conftest.py`. Decide whether the exemption is path-anchored or basename-anchored, and say which in the PR — a rule that exempts only the top-level file leaves the gate red for a subdirectory guard, which is the same defect with a longer path.
+- Do **not** reach for `scripts/verify_hollow_tests.py` as an oracle to import here: it has no test module (ISSUE-085) and no `conftest` handling (measured), so importing it would couple this fix to an unevidenced guard.
+- Tests go in `tests/test_verify_checkpoint.py` (existing `_has_real_tests` coverage lives there) with the end-to-end runs driven through `bash scripts/checkpoint.sh` rather than the helper alone, per the composite-pin convention.
+- Once this lands, the follow-on the ISSUE-083 review recorded becomes available: move the two `delenv` calls from `tests/test_worktree.py::_env` back into `tests/conftest.py`, matching the suite-wide convention that file already argues for. Separate change, separate PR.
+
+#### Tests
+- [ ] Pre-fix reproduction: mixed fixture (real test + `conftest.py`) → `tests-written` exit 1 with the exact FAIL line; `_has_real_tests("tests/conftest.py", wt)` is `False`.
+- [ ] Pre-fix `red`-phase run on the same fixture: exit code and exact line pinned.
+- [ ] Post-fix: both phases exit 0, with `contain no real assertions` and `no test files were created or modified` both absent.
+- [ ] Disarm: hollow `tests/test_hollow.py` still fails, named in the FAIL line.
+- [ ] Laundering boundary: hollow `tests/test_conftest_loading.py` still fails, named in the FAIL line.
+- [ ] Nested `tests/<subdir>/conftest.py`: outcome matches the rule the PR records, pinned by exact string.
+- [ ] Fixture-created `tests/__init__.py`: outcome pinned by exit code and exact line.
+- [ ] Mutation: delete the exemption → the AC-3 test fails; widen the exemption to a substring match → the AC-4 laundering test fails. Both kills observed.
+- [ ] Existing `tests/test_verify_checkpoint.py` and `tests/test_checkpoint_merge_base.py` suites pass unmodified.
+
+#### Rollback
+`git revert`. The revert direction is safe for **detection** — it restores a stricter predicate that can only fail more files, never fewer, so no hollow test is let through by reverting. What it restores is the standing conflict between a blocking gate and the hermetic-guard convention, which means the next implementer either relocates a guard (narrowing it) or pushes past a blocking exit, both of which this issue exists to stop. Do **not** revert the exemption while keeping the AC-4 laundering test: that pairing asserts a boundary the code no longer has and turns the suite red for the wrong reason. A revert must leave `test_dir_pattern`, `test_pattern` and the AC-coverage check untouched — a revert that moves any of them has changed what the gate collects, which is outside this issue entirely.
 
 ---
