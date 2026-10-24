@@ -105,6 +105,48 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **A remote-only branch resolves to its remote tip in the worktree creator, or
+  the creator refuses** (ISSUE-083, PR #139) — `scripts/worktree.sh`'s
+  `cmd_create` consulted only `refs/heads/$branch`; when that ref was absent it
+  ran `git branch "$branch" "$default_branch"`, never looking at
+  `refs/remotes/origin/$branch` and never setting an upstream. Because the
+  review phase's cleanup (`cmd_remove`) ends in an unconditional
+  `git branch -D`, the **normal** path through a sprint produces exactly that
+  state — a branch whose reviewed commits live only on the remote — and
+  `wt_setup.sh` then reported success and printed a worktree path rooted on the
+  **caller's HEAD** with **no upstream**. Observed first-hand during ISSUE-078's
+  ship phase, pre-harm: a push from that worktree would have been a
+  non-fast-forward against the reviewed commits (rejected in the benign case,
+  destructive under `--force`), and any `git diff` run against it would have
+  reported the PR's entire content as missing.
+  Branch resolution is now a ladder — `refs/heads/$branch` →
+  `refs/remotes/origin/$branch` → default base — that creates the local branch
+  **at the remote tip with tracking set**, so HEAD and upstream are both correct
+  in one step. When the remote cannot be consulted (offline, unauthenticated,
+  `origin` absent, no such remote ref, consultation timed out) the creator
+  **refuses** with a named `reason=` on stderr and a **non-zero exit** instead of
+  silently re-rooting onto the caller's HEAD. Because the healthy output and the
+  defeated output were previously byte-identical, `cmd_create` now announces
+  which source supplied the branch — `source=local-ref` / `source=remote-tip` /
+  `source=new-from-base` — and names a local/remote divergence with **both short
+  shas** rather than resolving it quietly either way.
+  **New env knob — `KIT_WORKTREE_FETCH_TIMEOUT`** (default `60`): wall-clock
+  seconds allowed for each remote consultation, documented in `README.md` and in
+  the `scripts/worktree.sh` header. When no `timeout`/`gtimeout` binary is
+  present the script says so on stderr rather than letting the knob look
+  effective.
+  Review verdict **PASS-with-fixes**, one fix applied: **TC-083m**, pinning the
+  remote-only create against a **stale** cached ref (live tip vs stale cache).
+  Per `CONTRIBUTING.md`'s Kept-Surface Criterion this is **bucket C
+  (verification core)**. `tests/test_worktree.py` goes 11 → 28 tests; the suite
+  on `main` goes 2411 → 2428 passing.
+  **Four follow-up carriers were filed alongside it rather than left in the PR
+  body:** **ISSUE-091** (the ship path deletes neither branch ref — mandated by
+  this issue's AC-6), **ISSUE-092** (what the resolver keys on — the ladder reads
+  a cache artifact of one hard-coded remote; `Spec-Required`), **ISSUE-093** (the
+  fail-closed path's own failure modes), and **ISSUE-094** (the hollow-test
+  predicate fails `tests/conftest.py`, reddening a blocking implement gate).
+
 - **The review path can reach the runtime review skills — the SPEC-019 primary
   path now actually executes from a sub-task, and the first delegated review has
   run** (ISSUE-072, PR #135) — no kit agent granted any skill-invocation tool, so
