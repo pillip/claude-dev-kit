@@ -3941,7 +3941,7 @@ An issue registered in issues.md during a running sprint becomes visible to `spr
 - Owner:
 - Branch: issue/ISSUE-071-run-id-producer
 - GH-Issue: #142
-- PR:
+- PR: #143
 - Depends-On: ISSUE-067
 
 #### Goal
