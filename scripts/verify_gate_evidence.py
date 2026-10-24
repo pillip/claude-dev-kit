@@ -338,9 +338,20 @@ _BOOL_REFUSAL = re.compile(r"\breturn\s+(?:True|False)\b")
 #: never succeed on a line with no `else` — measured O(n^2): 4x the time per 2x
 #: the input, 15.2 s on one 208 KB added line. Nothing bounds this module's
 #: wall clock — `scripts/checkpoint.sh` `exec`s python3 with no timeout — so an
-#: author-written line was enough to park this blocking gate. A bounded
-#: quantifier makes the scan linear; 400 is far past any real ternary and is
-#: pinned by `TestAPathologicalLineCannotHangTheCheckpoint`.
+#: author-written line was enough to park this blocking gate. (That wall clock
+#: is now bounded outright — see ``KIT_GATE_EVIDENCE_TIMEOUT``.) A bounded
+#: quantifier makes the scan linear; 400 is far past any real ternary.
+#:
+#: Its pin, corrected. This used to cite
+#: `TestAPathologicalLineCannotHangTheCheckpoint`, which asserts only a
+#: wall-clock budget — and a NARROWER bound satisfies that better, so the test
+#: could not have been holding this value in place. The claim was false in the
+#: same way the `_GIT_TIMEOUT` provenance comment this file already records was,
+#: and the mutant measured the consequence: `400 -> 40` left the suite green.
+#: The value is now pinned behaviourally by `TestAC5MutationMatrix`'s AC-9.4
+#: cases — a real ternary with a 110-character gap must still read as a
+#: conditional, a 537-character gap is the documented blind spot, and the
+#: load-bearing case narrows THIS pattern rather than re-typing it.
 _TERNARY_GAP = 400
 
 _CONDITIONAL = re.compile(
