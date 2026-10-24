@@ -261,6 +261,47 @@ class TestCreate:
         marker = os.path.join(wt, ".claude-kit", "freeze-dir.txt")
         assert open(marker, encoding="utf-8").read().strip() == wt
 
+    def test_remote_only_branch_resolves_to_the_live_tip_not_the_cached_ref(
+        self, remote_repo
+    ):
+        """TC-083m (AC-1): the DISARM direction of the fetch decision.
+
+        ``remote_repo`` leaves ``refs/remotes/origin/<branch>`` already equal to
+        the remote tip, so every other AC-1 test passes whether the script
+        consults the remote live or merely trusts the cached remote-tracking
+        ref — deleting the whole ``git fetch`` block from ``resolve_from_remote``
+        survives all of them. Advance ``origin`` behind this clone's back and
+        the two answers diverge: resolving from the stale cache re-roots the
+        worktree onto an outdated sha, which is the same harm ISSUE-083 removes,
+        one step smaller. The script header asserts the cached ref is NOT
+        trusted as the tip; this is what holds it to that.
+        """
+        repo = remote_repo.repo
+        other = os.path.join(os.path.dirname(repo), "other-clone")
+        subprocess.run(
+            ["git", "clone", remote_repo.origin, other], check=True, capture_output=True
+        )
+        _git(other, "config", "user.email", "test@test.com")
+        _git(other, "config", "user.name", "Test")
+        _git(
+            other, "checkout", "-B", remote_repo.branch, f"origin/{remote_repo.branch}"
+        )
+        _git(other, "commit", "--allow-empty", "-m", "newer reviewed work")
+        _git(other, "push", "origin", remote_repo.branch)
+
+        live_tip = _git(
+            remote_repo.origin, "rev-parse", f"refs/heads/{remote_repo.branch}"
+        )
+        cached = _git(repo, "rev-parse", f"refs/remotes/origin/{remote_repo.branch}")
+        assert live_tip != cached, "fixture failed to make the cached ref stale"
+
+        result = _run(["create", remote_repo.branch], repo)
+
+        assert result.returncode == 0, result.stderr
+        head = _git(result.stdout.strip(), "rev-parse", "HEAD")
+        assert head == live_tip
+        assert head != cached
+
     @pytest.mark.parametrize(
         "breakage,reason",
         [
