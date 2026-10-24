@@ -53,10 +53,13 @@ is now ``scripts/kit_telemetry.py::emit_event`` (ISSUE-067, landed just before
 this module). This body was NOT swapped onto it, and the migration is tracked
 as **ISSUE-075**. Rationale for deferring rather than doing it here: (1)
 ``emit_event``'s containment check and its documented "NEVER raises" contract
-are both being rewritten by ISSUE-070 — the latter is currently *false*
+were both being rewritten by ISSUE-070 — the latter was *false* then
 (reproducible by closing stdout), whereas this function's blanket
-``except Exception`` makes the guarantee hold today, so adopting now would
-trade a working promise for a known-broken one inside the review gate;
+``except Exception`` makes the guarantee hold today, so adopting at that
+point would have traded a working promise for a known-broken one inside the
+review gate. **ISSUE-070 has since landed (PR #141)**: the never-raises
+contract is now true and pinned by tests, so this reason is spent and
+ISSUE-075 migrates against a tested promise;
 (2) ISSUE-067
 deliberately replaced silent-skip with announce-and-write-unattributed
 semantics, so two tests here pin the opposite contract
@@ -69,7 +72,11 @@ TOP-LEVEL event field (this module's ``--issue``), ``reason`` stays inside
 ``payload``, ``project_path`` must be passed explicitly (it defaults to
 ``Path.cwd()``), only ``payload["detail"]`` is truncated there — so preserve
 this module's stronger all-string-value truncation at the call site — and
-``False`` is a skip, not an error.
+``False`` is a skip, not an error. One ISSUE-070 change the migration must
+respect: ``project_path`` is NOT its own containment root there. That root
+is derived from the process CWD's main git work tree, else
+``CLAUDE_PROJECT_DIR``, else the CWD, and a ``project_path`` resolving
+outside it is refused with an announcement and nothing written.
 
 Env knobs (no new ones — ``KIT_RUN_ID`` is pre-documented in README and
 docs/telemetry_schema.md):

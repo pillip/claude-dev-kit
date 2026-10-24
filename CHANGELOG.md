@@ -125,9 +125,13 @@ release tags are `claude-dev-kit--v<version>`.
   named reason instead of blocking `os.open` forever. A hang matters more than
   an exception here because `verify_checkpoint.py`'s wrapper catches exceptions
   but **not stalls**, so the old behaviour stalled a gate checkpoint rather than
-  failing it. **New test knob — `KIT_TELEMETRY_PROBE_TIMEOUT`** (default `20`
-  seconds): it bounds the probe and reports a timeout as exit **124**, a
-  distinct reported outcome rather than a silent wait.
+  failing it. The anti-hang leg is `O_NONBLOCK` on the open; the anti-write leg
+  is an `fstat` after it (`S_ISREG` plus `st_nlink == 1`). **New *test-harness*
+  knob — `KIT_TELEMETRY_PROBE_TIMEOUT`** (default `20` seconds, read by
+  `tests/test_kit_telemetry.py`, not by the emitter): it bounds the
+  planted-FIFO probe subprocess and classifies a timeout as rc **124**, so a
+  HANG is a distinct reported outcome rather than a silent wait or a merely
+  different assertion.
   **The contract is now true rather than advertised.** The docstring's "NEVER
   raises" was false — closing stdout raised `ValueError` from the announcement
   itself. The catch set was widened and `_announce` now swallows a failed

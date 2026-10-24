@@ -86,17 +86,33 @@ or its CLI, and see the Emit-site inventory below for the audited
 exceptions. Each event line must validate against this schema; future
 ingestion replays these files under the ISSUE-001 pipeline. The shared
 emitter resolves the run-id from the `KIT_RUN_ID` env var and auto-creates
-`.claude/runs/`; an unset or invalid run-id means the event is written
-under the explicit `unattributed` run id with a top-level
-`run_id_fallback` field naming the condition, plus one
-`[kit-telemetry]` stdout announcement naming the knob — never a silent
-no-op.
+`.claude/runs/` inside the contained project root (below); an unset or
+invalid run-id means the event is written under the explicit
+`unattributed` run id with a top-level `run_id_fallback` field naming the
+condition, plus one `[kit-telemetry]` stdout announcement naming the knob —
+never a silent no-op.
+
+**Containment (ISSUE-070).** The caller-supplied `project_path` is NOT its
+own containment root. The root is derived independently of the caller — the
+main git work-tree root of the process's current directory, else
+`CLAUDE_PROJECT_DIR`, else the current directory — and a `project_path`
+that resolves outside it is refused with a named reason. Only
+`.claude/runs/` is auto-created, and only inside that root; the project root
+itself is never created. See the `CLAUDE_PROJECT_DIR` entry in README's
+environment-variable list for the user-facing rule.
 
 Every remaining skip path in the shared emitter announces its named reason
-on stdout (containment violation, serialized event past the 4 KB cap, write
-failure). A rejected containment violation writes nothing anywhere, so the
-stdout line is its only signal. Telemetry stays non-blocking: never fail the
-parent skill on a telemetry write error (unchanged).
+on stdout: a containment violation (the project path, or a resolved
+`.claude/runs` that escapes the project root), a project root that is not an
+existing directory, a serialized event past the 4 KB cap, a non-regular or
+multiply-linked file planted at the event path (refused by the post-open
+`fstat`; the open also carries `O_NONBLOCK` so a planted FIFO cannot hang
+the emit), and any other write failure. A rejected containment violation
+writes nothing anywhere, so the stdout line is its only signal. Telemetry
+stays non-blocking: `emit_event` never raises — since ISSUE-070 that is a
+contract pinned by tests rather than merely advertised, including the
+closed-stdout case where the announcement itself would fail — so a telemetry
+write error never fails the parent skill.
 
 `.claude/runs/` is run-scoped scratch, not a tracked artifact. This repo
 gitignores it; a consumer project should add the same line to its own
@@ -112,7 +128,7 @@ hand-rolled appender remains unexamined.
 |------|-----------|------------------------|
 | `scripts/synthesize_gate_results.py` | `kit_telemetry.emit_event` (thin `_emit_telemetry` delegation) | Migrated to the shared helper. |
 | `skills/review/SKILL.md.tmpl` delegation/degraded emits | `python3 scripts/review_context.py decide` / `emit` (ISSUE-066) | Superseded the shared-emitter CLI one-liners: ISSUE-066 shipped immediately after this audit and moved the review emits out of prose into `review_context.py`, which owns the decide-once contract. The prose no longer calls `kit_telemetry.py` directly. |
-| `scripts/review_context.py` | own hardened `_emit_event` appender | **NOT YET migrated — ISSUE-075.** Per-control equivalence with `kit_telemetry.emit_event` was verified at review time, with two controls *stronger* (all-string-value truncation rather than `detail`-only; coercion inside the `try` so it never raises) — so this is duplication debt, not a hardening regression. Migration was deferred at ISSUE-066's ship because `emit_event`'s containment and "NEVER raises" contracts are themselves being rewritten by ISSUE-070, and two ISSUE-066 tests pin the opposite (pre-announcement) contract. |
+| `scripts/review_context.py` | own hardened `_emit_event` appender | **NOT YET migrated — ISSUE-075.** Per-control equivalence with `kit_telemetry.emit_event` was verified at review time, with two controls *stronger* (all-string-value truncation rather than `detail`-only; coercion inside the `try` so it never raises) — so this is duplication debt, not a hardening regression. Migration was deferred at ISSUE-066's ship because `emit_event`'s containment and "NEVER raises" contracts were then being rewritten by ISSUE-070, and two ISSUE-066 tests pin the opposite (pre-announcement) contract. **ISSUE-070 has since landed (PR #141)**: the containment root is now derived independently of the caller and "NEVER raises" is pinned by tests, so that half of the deferral is spent — ISSUE-075 migrates against a tested contract, and the two pre-announcement tests here are the remaining work. |
 | `skills/bizanalysis/SKILL.md.tmpl` research emits | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
 | `skills/brainstorm/SKILL.md.tmpl` degraded emit | `python3 scripts/kit_telemetry.py` CLI one-liner | Migrated from prose instruction. |
 | `scripts/spec_gate.py` | printed JSON decision object + the skill's stdout "telemetry-style" bypass line per SPEC-007 | JUSTIFIED, not migrated: no JSONL appender exists there — adding one is new scope (minimality). |
