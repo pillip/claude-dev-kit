@@ -105,6 +105,50 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **The telemetry emitter's containment check can now fail, a planted FIFO can
+  no longer hang a gate, and the "NEVER raises" contract is true rather than
+  advertised** (ISSUE-070, PR #141) — the three defects carried out of the
+  ISSUE-067 review, all in `scripts/kit_telemetry.py::emit_event`.
+  **Containment is now falsifiable.** The check compared two values **both
+  derived from the caller-supplied `project_path`**, so for a non-symlinked root
+  it could not fail — appending into any existing writable directory worked
+  (`~` and `~/.ssh` were demonstrated at ISSUE-067's review). The **scope
+  decision is shape A**: `project_path` stops being the containment root. A new
+  `_containment_root()` derives the root **independently** — the main git
+  work-tree root of the process CWD, falling back to `CLAUDE_PROJECT_DIR`, then
+  CWD — and an out-of-root `project_path` is refused with a **named reason**.
+  ISSUE-067's AC-1 auto-create is **kept inside** that root and **dropped
+  outside** it, which is the ISSUE-067-AC-1 vs ISSUE-058-containment tension
+  this issue existed to decide.
+  **A planted FIFO can no longer hang a gate.** Non-regular targets — FIFO,
+  socket, device node, directory, multiply-linked file — are refused with a
+  named reason instead of blocking `os.open` forever. A hang matters more than
+  an exception here because `verify_checkpoint.py`'s wrapper catches exceptions
+  but **not stalls**, so the old behaviour stalled a gate checkpoint rather than
+  failing it. **New test knob — `KIT_TELEMETRY_PROBE_TIMEOUT`** (default `20`
+  seconds): it bounds the probe and reports a timeout as exit **124**, a
+  distinct reported outcome rather than a silent wait.
+  **The contract is now true rather than advertised.** The docstring's "NEVER
+  raises" was false — closing stdout raised `ValueError` from the announcement
+  itself. The catch set was widened and `_announce` now swallows a failed
+  `print`, so **ISSUE-075 can adopt a *tested* promise** instead of an
+  advertised one, which was the stated precondition for that migration.
+  Review verdict **PASS-with-fixes**, and the review found and fixed a **High**:
+  the independently-derived root was itself re-derivable, because
+  `_main_repo_root` trusted a linked worktree's `.git` file and the `commondir`
+  it points at — writable files *inside* the tree — so the hop is now anchored.
+  Per `CONTRIBUTING.md`'s Kept-Surface Criterion this is **bucket C
+  (verification core)**. `tests/test_kit_telemetry.py` goes 21 → 53 tests; the
+  suite on `main` goes 2428 → 2464 passing with **1 skipped** (an unprivileged
+  `mknod` of a character device). Both suite totals are measured on a working
+  copy carrying five untracked `docs/sprint_state.archive-*.md` files that three
+  parametrized tests glob; on tracked files alone the same run collects 2450.
+  **Known residual, recorded rather than overstated — GAP-070e.** `O_NOFOLLOW`
+  binds only the **final** path component and `fstat` validates **type**, not
+  **location**, so swapping `<project>/.claude` for a directory symlink inside
+  the check→open window still escapes containment. It was demonstrated during
+  the review and is being filed as its own issue rather than left in a PR body.
+
 - **A remote-only branch resolves to its remote tip in the worktree creator, or
   the creator refuses** (ISSUE-083, PR #139) — `scripts/worktree.sh`'s
   `cmd_create` consulted only `refs/heads/$branch`; when that ref was absent it

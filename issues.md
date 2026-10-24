@@ -40,7 +40,7 @@
 - [x] ISSUE-052: Make sprint_queue crash-recovery aware of already-merged PRs _(track: platform, P2, 1d — sprint discovered, iter7/8)_
 - [x] ISSUE-053: Document the KIT_ALLOW_BROWSER_INSTALL + KIT_SPRINT_QUEUE_GH_TIMEOUT env knobs _(track: platform, P3, 0.5d — sprint 2 discovered, iter1/2)_
 - [x] ISSUE-069: Pin the sprint roster boundary at sprint start — stop the watermark ratchet from re-hiding and auto-dispatching Board issues _(track: platform, P1, 1.5d — ISSUE-068 review triage, 2 unresolved High (GAP-068a/b); depends on 068)_
-- [ ] ISSUE-070: Contain the telemetry emitter's write target and make its no-raise/no-hang contract true _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High + 2 same-module Medium; depends on 067)_
+- [x] ISSUE-070: Contain the telemetry emitter's write target and make its no-raise/no-hang contract true _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High + 2 same-module Medium; depends on 067)_
 - [ ] ISSUE-071: Give KIT_RUN_ID a producer or stop announcing its absence on every run _(track: platform, P1, 1d — ISSUE-067 review triage, unresolved High: the fallback announcement fires on 100% of runs; depends on 067)_
 - [x] ISSUE-072: Verify sub-agent skill invocation in the feature matrix and grant it on the review path if supported _(track: platform, P1, 0.5d — ISSUE-066 review triage: the kit's own agent `tools:` frontmatter confounds SPEC-066's categorical conclusion; depends on 066)_
 - [x] ISSUE-073: Validate the PR ref before the `gh` merge-state probe — an option-shaped Board `PR:` value forges a MERGED verdict _(track: platform, P1, 0.5d — GAP-068j: pre-existing argument injection from ISSUE-052, live on main, reviewer-reproduced on the rostered path; depends on none)_
@@ -3877,7 +3877,7 @@ An issue registered in issues.md during a running sprint becomes visible to `spr
 - PRD-Ref: none (kit self-development; ISSUE-067 review triage — unresolved High + 2 Mediums in the same module; review lesson "Workspace-persisted state consumed by auto-running hooks is untrusted input — validate on read", write-side corollary from the ISSUE-058 review — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 1d
-- Status: doing
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-070-telemetry-containment
 - GH-Issue: #140
