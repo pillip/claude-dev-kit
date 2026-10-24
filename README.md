@@ -722,6 +722,17 @@ optional — the defaults are safe for local and CI runs:
   `[kit-telemetry]` stdout line naming the knob — an emit through the shared
   emitter is never a silent no-op. `.claude/runs/` is run-scoped scratch: add
   it to your project's `.gitignore` so event files are never committed.
+- `CLAUDE_PROJECT_DIR` — set by the Claude Code runtime, never by the kit.
+  The shared telemetry emitter reads it (ISSUE-070) as the **fallback**
+  containment root: an emit may only write inside the main git work-tree
+  root of the process's current directory, and when that directory is not
+  in a git work tree this knob supplies the root instead (with the current
+  directory as the last resort). A `--project-path` that resolves outside
+  that root is refused with one `[kit-telemetry]` line and nothing is
+  written. Linked worktrees resolve to the MAIN repo root, so
+  `<repo>/.worktrees/<branch>` and the repo root admit each other. Under a
+  plugin install the root is the user's project — never the kit's install
+  directory.
 
 ### Configuring gates via `docs/test_plan.md`
 

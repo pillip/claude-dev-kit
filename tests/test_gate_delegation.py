@@ -65,9 +65,23 @@ def _write_results(project: Path, payload, name: str = "gate_results.json") -> P
 
 
 @pytest.fixture()
-def project(tmp_path: Path) -> Path:
-    """An isolated fake project root."""
-    p = tmp_path / "proj"
+def project(tmp_path: Path, monkeypatch) -> Path:
+    """An isolated fake project root, inside an isolated containment root.
+
+    ISSUE-070: ``kit_telemetry.emit_event`` derives its containment root
+    independently of the ``project_path`` it is handed (main git work-tree
+    root of the process CWD, else ``CLAUDE_PROJECT_DIR``, else CWD), so a
+    telemetry-emitting test has to establish that root or its emits are
+    refused as out-of-project. The assertion is a fixture self-check: it
+    fails loudly rather than letting the telemetry tests below pass on a
+    refusal path.
+    """
+    root = tmp_path / "kitroot"
+    root.mkdir()
+    monkeypatch.chdir(root)
+    monkeypatch.setenv(kt.PROJECT_DIR_ENV, str(root))
+    assert kt._containment_root() == root.resolve()
+    p = root / "proj"
     p.mkdir()
     return p
 
@@ -75,6 +89,9 @@ def project(tmp_path: Path) -> Path:
 # Ambient-env isolation for KIT_GATE_RESULTS_FILE / KIT_RUN_ID lives in
 # tests/conftest.py (autouse, suite-wide) — every test that reaches
 # _run_verify_gates traverses the delegation consult, not just this file.
+# CLAUDE_PROJECT_DIR is set per-test by the `project` fixture above rather
+# than suite-wide, because the containment root it feeds is only consulted
+# by tests that actually emit.
 
 
 def _probe(monkeypatch, code: int, evidence: str = "stub"):
