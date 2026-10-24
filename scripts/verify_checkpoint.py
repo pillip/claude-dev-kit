@@ -1502,7 +1502,20 @@ def verify_review_gate_evidence(issue_id: str, **_) -> bool:
         )
         return False
 
-    report = vge.analyze(diff_text)
+    # Fail CLOSED on a refusal to evaluate, the same way the causes above do.
+    # `analyze` is bounded by `KIT_GATE_EVIDENCE_TIMEOUT` (SPEC-081 amendment
+    # 2026-10-24, AC-9.2) because `scripts/checkpoint.sh` `exec`s python3 with
+    # no timeout and the sprint runner's watchdog is 600 s — a blocking review
+    # gate must not be hangable by its own subject. A timed-out analysis
+    # produced no verdict, so it is NOT a pass, and it is deliberately not a
+    # `Finding`: `vge.BLOCKING_KINDS` stays the only statement of which
+    # finding KINDS block.
+    try:
+        report = vge.analyze(diff_text)
+    except vge.AnalysisTimeout as timeout:
+        print(f"FAIL: gate-evidence — {timeout}")
+        return False
+
     for line in vge.format_report(report):
         print(line)
     return not report.blocking_findings

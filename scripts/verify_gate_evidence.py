@@ -88,10 +88,12 @@ below is the single place that says which do.
   fail the phase. Decision 8 records the residual without softening it: an
   author who writes only arm-direction tests produces an *attributed* battery
   and is therefore surfaced here, not blocked.
-* **2** on a usage error — which includes a ``--diff-file`` whose decoded text
-  holds no ``+++ `` header at all, because a PASS over unreadable bytes renders
-  byte-identically to a PASS over a clean diff (measured: a UTF-16 file printed
-  the gate-free verdict and exited 0).
+* **2** on a REFUSAL TO EVALUATE, which is deliberately a different code from
+  the **1** a blocking finding produces. It covers a usage error, a
+  ``--diff-file`` whose decoded text holds no ``+++ `` header at all (a PASS
+  over unreadable bytes renders byte-identically to a PASS over a clean diff —
+  measured: a UTF-16 file printed the gate-free verdict and exited 0), and an
+  analysis that blew its wall-clock budget (``AnalysisTimeout``, below).
 
 The PHASE is unchanged: ``("review", "gate-evidence")`` stays out of
 ``verify_checkpoint.ADVISORY_PHASES``, so this is not the blanket Option G the
@@ -105,6 +107,21 @@ TAB-plus-timestamp field. Two bounds keep one added line from parking this
 blocking gate — ``_TERNARY_GAP`` and ``_MAX_SCAN_CHARS``, both documented at
 their definitions, including the one detection blind spot the second accepts.
 
+Environment knob (SPEC-081 amendment 2026-10-24, AC-9.2):
+
+* ``KIT_GATE_EVIDENCE_TIMEOUT`` — seconds `analyze` may spend before it
+  REFUSES rather than finishing. Default ``60``
+  (`DEFAULT_TIMEOUT_SECONDS`); unset, non-numeric, zero and negative values
+  fall back to that default without crashing, exactly as
+  ``KIT_CHECKPOINT_TEST_TIMEOUT`` and ``KIT_SPRINT_QUEUE_GH_TIMEOUT`` do.
+  Past the bound `analyze` raises `AnalysisTimeout` and both consumers fail
+  CLOSED — the CLI at exit 2, ``verify_checkpoint`` at ``False`` — because a
+  half-finished analysis is not a pass. The bound exists because
+  ``scripts/checkpoint.sh`` ``exec``s python3 with no timeout and the sprint
+  runner's watchdog is 600 s, so an unbounded blocking gate is hangable by
+  its own subject. The quadratic that made that reachable is gone too (see
+  `_BlockFacts`); the memoisation is the fix and the bound is the guarantee.
+
 The tunables below are module-level and read at call time *on purpose*: the
 test suite mutates them one at a time to prove each rule is load-bearing
 (ISSUE-081 AC-5). Do not inline them into the functions that read them.
@@ -113,10 +130,115 @@ test suite mutates them one at a time to prove each rule is load-bearing
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+# ── The wall-clock bound (SPEC-081 amendment 2026-10-24, AC-9.2) ─────
+
+#: Seconds `analyze` may spend before it REFUSES rather than finishing.
+#: Overridable with the env knob below.
+#:
+#: 60 is chosen against MEASURED headroom, not picked round. After the
+#: `_BlockFacts` hoist the slowest honest input measured for this change is
+#: **0.187 s** — a 245 KB diff adding 800 gates and 800 batteries where every
+#: battery attributes to every gate, which is roughly 8x this repo's largest
+#: real PR — so the default is ~320x the worst honest case. The same input
+#: cost 5.089 s before the hoist, and the attempt-3 review measured 32.5 s at
+#: 212 KB, so 60 s is also above the pre-fix cost of everything it saw: the
+#: bound is a backstop, not a tuning parameter. It stays an order of
+#: magnitude under the sprint runner's 600 s no-progress watchdog so the
+#: refusal is what the operator sees, not a killed agent.
+DEFAULT_TIMEOUT_SECONDS = 60.0
+
+#: THE knob name, as one constant: the failure message, the module docstring
+#: and the suite all read it from here rather than re-typing a literal that
+#: can drift (review lesson 2 — print the knob name in the failure message it
+#: remediates).
+GATE_EVIDENCE_TIMEOUT_ENV = "KIT_GATE_EVIDENCE_TIMEOUT"
+
+
+def _timeout_budget() -> float:
+    """Resolve `analyze`'s wall-clock budget at call time.
+
+    Reads ``KIT_GATE_EVIDENCE_TIMEOUT`` (seconds). A valid positive value
+    overrides the default; unset, non-numeric, zero and negative values fall
+    back to `DEFAULT_TIMEOUT_SECONDS` without crashing — the same semantics
+    ``KIT_CHECKPOINT_TEST_TIMEOUT`` and ``KIT_SPRINT_QUEUE_GH_TIMEOUT``
+    already have, so an operator who knows one knows all three. Fractional
+    seconds are accepted (the sibling knobs' `float` spelling, not `int`), so
+    the bound is testable without a multi-second test.
+    """
+    raw = os.environ.get(GATE_EVIDENCE_TIMEOUT_ENV, "")
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return DEFAULT_TIMEOUT_SECONDS
+    # `nan > 0` is False, so NaN lands on the default with everything else.
+    return seconds if seconds > 0 else DEFAULT_TIMEOUT_SECONDS
+
+
+class AnalysisTimeout(Exception):
+    """`analyze` hit its wall-clock bound and REFUSED rather than finishing.
+
+    Deliberately NOT a `Finding`: a finding is a verdict about a gate, and the
+    analysis that would have produced one did not complete. It is also not a
+    second statement of the tier — `BLOCKING_KINDS` stays the only statement
+    of which finding KINDS block. Both consumers catch it and fail CLOSED:
+    `main` at exit **2**, the code it already uses for "refused to evaluate"
+    and visibly distinct from the **1** a blocking finding produces, and
+    ``verify_checkpoint.verify_review_gate_evidence`` at `False`.
+    """
+
+
+_TIMEOUT_MESSAGE = (
+    "REFUSED (not clean): gate-evidence analysis exceeded its wall-clock "
+    "budget after {elapsed:.3f}s of {budget:g}s on a {size}-character diff, "
+    "so it did NOT complete — this is NOT a pass. A half-finished analysis "
+    "cannot tell a clean diff from one whose gates are unevidenced, and a "
+    "blocking review gate that can be parked by its own subject is an "
+    "availability defect (SPEC-081 amendment 2026-10-24, AC-9.2). Raise the "
+    "bound by exporting `{env}=<seconds>` (default {default:g}; non-numeric, "
+    "zero and negative values fall back to that default). If the diff is not "
+    "honestly this large, the input SHAPE is the defect — the cost is driven "
+    "by the gates x test-batteries product, not by size alone — so report it "
+    "rather than raising the bound."
+)
+
+
+class _Deadline:
+    """One `analyze()` call's wall-clock budget, POLLED at loop granularity.
+
+    Polled rather than enforced with `signal.alarm` or a watchdog thread, on
+    purpose: `analyze` runs in-process inside `verify_checkpoint`, which
+    `scripts/checkpoint.sh` `exec`s, so a process-global alarm is
+    main-thread-only and would fire inside whatever the caller does next. The
+    polls sit where the cost accrues — once after parsing, then once per
+    battery and once per gate, which are the two loops whose product was the
+    measured quadratic.
+    """
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+        self._budget = _timeout_budget()
+        self._start = time.monotonic()
+
+    def check(self) -> None:
+        elapsed = time.monotonic() - self._start
+        if elapsed <= self._budget:
+            return
+        raise AnalysisTimeout(
+            _TIMEOUT_MESSAGE.format(
+                elapsed=elapsed,
+                budget=self._budget,
+                size=self._size,
+                env=GATE_EVIDENCE_TIMEOUT_ENV,
+                default=DEFAULT_TIMEOUT_SECONDS,
+            )
+        )
 
 # ── The finding TIER (SPEC-081 amendment 2026-10-24, decision 6) ─────
 
@@ -129,8 +251,10 @@ from pathlib import Path
 #:
 #: Why this kind and ONLY this kind is decidable: ``missing-disarm-battery``
 #: fires if and only if ``attributed == []``, which is computed purely from
-#: ``_calls`` (a literal symbol-name regex) and ``_attributed`` (a name-token
-#: match on the vacuity guard). It never consults ``_refusal_shaped``, so no
+#: ``_called_names`` (the symbol-name call extraction `_calls` spells by
+#: symbol) and ``_attributed_by`` (the name-token match on the vacuity guard
+#: that `_attributed` spells by block). It never consults ``_refusal_shaped``,
+#: so no
 #: polarity judgement can make it fire or not fire; the property it asserts —
 #: "no added test battery mentions this gate at all" — is true or false in the
 #: diff text and nowhere else.
@@ -1088,23 +1212,66 @@ def _guard_literals(block: _Block) -> list[str]:
     return literals
 
 
+def _guard_tokens(block: _Block) -> tuple[frozenset[str], ...]:
+    """The NAME TOKENS of each vacuity-guard literal, one frozenset per literal.
+
+    Extracted once per block by `_BlockFacts`, because every consumer of a
+    guard literal wants its tokens and `analyze` used to re-derive them for
+    every (gate, battery) pair (SPEC-081 amendment 2026-10-24, AC-9.2).
+    """
+    return tuple(frozenset(_tokens(literal)) for literal in _guard_literals(block))
+
+
 # GATE-EVIDENCE-EXEMPT(_attributed): private predicate; mutation-pinned through REQUIRE_VACUITY_GUARD, which is the knob that makes attribution load-bearing.
 def _attributed(block: _Block, symbol: str) -> bool:
-    """True when a vacuity guard in this block names the gate's input."""
+    """True when a vacuity guard in this block names the gate's input.
+
+    The by-BLOCK spelling, which is what the module docstring and
+    `BLOCKING_KINDS` name and what the suite probes. `analyze` calls
+    `_attributed_by` instead, with the block's guard tokens already extracted
+    once — same rule, one extraction.
+    """
+    return _attributed_by(_guard_tokens(block), _tokens(symbol))
+
+
+def _attributed_by(
+    guard_tokens: tuple[frozenset[str], ...], symbol_tokens: set[str]
+) -> bool:
+    """THE attribution rule, over tokens already extracted once per block."""
     if not REQUIRE_VACUITY_GUARD:
         return True
-    symbol_tokens = _tokens(symbol)
     if not symbol_tokens:
         return False
     needed = 2 if len(symbol_tokens) >= 3 else 1
-    for literal in _guard_literals(block):
-        if len(symbol_tokens & _tokens(literal)) >= needed:
-            return True
-    return False
+    return any(len(symbol_tokens & tokens) >= needed for tokens in guard_tokens)
+
+
+#: One CALL in a block: `\b<name>\s*\(`, with the name generalised to `\w+`.
+#: Byte-for-byte the pattern `_calls` used to build per (gate, battery) pair
+#: with `re.escape`, which is why extracting every name ONCE is equivalent and
+#: not merely similar — `TestCallAttributionIsExtractedOncePerBlock` checks
+#: that against every pair the committed corpus produces. The `\b` is what
+#: makes `_refuse(` and `refuse2(` non-calls of `refuse`, and the greedy `\w+`
+#: is what preserves it: on `_refuse(` the capture is `_refuse`, so `refuse`
+#: is correctly absent from the set.
+_CALLEE_RE = re.compile(r"\b(\w+)\s*\(")
+
+
+def _called_names(block: _Block) -> frozenset[str]:
+    """Every name this block calls, extracted ONCE.
+
+    `_calls` ran a freshly `re.escape`d search over a freshly re-joined
+    `block.text` for every (gate, battery) pair: 160 000 searches and 160 000
+    joins on a 400-gate diff, which profiled at 0.61 s of a 0.84 s run even
+    after the per-block predicates were hoisted (SPEC-081 amendment
+    2026-10-24, AC-9.2). `analyze` now tests set membership instead.
+    """
+    return frozenset(_CALLEE_RE.findall(block.text))
 
 
 def _calls(block: _Block, symbol: str) -> bool:
-    return bool(re.search(rf"\b{re.escape(symbol)}\s*\(", block.text))
+    """True when this block calls `symbol`. The by-SYMBOL spelling."""
+    return symbol in _called_names(block)
 
 
 # GATE-EVIDENCE-EXEMPT(_is_non_vacuous): private predicate; mutation-pinned through REQUIRE_VACUITY_GUARD together with _attributed.
@@ -1114,10 +1281,16 @@ def _is_non_vacuous(block: _Block) -> bool:
     A battery of 8 mutations with no input-side guard is indistinguishable from
     8 copies of a case that already passed, which is why this is required of a
     composite pin even when the gate is attributed by a direct call.
+
+    The by-BLOCK spelling of `_non_vacuous`, for the same reason `_attributed`
+    is the by-block spelling of `_attributed_by`.
     """
-    if not REQUIRE_VACUITY_GUARD:
-        return True
-    return bool(_guard_literals(block))
+    return _non_vacuous(_guard_tokens(block))
+
+
+def _non_vacuous(guard_tokens: tuple[frozenset[str], ...]) -> bool:
+    """THE non-vacuity rule, over tokens already extracted once per block."""
+    return (not REQUIRE_VACUITY_GUARD) or bool(guard_tokens)
 
 
 # GATE-EVIDENCE-EXEMPT(_has_consumer_outcome): private predicate; mutation-pinned through REQUIRE_CONSUMER_OUTCOME on a constructed helper-only diff, and through REQUIRE_REFUSAL_DIRECTION by the `consumer_exit_zero` arm-only shape.
@@ -1372,8 +1545,63 @@ def _exemptions(files: list[_FileDiff]) -> tuple[tuple[str, str, str], ...]:
     return tuple(found)
 
 
+@dataclass
+class _BlockFacts:
+    """Everything `analyze` needs to know about ONE battery, computed ONCE.
+
+    Every field depends on the BLOCK alone, and `analyze` used to recompute
+    all of them inside its per-gate loop: `_attributed` called
+    `_guard_literals(block)` for every (gate, battery) pair, and
+    `_asserts_refusal` / `_is_non_vacuous` / `_has_consumer_outcome` were
+    evaluated per gate as well. That is the measured quadratic of SPEC-081's
+    2026-10-24 amendment, AC-9.2 — 0.05 / 0.20 / 0.64 / 2.22 s at 50 / 100 /
+    200 / 400 gates over the matching battery count, ~3.5x per 2x input, with
+    the attempt-3 review measuring 32.5 s at 212 KB on a heavier block shape.
+    Size alone is not the trigger: the four committed fixtures concatenated
+    are 332.7 KB and cost 0.04 s. The gates x batteries PRODUCT is.
+
+    Deliberately NOT a `functools.lru_cache` on the predicates themselves.
+    The tunables at the top of this module are read AT CALL TIME precisely so
+    the suite can mutate them one at a time and prove each rule is
+    load-bearing (AC-5, `_REAL_MUTANTS` and the mutation matrix). A cache that
+    outlived one `analyze()` call would let a verdict computed under the real
+    rule survive the mutation, the mutant would "survive", and a fix for a
+    performance defect would have installed a new fail-open INSIDE the guard.
+    The lifetime is exactly one call — these objects are built from blocks
+    this call parsed and are dropped when it returns — and
+    `TestTheMemoisationDoesNotOutliveOneCall` is what makes that known rather
+    than claimed.
+    """
+
+    called_names: frozenset[str]
+    guard_tokens: tuple[frozenset[str], ...]
+    asserts_refusal: bool
+    #: `_is_non_vacuous and _has_consumer_outcome`, kept as ONE field so the
+    #: short-circuit the per-gate loop had is preserved: a block with no
+    #: registering vacuity guard must still not pay for `_CONSUMER_RE`.
+    composite: bool
+
+
+def _block_facts(block: _Block) -> _BlockFacts:
+    guard_tokens = _guard_tokens(block)
+    return _BlockFacts(
+        called_names=_called_names(block),
+        guard_tokens=guard_tokens,
+        asserts_refusal=_asserts_refusal(block),
+        composite=_non_vacuous(guard_tokens) and _has_consumer_outcome(block),
+    )
+
+
 def analyze(diff_text: str) -> Report:
-    """Classify a unified diff: which gates it adds, and what evidences them."""
+    """Classify a unified diff: which gates it adds, and what evidences them.
+
+    Raises `AnalysisTimeout` — and returns no report at all — when the work
+    exceeds `KIT_GATE_EVIDENCE_TIMEOUT` seconds (default
+    `DEFAULT_TIMEOUT_SECONDS`). Both consumers fail CLOSED on it; a
+    half-finished analysis is not a pass.
+    """
+    deadline = _Deadline(len(diff_text))
+
     files = _parse(diff_text)
     gates = detect_gates(files)
 
@@ -1381,7 +1609,15 @@ def analyze(diff_text: str) -> Report:
     exempted = {(path, symbol) for path, symbol, _ in exemptions}
 
     blocks, module_text = _blocks(files)
-    batteries = [block for block in blocks if _is_battery(block, module_text)]
+    # One poll for everything above, which is linear in the diff but is still
+    # the only work a gate-free, battery-free diff does.
+    deadline.check()
+
+    batteries: list[_BlockFacts] = []
+    for block in blocks:
+        deadline.check()
+        if _is_battery(block, module_text):
+            batteries.append(_block_facts(block))
 
     evidence: dict[tuple[str, str], dict[str, bool]] = {}
     # Refusals come first: they say the subject itself could not be read, so a
@@ -1402,19 +1638,20 @@ def analyze(diff_text: str) -> Report:
         if is_scanned_source(path)
     ]
     for gate in gates:
+        deadline.check()
+        # Tokenised ONCE per gate rather than once per (gate, battery) pair.
+        symbol_tokens = _tokens(gate.symbol)
         attributed = [
-            block
-            for block in batteries
-            if _calls(block, gate.symbol) or _attributed(block, gate.symbol)
+            facts
+            for facts in batteries
+            if gate.symbol in facts.called_names
+            or _attributed_by(facts.guard_tokens, symbol_tokens)
         ]
         # DIRECTION, not end-to-end-ness. `attributed` alone answers "is there
         # a >= MIN_VARIANTS battery that mentions this gate", which is what
         # `disarm` used to mean and is not what the requirement names.
-        disarm = any(_asserts_refusal(block) for block in attributed)
-        composite = any(
-            _is_non_vacuous(block) and _has_consumer_outcome(block)
-            for block in attributed
-        )
+        disarm = any(facts.asserts_refusal for facts in attributed)
+        composite = any(facts.composite for facts in attributed)
         evidence[(gate.path, gate.symbol)] = {
             "disarm": disarm,
             "composite": composite,
@@ -1610,7 +1847,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    report = analyze(diff_text)
+    # Fail CLOSED on a refusal to evaluate, at the exit code this CLI already
+    # uses for one — a timed-out analysis produced no verdict, so it must not
+    # render as a PASS and must not be confused with a blocking FINDING
+    # either. `BLOCKING_KINDS` keeps exit 1 to itself.
+    try:
+        report = analyze(diff_text)
+    except AnalysisTimeout as timeout:
+        print(f"ERROR: {timeout}", file=sys.stderr)
+        return 2
+
     for line in format_report(report):
         print(line)
 

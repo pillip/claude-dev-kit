@@ -14,6 +14,11 @@ Common issues and solutions when using the claude-dev-kit pipeline.
 - **Cause**: Network issues or GitHub API rate limiting; or, for test-phase checkpoints (implement `red`/`test`, ship `smoke`), a test suite that runs longer than the test timeout (default 600 seconds). The same timeout applies to the platform `unit` gate run by `scripts/verify_gates.py` (e.g. during ship's blocking gates)
 - **Solution**: For network commands, check your internet connection; if rate-limited, wait a few minutes and retry (the script retries automatically up to 2 times). For slow test suites, raise the timeout via the `KIT_CHECKPOINT_TEST_TIMEOUT` env var (seconds), e.g. `KIT_CHECKPOINT_TEST_TIMEOUT=1200`. Invalid or non-positive values fall back to the default. Note: a RED-phase run that times out is reported as inconclusive and FAILS — a timeout is not accepted as proof of a failing suite.
 
+### Problem: review `gate-evidence` refuses with "exceeded its wall-clock budget"
+- **Symptom**: the blocking `review/gate-evidence` phase prints `FAIL: gate-evidence — REFUSED (not clean): gate-evidence analysis exceeded its wall-clock budget after …s of …s on a …-character diff`, and `scripts/verify_gate_evidence.py --diff-file …` exits `2` rather than `0` or `1`
+- **Cause**: the analysis is bounded so a blocking review gate cannot be parked by its own subject — `scripts/checkpoint.sh` runs it with no timeout and the sprint runner's watchdog is 600 s. The cost is driven by the **gates × test-batteries product** in the branch diff, not by diff size alone (the repo's four committed diff fixtures total 332.7 KB and analyze in 0.04 s)
+- **Solution**: `KIT_GATE_EVIDENCE_TIMEOUT` defaults to `60` seconds; raise it with `KIT_GATE_EVIDENCE_TIMEOUT=300` if the branch really does add that many gates and batteries. Invalid or non-positive values fall back to the default. Note the refusal **fails closed**: a timed-out analysis is not accepted as a pass, because a half-finished run cannot tell a clean diff from one whose gates are unevidenced. If the branch is ordinary, the input shape is the defect — report it rather than raising the bound.
+
 ### Problem: Checkpoint fails with "issues.md not found"
 - **Symptom**: FAIL message mentioning issues.md path
 - **Cause**: Running verify_checkpoint.py from a worktree where issues.md doesn't exist

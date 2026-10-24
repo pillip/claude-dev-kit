@@ -661,6 +661,11 @@ optional — the defaults are safe for local and CI runs:
 - `KIT_CHECKPOINT_TEST_TIMEOUT` — seconds allowed for test-phase checkpoints
   (`/implement` RED/test, `/ship` smoke) and the `verify_gates.py` unit gate.
   Default `600`; invalid or non-positive values fall back to the default.
+- `KIT_GATE_EVIDENCE_TIMEOUT` — seconds the blocking `review/gate-evidence`
+  analysis (`scripts/verify_gate_evidence.py`) may spend before it refuses
+  rather than finishing. Default `60`; invalid or non-positive values fall back
+  to the default. Past the bound the phase fails **closed** — a timed-out
+  analysis is not a pass — and the failure message names this knob.
 - `KIT_SPRINT_QUEUE_GH_TIMEOUT` — default `10`; seconds for the sprint queue's
   `gh pr view` merge-state probe (`scripts/sprint_queue.py`). On timeout the
   probe degrades to a phase-only decision so an offline or hung `gh` never

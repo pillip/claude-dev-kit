@@ -4653,3 +4653,489 @@ class TestTheConsumerOutcomeScanIsBounded:
             f"not restore the quadratic cost, so this bound is not what makes "
             f"the evidence half cheap — find what is before trusting it"
         )
+
+
+# ── AC-9.2: gates x batteries is LINEAR, and the clock is BOUNDED ────
+#
+# `analyze` was quadratic in gates x batteries: `_attributed` recomputed
+# `_guard_literals(block)` for every (gate, battery) pair, and
+# `_asserts_refusal` / `_is_non_vacuous` / `_has_consumer_outcome` were
+# evaluated inside the per-gate loop too. Measured on an ordinary hand-written
+# shape — N predicate gates in one source file, N parametrized three-variant
+# batteries in one test file, nothing pathological per line:
+#
+#     19.5 KB / 50 gates -> 0.05 s | 38.9 KB / 100 -> 0.20 s
+#     78.7 KB / 200      -> 0.64 s | 158.2 KB / 400 -> 2.22 s   (~3.5x per 2x)
+#
+# and the attempt-3 review measured 32.5 s at 212 KB on a heavier block shape.
+# SIZE alone is not the trigger — concatenating the four committed fixtures is
+# 332.7 KB and runs in 0.04 s — the gates x batteries PRODUCT is.
+#
+# The pin below is an execution COUNT, not a wall clock. A timing assertion is
+# satisfiable by a fast machine and flaky on a loaded one; "how many times did
+# `_guard_literals` run, and does that number move when only the GATE count
+# moves" is the evidence. Two earlier probes on this issue reported false
+# all-clears by self-describing instead of counting.
+
+#: Batteries in the dense shape below. Small on purpose: the pin is the SHAPE
+#: of the count (independent of the gate count), not a stress run.
+_DENSE_N = 12
+
+
+def _added_file(path: str, lines: list[str]) -> str:
+    """One added file as unified-diff text."""
+    body = "".join("+" + line + "\n" for line in lines)
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        f"@@ -0,0 +1,{len(lines)} @@\n" + body
+    )
+
+
+def _dense_pair(gates: int, batteries: int) -> str:
+    """`gates` gates and `batteries` batteries, with EVERY pair attributed.
+
+    Density is what makes the probe non-vacuous, and getting it wrong is how a
+    naive measurement reports a false all-clear. Three of the four per-block
+    predicates are reached through `any(...)`, so when most batteries are
+    unattributed — or when the first attributed one already satisfies the
+    predicate — `any` short-circuits and the cost is O(gates) even before the
+    fix.
+
+    Here every gate's name tokens are ``{marker, absent}``, every battery's
+    vacuity-guard literal is ``MARKER``, and no battery names a gate, so
+    `_calls` is False and `_attributed` is True for all gates x batteries
+    pairs. Every battery is arm-only (`is True`), so neither the `disarm`
+    `any()` nor the `composite` `any()` can short-circuit either.
+    """
+    source: list[str] = []
+    for index in range(gates):
+        source += [
+            f"def marker_absent_{index}(text: str) -> bool:",
+            f'    if "MARKER{index}" in text:',
+            "        return False",
+            "    return True",
+            "",
+        ]
+    tests: list[str] = []
+    for index in range(batteries):
+        tests += [
+            '@pytest.mark.parametrize("text", ["MARKER a", "MARKER b",'
+            ' "MARKER c"])',
+            f"def test_handled_{index}(text):",
+            '    assert "MARKER" in text',
+            f"    assert handled_{index}(text) is True",
+            "",
+        ]
+    return _added_file("scripts/dense_gates.py", source) + _added_file(
+        "tests/test_dense_gates.py", tests
+    )
+
+
+#: The four predicates whose value depends on the BLOCK alone and which the
+#: per-gate loop used to recompute. Named from the module so a rename cannot
+#: leave this probe silently measuring a function nobody calls.
+_PER_BLOCK_PREDICATES = (
+    "_guard_literals",
+    "_asserts_refusal",
+    "_non_vacuous",
+    "_has_consumer_outcome",
+)
+
+
+def _call_count(monkeypatch, name: str, text: str) -> int:
+    """How many times `vge.<name>` runs during one `analyze(text)`."""
+    real = getattr(vge, name)
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(args[:1])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(vge, name, counted)
+    try:
+        vge.analyze(text)
+    finally:
+        monkeypatch.setattr(vge, name, real)
+    return len(calls)
+
+
+class TestTheAnalysisIsLinearInGatesTimesBatteries:
+    """SPEC-081 amendment 2026-10-24, AC-9.2 — the memoisation half.
+
+    A blocking review gate that is quadratic in its own subject is hangable by
+    its own subject: `scripts/checkpoint.sh` `exec`s python3 with no timeout
+    and the sprint runner's watchdog is 600 s.
+    """
+
+    def test_the_dense_shape_really_is_dense(self):
+        """Vacuity guard: without this the counts below prove nothing.
+
+        Every precondition the probe rests on, pinned explicitly — the gates
+        are detected, the batteries are batteries, no battery NAMES a gate (so
+        `_calls` cannot short-circuit `_attributed`), every battery attributes
+        to every gate, and no battery asserts a refusal (so neither `any()`
+        can short-circuit).
+        """
+        text = _dense_pair(_DENSE_N, _DENSE_N)
+        report = vge.analyze(text)
+        symbols = [gate.symbol for gate in report.gates]
+        assert len(symbols) == _DENSE_N, symbols
+
+        blocks, module_text = vge._blocks(vge._parse(text))
+        batteries = [b for b in blocks if vge._is_battery(b, module_text)]
+        assert len(batteries) == _DENSE_N, len(batteries)
+
+        for block in batteries:
+            for symbol in symbols:
+                assert not vge._calls(block, symbol), symbol
+                assert vge._attributed(block, symbol), symbol
+            assert not vge._asserts_refusal(block), block.head
+            assert vge._is_non_vacuous(block), block.head
+            assert not vge._has_consumer_outcome(block), block.head
+
+    @pytest.mark.parametrize("name", _PER_BLOCK_PREDICATES)
+    def test_the_per_block_call_count_does_not_move_with_the_gate_count(
+        self, monkeypatch, name
+    ):
+        """The sharpest statement of O(batteries), not O(gates x batteries).
+
+        Hold the batteries fixed, raise the gates from 2 to `_DENSE_N`, and the
+        count must not budge. Before the fix it multiplied: `_guard_literals`
+        ran 2 x 2 x 12 = 48 times at 2 gates and 2 x 12 x 12 = 288 at 12.
+        """
+        batteries = _DENSE_N
+        few = _call_count(monkeypatch, name, _dense_pair(2, batteries))
+        many = _call_count(monkeypatch, name, _dense_pair(_DENSE_N, batteries))
+        assert many == few, (
+            f"{name} ran {few} times with 2 gates and {many} with "
+            f"{_DENSE_N}, over the same {batteries} batteries: the per-block "
+            f"predicate is still being recomputed per GATE"
+        )
+
+    @pytest.mark.parametrize("name", _PER_BLOCK_PREDICATES)
+    def test_each_per_block_predicate_runs_once_per_battery(
+        self, monkeypatch, name
+    ):
+        """And the absolute count is the battery count, not a multiple of it."""
+        count = _call_count(
+            monkeypatch, name, _dense_pair(_DENSE_N, _DENSE_N)
+        )
+        assert count == _DENSE_N, (
+            f"{name} ran {count} times for {_DENSE_N} batteries x "
+            f"{_DENSE_N} gates; O(batteries) is {_DENSE_N} and the quadratic "
+            f"was up to {_DENSE_N * _DENSE_N}"
+        )
+
+    def test_the_verdict_is_unchanged_by_the_hoist(self):
+        """Removing the quadratic must not move a single finding.
+
+        Every gate in the dense shape has attributed batteries and none of
+        them asserts a refusal, so each one is ADVISORY
+        `missing-refusal-direction` and the diff exits 0 — the same verdict
+        the per-gate recomputation produced.
+        """
+        report = vge.analyze(_dense_pair(_DENSE_N, _DENSE_N))
+        assert [f.kind for f in report.findings] == [
+            "missing-refusal-direction"
+        ] * _DENSE_N, [f.kind for f in report.findings]
+        assert report.blocking_findings == (), report.blocking_findings
+        for gate in report.gates:
+            assert report.evidence[(gate.path, gate.symbol)] == {
+                "disarm": False,
+                "composite": False,
+            }, gate.symbol
+
+
+# ── AC-9.2: the wall-clock bound ─────────────────────────────────────
+
+#: Read from the module, never re-typed: a knob-name assertion whose literal
+#: has drifted from the implementation passes vacuously.
+_TIMEOUT_ENV = vge.GATE_EVIDENCE_TIMEOUT_ENV
+
+#: A budget small enough that the first clock check after parsing is already
+#: past it, for ANY diff this size. Not a sleep and not a race: `_parse` +
+#: `detect_gates` + `_blocks` over ~26 KB cost milliseconds, six orders of
+#: magnitude above this.
+_TINY_BUDGET = "0.000001"
+
+_TIMEOUT_GATES = 80
+_TIMEOUT_INPUT = _dense_pair(_TIMEOUT_GATES, _TIMEOUT_GATES)
+
+
+class TestTheAnalysisBudgetKnob:
+    """`KIT_GATE_EVIDENCE_TIMEOUT`, with the house semantics of its siblings.
+
+    `KIT_CHECKPOINT_TEST_TIMEOUT` and `KIT_SPRINT_QUEUE_GH_TIMEOUT` are the
+    format oracle: seconds, read at call time, and unset / non-numeric /
+    non-positive values fall back to the documented default rather than
+    crashing. An operator who knows one must know all three.
+    """
+
+    def test_the_knob_is_named_in_the_house_style(self):
+        assert _TIMEOUT_ENV == "KIT_GATE_EVIDENCE_TIMEOUT"
+
+    def test_unset_means_the_documented_default(self, monkeypatch):
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        assert vge._timeout_budget() == vge.DEFAULT_TIMEOUT_SECONDS
+        assert vge.DEFAULT_TIMEOUT_SECONDS == 60
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            pytest.param("120", 120.0, id="integer"),
+            pytest.param("0.5", 0.5, id="fractional"),
+            pytest.param("  90  ", 90.0, id="padded"),
+        ],
+    )
+    def test_a_positive_override_is_honoured(self, monkeypatch, raw, expected):
+        monkeypatch.setenv(_TIMEOUT_ENV, raw)
+        assert vge._timeout_budget() == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            pytest.param("", id="empty"),
+            pytest.param("abc", id="non_numeric"),
+            pytest.param("60s", id="unit_suffix"),
+            pytest.param("0", id="zero"),
+            pytest.param("-1", id="negative"),
+            pytest.param("-0.5", id="negative_fraction"),
+            pytest.param("nan", id="nan"),
+        ],
+    )
+    def test_a_useless_value_falls_back_without_crashing(
+        self, monkeypatch, raw
+    ):
+        monkeypatch.setenv(_TIMEOUT_ENV, raw)
+        assert vge._timeout_budget() == vge.DEFAULT_TIMEOUT_SECONDS
+
+    def test_the_knob_is_read_at_call_time(self, monkeypatch):
+        """Not frozen at import, so a test (or an operator) can move it."""
+        monkeypatch.setenv(_TIMEOUT_ENV, "11")
+        assert vge._timeout_budget() == 11.0
+        monkeypatch.setenv(_TIMEOUT_ENV, "22")
+        assert vge._timeout_budget() == 22.0
+
+
+class TestTheAnalysisRefusesPastItsBudget:
+    """A measured-fast implementation is not a bound; this is the bound.
+
+    Fail CLOSED: a timed-out analysis did not complete, so it is NOT a pass
+    and must not RENDER as one. Review lesson 16 — the defence is exercised in
+    the DISARM direction and through its real consumers, not only at its
+    helper.
+    """
+
+    def test_analyze_refuses_rather_than_returning_a_report(self, monkeypatch):
+        monkeypatch.setenv(_TIMEOUT_ENV, _TINY_BUDGET)
+        with pytest.raises(vge.AnalysisTimeout) as excinfo:
+            vge.analyze(_TIMEOUT_INPUT)
+        message = str(excinfo.value)
+        # The knob it remediates, the elapsed time, the budget and the input
+        # size — review lesson 2, verbatim.
+        assert _TIMEOUT_ENV in message, message
+        assert str(len(_TIMEOUT_INPUT)) in message, message
+        assert re.search(r"\d+\.\d+s", message), message
+        assert GATE_FREE not in message, message
+
+    def test_an_honest_diff_under_the_default_budget_still_completes(
+        self, monkeypatch
+    ):
+        """The ARM direction: the bound must not refuse ordinary input.
+
+        Same bytes as the refusal above. If this ever fails, the default is
+        too tight — not the test.
+        """
+        monkeypatch.delenv(_TIMEOUT_ENV, raising=False)
+        report = vge.analyze(_TIMEOUT_INPUT)
+        assert len(report.gates) == _TIMEOUT_GATES, len(report.gates)
+
+    def test_the_cli_fails_closed_and_names_the_knob(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        monkeypatch.setenv(_TIMEOUT_ENV, _TINY_BUDGET)
+        path = tmp_path / "dense.diff"
+        path.write_text(_TIMEOUT_INPUT, encoding="utf-8")
+
+        rc = vge.main(["--diff-file", str(path)])
+        captured = capsys.readouterr()
+        printed = captured.out + captured.err
+
+        assert rc != 0, (rc, printed)
+        # Visibly distinct from a FINDING: `BLOCKING_KINDS` keeps exit 1 to
+        # itself, and a refusal to evaluate exits 2, exactly as the other
+        # "could not read the subject" refusals already do.
+        assert rc == 2, (rc, printed)
+        assert _TIMEOUT_ENV in printed, printed
+        # A timed-out run must not read like a clean one.
+        assert GATE_FREE not in printed, printed
+        assert "PASS:" not in printed, printed
+
+    def test_the_real_consumer_fails_closed_and_names_the_knob(
+        self, monkeypatch, capsys
+    ):
+        monkeypatch.setenv(_TIMEOUT_ENV, _TINY_BUDGET)
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _TIMEOUT_INPUT
+        )
+        verdict = vc.verify_review_gate_evidence("ISSUE-081")
+        out = capsys.readouterr().out
+        assert verdict is False, out
+        assert _TIMEOUT_ENV in out, out
+        assert GATE_FREE not in out, out
+        assert "PASS:" not in out, out
+
+    def test_the_blocking_checkpoint_exits_non_zero(self, monkeypatch, capsys):
+        """Through `verify_checkpoint.main`, which is what the skill runs."""
+        monkeypatch.setenv(_TIMEOUT_ENV, _TINY_BUDGET)
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _TIMEOUT_INPUT
+        )
+        rc = vc.main(
+            ["--skill", "review", "--phase", "gate-evidence",
+             "--issue", "ISSUE-081"]
+        )
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert _TIMEOUT_ENV in out, out
+        assert GATE_FREE not in out, out
+
+    def test_the_refusal_is_not_a_second_statement_of_the_tier(self, capsys):
+        """`BLOCKING_KINDS` stays THE one statement of which KINDS block.
+
+        The bound adds no finding kind and no second path to exit 1: it is an
+        exception both consumers catch, and the CLI surfaces it at the exit
+        code already reserved for "refused to evaluate".
+        """
+        assert vge.BLOCKING_KINDS == frozenset(
+            {"missing-disarm-battery", "unreadable-binary-rendering"}
+        )
+        assert issubclass(vge.AnalysisTimeout, Exception)
+        assert not issubclass(vge.AnalysisTimeout, vge.Finding)
+        # 2 (refused) and 1 (a blocking finding) are different codes.
+        assert vge.main(["--diff-file", str(PRE_FIX)]) == 1
+        capsys.readouterr()
+
+
+#: Each row is a tunable whose mutation MUST change the verdict on the text
+#: beside it, with both `analyze` calls handed the identical string object.
+_PRE_FIX_TEXT = _diff(PRE_FIX)
+
+_CACHE_LIFETIME_CASES = [
+    pytest.param(
+        "REQUIRE_REFUSAL_DIRECTION", False, _ARM_ONLY_DIFF, id="direction"
+    ),
+    pytest.param(
+        "REQUIRE_CONSUMER_OUTCOME", False, _HELPER_ONLY_DIFF, id="consumer"
+    ),
+    pytest.param(
+        "REQUIRE_VACUITY_GUARD", False, _PRE_FIX_TEXT, id="vacuity_guard"
+    ),
+]
+
+
+class TestTheMemoisationDoesNotOutliveOneCall:
+    """The pin that stops the fix from killing the AC-5 mutation matrix.
+
+    The tunables are module-level and read at call time ON PURPOSE, so the
+    suite can mutate them one at a time and prove each rule is load-bearing
+    (AC-5, `_REAL_MUTANTS` and `TestAC5MutationMatrix`). A module-level
+    `functools.lru_cache` on any per-block predicate would let a verdict
+    computed under the real rule survive the mutation — the mutant would
+    "survive", the matrix would go green, and the fix for a performance defect
+    would have installed a new fail-open INSIDE the guard. The cache lifetime
+    is therefore exactly one `analyze()` call, and this is how that is known.
+    """
+
+    @pytest.mark.parametrize("knob,mutant,text", _CACHE_LIFETIME_CASES)
+    def test_a_tunable_mutated_between_two_calls_changes_the_verdict(
+        self, monkeypatch, knob, mutant, text
+    ):
+        before = vge.analyze(text)
+        monkeypatch.setattr(vge, knob, mutant)
+        after = vge.analyze(text)          # the SAME string object
+        assert [(f.symbol, f.kind) for f in before.findings] != [
+            (f.symbol, f.kind) for f in after.findings
+        ], (
+            f"{knob}={mutant} changed nothing on identical text: a cached "
+            f"verdict outlived one analyze() call, which silently disarms the "
+            f"AC-5 mutation matrix"
+        )
+
+    def test_the_mutation_matrix_oracle_still_responds(self, monkeypatch):
+        """Belt and braces, against the real-fixture oracle itself."""
+        assert _contract_holds()
+        monkeypatch.setattr(vge, "REQUIRE_VACUITY_GUARD", False)
+        assert not _contract_holds(), (
+            "the real-fixture oracle no longer sees REQUIRE_VACUITY_GUARD"
+        )
+
+
+#: `(block body, symbol, does it call it)`. The shapes that distinguish a
+#: word-boundary-anchored `\b<symbol>\s*\(` search from a naive substring
+#: test, which is what makes the per-block extraction equivalent rather than
+#: merely similar.
+_CALL_SHAPES = [
+    pytest.param("    refuse_unmarked(text)", "refuse_unmarked", True, id="plain"),
+    pytest.param("    mod.refuse_unmarked(text)", "refuse_unmarked", True, id="dotted"),
+    pytest.param("    refuse_unmarked (text)", "refuse_unmarked", True, id="spaced"),
+    pytest.param("    refuse_unmarked(", "refuse_unmarked", True, id="open_only"),
+    pytest.param("    _refuse_unmarked(text)", "refuse_unmarked", False, id="prefixed"),
+    pytest.param("    refuse_unmarked2(text)", "refuse_unmarked", False, id="suffixed"),
+    pytest.param("    refuse_unmarked", "refuse_unmarked", False, id="not_a_call"),
+    pytest.param("    x = refuse_unmarked[0]", "refuse_unmarked", False, id="indexed"),
+]
+
+
+class TestCallAttributionIsExtractedOncePerBlock:
+    """`_calls` was the other half of the gates x batteries quadratic.
+
+    It ran `re.escape` + `re.search` over a freshly re-joined `block.text` for
+    every (gate, battery) pair — 160 000 searches and 160 000 joins on a
+    400-gate diff, which profiled at 0.61 s of a 0.84 s run after the per-block
+    predicates were hoisted. The names a block calls are extracted once
+    instead; `_calls` keeps its signature and its meaning and is now the
+    by-symbol spelling of that one extraction.
+    """
+
+    @pytest.mark.parametrize("body,symbol,expected", _CALL_SHAPES)
+    def test_the_boundary_rules_are_unchanged(self, body, symbol, expected):
+        block = vge._Block("def test_x():", ["def test_x():", body])
+        assert vge._calls(block, symbol) is expected, body
+
+    def test_the_extraction_agrees_with_calls_on_every_committed_fixture(self):
+        """The oracle is `_calls` itself, over real diffs and real gate names.
+
+        An equivalence claimed in a comment is a claim; an equivalence checked
+        against every (gate, battery) pair the committed corpus produces is
+        evidence.
+        """
+        pairs = 0
+        for fixture in (PRE_FIX, POST_FIX, NON_GATE, COLLIDING):
+            text = _diff(fixture)
+            files = vge._parse(text)
+            symbols = [gate.symbol for gate in vge.detect_gates(files)]
+            blocks, _ = vge._blocks(files)
+            for block in blocks:
+                names = vge._called_names(block)
+                for symbol in symbols:
+                    pairs += 1
+                    assert vge._calls(block, symbol) == (symbol in names), (
+                        fixture.name,
+                        symbol,
+                        block.head,
+                    )
+        assert pairs > 100, pairs      # fixture pin: the corpus is non-trivial
+
+    def test_the_extraction_does_not_run_once_per_gate(self, monkeypatch):
+        """Same pin as the per-block predicates, for the attribution half."""
+        batteries = _DENSE_N
+        few = _call_count(
+            monkeypatch, "_called_names", _dense_pair(2, batteries)
+        )
+        many = _call_count(
+            monkeypatch, "_called_names", _dense_pair(_DENSE_N, batteries)
+        )
+        assert few == many == batteries, (few, many, batteries)
