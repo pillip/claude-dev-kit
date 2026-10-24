@@ -686,6 +686,15 @@ optional — the defaults are safe for local and CI runs:
   cause, and the distinct exit class `3`, which `/sprint` treats as a hard stop
   even though exit `3` does print JSON. Restoring an accepted
   `Roster-Watermark` line in `## Meta` is what clears it — this knob does not.
+- `KIT_WORKTREE_FETCH_TIMEOUT` — default `60`; wall-clock seconds allowed for
+  each remote consultation `scripts/worktree.sh create` makes when the branch
+  exists only on the remote (`git ls-remote`, then a single-branch `git fetch`).
+  Invalid or non-positive values fall back to the default. Only that one path
+  consults the remote — a local ref or a genuinely new branch stays offline.
+  Exceeding the bound is reported as its own `reason=remote-fetch-timeout`
+  refusal, distinct from `reason=remote-unreachable`, because an offline remote
+  stalls rather than failing fast. Requires `timeout` (or `gtimeout`); where
+  neither exists the consultation runs unbounded and says so on stderr.
 - `KIT_ALLOW_BROWSER_INSTALL` — set to `1` to let the visual-diff and
   computed-styles gates auto-install Playwright + Chromium (heavy network +
   subprocess provisioning) when the browser is missing. Unset (the default) or
