@@ -716,12 +716,21 @@ optional — the defaults are safe for local and CI runs:
   the checkpoint prints a `GATES DELEGATED` marker — delegated runs are
   never silent.
 - `KIT_RUN_ID` — run id for the kit's best-effort telemetry appends to
-  `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). Unset or
-  invalid: the shared emitter (`scripts/kit_telemetry.py`, ISSUE-067)
-  writes the event under the `unattributed` fallback run id and prints one
-  `[kit-telemetry]` stdout line naming the knob — an emit through the shared
-  emitter is never a silent no-op. `.claude/runs/` is run-scoped scratch: add
-  it to your project's `.gitignore` so event files are never committed.
+  `.claude/runs/<run-id>.jsonl` (see `docs/telemetry_schema.md`). **Nothing
+  in the kit sets it**; supply it yourself when you want a run's events
+  grouped under one file. Unset (the default): the shared emitter
+  (`scripts/kit_telemetry.py`) still writes the event — under the
+  `unattributed` fallback run id, with a `run_id_fallback` field in the
+  event body — and prints **nothing**, because a line on 100% of runs is
+  noise rather than signal (ISSUE-071). Set to a value outside
+  `[A-Za-z0-9_-]{1,64}`: the same fallback **plus** one `[kit-telemetry]`
+  stdout line naming this knob, because that one is a misconfiguration you
+  can fix. Read the events back — both this stream and the ISSUE-001 hook
+  trace, on the default path — with
+  `python3 scripts/trace_query.py summary`, whose `unattributed events`
+  count is the aggregate the per-emit line used to report.
+  `.claude/runs/` is run-scoped scratch: add it to your project's
+  `.gitignore` so event files are never committed.
 - `CLAUDE_PROJECT_DIR` — set by the Claude Code runtime, never by the kit.
   The shared telemetry emitter reads it (ISSUE-070) as the **fallback**
   containment root: an emit may only write inside the main git work-tree

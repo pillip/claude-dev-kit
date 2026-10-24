@@ -652,9 +652,62 @@ Open gaps after this PR (each needs a carrier — a PR body is not one):
 Open gaps after this PR (each needs a carrier — a PR body is not one):
 
 - GAP-070a (Low, environment-dependent coverage): the character-device case is `pytest.skip`ped where unprivileged `os.mknod` is refused, which is every stock macOS and most CI containers — observed here as `mknod of a character device is not permitted here: [Errno 1] Operation not permitted`. The `S_ISREG` guard it probes is still covered unconditionally by the FIFO, socket and directory cases, so the skip costs a flavour and not a control; recorded rather than hidden because a reader scanning for "device node" in the AC will find a skip.
-- GAP-070b (Low, pre-existing, out of scope): `.claude/runs/` is still gitignored scratch that nothing reads on any default path (`scripts/trace_query.py` consumes the different `.claude/run/events.jsonl` stream), and every gate run still prints `[kit-telemetry] fallback: KIT_RUN_ID unset`. Carrier exists: **ISSUE-071**, which ships immediately after this and rebases on it. Deliberately untouched here.
+- GAP-070b (Low, pre-existing, out of scope): `.claude/runs/` is still gitignored scratch that nothing reads on any default path (`scripts/trace_query.py` consumes the different `.claude/run/events.jsonl` stream), and every gate run still prints `[kit-telemetry] fallback: KIT_RUN_ID unset`. Carrier exists: **ISSUE-071**, which ships immediately after this and rebases on it. Deliberately untouched here. **RESOLVED by ISSUE-071** — see the TC-071 section below: the unset-knob line is gone (the knob has no producer, so it was never a signal) and `trace_query.py` now reads `.claude/runs/*.jsonl` on its default path.
 - GAP-070c (Low, scope limit stated in the module docstring): containment is relative to the project the process runs in, so it does not defend a project root that is itself `$HOME` (a dotfiles git repo with `~` as its work tree would admit `~/.ssh`). Closing that would require a notion of "a kit project" independent of the user's own repo layout, which no AC asks for.
 - GAP-070e (Medium, review-found, NOT closed here): `O_NOFOLLOW` binds only the FINAL path component and `fstat` validates the node's TYPE, not its LOCATION — so swapping `<project>/.claude` for a directory symlink inside the check→open window still redirects the append outside the root. Demonstrated at review time through the same `datetime.now()` seam the TOCTOU test uses: `emit_event` returned **True** and wrote `<outside>/runs/<id>.jsonl`. The module docstring's claim that the `fstat` "closes the TOCTOU window" was corrected to scope it to the node. Closing the location leg needs an `openat`/`dir_fd` walk, which is well past a minimal review fix. Needs a carrier.
 - GAP-070f (Low, review-found): with the process CWD deleted under it, `_containment_root()`'s unconditional `Path.cwd()` makes **every** emit fail (`emit failed ([Errno 2] …)`) even when the caller passed an explicit, valid `project_path` — a dependency the pre-ISSUE-070 emitter only had on the `project_path=None` default. Reachable from a long-lived gate process whose worktree `worktree.sh remove` deleted mid-run. Fix is a `try`/fallback to `CLAUDE_PROJECT_DIR`; deliberately not taken at review time because it changes fallback semantics.
 - GAP-070g (Low, review-found): `_main_repo_root` ignores `GIT_DIR`/`GIT_WORK_TREE` (no subprocess runs), so it diverges from the `bash scripts/worktree.sh root` oracle it claims to mirror whenever those are exported — in the narrowing, safe direction. The two oracle-agreement tests would ERROR rather than fail in such a shell (`worktree.sh root` exits 128); `tests/conftest.py` has no hermetic `delenv` for `GIT_*`, and per GAP-083a it cannot easily gain one.
 - GAP-070d (Low, consistency): the sibling `timeout=` literals across `tests/` (`test_ci_workflow.py:74`, `test_gate_server.py`, `test_sweep_validators.py`, `test_sweep_contract_conformance.py`, `test_uiux_contract_conversion.py`, `test_figma_verify_family.py`) are all hard-coded with no env override, unlike the script-side `KIT_CHECKPOINT_TEST_TIMEOUT` / `KIT_WORKTREE_FETCH_TIMEOUT` convention this PR follows. Not touched: none of them is on this change's path.
+
+## ISSUE-071 — telemetry announcement scarcity + the stream's named consumer (PR #TBD)
+
+Risk this addresses: the ISSUE-067 instrument announced its `KIT_RUN_ID`-unset
+fallback on **100% of runs** (no kit surface sets the knob), and wrote to
+`.claude/runs/*.jsonl`, which **no code read on any default path**. A line
+printed every time is not a signal, so ISSUE-067's genuinely exceptional
+announcements (containment refusal, non-regular target, 4 KiB cap) were
+drowned by it — the "no signal reads as all clear" failure ISSUE-067 was
+built to fix, re-created one level up.
+
+**Resolution shipped: (b), demote the always-on path — taken to zero.** An
+**unset** knob is the kit's default state, so it is recorded only in the
+event body (`run_id_fallback`) and announced nowhere; an **invalid** knob is
+a human misconfiguration, so it keeps its one stdout line naming the knob.
+**Stream decision: name a consumer.** `scripts/trace_query.py summary` now
+reads `.claude/runs/*.jsonl` on its default path alongside the ISSUE-001
+hook trace, importing `kit_telemetry.RUNS_SUBDIR` rather than re-typing the
+path, and reports `script events` plus an `unattributed events` count — the
+aggregate readout that replaces the per-emit line.
+
+- TC-071a (AC-1, BOTH directions in ONE fixture, through the REAL consumer): `tests/test_kit_telemetry.py::TestIssue071ScarcityThroughTheRealGateChain` drives `synthesize_gate_results.decide_gate_path` — the function `verify_checkpoint._run_verify_gates` actually calls — in a bounded subprocess inside a tmp project whose `.git` makes it its own containment root (fixture self-check against `kit_telemetry._main_repo_root`). Arm: a clean default run's stdout is asserted **exactly empty**, not merely free of the fallback token. Disarm, same fixture: a `project_path` outside the root forces a containment refusal and must still print exactly one `[kit-telemetry]` line carrying `containment violation` / `NOT written`, so a mute emitter cannot pass the silence assertion (review lesson 16). A hang is reported as the distinct `TIMEOUT_RC` 124 outcome with `KIT_TELEMETRY_PROBE_TIMEOUT` named in the failure message.
+- TC-071b (AC-2, the repeat-emit budget): 20 emits in **one** process with the knob unset produce **0** notices, counted across stdout **and** stderr — relocating the line to stderr is not removing it, and AC-2 budgets notices, not stdout lines. Asserted as both `<= 1` (the AC) and `== 0` (the branch that shipped). All 20 events must still land, so scarcity cannot be satisfied by a silent no-op. Reverting to a per-emit announcement yields 20 and fails.
+- TC-071c (AC-3, no-silent-no-op under resolution (b)): the unset-knob fallback marker is present in the event body with both streams empty, and — the direction that keeps the change honest — an **invalid** knob still prints exactly one stdout line naming `KIT_RUN_ID`. A change that silenced everything would pass TC-071b and fail here.
+- TC-071d (AC-4, written path == read path, from PRODUCTION constants): an event is emitted through `kit_telemetry.emit_event`, its path recomputed with `kit_telemetry.event_path(...)`, and asserted to be a member of `trace_query.default_trace_paths(project)`; `trace_query.load_events` then reads the event back. The constant itself is pinned by **identity** (`trace_query.DEFAULT_RUNS_DIR is kit_telemetry.RUNS_SUBDIR`), so the two ends cannot drift into two literals that merely agree today. Disarm: `default_trace_paths` must still include the ISSUE-001 hook trace, so "unify the read" cannot mean "drop the stream trace_query already had". `tests/test_run_telemetry.py` adds the consumer-side pins: both streams covered, non-`.jsonl` files excluded, hook-trace events **not** counted as emitter events (schema-collision disarm), microsecond ISO-8601 timestamps parsed, and an end-to-end CLI run with **no path arguments** that emits via the real `kit_telemetry.py` CLI and finds the event in `trace_query.py summary --json`.
+- TC-071e (review lesson 2, the knob's doc lines): `KIT_RUN_ID` is named in the owning module docstring **and** in README, and both — plus `docs/telemetry_schema.md` — must name `trace_query.py`, the script that reads the stream. Pinned as an **occurrence whitelist** on the README's `KIT_RUN_ID` entry (sliced between its bullet and the next one) rather than a phrasing blacklist, per the ISSUE-040 lesson.
+
+**Re-pinned existing tests (contract change, not weakening).** The ISSUE-067
+announce-on-unset contract was pinned in five places; each was rewritten to
+the new contract rather than deleted, and the announcement path they
+exercised was preserved by moving them onto the **invalid** knob, which still
+announces:
+
+| Test | Was | Now |
+|---|---|---|
+| `test_kit_telemetry.py::TestRunIdFallback::test_unset_run_id_writes_unattributed_*` | one stdout line naming the knob | body marker present, both streams empty |
+| `::TestCli::test_without_run_id_exits_zero_*` | `[kit-telemetry]` in stdout | stdout and stderr both empty (the CLI is one emit per process, so an at-most-once notice would still be a line on every run) |
+| `::TestAnnouncementIntegrityEveryPath` (`_quote` forging defence) | `KIT_RUN_ID` **unset** shape | `KIT_RUN_ID` **invalid** shape — the defence under test is unchanged and still exercised on the run-id fallback path |
+| `::TestNeverRaisesContract::test_closed_stdout_does_not_raise_and_still_writes` (+ the real-subprocess variant) | unset knob reached `_announce` with stdout closed | invalid knob reaches it; **plus a new companion test** pinning that the now-silent unset path also survives a closed stdout |
+| `test_gate_delegation.py::test_missing_run_id_falls_back_to_unattributed`, `test_gate_binding.py::TestDormantPathsPrintNoGateOutput` | stdout contains ONLY the telemetry line | stdout is exactly empty — a **strengthening** of the "dormant flavors print no gate output" claim |
+
+ISSUE-070's shipped hardening is untouched: `_containment_root` / `_main_repo_root`
+(including the anchored `commondir` hop), the `O_NONBLOCK` + `fstat` planted-node
+guards, `_quote` on every announcement site, `_announce` swallowing a failed
+`print`, and the "NEVER raises" contract. The only mechanical change inside
+`emit_event` is that the runs-dir and event-path expressions are now
+`runs_dir(project)` / `event_path(project, run_id)` — the same values, named
+once so the consumer can import them.
+
+Open gaps after this PR (each needs a carrier — a PR body is not one):
+
+- GAP-071a (Low, by design): there is still **no producer** for `KIT_RUN_ID`, so every default run's events land in `unattributed.jsonl` and `trace_query` cannot separate one run from the next within that file. Resolution (a) was weighed and rejected: a `SessionStart` hook cannot export an env var into the agent's later Bash calls, so a producer would have to write a run-id file under `.claude/run/`, make the emitter read it as untrusted workspace input (review lesson 5), and keep `hooks.json` and `settings.snippet.json` in sync — all to attribute events for a consumer that only aggregates them. If per-run grouping ever earns its keep, that is the issue to file.
+- GAP-071b (Low): `trace_query`'s summary buckets emitter events under the literal session key `(no-session)`, because the emitter schema carries no `session_id` and the run id lives in the file name rather than the body. Honest for today's aggregate readout; a per-run breakdown would need the run id in the event body, which is a new telemetry dimension and explicitly Out of this issue's scope.

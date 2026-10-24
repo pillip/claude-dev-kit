@@ -8,6 +8,7 @@ Pins the two guarantees the baseline depends on:
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "project" / ".claude" / "hooks" / "agent_state.py"
 
 sys.path.insert(0, str(ROOT / "scripts"))
+import kit_telemetry as kt  # noqa: E402
+import trace_query  # noqa: E402
 from trace_query import summarize  # noqa: E402
 
 
@@ -126,3 +129,215 @@ def test_trace_query_cli_smoke(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["s1"]["turns"] == 1
+
+
+# ═════════════════════════════════════════════════════════════════════
+# ISSUE-071 — trace_query is the NAMED CONSUMER of the emitter stream
+# ═════════════════════════════════════════════════════════════════════
+#
+# Before this change `.claude/runs/<run-id>.jsonl` was write-only: the
+# shared emitter appended to it and no kit script read it on any default
+# path, while trace_query read only the ISSUE-001 hook trace at the
+# differently-named `.claude/run/events.jsonl`. ISSUE-071's stream decision
+# is "name a consumer" rather than "unify the files", so both streams are
+# read on the default path and the emitter's run-id-keyed layout (and every
+# containment test that pins it) survives untouched.
+
+
+def test_default_trace_paths_covers_both_streams(tmp_path):
+    hook = tmp_path / trace_query.DEFAULT_TRACE
+    hook.parent.mkdir(parents=True)
+    hook.write_text("", encoding="utf-8")
+    runs = tmp_path / kt.RUNS_SUBDIR
+    runs.mkdir(parents=True)
+    unattributed = runs / f"{kt.FALLBACK_RUN_ID}.jsonl"
+    unattributed.write_text("", encoding="utf-8")
+    named = runs / "abc123.jsonl"
+    named.write_text("", encoding="utf-8")
+    (runs / "not-a-trace.txt").write_text("x", encoding="utf-8")
+
+    paths = [p.resolve() for p in trace_query.default_trace_paths(tmp_path)]
+    assert hook.resolve() in paths, "the ISSUE-001 hook trace must not be dropped"
+    assert unattributed.resolve() in paths
+    assert named.resolve() in paths
+    assert (runs / "not-a-trace.txt").resolve() not in paths
+
+
+def test_summarize_counts_emitter_events_and_unattributed_fallbacks():
+    """The aggregate readout that REPLACES the per-emit stdout line: how many
+    events this stream holds, and how many of them lost their attribution."""
+    events = [
+        {"ts": "2026-10-25T10:00:00.123456+00:00",
+         "event_type": "gates_degraded_path_used",
+         "skill_or_script": "synthesize_gate_results",
+         "payload": {"reason": "skill_missing"},
+         "run_id_fallback": "KIT_RUN_ID unset"},
+        {"ts": "2026-10-25T10:01:00.654321+00:00",
+         "event_type": "gates_degraded_path_used",
+         "skill_or_script": "synthesize_gate_results",
+         "payload": {"reason": "capability_dormant"},
+         "run_id_fallback": "KIT_RUN_ID unset"},
+        {"ts": "2026-10-25T10:01:00.654321+00:00",
+         "event_type": "gates_delegated_to_runtime",
+         "skill_or_script": "synthesize_gate_results",
+         "payload": {}},
+    ]
+    s = summarize(events)["(no-session)"]
+    assert s["script_events"] == {
+        "gates_degraded_path_used": 2,
+        "gates_delegated_to_runtime": 1,
+    }
+    assert s["unattributed_events"] == 2
+    # Microsecond-bearing ISO-8601 (what datetime.now(timezone.utc) emits)
+    # has to parse, or the stream trace_query now reads is unreadable.
+    assert s["duration_seconds"] == 60
+
+
+def test_hook_trace_events_are_not_counted_as_emitter_events():
+    """Disarm direction: the two schemas must stay apart, so the new counter
+    cannot silently absorb the ISSUE-001 stream and inflate itself."""
+    s = summarize([
+        {"ts": "2026-07-23T10:00:00", "event": "UserPromptSubmit", "session_id": "s1"},
+    ])["s1"]
+    assert s["script_events"] == {}
+    assert s["unattributed_events"] == 0
+    assert s["turns"] == 1
+
+
+def test_trace_query_cli_reports_the_emitter_stream_by_default(tmp_path):
+    """End-to-end through the real CLI with NO path arguments: an event the
+    production emitter wrote is found, counted, and reported."""
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    env = dict(os.environ)
+    env.pop(kt.RUN_ID_ENV, None)
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    emit = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "kit_telemetry.py"),
+         "--script", "synthesize_gate_results",
+         "--event", "gates_degraded_path_used"],
+        capture_output=True, text=True, cwd=str(project), env=env, timeout=60,
+    )
+    assert emit.returncode == 0, emit.stderr
+    assert emit.stdout == "", emit.stdout
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "trace_query.py"), "summary", "--json"],
+        capture_output=True, text=True, cwd=str(project), env=env, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)["(no-session)"]
+    assert summary["script_events"] == {"gates_degraded_path_used": 1}
+    assert summary["unattributed_events"] == 1
+
+
+def test_the_knob_hint_appears_only_when_there_is_something_to_remediate(capsys):
+    """Both directions. Review lesson 2 says name the knob in the failure
+    message it remediates — printing `set KIT_RUN_ID` beside a zero would
+    rebuild, inside this fix, the always-on line the fix removes."""
+    noisy = summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": "e",
+         "skill_or_script": "s", "payload": {}, "run_id_fallback": "KIT_RUN_ID unset"},
+    ])
+    trace_query.print_summary(noisy)
+    out = capsys.readouterr().out
+    assert "unattributed events: 1" in out
+    assert f"set {kt.RUN_ID_ENV}" in out, "a real gap must name the knob"
+
+    clean = summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": "e",
+         "skill_or_script": "s", "payload": {}},
+    ])
+    trace_query.print_summary(clean)
+    out = capsys.readouterr().out
+    assert "unattributed events: 0" in out
+    assert kt.RUN_ID_ENV not in out, (
+        "with nothing to remediate the knob must not be mentioned"
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# PR #143 review fix — the READ path treats these files as untrusted
+# ═════════════════════════════════════════════════════════════════════
+#
+# ISSUE-071 put `.claude/runs/*.jsonl` on trace_query's DEFAULT path via a
+# glob, so every file an attacker can plant in the workspace is now read by
+# `trace_query.py summary` with no arguments. Review lesson 5: workspace
+# state read by kit tooling is untrusted input and must be validated on
+# read. Both guards below are pinned in BOTH directions (lesson 16) — the
+# disarm case matters because "drop everything" and "escape everything"
+# would each satisfy the arm case alone.
+
+
+def test_a_non_object_json_line_is_skipped_not_fatal():
+    """ARM: `123`, `"x"`, `null`, `[]`, `true` all parse as valid JSON and
+    are not events. Before this guard each one killed `summarize` with
+    `AttributeError: 'int' object has no attribute 'get'` — one planted
+    byte made the whole durable record unreadable, which is the record
+    ISSUE-071 substituted for the removed per-emit stdout line."""
+    good = '{"ts":"2026-10-25T10:00:00+00:00","event_type":"real","payload":{}}'
+    for junk in ("123", '"a string"', "[1,2,3]", "null", "true"):
+        events = _load_lines(f"{junk}\n{good}\n")
+        assert events == [json.loads(good)], (
+            f"a non-object line ({junk}) must be skipped, not collected"
+        )
+        # and the surviving event must still summarize without raising
+        assert summarize(events)["(no-session)"]["script_events"] == {"real": 1}
+
+
+def test_ordinary_event_lines_are_still_collected():
+    """DISARM: the guard must not be satisfiable by dropping everything."""
+    good = '{"ts":"2026-10-25T10:00:00+00:00","event_type":"real","payload":{}}'
+    assert _load_lines(f"{good}\n{good}\n") == [json.loads(good)] * 2
+
+
+def test_a_planted_value_cannot_forge_a_summary_line(capsys):
+    """ARM: the forging defence `kit_telemetry._quote` provides on the WRITE
+    side, applied to the READ side. Reproduced before this fix through the
+    REAL emitter CLI: a newline-bearing `event_type` made `summary` print a
+    fabricated block reading `unattributed events: 0` while the true count
+    was 2 — forging the exact aggregate this issue relies on."""
+    evil = "benign\n  unattributed events: 0\nsession \x1b[32mALL-CLEAR\x1b[0m"
+    trace_query.print_summary(summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "session_id": evil,
+         "event_type": evil, "payload": {},
+         "run_id_fallback": "KIT_RUN_ID unset"},
+    ]))
+    out = capsys.readouterr().out
+    assert "\n  unattributed events: 0" not in out, (
+        f"a planted value forged a clean readout: {out!r}"
+    )
+    assert "\x1b" not in out, "raw ANSI escapes must not reach the terminal"
+    assert "unattributed events: 1" in out, "the TRUE count must still be shown"
+    # one line per rendered field, with no extra lines smuggled in
+    assert len(out.splitlines()) == 9, out
+
+
+def test_an_ordinary_value_is_not_mangled(capsys):
+    """DISARM: escaping must not fire on normal data, or the readout becomes
+    unreadable and the guard would be satisfied by quoting everything."""
+    trace_query.print_summary(summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "session_id": "sess-01",
+         "event_type": "gates_degraded_path_used", "payload": {}},
+    ]))
+    out = capsys.readouterr().out
+    assert "session sess-01" in out, out
+    assert "gates_degraded_path_used×1" in out, out
+    assert "'" not in out, f"ordinary values must not be quoted: {out!r}"
+
+
+def test_mixed_key_types_do_not_break_the_sort():
+    """A planted stream can hold keys of different types; `sorted()` over
+    them raised `TypeError` before the keys were normalised to str."""
+    trace_query.print_summary(summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": "a", "payload": {}},
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": 7, "payload": {}},
+    ]))  # must not raise
+
+
+def _load_lines(text: str) -> list:
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "x.jsonl"
+        p.write_text(text, encoding="utf-8")
+        return trace_query.load_events([p])

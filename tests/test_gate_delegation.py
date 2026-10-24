@@ -432,16 +432,20 @@ class TestTelemetry:
     ):
         # ISSUE-067: KIT_RUN_ID unset is no longer a silent drop — the event
         # lands under the explicit 'unattributed' run id with the fallback
-        # visible in the event body, and stdout announces the named knob.
+        # visible in the event body.
+        # ISSUE-071 re-pin: the knob has no producer, so unset is the state
+        # of 100% of gate runs and the stdout announcement it used to print
+        # carried no information. The DURABLE record (the body field, read by
+        # scripts/trace_query.py) is what survives; the gate path is silent.
         self._runs_dir(project)
         _probe(monkeypatch, 1)
         _decide(project)  # must not raise
         event = self._events(project, "unattributed")[0]
         assert event["payload"]["reason"] == "skill_missing"
         assert event["run_id_fallback"] == "KIT_RUN_ID unset"
-        out = capsys.readouterr().out
-        assert "[kit-telemetry]" in out
-        assert "KIT_RUN_ID" in out
+        captured = capsys.readouterr()
+        assert captured.out == "", captured.out
+        assert captured.err == "", captured.err
 
     def test_invalid_run_id_falls_back_to_unattributed(
         self, project, monkeypatch, capsys
