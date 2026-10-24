@@ -729,10 +729,14 @@ optional — the defaults are safe for local and CI runs:
   in a git work tree this knob supplies the root instead (with the current
   directory as the last resort). A `--project-path` that resolves outside
   that root is refused with one `[kit-telemetry]` line and nothing is
-  written. Linked worktrees resolve to the MAIN repo root, so
-  `<repo>/.worktrees/<branch>` and the repo root admit each other. Under a
-  plugin install the root is the user's project — never the kit's install
-  directory.
+  written. A linked worktree **created inside its repo** — the only shape
+  `scripts/worktree.sh create` produces — resolves to the MAIN repo root,
+  so `<repo>/.worktrees/<branch>` and the repo root admit each other. A
+  worktree placed outside its repo, or backed by a bare repo, resolves to
+  **itself** instead: the emitter refuses to widen its own write boundary
+  on the strength of a `.git` file, which is ordinary writable workspace
+  content (review fix, PR #141). Under a plugin install the root is the
+  user's project — never the kit's install directory.
 
 ### Configuring gates via `docs/test_plan.md`
 

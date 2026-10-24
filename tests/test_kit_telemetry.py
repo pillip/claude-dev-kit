@@ -720,6 +720,145 @@ class TestContainmentRootDerivation:
         monkeypatch.delenv(kt.PROJECT_DIR_ENV)
         assert kt._containment_root() == plain.resolve()
 
+    @pytest.mark.parametrize(
+        "shape",
+        ["sibling", "ancestor", "filesystem-root", "bare-repo-parent"],
+    )
+    def test_a_hijacked_commondir_cannot_move_the_root(
+        self, tmp_path, monkeypatch, shape
+    ):
+        """Review finding (PR #141), ARM direction, all four hop shapes.
+
+        A linked worktree's ``.git`` is a plain writable FILE inside the
+        project, and the ``commondir`` it names is read to derive the
+        containment ROOT. Unvalidated, an attacker with the write access
+        AC-2 already assumes (they can plant a FIFO at the event path)
+        re-opens AC-1 by pointing the hop wherever they like.
+
+        ``ancestor`` and ``filesystem-root`` are the shapes a first review
+        fix MISSED: it asserted only that the hop contains the work tree,
+        which every ancestor does — ``commondir`` of ``/x`` yielded a root
+        of ``/`` and made containment vacuous. ``bare-repo-parent`` is the
+        same widening reached through a legitimate git layout.
+        Parametrized rather than duplicated so the sideways-only version
+        of this test cannot come back.
+        """
+        repo, wt = _make_repo_with_worktree(tmp_path)
+        monkeypatch.chdir(wt)
+        assert kt._containment_root() == repo.resolve(), "fixture self-check"
+
+        victim = tmp_path / "victim-home"
+        (victim / ".ssh").mkdir(parents=True)
+        (victim / ".ssh" / "id_ed25519").write_text("KEY", encoding="utf-8")
+        before = sorted(str(p.relative_to(victim)) for p in victim.rglob("*"))
+
+        fake_gitdir = tmp_path / "fake-gitdir"
+        fake_gitdir.mkdir()
+        commondir = {
+            # a directory beside the repo
+            "sibling": f"{victim}/.git",
+            # tmp_path CONTAINS the work tree — every ancestor passes an
+            # is_relative_to check, which is why that check is not enough
+            "ancestor": f"{tmp_path}/.git",
+            "filesystem-root": "/x",
+            # `git clone --bare` + `git worktree add`: commondir names
+            # <dir>/proj.git, so `.parent` is the directory holding every
+            # sibling project
+            "bare-repo-parent": f"{tmp_path}/proj.git",
+        }[shape]
+        (fake_gitdir / "commondir").write_text(commondir + "\n", encoding="utf-8")
+        (wt / ".git").write_text(f"gitdir: {fake_gitdir}\n", encoding="utf-8")
+
+        root = kt._containment_root()
+        assert root == wt.resolve(), (
+            f"{shape}: a rejected hop must fall back to this work tree, the "
+            f"conservative boundary; got {root}"
+        )
+        assert root != Path("/"), f"{shape}: containment became vacuous"
+        assert not victim.resolve().is_relative_to(root), (
+            f"{shape}: the victim tree fell inside the derived root {root}"
+        )
+        assert kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=victim / ".ssh"
+        ) is False
+        after = sorted(str(p.relative_to(victim)) for p in victim.rglob("*"))
+        assert after == before == [".ssh", ".ssh/id_ed25519"], f"{shape}: {after}"
+
+    def test_malformed_git_file_bytes_fall_back_instead_of_escaping(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Review finding (PR #141): the same untrusted-on-read lesson. A
+        non-UTF-8 byte or an embedded NUL in planted workspace state must
+        fail CLOSED to the work tree, not raise out of ``_main_repo_root``
+        and turn every emit in the tree into ``emit failed``."""
+        repo, wt = _make_repo_with_worktree(tmp_path)
+        monkeypatch.chdir(wt)
+        fake_gitdir = tmp_path / "fake-gitdir"
+        fake_gitdir.mkdir()
+        # (1) non-UTF-8 in commondir -> UnicodeDecodeError without errors=
+        (fake_gitdir / "commondir").write_bytes(b"\xff\xfe not utf-8\n")
+        (wt / ".git").write_text(f"gitdir: {fake_gitdir}\n", encoding="utf-8")
+        assert kt._containment_root() == wt.resolve()
+
+        # (2) NUL inside the commondir CONTENT -> Path.resolve() raises
+        # ValueError, which is NOT an OSError. This is the case that pins
+        # the widened catch: `Path.is_file()` swallows a NUL in the gitdir
+        # path itself, so only this one reaches `resolve()`.
+        (fake_gitdir / "commondir").write_bytes(b"/tmp/a\x00b\n")
+        assert kt._containment_root() == wt.resolve()
+
+        # (3) NUL in the gitdir line itself
+        (wt / ".git").write_bytes(b"gitdir: /tmp/ev\x00il\n")
+        assert kt._containment_root() == wt.resolve()
+
+        monkeypatch.setenv(kt.RUN_ID_ENV, "testrun")
+        assert kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=wt
+        ) is True, "a corrupt .git byte must not disable telemetry wholesale"
+        assert capsys.readouterr().out == ""
+
+    def test_a_planted_git_file_in_a_subdir_cannot_move_the_root(
+        self, tmp_path, monkeypatch
+    ):
+        """Same finding, the variant that needs no overwrite: a NEW
+        directory inside the project carrying a crafted ``.git`` file."""
+        repo, _wt = _make_repo_with_worktree(tmp_path)
+        victim = tmp_path / "victim2"
+        victim.mkdir()
+        fake_gitdir = tmp_path / "fake-gitdir-2"
+        fake_gitdir.mkdir()
+        (fake_gitdir / "commondir").write_text(f"{victim}/.git\n", encoding="utf-8")
+        planted = repo / "planted"
+        planted.mkdir()
+        (planted / ".git").write_text(f"gitdir: {fake_gitdir}\n", encoding="utf-8")
+
+        monkeypatch.chdir(planted)
+        root = kt._containment_root()
+        assert root == planted.resolve(), root
+        assert root.is_relative_to(repo.resolve()), (
+            f"the derived root escaped the project: {root}"
+        )
+        assert kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=victim
+        ) is False
+        assert list(victim.iterdir()) == []
+
+    def test_a_genuine_commondir_hop_is_still_followed(self, tmp_path, monkeypatch):
+        """DISARM direction for the fix above (lesson 16): the validation
+        must not break the real linked-worktree hop ISSUE-075 depends on —
+        a guard that rejected every hop would pass both tests above."""
+        repo, wt = _make_repo_with_worktree(tmp_path)
+        assert (wt / ".git").is_file(), "fixture self-check: real worktree shape"
+        monkeypatch.chdir(wt)
+        assert kt._containment_root() == repo.resolve()
+        assert kt._containment_root() != wt.resolve(), (
+            "the hop was rejected — the main root must still win for a real "
+            "linked worktree, or a main-root-targeted emit breaks"
+        )
+        assert kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=repo
+        ) is True
+
     def test_git_work_tree_wins_over_the_env_knob(self, tmp_path, monkeypatch):
         """Order matters for the kit's own sprint flow: from inside a
         worktree the git answer is the MAIN root, which admits both the
@@ -919,6 +1058,60 @@ class TestProjectPathContainment:
         assert refused.returncode == 0, refused.stderr
         assert "containment violation" in refused.stdout
         assert list(outside.iterdir()) == []
+
+
+class TestAnnouncementIntegrityEveryPath:
+    """Review finding (PR #141): ``_quote`` shipped applied to the PATH
+    only, so ``--event`` still forged a second ``[kit-telemetry]`` line on
+    three other announcement paths. Lesson 16 — a new defence must be
+    exercised through its REAL consumer (the CLI) at EVERY site, not only
+    in the arm direction at the one site its author had in mind.
+
+    Measured before the fix: 2 lines on all three shapes below.
+    """
+
+    EVIL = "benign_event\n[kit-telemetry] fallback: all clear"
+
+    @pytest.mark.parametrize(
+        "label,extra,run_id",
+        [
+            ("4096-byte cap", ["--payload", '{"f": "' + "y" * 5000 + '"}'], "capr"),
+            ("KIT_RUN_ID fallback", [], None),
+            ("invalid --payload", ["--payload", "{not json"], "badp"),
+        ],
+    )
+    def test_event_type_cannot_forge_a_second_line(
+        self, kit_root, project, label, extra, run_id
+    ):
+        result = _run_cli(
+            ["--script", "review", "--event", self.EVIL,
+             "--project-path", str(project), *extra],
+            _cli_env(run_id, kit_root),
+            cwd=kit_root,
+        )
+        assert result.returncode == 0, result.stderr
+        lines = result.stdout.splitlines()
+        assert len(lines) == 1, f"{label}: forged extra line(s): {result.stdout!r}"
+        assert lines[0].startswith("[kit-telemetry]"), label
+        assert "\\n[kit-telemetry] fallback: all clear" in result.stdout, (
+            f"{label}: the embedded newline must be escaped, not emitted raw"
+        )
+
+    def test_an_ordinary_event_type_still_reads_cleanly(self, kit_root, project):
+        """DISARM direction: escaping must not mangle the normal case —
+        the event name stays greppable in the announcement."""
+        result = _run_cli(
+            ["--script", "review", "--event", "review_degraded_path_used",
+             "--project-path", str(project)],
+            _cli_env(None, kit_root),
+            cwd=kit_root,
+        )
+        assert result.returncode == 0, result.stderr
+        assert len(result.stdout.splitlines()) == 1, result.stdout
+        assert "review_degraded_path_used" in result.stdout
+        assert "KIT_RUN_ID" in result.stdout
+        assert "unattributed" in result.stdout
+        assert len(_events(project, "unattributed")) == 1
 
 
 class TestPlantedNodeFamily:

@@ -66,10 +66,16 @@ Behavior (see docs/telemetry_schema.md for the event catalog):
   ``O_NONBLOCK`` leg is the anti-HANG guard — a planted FIFO otherwise
   blocks ``os.open`` forever, and ``verify_checkpoint.py``'s wrapper
   catches exceptions, not stalls, so a hang STALLS a gate instead of
-  failing it. The ``fstat`` leg is the anti-WRITE guard and is the one that
-  closes the TOCTOU window, because it interrogates the descriptor actually
-  opened: anything that is not a single-linked regular file (FIFO, socket,
-  device node, directory, hardlink) is refused with a named reason.
+  failing it. The ``fstat`` leg is the anti-WRITE guard and closes the
+  TOCTOU window FOR THE NODE AT THE EVENT PATH, because it interrogates the
+  descriptor actually opened: anything that is not a single-linked regular
+  file (FIFO, socket, device node, directory, hardlink) is refused with a
+  named reason. It does NOT re-validate LOCATION — ``fstat`` answers "what
+  kind of file is this", not "where is it" — and ``O_NOFOLLOW`` binds only
+  the FINAL path component. A ``.claude/`` swapped for a directory symlink
+  between the containment check and the open therefore still redirects the
+  append outside the root (demonstrated in review, PR #141; carried, not
+  closed here — closing it needs an ``openat``/``dir_fd`` walk).
 - ``emit_event`` NEVER raises — telemetry is a non-blocking instrument and
   the parent must never fail because of it. This is the contract ISSUE-075
   adopts, so it is pinned by tests rather than merely advertised: the catch
@@ -161,8 +167,15 @@ def _quote(value: object) -> str:
     """Render attacker-influenced text as a single escaped token.
 
     Announcements are one stdout line by contract. ``repr`` escapes
-    newlines, so a crafted ``--project-path`` cannot forge a second
-    ``[kit-telemetry]`` line that reads like an all-clear.
+    newlines, so a crafted ``--project-path`` or ``--event`` cannot forge a
+    second ``[kit-telemetry]`` line that reads like an all-clear.
+
+    Review fix (PR #141): this must wrap EVERY caller-supplied value that
+    reaches an announcement, not just the path. Shipped applied to the
+    path only, it left the 4 KiB-cap, ``KIT_RUN_ID``-fallback, outer-handler
+    and ``--payload`` announcements forging a second line through
+    ``event_type`` — a defence tested in the arm direction at one call site
+    and absent at the others (review lesson 16).
     """
     return repr(str(value))
 
@@ -177,6 +190,11 @@ def _main_repo_root(start: Path) -> Path | None:
     every emit would add a second way for it to stall. The mirror is pinned
     against that oracle — including the linked-worktree case — in
     ``tests/test_kit_telemetry.py::TestContainmentRootDerivation``.
+
+    Two deliberate divergences from that oracle, both in the narrowing
+    (safe) direction: ``GIT_DIR``/``GIT_WORK_TREE`` are not consulted
+    because no subprocess runs, and a ``commondir`` hop that leaves the
+    work tree is rejected rather than followed (see below).
     """
     for candidate in (start, *start.parents):
         dot_git = candidate / ".git"
@@ -191,32 +209,64 @@ def _main_repo_root(start: Path) -> Path | None:
         # ``<main-root>``, which is the property a worktree-rooted caller
         # (ISSUE-075) depends on. A submodule has no ``commondir``; its own
         # work tree is then the boundary, which is the conservative answer.
+        #
+        # Review fix (PR #141): everything read below — the ``.git`` file
+        # and the ``commondir`` it names — is WORKSPACE CONTENT, i.e.
+        # untrusted input on read (review lesson 5), and this function
+        # derives a SECURITY boundary from it. A linked worktree's ``.git``
+        # is an ordinary writable file inside the tree, so an attacker with
+        # the write access AC-2 already assumes could otherwise name any
+        # ``commondir`` and move the root anywhere (``/x`` made containment
+        # vacuous). Hence: ONE try — any malformed byte falls through to the
+        # conservative answer rather than escaping this function — plus the
+        # anchor below.
         try:
             spec = dot_git.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return candidate
-        gitdir = ""
-        for line in spec.splitlines():
-            if line.startswith("gitdir:"):
-                gitdir = line.split(":", 1)[1].strip()
-                break
-        if not gitdir:
-            return candidate
-        git_path = Path(gitdir)
-        if not git_path.is_absolute():
-            git_path = candidate / git_path
-        commondir = git_path / "commondir"
-        if not commondir.is_file():
-            return candidate
-        try:
-            common = Path(commondir.read_text(encoding="utf-8").strip())
-        except OSError:
-            return candidate
-        if not common.is_absolute():
-            common = git_path / common
-        try:
-            return common.resolve().parent
-        except OSError:
+            gitdir = ""
+            for line in spec.splitlines():
+                if line.startswith("gitdir:"):
+                    gitdir = line.split(":", 1)[1].strip()
+                    break
+            if not gitdir:
+                return candidate
+            git_path = Path(gitdir)
+            if not git_path.is_absolute():
+                git_path = candidate / git_path
+            commondir = git_path / "commondir"
+            if not commondir.is_file():
+                return candidate
+            common = Path(
+                commondir.read_text(encoding="utf-8", errors="replace").strip()
+            )
+            if not common.is_absolute():
+                common = git_path / common
+            common_dir = common.resolve()
+            hop = common_dir.parent
+            # The anchor. "Is the hop an ancestor of this work tree" is NOT
+            # enough — every ancestor is one, including ``/`` and ``$HOME``,
+            # which is precisely the direction an attacker wants (found in
+            # review by both runtime reviewers after a first fix checked only
+            # the sideways direction). What cannot be forged without write
+            # access at the destination is the destination's own git dir:
+            # require ``hop`` to be a real work tree whose ``.git`` IS the
+            # common dir we just followed. A bare-repo-backed worktree
+            # (``commondir`` = ``/srv/proj.git``) fails this too, so the root
+            # never widens to the directory holding sibling projects.
+            if not common_dir.is_dir():
+                return candidate
+            if (hop / ".git").resolve() != common_dir:
+                return candidate
+            # Belt and braces, and the reason an out-of-tree
+            # ``git worktree add`` target (which `worktree.sh create` never
+            # produces) contains itself rather than resolving to the main
+            # root — a deliberate narrowing.
+            if not candidate.resolve().is_relative_to(hop):
+                return candidate
+            return hop
+        except (OSError, ValueError):
+            # ValueError covers an embedded NUL in a planted ``gitdir:``.
+            # Failing closed here keeps one corrupt byte in workspace state
+            # from taking down every emit in the tree.
             return candidate
     return None
 
@@ -356,7 +406,7 @@ def emit_event(
         if len(data) > _MAX_EVENT_BYTES:
             _announce(
                 f"skipped: serialized event exceeds the {_MAX_EVENT_BYTES}-byte "
-                f"cap — event '{event_type}' NOT written"
+                f"cap — event {_quote(event_type)} NOT written"
             )
             return False
 
@@ -368,11 +418,13 @@ def emit_event(
         #     FIFO blocks os.open FOREVER, and verify_checkpoint.py's wrapper
         #     catches exceptions, not stalls, so the emit would STALL a gate
         #     instead of failing it. A no-op for regular files.
-        #   fstat after the open — the anti-WRITE leg, and the only check
-        #     immune to the TOCTOU window, because it interrogates the
+        #   fstat after the open — the anti-WRITE leg. It is immune to the
+        #     TOCTOU window for the NODE, because it interrogates the
         #     descriptor actually opened rather than a path that may have
         #     been swapped since. Refuses FIFOs, sockets, device nodes,
-        #     directories and hardlinks.
+        #     directories and hardlinks. It does NOT re-check location; see
+        #     the module docstring for the directory-symlink gap that
+        #     remains open.
         flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY
         flags |= getattr(os, "O_NOFOLLOW", 0)
         flags |= getattr(os, "O_NONBLOCK", 0)
@@ -412,13 +464,13 @@ def emit_event(
 
         if fallback_reason is not None:
             _announce(
-                f"fallback: {fallback_reason} — event '{event_type}' written "
-                f"under run id '{FALLBACK_RUN_ID}'"
+                f"fallback: {fallback_reason} — event {_quote(event_type)} "
+                f"written under run id '{FALLBACK_RUN_ID}'"
             )
         return True
     except Exception as exc:  # non-blocking instrument: never fail the parent
         _announce(
-            f"skipped: emit failed ({exc}) — event '{event_type}' NOT written"
+            f"skipped: emit failed ({exc}) — event {_quote(event_type)} NOT written"
         )
         return False
 
@@ -443,13 +495,13 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError:
             _announce(
                 f"skipped: --payload is not valid JSON — event "
-                f"'{args.event}' NOT written"
+                f"{_quote(args.event)} NOT written"
             )
             return 0
         if not isinstance(payload, dict):
             _announce(
                 f"skipped: --payload is not a JSON object — event "
-                f"'{args.event}' NOT written"
+                f"{_quote(args.event)} NOT written"
             )
             return 0
 
