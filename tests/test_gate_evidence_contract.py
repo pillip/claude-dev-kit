@@ -3169,6 +3169,26 @@ def _consume(monkeypatch, capsys, repo: Path) -> tuple[bool, str]:
     return verdict, capsys.readouterr().out
 
 
+def _with_origin(repo: Path, head_branch: str, *push: str) -> Path:
+    """Give the repo a real origin and point origin/HEAD at <head_branch>.
+
+    <push> names the branches published to it (default: ``main`` and ``work``),
+    because WHICH remote-tracking refs a clone happens to have is the input the
+    base-corroboration reads — a test that cannot choose it cannot pin it.
+    """
+    bare = repo.parent / f"{repo.name}-origin.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", str(bare)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-q", "origin", *(push or ("main", "work")))
+    _git(repo, "remote", "set-head", "origin", head_branch)
+    return repo
+
+
 class TestUntrackedFilesAreAcquired:
     """The untracked leg the module's own oracle already owned (ISSUE-048).
 
@@ -3303,21 +3323,6 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
     Workspace-persisted state a gate reads is untrusted input: validate on read.
     """
 
-    @staticmethod
-    def _with_origin(repo: Path, head_branch: str) -> Path:
-        """Give the repo a real origin and point origin/HEAD at <head_branch>."""
-        bare = repo.parent / f"{repo.name}-origin.git"
-        subprocess.run(
-            ["git", "init", "-q", "--bare", str(bare)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        _git(repo, "remote", "add", "origin", str(bare))
-        _git(repo, "push", "-q", "origin", "main", "work")
-        _git(repo, "remote", "set-head", "origin", head_branch)
-        return repo
-
     def _repo_with_committed_gate(self, tmp_path: Path) -> Path:
         repo = _branch_repo(tmp_path)
         (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
@@ -3329,7 +3334,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
         self, tmp_path, monkeypatch, capsys
     ):
         """The real `_default_branch()` chain, against a real manipulated ref."""
-        repo = self._with_origin(self._repo_with_committed_gate(tmp_path), "main")
+        repo = _with_origin(self._repo_with_committed_gate(tmp_path), "main")
         monkeypatch.chdir(repo)
 
         # BASELINE: origin/HEAD -> main, the gate is charged.
@@ -3351,7 +3356,7 @@ class TestABaseThatEqualsHeadIsRefusedNotPassed:
         self, tmp_path, monkeypatch, capsys
     ):
         """The refusal must NAME the cause, or it is the same silent pass."""
-        repo = self._with_origin(self._repo_with_committed_gate(tmp_path), "work")
+        repo = _with_origin(self._repo_with_committed_gate(tmp_path), "work")
         monkeypatch.chdir(repo)
         _, out = _consume(monkeypatch, capsys, repo)
         assert "FAIL: gate-evidence" in out, out
@@ -5139,3 +5144,388 @@ class TestCallAttributionIsExtractedOncePerBlock:
             monkeypatch, "_called_names", _dense_pair(_DENSE_N, batteries)
         )
         assert few == many == batteries, (few, many, batteries)
+
+
+# ── AC-9.3: an ANCESTOR base must not narrow the subject ─────────────
+#
+# `_gate_evidence_diff` guarded two EQUALITIES: the resolved default branch IS
+# the branch under review, and `base_sha == head_sha`. The attack does not need
+# equality. A base that is a strict ANCESTOR of HEAD narrows the diff without
+# ever equalling it, so a gate added in an EARLIER commit of the same branch
+# falls outside the subject and neither refusal fires.
+#
+# Measured for this change on a throwaway repo against the committed detector —
+# `main` at the fork point, `work` = [gate, filler, filler]:
+#
+#   origin/HEAD -> origin/main      base fa26f58^^   VERDICT False
+#     FAIL ... [missing-disarm-battery] refuse_unmarked (scripts/demo_fix.py:7)
+#   origin/HEAD -> origin/<decoy>   base fa26f58     VERDICT True
+#     PASS: gate-evidence — no gate DETECTED in the diff.
+#     narrowed subject = ['scripts/util.py']
+#
+# `refs/remotes/origin/HEAD` is purely local, author-writable, never pushed and
+# invisible in the PR, so this is workspace-persisted state a gate reads, i.e.
+# untrusted input to be validated on read (review lesson 5). Review lesson 16
+# governs the tests: the disarm direction, through the real consumer.
+
+#: The gate the TRUNK adds before the branch forks. Same proven-detected shape
+#: as `_GATE_SOURCE`, renamed so the two can never be confused in one assertion.
+_TRUNK_GATE = "refuse_untrusted"
+_TRUNK_GATE_SOURCE = _GATE_SOURCE.replace(_REPO_GATE, _TRUNK_GATE).replace(
+    "ZZMARK", "QQMARK"
+)
+
+_DECOY_SHAPES = [
+    pytest.param("trunk", id="decoy_outside_the_candidate_list"),
+    pytest.param("master", id="decoy_named_like_a_candidate"),
+]
+
+
+def _repo_with_an_early_gate(tmp_path: Path, name: str) -> tuple[Path, str]:
+    """`main` = the fork point; `work` = [unevidenced gate, filler, filler].
+
+    Returns ``(repo, mid)`` where <mid> is the SECOND branch commit: a strict
+    DESCENDANT of the fork point and a strict ANCESTOR of HEAD — exactly the
+    kind of commit neither equality refusal can see, and the one a decoy
+    remote-tracking ref points at.
+    """
+    repo = _init_repo(tmp_path, name)
+    _git(repo, "checkout", "-q", "-b", "work")
+    (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "work B: add an unevidenced gate")
+    (repo / "scripts" / "util.py").write_text(_FILLER, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "work C: ordinary filler")
+    mid = _rev_parse(repo, "HEAD")
+    (repo / "scripts" / "util.py").write_text('VERSION = "0.0.2"\n', encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "work D: ordinary filler")
+    return _with_origin(repo, "main"), mid
+
+
+def _point_origin_head_at(repo: Path, decoy: str, sha: str) -> None:
+    """The attack: local, never-pushed, PR-invisible ref writes.
+
+    TWO writes, not one. `_default_branch()` keeps only the LAST path component
+    of `refs/remotes/origin/HEAD`'s target, and git's rev-parse DWIM does not
+    reach `refs/remotes/origin/<decoy>` from the bare name <decoy> — measured:
+    `fatal: Not a valid object name decoy` — so a same-named local ref is
+    needed before `git merge-base HEAD <decoy>` resolves at all. Both writes are
+    still entirely local, still never pushed, still invisible in the PR.
+    """
+    _git(repo, "update-ref", f"refs/remotes/origin/{decoy}", sha)
+    _git(repo, "branch", "-f", decoy, sha)
+    _git(
+        repo,
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        f"refs/remotes/origin/{decoy}",
+    )
+
+
+def _repo_with_a_stale_local_trunk(tmp_path: Path) -> tuple[Path, str, str]:
+    """`main` BEHIND `origin/main`, plus an abandoned local `master` at the root.
+
+    The honest shape this repository itself is in (measured 2026-10-24: local
+    `main` at c1ad22b, `origin/main` at ad4dc69, merge-base with HEAD identical
+    at b4dda364ab89), plus the local `master` that every master→main rename
+    leaves behind. The trunk commit the branch forks FROM adds an unevidenced
+    gate, so widening the subject past the fork point manufactures a finding and
+    blocks an honest review — the false block the candidate ORDERING prevents.
+
+    Returns ``(repo, root, fork)``.
+    """
+    repo = _init_repo(tmp_path, "stale")             # A0, the root commit
+    root = _rev_parse(repo, "HEAD")
+    _git(repo, "branch", "master", root)             # abandoned, never pushed
+    (repo / "scripts" / "trunk_gate.py").write_text(
+        _TRUNK_GATE_SOURCE, encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "main A1: trunk adds its own unevidenced gate")
+    fork = _rev_parse(repo, "HEAD")
+
+    _git(repo, "checkout", "-q", "-b", "work")
+    (repo / "scripts" / "util.py").write_text(_FILLER, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "work: ordinary filler, no gate")
+
+    _with_origin(repo, "main")                       # origin/main == A1 == fork
+    # Advance origin/main PAST the fork point and fetch it without moving the
+    # local branch — the state every clone is in between two pulls.
+    _git(repo, "checkout", "-q", "-b", "pusher", "main")
+    (repo / "README.md").write_text("trunk moved on\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "main A2: trunk moves on")
+    _git(repo, "push", "-q", "origin", "pusher:main")
+    _git(repo, "checkout", "-q", "work")
+    _git(repo, "branch", "-D", "pusher")
+    _git(repo, "fetch", "-q", "origin")
+    return repo, root, fork
+
+
+class TestAnAncestorBaseCannotNarrowTheSubject:
+    """AC-9.3, in the DISARM direction, through the REAL consumer.
+
+    Review lesson 16, verbatim: a newly added defence is tested in the disarm
+    direction and through its real consumer, not only in the arm direction at
+    its helper. The real consumer is `verify_review_gate_evidence`, whose
+    boolean IS the review phase's exit code.
+    """
+
+    def test_the_honest_repo_blocks_the_same_gate_with_no_disclosure(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Positive control (a) — without it this class proves nothing.
+
+        Same repo, same gate, `origin/HEAD` on the real trunk: the gate must be
+        charged, and the corroboration must stay SILENT. A disclosure on an
+        honest repo would make the disclosure noise, and noise is unread.
+        """
+        repo, _ = _repo_with_an_early_gate(tmp_path, "honest")
+        monkeypatch.chdir(repo)
+        assert vc._default_branch() == "main"
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+        assert vc._BASE_WIDENED_DISCLOSURE not in out, out
+
+    @pytest.mark.parametrize("decoy", _DECOY_SHAPES)
+    def test_a_mid_branch_decoy_base_cannot_hide_an_earlier_gate(
+        self, tmp_path, monkeypatch, capsys, decoy
+    ):
+        """The attack, A/B on identical gate bytes, through the real consumer.
+
+        Both decoy spellings matter: one sits OUTSIDE the corroboration
+        candidate list, one is named like a member of it — a defence that only
+        survives when the attacker picks an unfamiliar name is not a defence.
+        """
+        repo, mid = _repo_with_an_early_gate(tmp_path, f"attacked_{decoy}")
+        monkeypatch.chdir(repo)
+
+        baseline_verdict, baseline_out = _consume(monkeypatch, capsys, repo)
+        assert baseline_verdict is False, baseline_out
+        assert _REPO_GATE in baseline_out, baseline_out
+
+        _point_origin_head_at(repo, decoy, mid)
+
+        # Fixture pins, read straight from git: the attack really landed, it
+        # really narrows, and NEITHER existing equality refusal can fire on it.
+        assert vc._default_branch() == decoy, "fixture pin: the attack landed"
+        assert _head_branch(repo) == "work"            # name equality cannot fire
+        narrowed = vc._merge_base(str(repo), decoy)
+        honest = vc._merge_base(str(repo), "origin/main")
+        assert narrowed == mid
+        assert narrowed != _rev_parse(repo, "HEAD")    # sha equality cannot fire
+        assert narrowed != honest
+        narrowed_subject = subprocess.run(
+            ["git", "diff", "--text", "--name-only", narrowed],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=_CLI_TIMEOUT,
+        ).stdout.split()
+        assert "scripts/demo_fix.py" not in narrowed_subject, (
+            "fixture pin: the narrowed subject must really hide the gate, "
+            f"got {narrowed_subject}"
+        )
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict == baseline_verdict, (
+            "identical gate bytes, two local ref writes, different verdict:\n"
+            f"[A decoy] {out}\n[B honest] {baseline_out}"
+        )
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+        assert GATE_FREE not in out, out
+
+        # The disclosure, unmissable: both refs, both short shas, which one was
+        # used, and that origin/HEAD is local and invisible in the PR.
+        assert vc._BASE_WIDENED_DISCLOSURE in out, out
+        assert f"'{decoy}'" in out, out
+        assert "'origin/main'" in out, out
+        assert narrowed[:12] in out, out
+        assert honest[:12] in out, out
+        assert "refs/remotes/origin/HEAD" in out, out
+        assert "never pushed" in out, out
+        assert "invisible in the PR" in out, out
+
+    def test_an_honest_repo_with_no_gate_still_passes(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Positive control (b): a widened subject must not MANUFACTURE one."""
+        repo = _with_origin(_branch_repo(tmp_path, "nogate"), "main")
+        monkeypatch.chdir(repo)
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is True, out
+        assert GATE_FREE in out, out
+        assert vc._BASE_WIDENED_DISCLOSURE not in out, out
+
+    def test_a_stale_local_trunk_is_not_consulted_and_discloses_nothing(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Positive control (c): the false block the ORDERING exists to prevent.
+
+        `origin/main` resolves, so the abandoned local `master` is never
+        consulted and the base stays at the fork point — which is exactly
+        `origin/main`'s merge-base, pinned by sha rather than by narrative.
+        """
+        repo, root, fork = _repo_with_a_stale_local_trunk(tmp_path)
+        monkeypatch.chdir(repo)
+
+        # Fixture pins: local `main` really is behind `origin/main`, the
+        # abandoned local `master` really would widen past the fork point, and
+        # `origin/master` really is absent so tier 1 really is non-empty.
+        assert vc._default_branch() == "main"
+        assert _rev_parse(repo, "main") == fork
+        assert _rev_parse(repo, "origin/main") != fork
+        assert vc._merge_base(str(repo), "origin/main") == fork
+        assert vc._merge_base(str(repo), "master") == root
+        assert vc._is_strict_ancestor(str(repo), root, fork) is True
+        assert vc._rev(str(repo), "origin/master") is None
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is True, out
+        assert GATE_FREE in out, out
+        assert _TRUNK_GATE not in out, out
+        assert vc._BASE_WIDENED_DISCLOSURE not in out, out
+
+    def test_consulting_a_local_trunk_first_would_false_block_that_repo(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Why remote-tracking refs come FIRST — the ordering is load-bearing.
+
+        Flattening the tiers so local names are consulted alongside the
+        remote-tracking ones widens the subject past the fork point on the very
+        same honest repo, charges the branch with the TRUNK's gate and blocks
+        the review. Doubles as the vacuity guard for the control above: it
+        proves the trunk gate IS detectable, so that control's `not in` is not
+        passing on an undetectable symbol.
+        """
+        repo, _root, _fork = _repo_with_a_stale_local_trunk(tmp_path)
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(vc, "_TRUNK_CORROBORATION_TIERS", (("main", "master"),))
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert _TRUNK_GATE in out, out
+        assert vc._BASE_WIDENED_DISCLOSURE in out, out
+        assert "'master'" in out, out
+
+    def test_the_name_equality_refusal_still_fires_with_corroboration_live(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The equality refusals cover what corroboration cannot. Both stay.
+
+        `origin/main` resolves here and would happily supply a wider base, so
+        this pins that the corroboration path does not BYPASS the refusal that
+        already existed.
+        """
+        repo, _mid = _repo_with_an_early_gate(tmp_path, "name_equality")
+        monkeypatch.chdir(repo)
+        _git(repo, "remote", "set-head", "origin", "work")
+
+        assert vc._default_branch() == _head_branch(repo) == "work"
+        assert vc._merge_base(str(repo), "origin/main") is not None
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "IS the branch under review" in out, out
+        assert GATE_FREE not in out, out
+
+    def test_the_sha_equality_refusal_still_fires_with_corroboration_live(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Same, for the sha leg: a branch carrying no commit of its own."""
+        repo = _with_origin(_init_repo(tmp_path, "sha_equality"), "main", "main")
+        _git(repo, "checkout", "-q", "-b", "work")
+        (repo / "scripts" / "demo_fix.py").write_text(_GATE_SOURCE, encoding="utf-8")
+        monkeypatch.chdir(repo)
+
+        assert vc._default_branch() == "main"
+        assert _head_branch(repo) == "work"
+        assert vc._merge_base(str(repo), "main") == _rev_parse(repo, "HEAD")
+
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert "same commit as HEAD" in out, out
+        assert "IS the branch under review" not in out, out
+        assert GATE_FREE not in out, out
+
+    def test_making_the_comparison_an_equality_test_again_is_observable(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """AC-5 on this defence, mutant 1 — the PRE-FIX behaviour.
+
+        The pre-fix source compared the base to the branch NAME and to HEAD's
+        SHA: two equalities. Reducing the ancestor RELATION back to equality
+        reproduces it exactly, and the gate goes invisible again.
+        """
+        repo, mid = _repo_with_an_early_gate(tmp_path, "mutant_equality")
+        monkeypatch.chdir(repo)
+        _point_origin_head_at(repo, "trunk", mid)
+
+        armed_verdict, armed_out = _consume(monkeypatch, capsys, repo)
+        assert armed_verdict is False, armed_out
+        assert _REPO_GATE in armed_out, armed_out
+
+        monkeypatch.setattr(
+            vc,
+            "_is_strict_ancestor",
+            lambda wt_path, ancestor, descendant: ancestor == descendant,
+        )
+        mutant_verdict, mutant_out = _consume(monkeypatch, capsys, repo)
+        assert mutant_verdict is True, (
+            "mutant SURVIVED: an equality-only comparison can never widen, so "
+            f"the ancestor base must have hidden the gate again:\n{mutant_out}"
+        )
+        assert _REPO_GATE not in mutant_out, mutant_out
+        assert GATE_FREE in mutant_out, mutant_out
+
+    def test_dropping_the_disclosure_print_is_observable(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """AC-5 on this defence, mutant 2 — a SILENT widen is its own defect.
+
+        A defeated control must not look like a clean one. Widening without
+        saying so hides that `refs/remotes/origin/HEAD` was pointed somewhere it
+        should not be, and the boolean alone cannot tell a silent widen from a
+        disclosed one — which is why this needs a pin of its own.
+        """
+        repo, mid = _repo_with_an_early_gate(tmp_path, "mutant_silent")
+        monkeypatch.chdir(repo)
+        _point_origin_head_at(repo, "trunk", mid)
+
+        monkeypatch.setattr(vc, "_disclose_widened_base", lambda *args: None)
+        verdict, out = _consume(monkeypatch, capsys, repo)
+
+        assert vc._BASE_WIDENED_DISCLOSURE not in out, (
+            "mutant SURVIVED: the disclosure is not printed by "
+            f"`_disclose_widened_base`, so dropping it changed nothing:\n{out}"
+        )
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+
+    def test_the_ancestor_relation_answers_the_four_shapes(self, tmp_path):
+        """Arm AND disarm at the helper, including both ways to say `no`."""
+        repo, mid = _repo_with_an_early_gate(tmp_path, "relation")
+        head = _rev_parse(repo, "HEAD")
+        fork = vc._merge_base(str(repo), "main")
+
+        assert vc._is_strict_ancestor(str(repo), fork, mid) is True
+        assert vc._is_strict_ancestor(str(repo), mid, fork) is False
+        assert vc._is_strict_ancestor(str(repo), head, head) is False
+
+        # Unrelated histories answer False in BOTH directions, so nothing is
+        # widened across a graft.
+        _git(repo, "checkout", "-q", "--orphan", "island")
+        (repo / "island.txt").write_text("alone\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "island: unrelated root")
+        island = _rev_parse(repo, "HEAD")
+        assert vc._is_strict_ancestor(str(repo), island, head) is False
+        assert vc._is_strict_ancestor(str(repo), head, island) is False

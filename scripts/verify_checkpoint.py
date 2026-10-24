@@ -462,6 +462,21 @@ def _merge_base(wt_path: str, base: str) -> str | None:
     return None
 
 
+def _is_strict_ancestor(wt_path: str, ancestor: str, descendant: str) -> bool:
+    """True when <ancestor> is an ancestor of <descendant> and not the same commit.
+
+    The ancestor RELATION, not equality (SPEC-081 amendment 2026-10-24,
+    AC-9.3). Unrelated histories answer False in both directions, so nothing
+    is ever compared across a graft.
+    """
+    if ancestor == descendant:
+        return False
+    result = _run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=wt_path
+    )
+    return result.returncode == 0
+
+
 def _untracked_paths(wt_path: str) -> list[str]:
     """Untracked, non-ignored paths in the worktree, relative to its root.
 
@@ -1382,6 +1397,103 @@ def _untracked_diff_text(wt_path: str) -> str:
     return "".join(parts)
 
 
+#: Trunk refs a clone already has, consulted to CORROBORATE the base that
+#: `_default_branch()` resolved out of `refs/remotes/origin/HEAD`. Each tuple is
+#: a TIER, and the first tier holding any resolvable ref is the only one
+#: consulted: remote-tracking names come first because a local `main` — or the
+#: local `master` every master→main rename leaves behind — is routinely BEHIND
+#: its remote, so on an honest repo its merge-base is the more ancestral one and
+#: taking it would widen the subject with commits the TRUNK added before the
+#: fork point. That is ISSUE-048's false charge, i.e. a review blocked for
+#: somebody else's gate, and it is why the local names are a fallback for a
+#: clone with no remote rather than a second opinion (SPEC-081 amendment
+#: 2026-10-24, AC-9.3).
+_TRUNK_CORROBORATION_TIERS = (("origin/main", "origin/master"), ("main", "master"))
+
+#: First line of the base-widening disclosure, as a constant because the tests
+#: guard it in the NEGATIVE too ("an honest repo discloses nothing") and a `not
+#: in` whose literal has drifted from the implementation passes vacuously.
+_BASE_WIDENED_DISCLOSURE = (
+    "WARN: gate-evidence — the resolved diff base NARROWED this phase's subject"
+)
+
+
+def _disclose_widened_base(
+    base: str, resolved_sha: str, candidate: str, candidate_sha: str
+) -> None:
+    """Say, unmissably, that the resolved base was overridden and why.
+
+    A silent correction is not acceptable for a blocking tier: the point of
+    ISSUE-081 is that a defeated control must not look like a clean one, and a
+    widen that prints nothing is indistinguishable from no attack at all.
+    """
+    print(
+        f"{_BASE_WIDENED_DISCLOSURE}, so a WIDER one was used.\n"
+        f"  resolved:     `refs/remotes/origin/HEAD` -> '{base}', merge-base "
+        f"{resolved_sha[:12]}\n"
+        f"  corroborated: '{candidate}', merge-base {candidate_sha[:12]} — an "
+        f"ANCESTOR of the resolved base, so the resolved base was hiding "
+        f"{candidate_sha[:12]}..{resolved_sha[:12]}\n"
+        f"  USED: {candidate_sha[:12]}, from '{candidate}'. Widening can only "
+        f"ADD findings, never remove them.\n"
+        f"  `refs/remotes/origin/HEAD` is purely LOCAL, author-writable, never "
+        f"pushed, and invisible in the PR — check where it points."
+    )
+
+
+def _widest_trunk_base(wt_path: str, base: str, diff_base: str) -> str:
+    """<diff_base>, or a corroborating trunk ref's merge-base when that is WIDER.
+
+    `_default_branch()` reads `refs/remotes/origin/HEAD`, a purely local,
+    author-writable, never-pushed, PR-invisible ref. A base that is a strict
+    ANCESTOR of HEAD narrows the diff without ever EQUALLING it, so neither
+    equality refusal in `_gate_evidence_diff` can see it: point
+    `refs/remotes/origin/HEAD` at a decoy sitting on a mid-branch commit and a
+    gate added in an EARLIER commit of the same branch falls outside the subject
+    (SPEC-081 amendment 2026-10-24, AC-9.3; measured at 'no gate DETECTED',
+    exit 0).
+
+    So the resolved base is corroborated against `_TRUNK_CORROBORATION_TIERS`
+    and NEVER narrowed: any candidate whose merge-base with HEAD is a strict
+    ancestor of the resolved one wins. Widening is the safe direction, which is
+    why this corrects rather than refuses — a wider subject can only ADD
+    findings, never remove them, so it cannot turn a FAIL into a PASS, whereas
+    refusing would halt an honest review over a stale ref. Its cost is the
+    mirror case: a local trunk carrying commits the remote has not got widens
+    the subject by them, which is noise at worst and is disclosed.
+
+    **Residual, disclosed rather than papered over:** an author who rewrites
+    EVERY local trunk ref — `refs/remotes/origin/HEAD`, the remote-tracking
+    `origin/main`, and the local `main`/`master` — can still narrow this
+    subject. There is no offline fix: every ref this process can read lives in
+    the author's own clone, and nothing here reaches the forge. What it buys is
+    that narrowing stops being SILENT and stops being a ONE-ref edit.
+    """
+    resolved_sha = _rev(wt_path, diff_base)
+    if resolved_sha is None:
+        # Nothing to compare an ancestry against; the callers below already
+        # fail closed on a base that will not resolve.
+        return diff_base
+
+    widest_ref, widest_sha = base, resolved_sha
+    for tier in _TRUNK_CORROBORATION_TIERS:
+        candidates = [ref for ref in tier if _rev(wt_path, ref) is not None]
+        if not candidates:
+            continue
+        for candidate in candidates:
+            candidate_sha = _merge_base(wt_path, candidate)
+            if candidate_sha is not None and _is_strict_ancestor(
+                wt_path, candidate_sha, widest_sha
+            ):
+                widest_ref, widest_sha = candidate, candidate_sha
+        break
+
+    if widest_sha == resolved_sha:
+        return diff_base
+    _disclose_widened_base(base, resolved_sha, widest_ref, widest_sha)
+    return widest_sha
+
+
 def _gate_evidence_diff(issue_id: str) -> str | None:
     """The branch's own delta as unified-diff text, or None if unobtainable.
 
@@ -1405,6 +1517,10 @@ def _gate_evidence_diff(issue_id: str) -> str | None:
     ``merge_base == HEAD``, which makes ``git diff`` succeed with zero bytes,
     which used to read as "no gate-adding change". The same state arises with no
     attacker at all when the branch under review IS the default branch.
+
+    Those two refusals are EQUALITY tests, and narrowing does not need equality
+    — so the base is also corroborated against the clone's own trunk refs and
+    never narrowed (``_widest_trunk_base``, AC-9.3).
 
     ``--text`` for the same class of reason, and measured the same way: one
     committed ``.gitattributes`` line, ``*.py -diff``, makes git render every
@@ -1437,7 +1553,13 @@ def _gate_evidence_diff(issue_id: str) -> str | None:
         )
         return None
 
+    # Corroborated BEFORE the sha-identity refusal below, because the two
+    # equality refusals only cover the cases corroboration cannot: a base that
+    # is a strict ANCESTOR of HEAD narrows the subject without ever equalling
+    # it (AC-9.3). The name refusal stays FIRST — a wider base must not rescue
+    # a run that has no base to diff against at all.
     diff_base = _merge_base(wt_path, base) or base
+    diff_base = _widest_trunk_base(wt_path, base, diff_base)
     base_sha, head_sha = _rev(wt_path, diff_base), _rev(wt_path, "HEAD")
     if base_sha is not None and base_sha == head_sha:
         print(
