@@ -1089,34 +1089,52 @@ class TestToctou:
         self, project, monkeypatch, capsys
     ):
         """``datetime.now()`` is called AFTER containment and the runs-dir
-        mkdir and BEFORE ``os.open``, so planting there lands the FIFO
+        mkdir and BEFORE ``os.open``, so planting there lands the node
         squarely inside the real check->open window. What saves the emitter
         is the open-time guard, not the (already passed) containment check.
+
+        The planted FIFO is opened for reading by the test FIRST so that the
+        emitter's own ``os.open`` cannot block on it. That is deliberate and
+        load-bearing: this test runs IN-PROCESS, so a readerless FIFO here
+        would hang the whole suite forever the moment the ``O_NONBLOCK``
+        guard regressed, instead of failing it. The hang direction belongs
+        to the bounded subprocess probe
+        (``test_fifo_at_the_event_path_refused_without_hanging``); what this
+        test owns is the TOCTOU-proof leg — the post-open ``fstat``, the
+        only check that interrogates the descriptor actually opened.
+        (Measured: with a readerless FIFO and the guard removed, the
+        mutation run stalled past 600 s until it was killed.)
         """
         monkeypatch.setenv(kt.RUN_ID_ENV, "testrun")
         runs = project / ".claude" / "runs"
         runs.mkdir(parents=True)
         target = runs / "testrun.jsonl"
         real_datetime = kt.datetime
-        planted: list[bool] = []
+        readers: list[int] = []
 
         class _PlantInsideTheWindow:
             @staticmethod
             def now(tz=None):
-                if not planted:
+                if not readers:
                     os.mkfifo(target)
-                    planted.append(True)
+                    readers.append(os.open(target, os.O_RDONLY | os.O_NONBLOCK))
                 return real_datetime.now(tz)
 
         monkeypatch.setattr(kt, "datetime", _PlantInsideTheWindow)
-        ok = kt.emit_event(
-            "test_event", {}, script_name="kit_test", project_path=project
-        )
-        assert planted, "the TOCTOU plant never ran — the window moved"
-        assert ok is False
-        assert stat.S_ISFIFO(os.lstat(target).st_mode)
+        try:
+            ok = kt.emit_event(
+                "test_event", {}, script_name="kit_test", project_path=project
+            )
+            assert readers, "the TOCTOU plant never ran — the window moved"
+            assert ok is False
+            assert stat.S_ISFIFO(os.lstat(target).st_mode)
+            assert os.read(readers[0], 4096) == b"", "data reached the planted node"
+        finally:
+            for fd in readers:
+                os.close(fd)
         out = capsys.readouterr().out
         assert "[kit-telemetry]" in out
+        assert "non-regular" in out
         assert "NOT written" in out
 
 
