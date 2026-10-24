@@ -1112,6 +1112,33 @@ _SINGLE_CASE_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,6 @@
 _DEMO_GATE = "blocked_marker_is_absent"
 _DEMO_GATE_PATH = "scripts/demo_gate.py"
 
+# A diff in which git rendered a non-test `.py` SOURCE file as BINARY instead
+# of as text — what ONE committed `.gitattributes` line (`*.py -diff`) does to
+# every `.py` file in a repository. Byte-for-byte the shape real `git diff`
+# emitted on the throwaway two-commit repository SPEC-081's AC-9.1 was measured
+# on. `_parse` only opens a file on a `--- `/`+++ ` header pair, so before the
+# fix it saw no file at all and `analyze` printed the ordinary gate-free
+# verdict at exit 0 — a BLOCKING review phase switched off by one committed
+# line, with no waiver printed. The `.gitattributes` file itself still renders
+# as TEXT, which is why `main`'s "no `+++ ` header" refusal does not fire
+# either. Exercised by `TestABinaryRenderedSourceIsRefusedNotPassed` and used
+# as `_KIND_CORPUS`'s entry for the kind it provokes.
+_BINARY_RENDERED_PATH = "scripts/guard.py"
+_BINARY_RENDERED_GATE_DIFF = (
+    "diff --git a/.gitattributes b/.gitattributes\n"
+    "new file mode 100644\n"
+    "index 0000000..0822dba\n"
+    "--- /dev/null\n"
+    "+++ b/.gitattributes\n"
+    "@@ -0,0 +1 @@\n"
+    "+*.py -diff\n"
+    f"diff --git a/{_BINARY_RENDERED_PATH} b/{_BINARY_RENDERED_PATH}\n"
+    "new file mode 100644\n"
+    "index 0000000..dc9de64\n"
+    f"Binary files /dev/null and b/{_BINARY_RENDERED_PATH} differ\n"
+)
+_UNREADABLE_KIND = "unreadable-binary-rendering"
+
 
 # ── AC-4, the worked example ─────────────────────────────────────────
 #
@@ -1827,6 +1854,18 @@ class TestTheArmOnlyAttackIsSurfacedNotBlocked:
 # new fail-open of exactly the shape ISSUE-081 exists to stop.
 
 
+#: The SHAPE of a finding kind in this module: a lowercase hyphenated slug.
+#: Deliberately a shape and not a `missing-` prefix. The prefix version could
+#: only ever find the three kinds that happened to share it, so a fourth kind
+#: named anything else — `unreadable-binary-rendering` is exactly that — went
+#: unenumerated, stayed out of `_KIND_CORPUS` without failing the equality
+#: assertion below, and inherited the advisory tier unexamined. That is the
+#: fail-open direction this probe exists to close. The other string constants
+#: inside `analyze` (`disarm`, `composite`, and the format keys) carry no
+#: hyphen, so they do not match.
+_FINDING_KIND_SHAPE = re.compile(r"^[a-z]+(?:-[a-z]+)+$")
+
+
 def _engine_finding_kinds() -> set[str]:
     """Every finding kind `analyze` can emit, read from the ENGINE's own AST.
 
@@ -1849,7 +1888,7 @@ def _engine_finding_kinds() -> set[str]:
         for node in ast.walk(analyze)
         if isinstance(node, ast.Constant)
         and isinstance(node.value, str)
-        and node.value.startswith("missing-")
+        and _FINDING_KIND_SHAPE.match(node.value)
     }
 
 
@@ -1860,6 +1899,7 @@ _KIND_CORPUS = {
     "missing-disarm-battery": _SINGLE_CASE_DIFF,
     "missing-refusal-direction": _ARM_ONLY_DIFF,
     "missing-composite-pin": _HELPER_ONLY_DIFF,
+    _UNREADABLE_KIND: _BINARY_RENDERED_GATE_DIFF,
 }
 
 
@@ -1886,10 +1926,18 @@ class TestTheTierIsStatedOnceAndDerivedEverywhere:
             set(_KIND_CORPUS) ^ _engine_finding_kinds()
         )
 
-    def test_only_the_decidable_kind_blocks(self):
-        assert vge.BLOCKING_KINDS == frozenset({"missing-disarm-battery"}), (
-            vge.BLOCKING_KINDS
-        )
+    def test_only_the_decidable_kinds_block(self):
+        """Both members are decidable from the diff TEXT, not from polarity.
+
+        `missing-disarm-battery` fires iff no added battery is attributed to
+        the gate; `unreadable-binary-rendering` fires iff git rendered a
+        non-test `.py` path as bytes instead of as text. Neither consults
+        `_refusal_shaped`, which is the property that separates this tier from
+        the advisory one (SPEC-081 amendment 2026-10-24, decision 6 / AC-9.1).
+        """
+        assert vge.BLOCKING_KINDS == frozenset(
+            {"missing-disarm-battery", _UNREADABLE_KIND}
+        ), vge.BLOCKING_KINDS
 
     @pytest.mark.parametrize("kind", sorted(_KIND_CORPUS))
     def test_the_mapping_the_renderer_and_the_exit_code_agree(
@@ -2066,6 +2114,43 @@ class TestTheTierAgreesThroughTheRealConsumer:
             line for line in rendered.split("\n") if line.startswith("FAIL:")
         )
         assert "BLOCKING" in heading.upper(), heading
+
+    @pytest.mark.parametrize(
+        "kind", sorted(k for k in _KIND_CORPUS if k in vge.BLOCKING_KINDS)
+    )
+    def test_the_fail_heading_names_only_the_kinds_actually_present(self, kind):
+        """The heading used to print all of `BLOCKING_KINDS`, present or not.
+
+        Two things were wrong with it once the tier held more than one kind.
+        It named kinds this report does not contain, which sends a reviewer
+        looking for a finding that is not there; and it counted the findings
+        as "gate(s)", which is false for `unreadable-binary-rendering` —
+        that finding is about a FILE the gate could not read, and no gate was
+        detected in it at all.
+        """
+        report = vge.analyze(_KIND_CORPUS[kind])
+        # Fixture pin: this diff provokes exactly this kind, so an absent kind
+        # name below cannot be another finding's.
+        assert [f.kind for f in report.findings] == [kind], report.findings
+
+        heading = next(
+            line for line in vge.format_report(report) if line.startswith("FAIL:")
+        )
+        assert kind in heading, heading
+        absent = vge.BLOCKING_KINDS - {kind}
+        assert absent, "this pin needs a second blocking kind to be meaningful"
+        for other in absent:
+            assert other not in heading, (other, heading)
+
+    def test_the_fail_heading_does_not_call_an_unreadable_file_a_gate(self):
+        report = vge.analyze(_BINARY_RENDERED_GATE_DIFF)
+        # Vacuity guard: no gate was detected, so "gate(s)" would be a lie.
+        assert report.gates == (), report.gates
+        heading = next(
+            line for line in vge.format_report(report) if line.startswith("FAIL:")
+        )
+        assert "gate(s)" not in heading, heading
+        assert "1 finding(s)" in heading, heading
 
     def test_a_mixed_diff_prints_both_sections_and_blocks(
         self, monkeypatch, capsys
@@ -3695,6 +3780,487 @@ class TestHeaderRenderings:
         assert "rename from scripts/old_name.py" in real, real
         assert "+++ b/scripts/new_name.py" not in real, real
         assert [f.path for f in vge._parse(real)] == ["scripts/util.py"], real
+
+
+# ── AC-9.1: a `.gitattributes` line must not disarm the gate ─────────
+#
+# Measured on a throwaway two-commit repository against the committed
+# detector: adding `scripts/guard.py` with one predicate gate and no evidence
+# yields `FAIL ... [missing-disarm-battery] ... exit 1`, and the SAME range
+# with one extra committed line — `.gitattributes` holding `*.py -diff` —
+# yields the byte-identical ordinary gate-free verdict at exit 0, because git
+# renders every `.py` file as `Binary files ... differ` and `_parse` only opens
+# a file on a `--- `/`+++ ` header pair. `main`'s "not a unified diff" refusal
+# does not fire either: the non-`.py` files in the same diff still supply
+# `+++ ` headers. One committed line, a BLOCKING phase off, no waiver printed.
+#
+# Review lesson 5, verbatim: workspace-persisted state a gate reads is
+# untrusted input, so it is validated on read. Both layers are required and
+# both are pinned here — the consumer must render with `--text` so the
+# attribute cannot narrow its subject, and `analyze` must refuse on its own
+# because `--diff-file` feeds it text this process did not render.
+
+_ATTRIBUTE_LINE = "*.py -diff\n"
+
+
+def _repo_behind_the_attribute(
+    tmp_path: Path,
+    name: str,
+    *,
+    attribute: bool = True,
+    evidence: bool = False,
+    commit_gate: bool = True,
+) -> Path:
+    """A real repo whose branch adds `_GATE_SOURCE`, optionally behind `-diff`.
+
+    `attribute` commits the `*.py -diff` line; `evidence` adds the battery
+    that `TestUntrackedFilesAreAcquired` already proves is credited;
+    `commit_gate=False` leaves the gate file UNTRACKED, which is the state
+    `skills/review/SKILL.md` normally puts a reviewer in at step 4.6 and which
+    reaches the diff through `_untracked_diff_text`'s own `git diff --no-index`.
+    """
+    repo = _branch_repo(tmp_path, name)
+    if attribute:
+        (repo / ".gitattributes").write_text(_ATTRIBUTE_LINE, encoding="utf-8")
+    if evidence:
+        (repo / "tests" / "test_demo_fix.py").write_text(
+            _GATE_EVIDENCE, encoding="utf-8"
+        )
+    gate = repo / "scripts" / "demo_fix.py"
+    gate.write_text(_GATE_SOURCE, encoding="utf-8")
+    if commit_gate:
+        _git(repo, "add", "-A")
+    else:
+        _git(repo, "add", "-A", "--", ".gitattributes", "tests")
+    _git(repo, "commit", "-qm", "work: add a gate")
+    return repo
+
+
+def _without_text_flag(monkeypatch) -> None:
+    """Revert the `--text` half of the fix, at the seam that renders the diff.
+
+    AC-5's shape applied to this defence: the mutation strips `--text` from
+    every command `verify_checkpoint` runs, which is exactly the pre-fix
+    source, and at least one assertion must change.
+    """
+    real_run = vc._run
+    monkeypatch.setattr(
+        vc,
+        "_run",
+        lambda cmd, *args, **kwargs: real_run(
+            [arg for arg in cmd if arg != "--text"], *args, **kwargs
+        ),
+    )
+
+
+class TestAGitattributesLineCannotDisarmTheConsumer:
+    """Layer 1, in the DISARM direction, through the REAL consumer.
+
+    Review lesson 16: a newly added defence is tested in the disarm direction
+    and through its real consumer, not only in the arm direction at its
+    helper. The real consumer is `verify_review_gate_evidence`, whose boolean
+    IS the review phase's exit code.
+    """
+
+    def test_git_really_renders_the_gate_as_binary(self, tmp_path):
+        """Vacuity guard for the whole class: the attack must really fire.
+
+        If git did not hide the file, every verdict below would be the
+        ordinary one and this class would assert nothing about `-diff`.
+        """
+        repo = _repo_behind_the_attribute(tmp_path, "armed")
+
+        def render(*flags: str) -> str:
+            return subprocess.run(
+                ["git", "diff", *flags, "main", "--"],
+                cwd=repo, check=True, capture_output=True, text=True,
+                timeout=_CLI_TIMEOUT,
+            ).stdout
+
+        plain, added = render(), f"+{_GATE_SOURCE.splitlines()[0]}"
+        assert "Binary files /dev/null and b/scripts/demo_fix.py differ" in plain
+        assert added not in plain, plain
+        # ...and `--text` is what restores it, which is the whole fix.
+        assert added in render("--text")
+
+    def test_the_consumer_renders_text_not_binary(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _repo_behind_the_attribute(tmp_path, "rendered")
+        monkeypatch.setattr(vc, "_find_worktree_path", lambda issue_id: str(repo))
+
+        diff_text = vc._gate_evidence_diff("ISSUE-081")
+        assert diff_text is not None
+        assert f"+{_GATE_SOURCE.splitlines()[0]}" in diff_text, diff_text
+        assert "Binary files" not in diff_text, diff_text
+
+    def test_a_committed_attribute_does_not_turn_the_phase_off(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The disarm direction: the gate must still be NAMED, not merely refused."""
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _repo_behind_the_attribute(tmp_path, "disarmed")
+        verdict, out = _consume(monkeypatch, capsys, repo)
+
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+        assert GATE_FREE not in out, out
+
+    def test_the_positive_control_without_the_attribute_also_blocks(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A/B on the same bytes: the attribute must change NOTHING.
+
+        Without this the class proves only "an unevidenced gate blocks", which
+        was already true, rather than "the attribute did not change it".
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        with_attr = _repo_behind_the_attribute(tmp_path, "with_attr")
+        without_attr = _repo_behind_the_attribute(
+            tmp_path, "without_attr", attribute=False
+        )
+        assert (with_attr / "scripts" / "demo_fix.py").read_bytes() == (
+            without_attr / "scripts" / "demo_fix.py"
+        ).read_bytes()
+
+        verdict_a, out_a = _consume(monkeypatch, capsys, with_attr)
+        verdict_b, out_b = _consume(monkeypatch, capsys, without_attr)
+
+        assert verdict_b is False, out_b
+        assert _REPO_GATE in out_b, out_b
+        assert verdict_a == verdict_b, (
+            "identical gate bytes, one committed `.gitattributes` line, "
+            f"different verdict:\n[A -diff] {out_a}\n[B plain] {out_b}"
+        )
+
+    def test_an_evidenced_gate_still_passes_behind_the_attribute(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """AC-3: the fix must not turn `-diff` into a new false-block tax.
+
+        This is also the sharpest proof of layer 1 on its own: the battery
+        that evidences the gate lives in a `.py` file too, so it is hidden by
+        the same attribute. Only a `--text` render can credit it.
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _repo_behind_the_attribute(tmp_path, "evidenced", evidence=True)
+        verdict, out = _consume(monkeypatch, capsys, repo)
+
+        assert verdict is True, out
+        assert "carry both directions" in out, out
+        assert _REPO_GATE in out, out
+
+    def test_the_untracked_leg_is_rendered_as_text_too(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """`git diff --no-index` honours `.gitattributes` as well — measured.
+
+        The reviewer's just-written, not-yet-committed gate reaches the diff
+        through `_untracked_diff_text`. Fixing only the committed leg would
+        leave the same one-line disarm live on the state the SKILL puts a
+        reviewer in at step 4.6.
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _repo_behind_the_attribute(tmp_path, "untracked", commit_gate=False)
+
+        # Vacuity guard: the gate really is untracked, and the attribute
+        # really is in force for it.
+        assert "scripts/demo_fix.py" in vc._untracked_paths(str(repo))
+        verdict, out = _consume(monkeypatch, capsys, repo)
+        assert verdict is False, out
+        assert _REPO_GATE in out, out
+        assert GATE_FREE not in out, out
+
+    @pytest.mark.parametrize(
+        "label,commit_gate", [("committed", True), ("untracked", False)]
+    )
+    def test_dropping_text_from_the_render_is_observable(
+        self, tmp_path, monkeypatch, capsys, label, commit_gate
+    ):
+        """AC-5 on layer 1: reverting `--text` must change an assertion.
+
+        Both legs, because they are two `git diff` invocations and fixing one
+        is not a fix. The mutant does not flip the BOOLEAN — layer 2 refuses
+        on the same bytes, which is the point of having two layers — so what
+        it flips is whether the gate is NAMED. A verdict that cannot name the
+        gate has had its subject narrowed, which is the harm.
+        """
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+        repo = _repo_behind_the_attribute(
+            tmp_path, f"mutant_{label}", commit_gate=commit_gate
+        )
+
+        armed_verdict, armed_out = _consume(monkeypatch, capsys, repo)
+        assert armed_verdict is False, armed_out
+        assert _REPO_GATE in armed_out, armed_out
+
+        _without_text_flag(monkeypatch)
+        mutant_verdict, mutant_out = _consume(monkeypatch, capsys, repo)
+        assert _REPO_GATE not in mutant_out, (
+            "mutant SURVIVED: without `--text` the consumer cannot have seen "
+            f"the gate's source, yet it named it:\n{mutant_out}"
+        )
+        # Layer 2 catches what layer 1 no longer prevents — so the phase still
+        # refuses, and says WHY rather than reporting a clean diff.
+        assert mutant_verdict is False, mutant_out
+        assert GATE_FREE not in mutant_out, mutant_out
+        assert ".gitattributes" in mutant_out, mutant_out
+
+
+# ── AC-9.1, layer 2: `analyze` refuses rather than reporting no gate ──
+#
+# Reachable independently of layer 1 through the documented `--diff-file`,
+# over text this process did not render, so it has to fail CLOSED on its own.
+
+_PNG_BINARY_DIFF = _BINARY_RENDERED_GATE_DIFF.replace(
+    _BINARY_RENDERED_PATH, "assets/logo.png"
+)
+_TEST_PATH_BINARY_DIFF = _BINARY_RENDERED_GATE_DIFF.replace(
+    _BINARY_RENDERED_PATH, "tests/test_guard.py"
+)
+#: A deleted file is rendered `Binary files a/<path> and /dev/null differ`,
+#: and a deletion adds no gate — refusing on it would be a false block.
+_DELETED_BINARY_DIFF = _BINARY_RENDERED_GATE_DIFF.replace(
+    f"Binary files /dev/null and b/{_BINARY_RENDERED_PATH} differ",
+    f"Binary files a/{_BINARY_RENDERED_PATH} and /dev/null differ",
+).replace("new file mode 100644", "deleted file mode 100644")
+
+#: `git diff --binary`'s rendering: no `Binary files` line, no `--- `/`+++ `
+#: pair, and the path only on the `diff --git` header. Payload copied from
+#: real `git diff --binary` output for the same file.
+_GIT_BINARY_PATCH_DIFF = (
+    "diff --git a/.gitattributes b/.gitattributes\n"
+    "new file mode 100644\n"
+    "index 0000000..0822dba\n"
+    "--- /dev/null\n"
+    "+++ b/.gitattributes\n"
+    "@@ -0,0 +1 @@\n"
+    "+*.py -diff\n"
+    f"diff --git a/{_BINARY_RENDERED_PATH} b/{_BINARY_RENDERED_PATH}\n"
+    "new file mode 100644\n"
+    "index 0000000000000000000000000000000000000000.."
+    "08eb5ec3fb005d7b8650be223735fa5f4ceb1e23\n"
+    "GIT binary patch\n"
+    "literal 181\n"
+    "zcmY#VQgT#CFHI~;(Nj`V;^N{;NljD8NX;ooEz&4StthclC@v||RM52p(N<gvKv0xg\n"
+    "\n"
+    "literal 0\n"
+    "HcmV?d00001\n"
+    "\n"
+)
+
+
+class TestABinaryRenderedSourceIsRefusedNotPassed:
+    """A file the gate could not read must not render as a file with no gate."""
+
+    def test_a_binary_rendered_non_test_py_is_a_blocking_finding(self):
+        report = vge.analyze(_BINARY_RENDERED_GATE_DIFF)
+        # Vacuity guard: this is the pre-fix behaviour, so the refusal cannot
+        # be coming from a gate that was detected after all.
+        assert report.gates == (), report.gates
+        assert [f.kind for f in report.findings] == [_UNREADABLE_KIND], (
+            report.findings
+        )
+        assert report.findings[0].tier == "blocking", report.findings[0]
+        assert report.findings[0].path == _BINARY_RENDERED_PATH
+
+    def test_the_message_names_the_file_the_cause_and_the_refusal(self):
+        message = vge.analyze(_BINARY_RENDERED_GATE_DIFF).findings[0].message
+        assert _BINARY_RENDERED_PATH in message, message
+        assert ".gitattributes" in message, message
+        assert "-diff" in message, message
+        assert "refus" in message.lower(), message
+
+    def test_the_message_does_not_ask_for_a_test(self):
+        """It is a refusal to analyse, not a missing-evidence finding.
+
+        "Add a test that drives ..." would be unactionable and wrong: no gate
+        was detected, so there is nothing to write a battery for until the
+        file is readable.
+        """
+        message = vge.analyze(_BINARY_RENDERED_GATE_DIFF).findings[0].message
+        assert "Add a test that drives" not in message, message
+        assert "input variants" not in message, message
+
+    def test_the_exemption_escape_is_not_offered_for_an_unreadable_file(self):
+        """The marker is read from the gate's OWN file's added lines.
+
+        This module never saw those lines, so an exemption cannot waive this
+        finding — printing the generic opt-out footer under it would be a
+        remedy that silently does nothing.
+        """
+        footer = "GATE-EVIDENCE-EXEMPT"
+        # Fixture pin: the footer IS printed for a waivable blocking finding,
+        # so its absence below is the suppression and not a renderer that
+        # stopped printing it at all.
+        waivable = "\n".join(vge.format_report(vge.analyze(_SINGLE_CASE_DIFF)))
+        assert footer in waivable, waivable
+
+        rendered = "\n".join(
+            vge.format_report(vge.analyze(_BINARY_RENDERED_GATE_DIFF))
+        )
+        assert footer not in rendered, rendered
+
+    def test_the_verdict_is_not_the_gate_free_line(self):
+        """The exact defeat: before the fix this was byte-identical to a pass."""
+        rendered = "\n".join(
+            vge.format_report(vge.analyze(_BINARY_RENDERED_GATE_DIFF))
+        )
+        assert GATE_FREE not in rendered, rendered
+        assert rendered.startswith("FAIL:"), rendered
+
+    def test_the_cli_and_the_real_consumer_both_refuse(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        path = tmp_path / "attribute_disarm.diff"
+        path.write_text(_BINARY_RENDERED_GATE_DIFF, encoding="utf-8")
+        rc = vge.main(["--diff-file", str(path)])
+        out = capsys.readouterr().out
+        assert rc == 1, out
+        assert _UNREADABLE_KIND in out, out
+
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _BINARY_RENDERED_GATE_DIFF
+        )
+        assert vc.verify_review_gate_evidence("ISSUE-081") is False
+        consumed = capsys.readouterr().out
+        assert ".gitattributes" in consumed, consumed
+
+    def test_the_git_binary_patch_rendering_is_refused_too(self):
+        """`git diff --binary` says it differently and means the same thing."""
+        # Vacuity guard: this rendering carries neither marker the other case
+        # relies on, so it cannot be passing for the same reason.
+        assert "Binary files" not in _GIT_BINARY_PATCH_DIFF
+        assert f"+++ b/{_BINARY_RENDERED_PATH}" not in _GIT_BINARY_PATCH_DIFF
+
+        report = vge.analyze(_GIT_BINARY_PATCH_DIFF)
+        assert [f.kind for f in report.findings] == [_UNREADABLE_KIND], (
+            report.findings
+        )
+        assert report.findings[0].path == _BINARY_RENDERED_PATH
+
+    @pytest.mark.parametrize(
+        "label,diff",
+        [
+            ("binary_asset", _PNG_BINARY_DIFF),
+            ("test_path_py", _TEST_PATH_BINARY_DIFF),
+            ("deleted_py", _DELETED_BINARY_DIFF),
+        ],
+    )
+    def test_a_path_the_detector_never_scans_is_not_refused(self, label, diff):
+        """AC-3: the refusal covers exactly the paths `detect_gates` reads.
+
+        A `.png`, a genuine binary asset, or a test file rendered as binary
+        hides nothing from gate detection — detection never looks at them.
+        Refusing would be a false block on an ordinary PR.
+        """
+        report = vge.analyze(diff)
+        assert report.findings == (), (label, report.findings)
+        assert GATE_FREE in "\n".join(vge.format_report(report)), label
+
+    def test_a_c_quoted_non_ascii_path_rendered_as_binary_is_recognised(self):
+        """Git's DEFAULT spelling for a non-ASCII name, through the one decoder.
+
+        `_c_quote` is the suite's existing `quote_c_style` oracle, validated
+        against real git by `test_the_c_quote_renderer_matches_real_git`, and
+        `unquote_c_style` is the module's one decoder. A guard that re-typed a
+        second decoder here would be the duplicated oracle ISSUE-084 carries.
+        """
+        accented = _accent(_BINARY_RENDERED_PATH)
+        text = _BINARY_RENDERED_GATE_DIFF.replace(
+            f"Binary files /dev/null and b/{_BINARY_RENDERED_PATH} differ",
+            f"Binary files /dev/null and {_c_quote('b/' + accented)} differ",
+        )
+        # Vacuity guards: the field really is quoted and really is escaped, so
+        # a pass cannot come from the plain spelling surviving the rewrite.
+        assert '"b/' in text, text
+        assert re.search(r"\\\d{3}", text), text
+
+        report = vge.analyze(text)
+        assert [f.kind for f in report.findings] == [_UNREADABLE_KIND], (
+            report.findings
+        )
+        assert report.findings[0].path == accented, report.findings[0].path
+        assert vge.unquote_c_style(_c_quote(accented)) == accented
+
+    def test_real_git_c_quoted_binary_output_is_recognised(self, tmp_path):
+        """The same case against real `git diff`, not against the imitation."""
+        repo = _branch_repo(tmp_path, "nonascii_binary")
+        (repo / ".gitattributes").write_text(_ATTRIBUTE_LINE, encoding="utf-8")
+        (repo / _NON_ASCII_GATE_FILE).write_text(_GATE_SOURCE, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "work: a non-ASCII gate behind `-diff`")
+        real = _real_git_diff(repo)
+
+        # Fixture pins, read straight from git: it really hid the file and
+        # really C-quoted the name, so this stays RED on the verdict.
+        marker = next(
+            line for line in real.split("\n") if line.startswith("Binary files ")
+        )
+        assert re.search(r"\\\d{3}", marker), marker
+        assert f"+{_GATE_SOURCE.splitlines()[0]}" not in real
+
+        # `_branch_repo`'s ASCII filler is a `.py` file too, so the attribute
+        # hides it as well and it is refused on the same grounds. What this
+        # case is about is that the C-QUOTED name is decoded, not dropped.
+        report = vge.analyze(real)
+        assert {f.kind for f in report.findings} == {_UNREADABLE_KIND}, (
+            report.findings
+        )
+        assert _NON_ASCII_GATE_FILE in {f.path for f in report.findings}, (
+            [f.path for f in report.findings]
+        )
+
+    def test_a_diff_of_a_diff_quoting_the_marker_is_not_a_refusal(self):
+        """This repo COMMITS `.diff` fixtures, so this is a real PR shape.
+
+        An added line `+Binary files ... differ` inside a committed fixture is
+        content, not an extended header. Reading it as one would refuse every
+        PR that touches `tests/fixtures/gate_evidence/`.
+        """
+        text = (
+            "diff --git a/tests/fixtures/x.diff b/tests/fixtures/x.diff\n"
+            "--- a/tests/fixtures/x.diff\n"
+            "+++ b/tests/fixtures/x.diff\n"
+            "@@ -0,0 +1,3 @@\n"
+            "+diff --git a/scripts/quoted.py b/scripts/quoted.py\n"
+            "+Binary files /dev/null and b/scripts/quoted.py differ\n"
+            "+GIT binary patch\n"
+        )
+        report = vge.analyze(text)
+        assert report.findings == (), report.findings
+
+    def test_dropping_the_kind_from_the_blocking_tier_is_observable(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """AC-5 on layer 2, both directions, at the one source of truth.
+
+        `BLOCKING_KINDS` is the only statement of which kinds block; dropping
+        this kind from it must stop the refusal from refusing, at the CLI and
+        at the real consumer alike.
+        """
+        path = tmp_path / "attribute_disarm.diff"
+        path.write_text(_BINARY_RENDERED_GATE_DIFF, encoding="utf-8")
+        monkeypatch.setattr(
+            vc, "_gate_evidence_diff", lambda issue_id: _BINARY_RENDERED_GATE_DIFF
+        )
+
+        assert vge.main(["--diff-file", str(path)]) == 1
+        capsys.readouterr()
+        assert vc.verify_review_gate_evidence("ISSUE-081") is False
+        capsys.readouterr()
+
+        monkeypatch.setattr(
+            vge, "BLOCKING_KINDS", frozenset({"missing-disarm-battery"})
+        )
+        assert vge.main(["--diff-file", str(path)]) == 0, (
+            "mutant SURVIVED: dropping the kind from BLOCKING_KINDS must stop "
+            "it blocking, or the exit code is not derived from the mapping"
+        )
+        capsys.readouterr()
+        assert vc.verify_review_gate_evidence("ISSUE-081") is True, (
+            "mutant SURVIVED at the real consumer"
+        )
+        capsys.readouterr()
 
 
 # ── Per-line cost: a blocking gate must not be hangable ──────────────

@@ -135,6 +135,13 @@ from pathlib import Path
 #: "no added test battery mentions this gate at all" — is true or false in the
 #: diff text and nowhere else.
 #:
+#: ``unreadable-binary-rendering`` is decidable in the same sense and is a
+#: REFUSAL rather than a verdict: git either rendered a non-test ``.py`` path
+#: as text or as bytes, and when it rendered it as bytes this module read none
+#: of the file, so "no gate detected" would be a claim it has no basis for.
+#: One committed ``.gitattributes`` line (``*.py -diff``) produced exactly
+#: that pass at exit 0 (SPEC-081 amendment 2026-10-24, AC-9.1).
+#:
 #: Why the other two only advise: both route through ``_refusal_shaped``, and
 #: predicate polarity is NOT decidable for a detector-shaped gate, where the
 #: disarm direction is correctly written ``assert detected is True`` — the
@@ -146,7 +153,9 @@ from pathlib import Path
 #: The PHASE is unaffected: ``("review", "gate-evidence")`` stays OUT of
 #: ``verify_checkpoint.ADVISORY_PHASES``, so the obligation is still an exit
 #: code for the decidable half. What is advisory is a finding KIND.
-BLOCKING_KINDS = frozenset({"missing-disarm-battery"})
+BLOCKING_KINDS = frozenset(
+    {"missing-disarm-battery", "unreadable-binary-rendering"}
+)
 
 
 # ── Tunables (mutation-pinned by tests/test_gate_evidence_contract.py) ──
@@ -627,6 +636,19 @@ def is_test_path(path: str) -> bool:
     return bool(TEST_FILE_PATTERN.search(path) or TEST_DIR_PATTERN.search(path))
 
 
+def is_scanned_source(path: str) -> bool:
+    """True for the paths gate detection reads: non-test Python sources.
+
+    THE one statement of the detector's subject, because three places need
+    exactly the same answer: `detect_gates`, `_exemptions`, and the
+    binary-rendering refusal, whose whole claim is that it covers *exactly*
+    the paths `detect_gates` would have scanned. A fourth re-typed copy of
+    this condition is how the test-path classifier came to have four
+    disagreeing definitions (SPEC-081 amendment 2026-10-14, decision 5).
+    """
+    return path.endswith(".py") and not is_test_path(path)
+
+
 @dataclass
 class _FileDiff:
     path: str
@@ -705,6 +727,97 @@ def _parse(diff_text: str) -> list[_FileDiff]:
     return files
 
 
+#: The two ways git says "I rendered this file as bytes, not as text".
+#: ``Binary files <a> and <b> differ`` is the default; ``GIT binary patch`` is
+#: what ``git diff --binary`` emits in its place. Verified against real git
+#: 2.44 output for an added, a modified and a deleted file, for a path holding
+#: a space, and for a non-ASCII path (which git C-quotes by default).
+_BINARY_FILES_PREFIX = "Binary files "
+_BINARY_FILES_SUFFIX = " differ"
+_GIT_BINARY_PATCH = "GIT binary patch"
+_DIFF_GIT_PREFIX = "diff --git "
+
+
+def _diff_git_b_field(rest: str) -> str:
+    """The b-side field of a ``diff --git <a> <b>`` header line.
+
+    Needed only for the ``GIT binary patch`` rendering, which carries no
+    ``+++ `` header, no ``Binary files`` line, and therefore no other copy of
+    the path. The header is ambiguous in general — git separates the two
+    fields with a space and does NOT quote a path merely because it contains
+    one — so the split is taken where both fields name the SAME path, which is
+    what git writes for everything except a rename. A rename falls through to
+    the last space, i.e. to its new name.
+    """
+    for index, char in enumerate(rest):
+        if char != " ":
+            continue
+        left, right = rest[:index], rest[index + 1:]
+        if left and right and _header_path(left) == _header_path(right):
+            return right
+    return rest.rsplit(" ", 1)[-1]
+
+
+def _binary_rendered(diff_text: str) -> list[tuple[int, str]]:
+    """``(diff line number, path)`` for every file git rendered as BINARY.
+
+    A sibling of `_parse` rather than a field on `_FileDiff`, because that
+    list means "files whose TEXT this module can scan" and four parser pins
+    depend on a binary-rendered file contributing none. Both route every path
+    through `_header_path`, so there is one path decoder here, not two.
+
+    Why a BLOCKING gate has to care (SPEC-081 amendment 2026-10-24, AC-9.1):
+    one committed ``.gitattributes`` line, ``*.py -diff``, makes git render
+    every ``.py`` file as ``Binary files ... differ``. `_parse` only opens a
+    file on a ``--- ``/``+++ `` header pair, so it saw no file at all and
+    `analyze` printed the byte-identical ordinary gate-free verdict at exit 0
+    — measured on a throwaway two-commit repository. `main`'s "not a unified
+    diff" refusal does not fire either, because the non-``.py`` files in the
+    same diff still supply ``+++ `` headers. Review lesson 5 applies verbatim:
+    workspace-persisted state a gate reads is untrusted input.
+
+    Both markers are recognised only at column 0, where git writes an extended
+    header. A ``+``/``-``/`` ``-prefixed copy of either line is diff CONTENT —
+    this repo commits ~4.7k lines of ``.diff`` fixtures, so a PR that edits
+    one really does carry those bytes — and must not be read as a header.
+
+    A b-side of ``/dev/null`` is a DELETION, and a deleted file adds no gate,
+    so it is skipped rather than refused; the ``deleted file mode`` extended
+    header is the equivalent signal for the ``GIT binary patch`` rendering,
+    which keeps the real path on both sides of its ``diff --git`` line.
+
+    Residual, inherent to the format and disclosed rather than guessed at: an
+    UNQUOTED path containing the literal `` and `` makes the ``Binary files``
+    line ambiguous. Git quotes a path for a non-ASCII byte, a control
+    character, a ``"`` or a ``\\`` — not for a space — so this cannot be
+    resolved from the line alone. It affects which path is named, and it fails
+    toward naming the wrong path rather than toward silence.
+    """
+    found: list[tuple[int, str]] = []
+    header = ""
+    deleted = False
+    for number, raw in enumerate(diff_text.split("\n"), start=1):
+        line = raw.rstrip("\r")
+        if line.startswith(_DIFF_GIT_PREFIX):
+            header, deleted = line[len(_DIFF_GIT_PREFIX):], False
+            continue
+        if line.startswith("deleted file mode "):
+            deleted = True
+            continue
+        if line.startswith(_BINARY_FILES_PREFIX) and line.endswith(
+            _BINARY_FILES_SUFFIX
+        ):
+            body = line[len(_BINARY_FILES_PREFIX):-len(_BINARY_FILES_SUFFIX)]
+            path = _header_path(body.rsplit(" and ", 1)[-1])
+        elif line == _GIT_BINARY_PATCH and header and not deleted:
+            path = _header_path(_diff_git_b_field(header))
+        else:
+            continue
+        if path != "/dev/null":
+            found.append((number, path))
+    return found
+
+
 # ── Gate detection ───────────────────────────────────────────────────
 
 
@@ -726,7 +839,7 @@ def _is_predicate_shaped(symbol: str, signature: str) -> bool:
 def detect_gates(files: list[_FileDiff]) -> tuple[Gate, ...]:
     gates: list[Gate] = []
     for file in files:
-        if is_test_path(file.path) or not file.path.endswith(".py"):
+        if not is_scanned_source(file.path):
             continue
         for symbol, lines in file.added_by_def.items():
             code = [_destring(_scannable(line)) for line in lines]
@@ -1142,6 +1255,25 @@ GATE_FREE_VERDICT = (
     "amendment decision 3 / ISSUE-087)."
 )
 
+#: NOT a missing-evidence finding and deliberately not worded like one: no
+#: gate was detected in this file, so "add a battery" would be unactionable.
+#: It is a refusal to analyse, and it says which file, what the likely cause
+#: is, and what the gate would otherwise have printed instead.
+_BINARY_RENDERING_MESSAGE = (
+    "REFUSED: {path} is a non-test `.py` source file, but this diff renders "
+    "it as BINARY rather than as text, so gate detection could not see the "
+    "file's contents at all. The usual cause is a committed `.gitattributes` "
+    "line giving the path the `-diff` attribute (e.g. `*.py -diff`), which "
+    "makes git print a `Binary files ... differ` line in place of every "
+    "added line — measured: one such committed line turned this BLOCKING "
+    "phase into the ordinary gate-free verdict at exit 0, with no waiver "
+    "printed (SPEC-081 amendment 2026-10-24, AC-9.1). This phase therefore "
+    "refuses rather than reporting that no gate was detected, because a diff "
+    "it cannot read is indistinguishable from a diff with no gate in it. "
+    "Re-render with `git diff --text` (the review checkpoint now does), or "
+    "drop the `-diff` attribute for this path."
+)
+
 _DISARM_MESSAGE = (
     "{symbol} ({path}:{line}) adds a gate and NO added test battery is "
     "attributed to it at all. Add a test that drives {symbol} over at least "
@@ -1226,7 +1358,7 @@ def _exemptions(files: list[_FileDiff]) -> tuple[tuple[str, str, str], ...]:
     """
     found: list[tuple[str, str, str]] = []
     for file in files:
-        if is_test_path(file.path) or not file.path.endswith(".py"):
+        if not is_scanned_source(file.path):
             continue
         for _, text in file.added:
             match = _EXEMPT_RE.search(text)
@@ -1252,7 +1384,23 @@ def analyze(diff_text: str) -> Report:
     batteries = [block for block in blocks if _is_battery(block, module_text)]
 
     evidence: dict[tuple[str, str], dict[str, bool]] = {}
-    findings: list[Finding] = []
+    # Refusals come first: they say the subject itself could not be read, so a
+    # reviewer should see them before any verdict computed over what remained.
+    # Scoped to `is_scanned_source` — EXACTLY the paths `detect_gates` reads —
+    # because a `.png`, a genuine binary asset or a binary-rendered test file
+    # hides nothing from gate detection, and refusing on one would be a false
+    # block on an ordinary PR (AC-3).
+    findings: list[Finding] = [
+        Finding(
+            path,
+            path,
+            number,
+            "unreadable-binary-rendering",
+            _BINARY_RENDERING_MESSAGE.format(path=path),
+        )
+        for number, path in _binary_rendered(diff_text)
+        if is_scanned_source(path)
+    ]
     for gate in gates:
         attributed = [
             block
@@ -1370,26 +1518,42 @@ def format_report(report: Report) -> list[str]:
         f"EXEMPT: {path}:{symbol} — {reason}"
         for path, symbol, reason in report.exemptions
     ]
-    if not report.gates:
+    # "No gate detected" is only sayable when nothing else was found either.
+    # A refusal fires with `gates == ()` by construction — the whole point is
+    # that the file could not be read — so an early return keyed on gates
+    # alone would print the gate-free verdict over the refusal and return 0.
+    if not report.gates and not report.findings:
         lines.append(GATE_FREE_VERDICT)
         return lines
 
     blocking, advisory = report.blocking_findings, report.advisory_findings
 
     if blocking:
-        # The kind names come from `BLOCKING_KINDS`, not from prose: a heading
-        # that described the one blocking kind in words would go stale the
-        # moment the set changed, and a stale verdict is the defect this
-        # amendment is correcting.
+        # The kind names are read off THIS report's findings, not off
+        # `BLOCKING_KINDS`: once the tier holds more than one kind, printing
+        # the whole set names kinds the report does not contain and sends a
+        # reviewer looking for a finding that is not there. And they are
+        # "finding(s)", not "gate(s)" — `unreadable-binary-rendering` is about
+        # a file in which NO gate was detected, which is exactly why it
+        # refuses.
+        kinds = sorted({finding.kind for finding in blocking})
         lines.append(
-            f"FAIL: gate-evidence — {len(blocking)} gate(s) in the BLOCKING "
-            f"tier ({', '.join(sorted(BLOCKING_KINDS))}) (ISSUE-081 / SPEC-081)"
+            f"FAIL: gate-evidence — {len(blocking)} finding(s) in the "
+            f"BLOCKING tier ({', '.join(kinds)}) (ISSUE-081 / SPEC-081)"
         )
         lines.extend(f"  - [{f.kind}] {f.message}" for f in blocking)
-        lines.append(
-            "  Opt out only with an inline `# GATE-EVIDENCE-EXEMPT(<symbol>): "
-            "<reason>` in the diff, justified in the PR body."
-        )
+        # Only when some blocking finding is actually waivable. The inline
+        # marker is collected from the gate's OWN file's added lines, so it
+        # cannot waive a file whose lines this module never saw — offering it
+        # there would be a remedy that silently does nothing. Derived from
+        # whether the finding names a detected gate rather than from its kind,
+        # because a kind literal here would be a second statement of the tier.
+        waivable = {(gate.path, gate.symbol) for gate in report.gates}
+        if any((f.path, f.symbol) in waivable for f in blocking):
+            lines.append(
+                "  Opt out only with an inline `# GATE-EVIDENCE-EXEMPT("
+                "<symbol>): <reason>` in the diff, justified in the PR body."
+            )
     else:
         lines.append(_pass_line(report))
 

@@ -1356,6 +1356,13 @@ def _untracked_diff_text(wt_path: str) -> str:
     Scoped to THIS caller: ``_untracked_paths`` keeps handing back git's quoted
     spelling, which ``_changed_files_vs_base`` has always reported and the
     implement phases have always consumed.
+
+    ``--text`` for the same reason ``_gate_evidence_diff`` passes it, and
+    measured on the same throwaway repo: ``--no-index`` honours
+    ``.gitattributes`` too, so one committed ``*.py -diff`` line rendered the
+    reviewer's just-written, not-yet-committed gate as ``Binary files ...
+    differ`` and the detector saw no file. Fixing only the committed leg is
+    not a fix (SPEC-081 amendment 2026-10-24, AC-9.1).
     """
     parts: list[str] = []
     for listed in _untracked_paths(wt_path):
@@ -1367,7 +1374,8 @@ def _untracked_diff_text(wt_path: str) -> str:
         # path — so the exit code cannot discriminate. The presence of diff
         # text is the signal.
         shown = _run(
-            ["git", "diff", "--no-index", "--", os.devnull, rel], cwd=wt_path
+            ["git", "diff", "--no-index", "--text", "--", os.devnull, rel],
+            cwd=wt_path,
         )
         if shown.stdout:
             parts.append(shown.stdout)
@@ -1397,6 +1405,19 @@ def _gate_evidence_diff(issue_id: str) -> str | None:
     ``merge_base == HEAD``, which makes ``git diff`` succeed with zero bytes,
     which used to read as "no gate-adding change". The same state arises with no
     attacker at all when the branch under review IS the default branch.
+
+    ``--text`` for the same class of reason, and measured the same way: one
+    committed ``.gitattributes`` line, ``*.py -diff``, makes git render every
+    ``.py`` file as ``Binary files ... differ`` instead of as its contents.
+    ``verify_gate_evidence._parse`` only opens a file on a ``--- ``/``+++ ``
+    header pair, so it saw no file at all and the phase printed the ordinary
+    gate-free verdict at exit 0 — a BLOCKING review phase switched off by one
+    committed line, with no waiver printed, and not even the "not a unified
+    diff" refusal firing because the non-``.py`` files still supply headers.
+    ``--text`` forbids the attribute from narrowing this phase's subject
+    (SPEC-081 amendment 2026-10-24, AC-9.1). It is the first of two layers:
+    `analyze` refuses on a binary-rendered source in its own right, because
+    ``--diff-file`` feeds it text this process did not render.
     """
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
@@ -1428,7 +1449,7 @@ def _gate_evidence_diff(issue_id: str) -> str | None:
         )
         return None
 
-    result = _run(["git", "diff", diff_base, "--"], cwd=wt_path)
+    result = _run(["git", "diff", "--text", diff_base, "--"], cwd=wt_path)
     if result.returncode != 0:
         return None
 
