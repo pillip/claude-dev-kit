@@ -8,6 +8,7 @@ Pins the two guarantees the baseline depends on:
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "project" / ".claude" / "hooks" / "agent_state.py"
 
 sys.path.insert(0, str(ROOT / "scripts"))
+import kit_telemetry as kt  # noqa: E402
+import trace_query  # noqa: E402
 from trace_query import summarize  # noqa: E402
 
 
@@ -126,3 +129,103 @@ def test_trace_query_cli_smoke(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["s1"]["turns"] == 1
+
+
+# ═════════════════════════════════════════════════════════════════════
+# ISSUE-071 — trace_query is the NAMED CONSUMER of the emitter stream
+# ═════════════════════════════════════════════════════════════════════
+#
+# Before this change `.claude/runs/<run-id>.jsonl` was write-only: the
+# shared emitter appended to it and no kit script read it on any default
+# path, while trace_query read only the ISSUE-001 hook trace at the
+# differently-named `.claude/run/events.jsonl`. ISSUE-071's stream decision
+# is "name a consumer" rather than "unify the files", so both streams are
+# read on the default path and the emitter's run-id-keyed layout (and every
+# containment test that pins it) survives untouched.
+
+
+def test_default_trace_paths_covers_both_streams(tmp_path):
+    hook = tmp_path / trace_query.DEFAULT_TRACE
+    hook.parent.mkdir(parents=True)
+    hook.write_text("", encoding="utf-8")
+    runs = tmp_path / kt.RUNS_SUBDIR
+    runs.mkdir(parents=True)
+    unattributed = runs / f"{kt.FALLBACK_RUN_ID}.jsonl"
+    unattributed.write_text("", encoding="utf-8")
+    named = runs / "abc123.jsonl"
+    named.write_text("", encoding="utf-8")
+    (runs / "not-a-trace.txt").write_text("x", encoding="utf-8")
+
+    paths = [p.resolve() for p in trace_query.default_trace_paths(tmp_path)]
+    assert hook.resolve() in paths, "the ISSUE-001 hook trace must not be dropped"
+    assert unattributed.resolve() in paths
+    assert named.resolve() in paths
+    assert (runs / "not-a-trace.txt").resolve() not in paths
+
+
+def test_summarize_counts_emitter_events_and_unattributed_fallbacks():
+    """The aggregate readout that REPLACES the per-emit stdout line: how many
+    events this stream holds, and how many of them lost their attribution."""
+    events = [
+        {"ts": "2026-10-25T10:00:00.123456+00:00",
+         "event_type": "gates_degraded_path_used",
+         "skill_or_script": "synthesize_gate_results",
+         "payload": {"reason": "skill_missing"},
+         "run_id_fallback": "KIT_RUN_ID unset"},
+        {"ts": "2026-10-25T10:01:00.654321+00:00",
+         "event_type": "gates_degraded_path_used",
+         "skill_or_script": "synthesize_gate_results",
+         "payload": {"reason": "capability_dormant"},
+         "run_id_fallback": "KIT_RUN_ID unset"},
+        {"ts": "2026-10-25T10:01:00.654321+00:00",
+         "event_type": "gates_delegated_to_runtime",
+         "skill_or_script": "synthesize_gate_results",
+         "payload": {}},
+    ]
+    s = summarize(events)["(no-session)"]
+    assert s["script_events"] == {
+        "gates_degraded_path_used": 2,
+        "gates_delegated_to_runtime": 1,
+    }
+    assert s["unattributed_events"] == 2
+    # Microsecond-bearing ISO-8601 (what datetime.now(timezone.utc) emits)
+    # has to parse, or the stream trace_query now reads is unreadable.
+    assert s["duration_seconds"] == 60
+
+
+def test_hook_trace_events_are_not_counted_as_emitter_events():
+    """Disarm direction: the two schemas must stay apart, so the new counter
+    cannot silently absorb the ISSUE-001 stream and inflate itself."""
+    s = summarize([
+        {"ts": "2026-07-23T10:00:00", "event": "UserPromptSubmit", "session_id": "s1"},
+    ])["s1"]
+    assert s["script_events"] == {}
+    assert s["unattributed_events"] == 0
+    assert s["turns"] == 1
+
+
+def test_trace_query_cli_reports_the_emitter_stream_by_default(tmp_path):
+    """End-to-end through the real CLI with NO path arguments: an event the
+    production emitter wrote is found, counted, and reported."""
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    env = dict(os.environ)
+    env.pop(kt.RUN_ID_ENV, None)
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    emit = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "kit_telemetry.py"),
+         "--script", "synthesize_gate_results",
+         "--event", "gates_degraded_path_used"],
+        capture_output=True, text=True, cwd=str(project), env=env, timeout=60,
+    )
+    assert emit.returncode == 0, emit.stderr
+    assert emit.stdout == "", emit.stdout
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "trace_query.py"), "summary", "--json"],
+        capture_output=True, text=True, cwd=str(project), env=env, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)["(no-session)"]
+    assert summary["script_events"] == {"gates_degraded_path_used": 1}
+    assert summary["unattributed_events"] == 1

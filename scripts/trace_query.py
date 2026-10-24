@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
 """Minimal trace query for the kit's run telemetry (ISSUE-001, baseline scope).
 
-Reads .claude/run/events.jsonl (or a given path / rotated .jsonl.N file) and
+Reads BOTH of the kit's local telemetry streams on its default path and
 prints per-session baseline metrics — the numbers used to compare harness
 changes (ISSUE-030..033) before/after:
 
     turns, tool calls, tool failures, subagent spawns (by type),
-    checkpoint runs / failures (by phase), wall-clock duration
+    checkpoint runs / failures (by phase), wall-clock duration,
+    script events (by event_type) and how many of them are unattributed
+
+The two streams:
+
+1. ``.claude/run/events.jsonl`` — the ISSUE-001 shape-only HOOK trace
+   written by ``project/.claude/hooks/agent_state.py``, keyed by
+   ``session_id`` and ``event``.
+2. ``.claude/runs/<run-id>.jsonl`` — the ISSUE-067 shared EMITTER stream
+   written by ``scripts/kit_telemetry.py``, keyed by ``event_type``, with
+   the run id in the file name. Added here by ISSUE-071: until then the
+   emitter stream was write-only — nothing read it on any default path —
+   so the instrument's only output was a file no code opened plus a stdout
+   line on 100% of runs. Removing that line (ISSUE-071's scarcity fix)
+   is only honest if the record it defers to is actually readable, which
+   is this. The ``unattributed events`` count is the aggregate readout
+   that replaces the per-emit line: it answers "how many events lost their
+   ``KIT_RUN_ID`` attribution" once, for the whole stream.
 
 Usage:
     python3 scripts/trace_query.py summary [events.jsonl ...]
@@ -25,7 +42,22 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import kit_telemetry  # noqa: E402 — sibling script, see the sys.path line above
+
 DEFAULT_TRACE = Path(".claude/run/events.jsonl")
+
+# The emitter's layout, imported rather than re-typed, so the path written
+# and the path read are ONE value (ISSUE-071 AC-4; pinned by identity in
+# tests/test_kit_telemetry.py::TestIssue071StreamHasANamedConsumer).
+DEFAULT_RUNS_DIR = kit_telemetry.RUNS_SUBDIR
+
+
+def default_trace_paths(root: str | Path = Path(".")) -> list[Path]:
+    """Every trace this tool reads when given no explicit paths."""
+    base = Path(root)
+    return [base / DEFAULT_TRACE, *sorted((base / DEFAULT_RUNS_DIR).glob("*.jsonl"))]
 
 
 def _parse_ts(ts: str):
@@ -34,7 +66,12 @@ def _parse_ts(ts: str):
             return datetime.strptime(ts, fmt)
         except ValueError:
             continue
-    return None
+    try:
+        # The emitter stream stamps datetime.now(timezone.utc).isoformat(),
+        # which carries microseconds and so matches neither format above.
+        return datetime.fromisoformat(ts)
+    except ValueError:
+        return None
 
 
 def load_events(paths: list[Path]) -> list[dict]:
@@ -63,6 +100,7 @@ def summarize(events: list[dict]) -> dict:
             "turns": 0, "tool_calls": 0, "tool_failures": 0,
             "subagents": Counter(), "checkpoints": Counter(),
             "checkpoint_failures": Counter(), "first_ts": None, "last_ts": None,
+            "script_events": Counter(), "unattributed": 0,
         })
         ts = _parse_ts(ev.get("ts", ""))
         if ts is not None:
@@ -80,6 +118,14 @@ def summarize(events: list[dict]) -> dict:
             s["tool_failures"] += 1
         elif event == "SubagentStart":
             s["subagents"][ev.get("agent_type", "unknown")] += 1
+
+        # Emitter-stream shape (scripts/kit_telemetry.py): keyed by
+        # `event_type`, not `event`, so the two schemas never collide.
+        event_type = ev.get("event_type")
+        if event_type is not None:
+            s["script_events"][event_type] += 1
+            if ev.get("run_id_fallback"):
+                s["unattributed"] += 1
 
         cp = ev.get("checkpoint")
         if cp is not None and event in ("PostToolUse", "PostToolUseFailure"):
@@ -101,6 +147,8 @@ def summarize(events: list[dict]) -> dict:
             "checkpoint_runs": dict(s["checkpoints"]),
             "checkpoint_failures": dict(s["checkpoint_failures"]),
             "duration_seconds": duration,
+            "script_events": dict(s["script_events"]),
+            "unattributed_events": s["unattributed"],
         }
     return out
 
@@ -118,6 +166,14 @@ def print_summary(summary: dict) -> None:
         print(f"  checkpoint failures: {fails}")
         dur = s["duration_seconds"]
         print(f"  wall-clock:          {dur}s" if dur is not None else "  wall-clock:          —")
+        evs = ", ".join(f"{k}×{v}" for k, v in sorted(s["script_events"].items())) or "—"
+        print(f"  script events:       {evs}")
+        # The aggregate that replaced ISSUE-067's per-emit stdout line
+        # (ISSUE-071): named here so the remediation is discoverable.
+        print(
+            f"  unattributed events: {s['unattributed_events']}"
+            f"  (set {kit_telemetry.RUN_ID_ENV} to attribute them)"
+        )
 
 
 def main() -> None:
@@ -125,11 +181,12 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_sum = sub.add_parser("summary", help="Per-session baseline metrics.")
     p_sum.add_argument("traces", nargs="*", type=Path, default=None,
-                       help=f"events.jsonl paths (default: {DEFAULT_TRACE})")
+                       help=(f"trace paths (default: {DEFAULT_TRACE} plus "
+                             f"{DEFAULT_RUNS_DIR}/*.jsonl)"))
     p_sum.add_argument("--json", action="store_true", help="Machine-readable output.")
     args = parser.parse_args()
 
-    paths = args.traces or [DEFAULT_TRACE]
+    paths = args.traces or [p for p in default_trace_paths() if p.exists()]
     summary = summarize(load_events(paths))
     if not summary:
         print("no events found", file=sys.stderr)

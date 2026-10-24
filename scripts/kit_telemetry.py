@@ -29,10 +29,22 @@ Behavior (see docs/telemetry_schema.md for the event catalog):
       append to ``<project>/.claude/runs/<run_id>.jsonl``, print NOTHING.
     - unset/blank → FALLBACK: append to ``.claude/runs/unattributed.jsonl``;
       the event gains a top-level ``"run_id_fallback": "KIT_RUN_ID unset"``
-      field and ONE stdout line announces the fallback, naming the knob.
+      field and NOTHING is printed on any stream.
     - set but failing the whitelist → the same ``unattributed`` fallback
-      with ``run_id_fallback`` noting the invalid value's rejection; the
-      raw invalid value is NEVER used in a filename.
+      with ``run_id_fallback`` noting the invalid value's rejection, plus
+      ONE stdout line naming the knob; the raw invalid value is NEVER used
+      in a filename.
+- Announcement SCARCITY (ISSUE-071). ISSUE-067 announced the unset-knob
+  fallback too, and that was the defect: no kit surface *sets*
+  ``KIT_RUN_ID``, so "unset" is the state of 100% of runs and the line
+  carried zero information while drowning the announcements that matter.
+  An unset knob is therefore the DEFAULT, recorded only in the event body;
+  an INVALID one is a misconfiguration a human should fix, so it keeps the
+  stdout channel. The no-silent-no-op property ISSUE-067 bought is
+  preserved by the durable record rather than by the console: the
+  ``run_id_fallback`` field survives in every unattributed event, and
+  ``scripts/trace_query.py`` reads this stream on its DEFAULT path and
+  reports the unattributed count in aggregate.
 - Containment (ISSUE-070): ``project_path`` is NOT its own containment
   root. The root is derived independently of the caller by
   :func:`_containment_root` — main git work-tree root of the process CWD,
@@ -99,9 +111,15 @@ nothing.
 
 Env knobs (documented here and in README's environment-variable list):
     KIT_RUN_ID — run id for telemetry appends to
-        ``<project>/.claude/runs/<run-id>.jsonl``. Unset or invalid =>
-        the event is written under the ``unattributed`` run id with a
-        ``run_id_fallback`` field and a stdout announcement naming the knob.
+        ``<project>/.claude/runs/<run-id>.jsonl``. No kit surface sets it;
+        it is supplied by whoever wants attributed events. Unset => the
+        event is written under the ``unattributed`` run id with a
+        ``run_id_fallback`` field and NO announcement (ISSUE-071: a line on
+        100% of runs is noise). Invalid => the same fallback plus ONE stdout
+        line naming this knob. Either way the events are readable with
+        ``python3 scripts/trace_query.py summary``, which reads
+        ``.claude/runs/*.jsonl`` alongside the ISSUE-001 hook trace on its
+        default path and reports the unattributed count.
     CLAUDE_PROJECT_DIR — consulted as the containment root ONLY when the
         process CWD is not inside a git work tree (set by the Claude Code
         runtime; the kit never sets it). It is a fallback, not an override:
@@ -131,6 +149,13 @@ PROJECT_DIR_ENV = "CLAUDE_PROJECT_DIR"
 # Explicit fallback run id when KIT_RUN_ID is unset or invalid — the event
 # survives, visibly unattributed, instead of being silently dropped.
 FALLBACK_RUN_ID = "unattributed"
+
+# Where this emitter's JSONL streams live, relative to a project root.
+# ISSUE-071: this is the SINGLE home of that path — scripts/trace_query.py
+# imports it rather than re-typing the literal, so the path written and the
+# path read cannot drift apart (pinned by identity in
+# tests/test_kit_telemetry.py::TestIssue071StreamHasANamedConsumer).
+RUNS_SUBDIR = Path(".claude") / "runs"
 
 # Whitelist for the attacker-influenced run-id filename component.
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -303,21 +328,47 @@ def _containment_root() -> Path:
     return cwd
 
 
-def _resolve_run_id() -> tuple[str, str | None]:
-    """Resolve (run_id, fallback_reason) from the KIT_RUN_ID env knob.
+def runs_dir(project: str | Path) -> Path:
+    """The directory this emitter appends to, inside ``project``.
+
+    The one place the layout is spelled; ``scripts/trace_query.py`` reads
+    the same constant so the written path and the read path are the same
+    value rather than two literals that agree today (ISSUE-071 AC-4).
+    """
+    return Path(project) / RUNS_SUBDIR
+
+
+def event_path(project: str | Path, run_id: str) -> Path:
+    """The exact file one emit appends to. ``run_id`` is whitelisted by
+    :func:`_resolve_run_id` before it ever reaches here."""
+    return runs_dir(project) / f"{run_id}.jsonl"
+
+
+def _resolve_run_id() -> tuple[str, str | None, bool]:
+    """Resolve (run_id, fallback_reason, announce) from the KIT_RUN_ID knob.
 
     fallback_reason is None on the clean path; otherwise it names the knob
     and the condition, and run_id is the explicit ``unattributed`` id.
+
+    ``announce`` is the ISSUE-071 scarcity decision, and it is deliberately
+    made HERE rather than at the print site: only the resolver knows whether
+    the fallback is the kit's default state or a human's mistake.
     """
     raw = os.environ.get(RUN_ID_ENV, "").strip()
     if not raw:
-        return FALLBACK_RUN_ID, f"{RUN_ID_ENV} unset"
+        # The 100%-of-runs condition. Nothing in the kit sets this knob, so
+        # announcing its absence told every user the same thing on every
+        # run — the noise ISSUE-071 removes. The fallback is still recorded
+        # in the event body, which is the durable record.
+        return FALLBACK_RUN_ID, f"{RUN_ID_ENV} unset", False
     if not _RUN_ID_RE.fullmatch(raw):
+        # Someone SET the knob and got it wrong: rare, actionable, and it
+        # silently costs attribution — so this one still speaks on stdout.
         # NEVER use the raw invalid value in a filename.
         return FALLBACK_RUN_ID, (
             f"{RUN_ID_ENV} invalid (must match {_RUN_ID_RE.pattern})"
-        )
-    return raw, None
+        ), True
+    return raw, None, False
 
 
 def emit_event(
@@ -335,7 +386,7 @@ def emit_event(
     """
     try:
         project = Path(project_path) if project_path is not None else Path.cwd()
-        run_id, fallback_reason = _resolve_run_id()
+        run_id, fallback_reason, announce_fallback = _resolve_run_id()
 
         # Containment against a root the CALLER DID NOT SUPPLY (ISSUE-070).
         # This is the check that was structurally unfalsifiable before:
@@ -377,14 +428,14 @@ def emit_event(
         # project root. Kept as its own check because the root above is the
         # project's, not this subtree's (ISSUE-058 / lesson 12 — the control's
         # POSITION before the mkdir is what the test pins).
-        runs_dir = project / ".claude" / "runs"
-        if not runs_dir.resolve().is_relative_to(resolved_project):
+        target_dir = runs_dir(project)
+        if not target_dir.resolve().is_relative_to(resolved_project):
             _announce(
                 "skipped: containment violation — resolved .claude/runs "
                 f"escapes the project root; event {_quote(event_type)} NOT written"
             )
             return False
-        runs_dir.mkdir(parents=True, exist_ok=True)
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         body = dict(payload) if payload else {}
         detail = body.get("detail")
@@ -429,7 +480,7 @@ def emit_event(
         flags |= getattr(os, "O_NOFOLLOW", 0)
         flags |= getattr(os, "O_NONBLOCK", 0)
         try:
-            fd = os.open(runs_dir / f"{run_id}.jsonl", flags, 0o644)
+            fd = os.open(event_path(project, run_id), flags, 0o644)
         except OSError as exc:
             _announce(
                 f"skipped: write failed ({exc}) — event {_quote(event_type)} "
@@ -462,7 +513,11 @@ def emit_event(
         finally:
             os.close(fd)
 
-        if fallback_reason is not None:
+        # Scarcity (ISSUE-071): only an ACTIONABLE fallback reaches stdout.
+        # The unset-knob fallback is the kit's default state, so it is
+        # carried by the ``run_id_fallback`` field written above and read
+        # back by ``scripts/trace_query.py``, not by a line on every run.
+        if announce_fallback and fallback_reason is not None:
             _announce(
                 f"fallback: {fallback_reason} — event {_quote(event_type)} "
                 f"written under run id '{FALLBACK_RUN_ID}'"

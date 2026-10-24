@@ -491,17 +491,16 @@ class TestSchemaViolationsStayInvalidResults:
 
 class TestDormantPathsPrintNoGateOutput:
     """The dormant degraded flavors print no GATE-decision output — their
-    decision/reason tuples are unchanged. Since ISSUE-067 the shared
-    telemetry emitter announces its KIT_RUN_ID fallback (conftest delenvs
-    the knob suite-wide), so stdout contains ONLY that [kit-telemetry] line
-    and the event lands in unattributed.jsonl with run_id_fallback set."""
+    decision/reason tuples are unchanged. ISSUE-067 briefly made the shared
+    emitter announce its KIT_RUN_ID fallback here (conftest delenvs the knob
+    suite-wide); ISSUE-071 removed that line because the knob has no
+    producer, so it fired on every gate run. Stdout is now EXACTLY empty and
+    the event still lands in unattributed.jsonl with run_id_fallback set."""
 
     def _assert_only_telemetry_fallback(self, project: Path, out: str) -> None:
-        lines = out.splitlines()
-        assert len(lines) == 1, f"expected only the telemetry fallback line: {out!r}"
-        assert lines[0].startswith("[kit-telemetry]")
-        assert "KIT_RUN_ID" in lines[0], "the announcement must name the knob"
-        assert "GATE" not in out, "dormant flavors must print no gate output"
+        assert out == "", (
+            f"a dormant gate decision must print nothing at all: {out!r}"
+        )
         [event] = _events(project, "unattributed")
         assert event["run_id_fallback"] == "KIT_RUN_ID unset"
 

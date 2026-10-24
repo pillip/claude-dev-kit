@@ -89,8 +89,20 @@ emitter resolves the run-id from the `KIT_RUN_ID` env var and auto-creates
 `.claude/runs/` inside the contained project root (below); an unset or
 invalid run-id means the event is written under the explicit
 `unattributed` run id with a top-level `run_id_fallback` field naming the
-condition, plus one `[kit-telemetry]` stdout announcement naming the knob —
-never a silent no-op.
+condition — never a silent no-op.
+
+**Announcement scarcity (ISSUE-071).** ISSUE-067 also printed one
+`[kit-telemetry]` stdout line for the unset-knob fallback. No kit surface
+*sets* `KIT_RUN_ID`, so that line fired on 100% of runs and drowned the
+announcements that matter — the same "no signal reads as all clear" shape
+ISSUE-067 existed to fix, one level up. The split now is: an **unset** knob
+is the default state, recorded only in the event body; an **invalid** knob
+is a misconfiguration and still prints one stdout line naming the knob.
+The durable record is read back by `scripts/trace_query.py summary`, which
+since ISSUE-071 reads `.claude/runs/*.jsonl` alongside the ISSUE-001 hook
+trace on its default path and reports a `script events` breakdown plus an
+`unattributed events` count — the aggregate that replaces the per-emit
+line. A write-only artifact is not an instrument.
 
 **Containment (ISSUE-070).** The caller-supplied `project_path` is NOT its
 own containment root. The root is derived independently of the caller — the
@@ -134,7 +146,7 @@ hand-rolled appender remains unexamined.
 | `scripts/spec_gate.py` | printed JSON decision object + the skill's stdout "telemetry-style" bypass line per SPEC-007 | JUSTIFIED, not migrated: no JSONL appender exists there — adding one is new scope (minimality). |
 | `project/.claude/hooks/agent_state.py` | hook-trace appender to `.claude/run/events.jsonl` | JUSTIFIED: separate ISSUE-001 shape-only hook-trace stream with its own contract; ISSUE-001 analytics scope is explicitly Out. |
 | `/ship` skill, `scripts/checkpoint.sh` / `verify_checkpoint.py` | — | JUSTIFIED: no emit call sites exist today (audited; nothing to migrate). |
-| `scripts/trace_query.py` | — | Consumer, not an emitter — and it reads the ISSUE-001 hook trace (`.claude/run/events.jsonl`), not this stream. |
+| `scripts/trace_query.py` | — | Consumer, not an emitter. Since **ISSUE-071** it reads BOTH streams on its default path: the ISSUE-001 hook trace (`.claude/run/events.jsonl`) and this one (`.claude/runs/*.jsonl`), importing the path constant from `kit_telemetry.RUNS_SUBDIR` so the path written and the path read cannot drift. |
 
 Events cataloged above without a live emit instruction (e.g.
 `synthesis_*`, `research_quote_*`) have no call site to migrate; when a

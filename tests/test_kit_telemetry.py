@@ -68,6 +68,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import kit_telemetry as kt  # noqa: E402
 import synthesize_gate_results as sgr  # noqa: E402
+import trace_query  # noqa: E402 — ISSUE-071: the stream's named consumer
 
 CLI = SCRIPTS_DIR / "kit_telemetry.py"
 WORKTREE_SH = SCRIPTS_DIR / "worktree.sh"
@@ -302,10 +303,16 @@ class TestCleanPath:
 
 
 class TestRunIdFallback:
-    def test_unset_run_id_writes_unattributed_and_announces(self, project, capsys):
-        """AC-2: without KIT_RUN_ID the event is written under the explicit
-        ``unattributed`` run id — not dropped — with the fallback visible in
-        the event body AND one stdout line naming the knob."""
+    def test_unset_run_id_writes_unattributed_without_announcing(
+        self, project, capsys
+    ):
+        """ISSUE-067 AC-2, re-pinned by ISSUE-071: without KIT_RUN_ID the
+        event is still written under the explicit ``unattributed`` run id —
+        not dropped — with the fallback visible in the event body. The stdout
+        line is GONE: the knob has no producer, so "unset" is the default
+        state on 100% of runs and announcing it carried zero information
+        (ISSUE-071 resolution (b)). The durable record is the body field,
+        which ``scripts/trace_query.py`` now reads and aggregates."""
         ok = kt.emit_event(
             "review_degraded_path_used",
             {"dimension": "code"},
@@ -316,13 +323,9 @@ class TestRunIdFallback:
         [event] = _events(project, "unattributed")
         assert event["run_id_fallback"] == "KIT_RUN_ID unset"
         assert event["payload"] == {"dimension": "code"}
-        out = capsys.readouterr().out
-        lines = out.splitlines()
-        assert len(lines) == 1, f"expected exactly one announcement line: {out!r}"
-        assert lines[0].startswith("[kit-telemetry]")
-        assert "KIT_RUN_ID" in out, "the announcement must name the knob"
-        assert "review_degraded_path_used" in out
-        assert "unattributed" in out
+        captured = capsys.readouterr()
+        assert captured.out == "", f"the default path must be silent: {captured.out!r}"
+        assert captured.err == "", f"...on BOTH channels: {captured.err!r}"
 
     def test_blank_run_id_treated_as_unset(self, project, monkeypatch, capsys):
         monkeypatch.setenv(kt.RUN_ID_ENV, "   ")
@@ -332,7 +335,8 @@ class TestRunIdFallback:
         assert ok is True
         [event] = _events(project, "unattributed")
         assert event["run_id_fallback"] == "KIT_RUN_ID unset"
-        assert "KIT_RUN_ID" in capsys.readouterr().out
+        captured = capsys.readouterr()
+        assert (captured.out, captured.err) == ("", "")
 
     @pytest.mark.parametrize("bad", ["../evil", "a b", "x" * 65])
     def test_invalid_run_id_falls_back_and_never_names_a_file_from_raw(
@@ -585,9 +589,12 @@ class TestCli:
         assert event["issue_id"] == "ISSUE-067"
         assert "run_id_fallback" not in event
 
-    def test_without_run_id_exits_zero_announces_and_writes_unattributed(
+    def test_without_run_id_exits_zero_silently_and_writes_unattributed(
         self, kit_root, project
     ):
+        """Re-pinned by ISSUE-071: the CLI is the shape a gate checkpoint
+        runs, one emit per process — so an at-most-once-per-process notice
+        would still be a line on 100% of runs. There is none."""
         result = _run_cli(
             [
                 "--script", "review",
@@ -599,8 +606,8 @@ class TestCli:
             cwd=kit_root,
         )
         assert result.returncode == 0, result.stderr
-        assert "[kit-telemetry]" in result.stdout
-        assert "KIT_RUN_ID" in result.stdout
+        assert result.stdout == "", result.stdout
+        assert result.stderr == "", result.stderr
         [event] = _events(project, "unattributed")
         assert event["run_id_fallback"] == "KIT_RUN_ID unset"
 
@@ -1072,11 +1079,15 @@ class TestAnnouncementIntegrityEveryPath:
 
     EVIL = "benign_event\n[kit-telemetry] fallback: all clear"
 
+    # ISSUE-071 re-pin: the ``KIT_RUN_ID`` shape moved from the UNSET value
+    # (which no longer announces at all) to an INVALID one, which still does.
+    # The defence being measured — ``_quote`` on every announcement site — is
+    # unchanged and still exercised on the run-id fallback path.
     @pytest.mark.parametrize(
         "label,extra,run_id",
         [
             ("4096-byte cap", ["--payload", '{"f": "' + "y" * 5000 + '"}'], "capr"),
-            ("KIT_RUN_ID fallback", [], None),
+            ("KIT_RUN_ID invalid fallback", [], "not a valid id"),
             ("invalid --payload", ["--payload", "{not json"], "badp"),
         ],
     )
@@ -1103,7 +1114,7 @@ class TestAnnouncementIntegrityEveryPath:
         result = _run_cli(
             ["--script", "review", "--event", "review_degraded_path_used",
              "--project-path", str(project)],
-            _cli_env(None, kit_root),
+            _cli_env("not a valid id", kit_root),  # ISSUE-071: the announcing shape
             cwd=kit_root,
         )
         assert result.returncode == 0, result.stderr
@@ -1347,7 +1358,16 @@ class TestNeverRaisesContract:
     ):
         """The reproduced defect: the fallback path announces, ``print`` on a
         closed stream raises ``ValueError``, and the outer handler announced
-        again — so the exception escaped the "never raises" wrapper."""
+        again — so the exception escaped the "never raises" wrapper.
+
+        ISSUE-071 re-pin: driven by an INVALID ``KIT_RUN_ID`` rather than an
+        unset one. The unset path no longer reaches ``_announce`` at all, so
+        leaving this test on it would have quietly stopped exercising the
+        announce-with-closed-stdout leg that ISSUE-075 adopts as a promise.
+        The invalid path both announces AND writes — the exact shape the
+        original test needed.
+        """
+        monkeypatch.setenv(kt.RUN_ID_ENV, "not a valid id")
         sink = io.StringIO()
         sink.close()
         monkeypatch.setattr(sys, "stdout", sink)
@@ -1355,6 +1375,22 @@ class TestNeverRaisesContract:
             "test_event", {}, script_name="kit_test", project_path=project
         )
         assert ok is True, "the event must still land; only the announcement is lost"
+        [event] = _events(project, "unattributed")
+        assert "KIT_RUN_ID" in event["run_id_fallback"]
+        assert "invalid" in event["run_id_fallback"]
+
+    def test_closed_stdout_on_the_silent_unset_path_does_not_raise(
+        self, project, monkeypatch
+    ):
+        """Companion pin: the now-silent default path must ALSO survive a
+        closed stdout — silence is not a reason to stop testing it."""
+        sink = io.StringIO()
+        sink.close()
+        monkeypatch.setattr(sys, "stdout", sink)
+        ok = kt.emit_event(
+            "test_event", {}, script_name="kit_test", project_path=project
+        )
+        assert ok is True
         [event] = _events(project, "unattributed")
         assert event["run_id_fallback"] == "KIT_RUN_ID unset"
 
@@ -1396,7 +1432,9 @@ class TestNeverRaisesContract:
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
-            env=_cli_env(project_dir=kit_root),  # KIT_RUN_ID unset -> announce path
+            # ISSUE-071 re-pin: an INVALID run id is the announcing fallback
+            # shape now; unset is silent and would no longer reach `print`.
+            env=_cli_env("not a valid id", kit_root),
             cwd=str(kit_root),
             timeout=_probe_timeout(),
         )
@@ -1438,3 +1476,270 @@ class TestEnvKnobDocumentation:
         assert kt.PROJECT_DIR_ENV in kt.__doc__
         readme = (SCRIPTS_DIR.parent / "README.md").read_text(encoding="utf-8")
         assert kt.PROJECT_DIR_ENV in readme
+
+
+# ═════════════════════════════════════════════════════════════════════
+# ISSUE-071 — announcement SCARCITY and the stream's named consumer
+# ═════════════════════════════════════════════════════════════════════
+#
+# ISSUE-067 made every skip/fallback announce so that "no signal" could not
+# be read as "all clear". The knob it announces about, ``KIT_RUN_ID``, has
+# no producer anywhere in the kit, so the unset-fallback line fired on 100%
+# of runs — which re-creates the same failure one level up: a line printed
+# every time carries no information, and the genuinely exceptional
+# announcements drown in it.
+#
+# Resolution (b), recorded in PR #143: the unset knob is the DEFAULT
+# condition, not an incident, so it is no longer announced at all. It stays
+# in the durable record — the ``run_id_fallback`` field in the event body —
+# and ``scripts/trace_query.py`` now reads that stream on its default path
+# and reports the unattributed count in aggregate. An INVALID ``KIT_RUN_ID``
+# is still exceptional (a human misconfigured it) and is still announced on
+# stdout, naming the knob.
+
+
+_GATE_PROBE_SRC = """
+import pathlib, sys
+sys.path.insert(0, {scripts!r})
+import synthesize_gate_results as sgr
+decision, _results, reason = sgr.decide_gate_path(
+    pathlib.Path(sys.argv[1]),
+    binding_key=sgr.generate_binding_key(),
+    process_start=0.0,
+)
+sys.stderr.write("DECISION=%s/%s\\n" % (decision, reason))
+"""
+
+
+class TestIssue071ScarcityThroughTheRealGateChain:
+    """AC-1, BOTH directions in the SAME fixture (review lesson 16).
+
+    Driven through the REAL consumer — ``verify_checkpoint._run_verify_gates``
+    calls ``synthesize_gate_results.decide_gate_path``, which calls
+    ``_emit_telemetry`` -> ``kit_telemetry.emit_event`` — not through the
+    emitter helper in isolation. A test that only asserted silence would pass
+    over an emitter that announces nothing ever, so the refusal direction is
+    forced in the same fixture and must still speak.
+    """
+
+    @pytest.fixture()
+    def gate_repo(self, tmp_path: Path) -> Path:
+        """A project that IS its own containment root (``.git`` directory)."""
+        repo = tmp_path / "gaterepo"
+        (repo / ".git").mkdir(parents=True)
+        assert kt._main_repo_root(repo) == repo, (
+            "fixture self-check: the probe's CWD must derive to the fixture "
+            "root, not an ambient repo"
+        )
+        return repo
+
+    def _run_gate_probe(
+        self, cwd: Path, project_path: Path
+    ) -> subprocess.CompletedProcess:
+        script = _GATE_PROBE_SRC.format(scripts=str(SCRIPTS_DIR))
+        env = _cli_env()  # KIT_RUN_ID / CLAUDE_PROJECT_DIR stripped
+        env.pop("KIT_GATE_RESULTS_FILE", None)
+        try:
+            return subprocess.run(
+                [sys.executable, "-c", script, str(project_path)],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=str(cwd),
+                timeout=_probe_timeout(),
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail(
+                f"gate probe HUNG (rc {TIMEOUT_RC}) past {_probe_timeout()}s — "
+                f"raise {PROBE_TIMEOUT_ENV} if this machine is merely slow"
+            )
+
+    def test_clean_default_gate_run_prints_nothing_at_all(self, gate_repo):
+        """Scarcity, arm direction: no kit env knobs set, a real gate path
+        decision, and stdout is EXACTLY empty — zero fallback lines."""
+        done = self._run_gate_probe(gate_repo, gate_repo)
+        assert done.returncode == 0, done.stderr
+        assert "DECISION=degraded/" in done.stderr, done.stderr
+        fallback_lines = [
+            line for line in done.stdout.splitlines() if kt.RUN_ID_ENV in line
+        ]
+        assert fallback_lines == [], (
+            f"a clean default run must print zero {kt.RUN_ID_ENV} fallback "
+            f"lines: {done.stdout!r}"
+        )
+        assert done.stdout == "", (
+            f"the announcement budget on a clean default run is zero lines, "
+            f"got: {done.stdout!r}"
+        )
+
+    def test_the_clean_run_still_recorded_the_fallback_in_the_event_body(
+        self, gate_repo
+    ):
+        """Silence must not become a silent no-op: the same clean run writes
+        the event, with the fallback marker in the DURABLE record."""
+        done = self._run_gate_probe(gate_repo, gate_repo)
+        assert done.returncode == 0, done.stderr
+        [event] = _events(gate_repo, kt.FALLBACK_RUN_ID)
+        assert event["run_id_fallback"] == f"{kt.RUN_ID_ENV} unset"
+        assert event["skill_or_script"] == "synthesize_gate_results"
+
+    def test_a_containment_refusal_in_the_same_fixture_still_announces(
+        self, gate_repo, tmp_path
+    ):
+        """Disarm direction for the scarcity change: an EXCEPTIONAL condition
+        forced on the same gate chain must still reach stdout, otherwise the
+        silence above is indistinguishable from a mute instrument."""
+        outside = tmp_path / "outside-project"
+        outside.mkdir()
+        done = self._run_gate_probe(gate_repo, outside)
+        assert done.returncode == 0, done.stderr
+        lines = done.stdout.splitlines()
+        assert len(lines) == 1, (
+            f"expected exactly one announcement line, got: {done.stdout!r}"
+        )
+        assert lines[0].startswith("[kit-telemetry]")
+        assert "containment violation" in lines[0]
+        assert "NOT written" in lines[0]
+        assert not (outside / ".claude").exists(), "a refusal writes nothing"
+
+
+class TestIssue071RepeatEmitBudget:
+    """AC-2 — 20 emits in ONE process with the knob unset produce AT MOST one
+    notice in total. A per-emit notice (today's behaviour) fails this."""
+
+    def test_twenty_emits_with_the_knob_unset_produce_at_most_one_notice(
+        self, project, capsys
+    ):
+        for i in range(20):
+            assert (
+                kt.emit_event(
+                    "test_event", {"n": i}, script_name="kit_test",
+                    project_path=project,
+                )
+                is True
+            )
+        captured = capsys.readouterr()
+        # Counted across BOTH channels: relocating the line to stderr is not
+        # the same as removing it, and AC-2 budgets NOTICES, not stdout lines.
+        notices = [
+            line
+            for line in (captured.out + captured.err).splitlines()
+            if kt.RUN_ID_ENV in line
+        ]
+        assert len(notices) <= 1, (
+            f"AC-2 budget blown — {len(notices)} notices across 20 emits: "
+            f"{notices[:3]}"
+        )
+        assert notices == [], (
+            "resolution (b) as shipped produces ZERO unset-knob notices; "
+            f"got {notices!r}"
+        )
+        assert len(_events(project, kt.FALLBACK_RUN_ID)) == 20, (
+            "all 20 events must still land — scarcity is not a silent no-op"
+        )
+
+
+class TestIssue071ExceptionalAnnouncementsSurvive:
+    """AC-3 — the ISSUE-067 no-silent-no-op property under resolution (b):
+    the fallback marker lives in the event body, and the conditions a human
+    should ACT on are still loud."""
+
+    def test_unset_knob_marker_is_in_the_body_and_nowhere_on_a_stream(
+        self, project, capsys
+    ):
+        ok = kt.emit_event(
+            "review_degraded_path_used", {"dimension": "code"},
+            script_name="review", project_path=project,
+        )
+        assert ok is True
+        [event] = _events(project, kt.FALLBACK_RUN_ID)
+        assert event["run_id_fallback"] == f"{kt.RUN_ID_ENV} unset"
+        captured = capsys.readouterr()
+        assert captured.out == "", captured.out
+        assert captured.err == "", captured.err
+
+    def test_invalid_knob_is_still_announced_on_stdout_and_names_the_knob(
+        self, project, monkeypatch, capsys
+    ):
+        """An invalid value is a MISCONFIGURATION, not the default state —
+        scarce by construction, so it keeps the stdout channel."""
+        monkeypatch.setenv(kt.RUN_ID_ENV, "not a valid id")
+        assert (
+            kt.emit_event(
+                "test_event", {}, script_name="kit_test", project_path=project
+            )
+            is True
+        )
+        out = capsys.readouterr().out
+        lines = out.splitlines()
+        assert len(lines) == 1, out
+        assert kt.RUN_ID_ENV in lines[0], "the message must name the knob"
+        assert "invalid" in lines[0]
+
+
+class TestIssue071StreamHasANamedConsumer:
+    """AC-4 — no write-only artifact survives. ``scripts/trace_query.py``
+    reads this emitter's stream on its DEFAULT path, and the identity is
+    asserted from the PRODUCTION constants on both ends, never a re-typed
+    literal."""
+
+    def test_the_path_written_is_the_path_the_consumer_reads(self, project):
+        assert (
+            kt.emit_event(
+                "gates_degraded_path_used", {"reason": "skill_missing"},
+                script_name="synthesize_gate_results", project_path=project,
+            )
+            is True
+        )
+        written = kt.event_path(project, kt.FALLBACK_RUN_ID)
+        assert written.is_file()
+
+        read_paths = [p.resolve() for p in trace_query.default_trace_paths(project)]
+        assert written.resolve() in read_paths, (
+            f"the emitter writes {written} which the consumer does not read: "
+            f"{read_paths}"
+        )
+        events = trace_query.load_events(
+            [p for p in trace_query.default_trace_paths(project) if p.exists()]
+        )
+        assert [e["event_type"] for e in events] == ["gates_degraded_path_used"]
+
+    def test_both_ends_share_one_production_constant(self):
+        """Pinned by IDENTITY, so a future edit cannot drift one copy of the
+        path apart from the other."""
+        assert trace_query.DEFAULT_RUNS_DIR is kt.RUNS_SUBDIR
+        assert kt.runs_dir(Path("/p")) == Path("/p") / kt.RUNS_SUBDIR
+        assert kt.event_path(Path("/p"), "r") == kt.runs_dir(Path("/p")) / "r.jsonl"
+
+    def test_the_consumer_still_reads_the_issue_001_hook_trace(self, project):
+        """Disarm direction: unifying the read must not DROP the stream
+        trace_query already consumed."""
+        paths = [p.resolve() for p in trace_query.default_trace_paths(project)]
+        assert (project / trace_query.DEFAULT_TRACE).resolve() in paths
+
+
+class TestIssue071KnobDocumentation:
+    """Review lesson 2, the other half: a knob whose behaviour changes gets
+    its doc lines updated in the SAME PR — owning module docstring AND the
+    user-facing doc — and the surviving message names the knob."""
+
+    def test_run_id_knob_is_documented_in_both_places(self):
+        assert kt.RUN_ID_ENV == "KIT_RUN_ID"
+        assert kt.RUN_ID_ENV in kt.__doc__
+        readme = (SCRIPTS_DIR.parent / "README.md").read_text(encoding="utf-8")
+        assert kt.RUN_ID_ENV in readme
+
+    def test_the_named_consumer_is_discoverable_from_the_docs(self):
+        """Occurrence whitelist (ISSUE-040 lesson), not a phrasing blacklist:
+        the two docs a user reaches for must NAME the script that reads the
+        stream, otherwise the artifact is write-only as far as anyone can
+        tell."""
+        readme = (SCRIPTS_DIR.parent / "README.md").read_text(encoding="utf-8")
+        start = readme.index(f"- `{kt.RUN_ID_ENV}`")
+        entry = readme[start : readme.index("\n- `", start + 1)]
+        assert "trace_query.py" in entry, entry
+        assert "trace_query" in kt.__doc__
+        schema = (SCRIPTS_DIR.parent / "docs" / "telemetry_schema.md").read_text(
+            encoding="utf-8"
+        )
+        assert "trace_query.py" in schema
