@@ -2,6 +2,7 @@
 
 import collections
 import os
+import re
 import shutil
 import subprocess
 import pytest
@@ -81,6 +82,18 @@ def _git_rc(repo: str, *args: str) -> int:
 
 def _has_local_branch(repo: str, branch: str) -> bool:
     return _git_rc(repo, "show-ref", "--verify", "--quiet", f"refs/heads/{branch}") == 0
+
+
+def _names(stderr: str, token: str) -> bool:
+    """True when ``token`` appears in ``stderr`` as a WHOLE token.
+
+    A plain ``in`` check is satisfied by a longer token sharing the prefix: the
+    AC-5 harness-validation mutant that renamed ``source=remote-tip`` to
+    ``source=remote-tipMUTATED`` SURVIVED the first matrix run for exactly that
+    reason. Boundary-matching closes it, which is why the matrix is validated
+    with a known-killing mutant before any ``SURVIVED`` verdict is trusted.
+    """
+    return re.search(re.escape(token) + r"(?![\w-])", stderr) is not None
 
 
 @pytest.fixture()
@@ -295,7 +308,7 @@ class TestCreate:
         assert result.returncode != 0
         assert result.stdout.strip() == ""
         assert remote_repo.branch in result.stderr
-        assert reason in result.stderr
+        assert _names(result.stderr, reason)
         assert not _has_local_branch(repo, remote_repo.branch)
         assert not os.path.isdir(
             os.path.join(os.path.realpath(repo), ".worktrees", "issue-ISSUE-999-x")
@@ -313,7 +326,7 @@ class TestCreate:
 
         assert result.returncode != 0
         assert result.stdout.strip() == ""
-        assert "reason=remote-unreachable" in result.stderr
+        assert _names(result.stderr, "reason=remote-unreachable")
         assert not _has_local_branch(remote_repo.repo, remote_repo.branch)
         assert not os.path.isdir(
             os.path.join(
@@ -344,7 +357,7 @@ class TestCreate:
 
         assert result.returncode != 0
         assert result.stdout.strip() == ""
-        assert "reason=remote-fetch-timeout" in result.stderr
+        assert _names(result.stderr, "reason=remote-fetch-timeout")
         assert "KIT_WORKTREE_FETCH_TIMEOUT" in result.stderr
         assert not _has_local_branch(repo, remote_repo.branch)
 
@@ -367,7 +380,14 @@ class TestCreate:
         assert "divergence" in result.stderr
         assert short_l in result.stderr
         assert short_r in result.stderr
-        assert "ahead" in result.stderr
+        # WHICH side is ahead, not merely that the word appears: a swapped
+        # ancestor test would otherwise pass while reporting the wrong side.
+        assert f"origin/{remote_repo.branch} is ahead" in result.stderr
+        assert "the local ref is ahead" not in result.stderr
+        assert "diverged" not in result.stderr
+        # The staleness of the side it compared against must be named, since no
+        # fetch runs on this path.
+        assert "cached" in result.stderr.lower()
         # Resolution choice (documented in the script header): LOCAL wins.
         assert _git(result.stdout.strip(), "rev-parse", "HEAD") == local_sha
 
@@ -394,7 +414,8 @@ class TestCreate:
         assert "divergence" in result.stderr
         assert short_l in result.stderr
         assert short_r in result.stderr
-        assert "diverged" in result.stderr
+        assert "diverged (neither side is an ancestor of the other)" in result.stderr
+        assert "is ahead" not in result.stderr
         assert _git(result.stdout.strip(), "rev-parse", "HEAD") == local_sha
 
     def test_new_branch_base_is_unchanged_pinned_by_sha(self, git_repo):
@@ -459,16 +480,16 @@ class TestCreate:
         """
         remote = _run(["create", remote_repo.branch], remote_repo.repo)
         assert remote.returncode == 0, remote.stderr
-        assert "source=remote-tip" in remote.stderr
+        assert _names(remote.stderr, "source=remote-tip")
 
         new = _run(["create", "feature/announce-new"], git_repo)
         assert new.returncode == 0, new.stderr
-        assert "source=new-from-base" in new.stderr
+        assert _names(new.stderr, "source=new-from-base")
 
         _git(git_repo, "branch", "feature/announce-local")
         local = _run(["create", "feature/announce-local"], git_repo)
         assert local.returncode == 0, local.stderr
-        assert "source=local-ref" in local.stderr
+        assert _names(local.stderr, "source=local-ref")
 
     def test_fetch_timeout_knob_is_documented(self):
         """TC-083l: the new env knob is documented where its siblings live.
