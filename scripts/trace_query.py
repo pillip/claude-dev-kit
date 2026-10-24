@@ -85,9 +85,20 @@ def load_events(paths: list[Path]) -> list[dict]:
             if not line:
                 continue
             try:
-                events.append(json.loads(line))
+                obj = json.loads(line)
             except json.JSONDecodeError:
                 continue  # tolerate a torn line; telemetry must never hard-fail
+            # Review fix (PR #143): a line can be VALID JSON and still not be
+            # an event — `123`, `"x"`, `null`, `[]` all parse, and `summarize`
+            # then calls `.get` on them and dies with an AttributeError. These
+            # files are workspace state anyone with write access to the
+            # checkout can plant (review lesson 5: validate on read), and
+            # ISSUE-071 just put them on this tool's DEFAULT path via a glob,
+            # so one planted byte would make the whole record unreadable —
+            # including the `unattributed events` count that this issue
+            # substituted for the removed per-emit announcement.
+            if isinstance(obj, dict):
+                events.append(obj)
     return events
 
 
@@ -153,21 +164,49 @@ def summarize(events: list[dict]) -> dict:
     return out
 
 
+def _safe(value: object) -> str:
+    """Render a value READ from a trace file as a single printable token.
+
+    Review fix (PR #143). ``.claude/runs/*.jsonl`` and the hook trace are
+    workspace files, i.e. untrusted input on read (review lesson 5), and
+    every value below reaches stdout verbatim. ``kit_telemetry._quote``
+    is this exact defence on the WRITE side, and its docstring says why:
+    ``repr`` escapes newlines, so a crafted value "cannot forge a second
+    line that reads like an all-clear". PR #141's review already had to
+    extend that defence from one announcement site to all of them (review
+    lesson 16); ISSUE-071 added a NEW output surface that re-opened the
+    same hole on the other side of the same data. Measured before this
+    fix: a planted ``event_type`` of ``"benign\\n  unattributed events: 0"``
+    made ``summary`` print a fabricated clean block while the true
+    unattributed count was 2 — forging precisely the aggregate this issue
+    substituted for the per-emit stdout line.
+
+    Ordinary values are returned untouched so the normal readout stays
+    readable; only a value carrying a control character is escaped. Making
+    every key a ``str`` also keeps ``sorted()`` below from raising on a
+    stream that mixes key types.
+    """
+    text = str(value)
+    return text if text.isprintable() else repr(text)
+
+
+def _join(counter: dict) -> str:
+    return ", ".join(f"{k}×{v}" for k, v in sorted(
+        (_safe(key), count) for key, count in counter.items()
+    )) or "—"
+
+
 def print_summary(summary: dict) -> None:
     for sid, s in summary.items():
-        print(f"session {sid}")
+        print(f"session {_safe(sid)}")
         print(f"  turns:               {s['turns']}")
         print(f"  tool calls:          {s['tool_calls']}  (failures: {s['tool_failures']})")
-        spawns = ", ".join(f"{k}×{v}" for k, v in sorted(s["subagent_spawns"].items())) or "—"
-        print(f"  subagent spawns:     {spawns}")
-        cps = ", ".join(f"{k}×{v}" for k, v in sorted(s["checkpoint_runs"].items())) or "—"
-        print(f"  checkpoint runs:     {cps}")
-        fails = ", ".join(f"{k}×{v}" for k, v in sorted(s["checkpoint_failures"].items())) or "—"
-        print(f"  checkpoint failures: {fails}")
+        print(f"  subagent spawns:     {_join(s['subagent_spawns'])}")
+        print(f"  checkpoint runs:     {_join(s['checkpoint_runs'])}")
+        print(f"  checkpoint failures: {_join(s['checkpoint_failures'])}")
         dur = s["duration_seconds"]
         print(f"  wall-clock:          {dur}s" if dur is not None else "  wall-clock:          —")
-        evs = ", ".join(f"{k}×{v}" for k, v in sorted(s["script_events"].items())) or "—"
-        print(f"  script events:       {evs}")
+        print(f"  script events:       {_join(s['script_events'])}")
         # The aggregate that replaced ISSUE-067's per-emit stdout line
         # (ISSUE-071). The remediation names the knob only when there is
         # something to remediate — printing "set KIT_RUN_ID" next to a zero

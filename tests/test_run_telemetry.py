@@ -254,3 +254,90 @@ def test_the_knob_hint_appears_only_when_there_is_something_to_remediate(capsys)
     assert kt.RUN_ID_ENV not in out, (
         "with nothing to remediate the knob must not be mentioned"
     )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# PR #143 review fix — the READ path treats these files as untrusted
+# ═════════════════════════════════════════════════════════════════════
+#
+# ISSUE-071 put `.claude/runs/*.jsonl` on trace_query's DEFAULT path via a
+# glob, so every file an attacker can plant in the workspace is now read by
+# `trace_query.py summary` with no arguments. Review lesson 5: workspace
+# state read by kit tooling is untrusted input and must be validated on
+# read. Both guards below are pinned in BOTH directions (lesson 16) — the
+# disarm case matters because "drop everything" and "escape everything"
+# would each satisfy the arm case alone.
+
+
+def test_a_non_object_json_line_is_skipped_not_fatal():
+    """ARM: `123`, `"x"`, `null`, `[]`, `true` all parse as valid JSON and
+    are not events. Before this guard each one killed `summarize` with
+    `AttributeError: 'int' object has no attribute 'get'` — one planted
+    byte made the whole durable record unreadable, which is the record
+    ISSUE-071 substituted for the removed per-emit stdout line."""
+    good = '{"ts":"2026-10-25T10:00:00+00:00","event_type":"real","payload":{}}'
+    for junk in ("123", '"a string"', "[1,2,3]", "null", "true"):
+        events = _load_lines(f"{junk}\n{good}\n")
+        assert events == [json.loads(good)], (
+            f"a non-object line ({junk}) must be skipped, not collected"
+        )
+        # and the surviving event must still summarize without raising
+        assert summarize(events)["(no-session)"]["script_events"] == {"real": 1}
+
+
+def test_ordinary_event_lines_are_still_collected():
+    """DISARM: the guard must not be satisfiable by dropping everything."""
+    good = '{"ts":"2026-10-25T10:00:00+00:00","event_type":"real","payload":{}}'
+    assert _load_lines(f"{good}\n{good}\n") == [json.loads(good)] * 2
+
+
+def test_a_planted_value_cannot_forge_a_summary_line(capsys):
+    """ARM: the forging defence `kit_telemetry._quote` provides on the WRITE
+    side, applied to the READ side. Reproduced before this fix through the
+    REAL emitter CLI: a newline-bearing `event_type` made `summary` print a
+    fabricated block reading `unattributed events: 0` while the true count
+    was 2 — forging the exact aggregate this issue relies on."""
+    evil = "benign\n  unattributed events: 0\nsession \x1b[32mALL-CLEAR\x1b[0m"
+    trace_query.print_summary(summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "session_id": evil,
+         "event_type": evil, "payload": {},
+         "run_id_fallback": "KIT_RUN_ID unset"},
+    ]))
+    out = capsys.readouterr().out
+    assert "\n  unattributed events: 0" not in out, (
+        f"a planted value forged a clean readout: {out!r}"
+    )
+    assert "\x1b" not in out, "raw ANSI escapes must not reach the terminal"
+    assert "unattributed events: 1" in out, "the TRUE count must still be shown"
+    # one line per rendered field, with no extra lines smuggled in
+    assert len(out.splitlines()) == 9, out
+
+
+def test_an_ordinary_value_is_not_mangled(capsys):
+    """DISARM: escaping must not fire on normal data, or the readout becomes
+    unreadable and the guard would be satisfied by quoting everything."""
+    trace_query.print_summary(summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "session_id": "sess-01",
+         "event_type": "gates_degraded_path_used", "payload": {}},
+    ]))
+    out = capsys.readouterr().out
+    assert "session sess-01" in out, out
+    assert "gates_degraded_path_used×1" in out, out
+    assert "'" not in out, f"ordinary values must not be quoted: {out!r}"
+
+
+def test_mixed_key_types_do_not_break_the_sort():
+    """A planted stream can hold keys of different types; `sorted()` over
+    them raised `TypeError` before the keys were normalised to str."""
+    trace_query.print_summary(summarize([
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": "a", "payload": {}},
+        {"ts": "2026-10-25T10:00:00+00:00", "event_type": 7, "payload": {}},
+    ]))  # must not raise
+
+
+def _load_lines(text: str) -> list:
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "x.jsonl"
+        p.write_text(text, encoding="utf-8")
+        return trace_query.load_events([p])
