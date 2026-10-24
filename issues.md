@@ -59,6 +59,7 @@
 - [ ] ISSUE-086: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, after repairing attribution _(track: platform, P1, 1.5d — durable carrier for SPEC-081 amendment decision 2: recall is 4/6 genuine gate-adders, both false negatives refuse by `return None`, and recovering the recall costs 1 false BLOCK per 2 recalls because attribution cannot see a battery driven through a test helper — attribution must be repaired first; depends on 081)_
 - [ ] ISSUE-087: Widen or honestly bound the gate-evidence detection boundary, and stop reporting a miss as "no gate-adding change" _(track: platform, P2, 1d — durable carrier for SPEC-081 amendment decision 3: a gate is seen only inside an added `def` in a changed non-test `.py` file, so module-level gates, the kit's own eight `.sh` scripts, test-named source files and `class`-hinted hunks all print the byte-identical gate-free PASS line; commit 7949ccb, written to harden this gate, is invisible to it; depends on 081)_
 - [ ] ISSUE-088: Decide the successor mechanism for the disarm-DIRECTION obligation, or decline the property outright _(track: platform, P1, 1d — durable carrier for SPEC-081 amendment decision 8: after the 2026-10-24 tier split the direction property is advisory, so the arm-only shape that shipped four consecutive fail-opens passes with a printed note; polarity is undecidable for a detector-shaped gate (598 of 4047 assert lines credited, ~40% bare counts), Option A and Option D are each 0 of 4, and the per-battery misclassification rate is 16 of 27 — decision issue, SPEC required, not a tightening of the direction predicate; depends on 081)_
+- [ ] ISSUE-089: Decide what corroboration makes it safe to resolve trunk through the remote-tracking ref — a bare branch name binds to the stale LOCAL `main` _(track: platform, P2, 1d — ISSUE-081 2026-10-24 rework residual: `_default_branch()` strips `refs/remotes/origin/main` to the bare `main`, which git DWIMs to `refs/heads/main`, so a branch forked from `origin/main`'s tip while the local trunk lags is diffed against the STALE LOCAL trunk and charged with commits it did not author — a wrong subject for the blocking `_gate_evidence_diff` AND for `_changed_files_vs_base`, shared with implement/red + implement/tests-written; the obvious fix NARROWS, which AC-9.3 forbids, so it needs a decision no ISSUE-081 AC names; decision issue, SPEC required; depends on 081)_
 
 ### Doing
 
@@ -5265,5 +5266,93 @@ The disarm-**direction** property has an owner and a written verdict: either a s
 
 #### Rollback
 `git revert` the PR. On the **ADOPT** branch, reverting removes the declaration surface and returns the direction property to today's advisory printed note — the post-split state, which under-enforces but cannot block an honest review, so the revert is safe in the over-detection direction. On the **DECLINE** branch, reverting restores text that over-claims what the phase enforces, which is the defect rather than a safe state; prefer re-landing the wording over reverting it. In **neither** case may a revert move a finding kind between tiers: `BLOCKING_KINDS` is untouched by this issue, and a revert that changes it has reverted decision 6 by accident.
+
+---
+
+### ISSUE-089: Decide what corroboration makes it safe to resolve trunk through the remote-tracking ref — a bare branch name binds to the stale LOCAL `main`
+
+> Durable carrier for a **Medium defect measured during ISSUE-081's 2026-10-24 rework**, filed because a deferred finding is only real if it has a durable carrier and a PR body is not one (review lesson 15). It is a **wrong-subject / false-BLOCK** risk, not a fail-open: the resolved base is too WIDE, and a wider subject can only ADD findings on the review path.
+>
+> **The defect.** `_default_branch()` reads `git symbolic-ref refs/remotes/origin/HEAD` and then throws away the one part that disambiguates it: `.rsplit("/", 1)[-1]` turns `refs/remotes/origin/main` into the **bare** name `main`. Its fallback loop is local-first by construction too — it verifies `refs/heads/{name}`. Every caller then resolves that bare name through git's DWIM order, which reaches `refs/heads/<name>` — the **local** branch — before any remote-tracking ref. On a clone where the branch was forked from `origin/main`'s tip while the local `main` lags behind, `merge-base HEAD main` is strictly more ancestral than `merge-base HEAD origin/main`, so the resolved diff base is the **stale local `main`** and the diff charges the branch with trunk commits it did not author.
+>
+> **Measured, not reasoned about: a bare ref name does not DWIM to `refs/remotes/origin/<name>`.** After only `git update-ref refs/remotes/origin/decoy HEAD`, `git merge-base HEAD decoy` fails with `fatal: Not a valid object name decoy`. A same-named **local** ref is required for the bare spelling to resolve at all, which is why the local branch always wins the resolution.
+>
+> **Two subjects, one of them shared with the implement phases.** `_gate_evidence_diff` feeds the blocking `review/gate-evidence` phase. `_changed_files_vs_base` feeds `implement/code` (advisory per ISSUE-031) and `implement/red` + `implement/tests-written` (**both blocking**). The fourth `_default_branch()` caller, `verify_ship_smoke`, compares branch **names** and is unaffected by resolution.
+>
+> **The wrong subject is SILENT.** `_widest_trunk_base` cannot see this shape: it adopts a candidate only when that candidate's merge-base is a **strict ancestor** of the resolved one, and here `origin/main`'s merge-base is a **descendant**. Nothing is selected, `_BASE_WIDENED_DISCLOSURE` never prints, and the run is byte-identical to an honest one.
+>
+> **Why it was not fixed inside ISSUE-081.** The obvious fix — resolve trunk through the remote-tracking ref — **narrows** the subject, and SPEC-081's 2026-10-24 amendment, decision 9 / **AC-9.3**, forbids narrowing: that AC exists precisely because an ancestor base narrowing the subject is how a gate hides. ISSUE-081 therefore landed the never-narrow rule — corroborate against `_TRUNK_CORROBORATION_TIERS` (remote-tracking candidates in tier 1, local names only as a fallback), take the more ancestral merge-base, print a `WARN:` disclosure on disagreement — and pinned the ordering with `test_consulting_a_local_trunk_first_would_false_block_that_repo`, which flattens the tiers on an honest repo and observes the resulting false block. It left this tension **open**: resolving it needs a decision about what corroboration makes narrowing safe, and **no ISSUE-081 acceptance criterion names it** (review lesson 14 — work added to satisfy a request for a decision ships without acceptance criteria, and that is where the defects are).
+>
+> **The never-narrow rule's own disclosed residual, carried here unchanged:** an author who rewrites **every** local trunk ref can still narrow the subject. There is no offline fix — every ref this process can read lives in the author's own clone.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-081 2026-10-24 rework residual — the base-**RESOLUTION** half of AC-9.3's never-narrow rule, which ISSUE-081 could not close without a decision. Native-memory review lessons: "work added to satisfy a request for a DECISION ships without acceptance criteria", "a deferred finding is only real if it has a durable carrier — a PR body is not one", "a newly added defence must be tested in the DISARM direction and through its real consumer", "a hand-rolled parser must match the oracle's edge cases AND its intended boundary")
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-081
+
+#### Goal
+How trunk is **resolved** — not merely corroborated — is decided and written down: either the diff base becomes the branch's real fork point under a stated precondition that provably cannot narrow the subject, or the SPEC records, with its measurement, that never-narrow wins and the stale-local-trunk subject is accepted and disclosed.
+
+#### Scope (In/Out)
+- In:
+  - **A SPEC whose Decision names exactly one resolution rule**, weighing at least these three candidates with the consequence of each stated as a measurement rather than a preference: (a) resolve remote-first **only when** the remote-tracking ref is a strict **DESCENDANT** of the same-named local ref — the honest-stale shape; (b) keep never-narrow unchanged and accept the wrong-subject cost, with its blast radius written down; (c) leave the resolution alone and **disclose** the local/remote divergence instead.
+  - The chosen behaviour implemented at the **resolution** seam (`_default_branch`, or a resolver it feeds), and holding for **both** consumers — `_gate_evidence_diff` and `_changed_files_vs_base` — **or** explicitly scoped to one with the reason written down and the scoped-out caller's unchanged behaviour pinned by a test. ISSUE-081 left `_changed_files_vs_base` byte-unchanged on purpose; "still unchanged" must be a pin, not a silence.
+  - Real-git tests in **both** directions: the honest-stale fork must stop being charged with the trunk's commits, **and** a mid-branch decoy ancestor must still be unable to narrow the subject — AC-9.3 survives the fix.
+  - A four-fixture replay proving the tier split is untouched.
+  - Recording whatever residual the chosen rule leaves, with its own carrier if it is not closed here.
+- Out:
+  - **ISSUE-081's tier split and `BLOCKING_KINDS`.** Decision 6 stands; this issue changes which commit the subject starts at, never which finding kinds block.
+  - **`_TRUNK_CORROBORATION_TIERS`' ordering as a tuning exercise.** Reordering or flattening the tiers is the measured false block, not a fix.
+  - ISSUE-084 (duplicated oracle), ISSUE-085 (backfill), ISSUE-086 (the `return None` under-detection class and attribution), ISSUE-087 (detection boundary and verdict vocabulary), ISSUE-088 (the disarm-direction successor mechanism). This issue consumes whatever detector those leave.
+  - Converting `verify_ship_smoke`'s **name** comparison into a ref resolution.
+  - A repo-wide `ruff` pass. `ruff` is not in the project's `dev` extra and nothing runs it; folding a lint sweep into this diff would bury the one seam under formatting noise.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given SPEC-089 at `Status: accepted`, when its Decision section is read, then it names **exactly one** resolution rule and records each rejected candidate together with the measurement that rejected it — including the `fatal: Not a valid object name decoy` result that proves a bare name cannot reach `refs/remotes/origin/<name>`. A Decision that defers the choice to a further carrier fails this AC.
+- [ ] Given a real git repo in the honest-stale-fork shape — fixture-pinned by sha: `main` resolves to a commit that is **not** the fork point, `merge-base HEAD main` is a **strict ancestor** of `merge-base HEAD origin/main`, and the commits between them add a trunk-authored, unevidenced gate the branch never touched, when the phase runs through `bash scripts/checkpoint.sh --skill review --phase gate-evidence`, then the trunk gate's symbol is **absent** from the output and the exit code matches the same repo diffed from its real fork point. Today that repo is charged with the trunk's gate.
+- [ ] Given the same honest-stale-fork repo with the chosen rule live, when the run completes, then **exactly one** of these holds and a test asserts which by the exact rendered string: the resolution changed and a disclosure names both refs and both 12-char shas, **or** the resolution is unchanged and the output states that the local and remote trunk refs disagree. A resolution that changes **silently** fails this AC — a narrowing that prints nothing is what AC-9.3 exists to forbid.
+- [ ] Given ISSUE-081's mid-branch decoy attack replayed over both `_DECOY_SHAPES` on identical gate bytes, when the real consumer runs after this change, then the verdict is still `False`, the gate symbol is still reported, the gate-free line is still absent, and `_BASE_WIDENED_DISCLOSURE` is still printed — the AC-9.3 property is unchanged by the fix, asserted against the module constant rather than a re-typed literal.
+- [ ] Given the chosen rule is the strict-**DESCENDANT** precondition, when a decoy is constructed that **satisfies** that precondition (a remote-tracking ref written to a commit that descends from the local trunk yet sits mid-branch), then the subject is still not narrowed past the branch's earliest commit — or the SPEC names this as a residual with its own carrier and a test pins the conceded behaviour. The precondition's safety must be **demonstrated by a decoy**, never asserted in prose.
+- [ ] Given the same honest-stale-fork repo, when `_changed_files_vs_base(wt_path, <resolved base>)` is called, then **exactly one** of these holds and a test asserts which: the trunk-only paths are absent from the returned set, **or** the PR states which caller was deliberately scoped out and why, and a test pins that caller's byte-unchanged behaviour so the exclusion is a recorded decision rather than an oversight.
+- [ ] Given ISSUE-081's four committed fixtures, when they are replayed after this change, then the exit codes are unchanged at `issue_078_pre_fix` **1**, `issue_078_post_fix` **1**, `issue_074_non_gate` **0**, `issue_056_colliding_main` **1**, and the per-fixture blocking/advisory finding split is identical to the recorded post-split table.
+- [ ] Given the shipped resolution rule, when it is mutated out, then at least **1** test fails, and at least **1** of the failing tests drives the real consumer `bash scripts/checkpoint.sh --skill review --phase gate-evidence` rather than a helper alone; and `tests/test_gate_evidence_contract.py::test_consulting_a_local_trunk_first_would_false_block_that_repo` and `::test_a_stale_local_trunk_is_not_consulted_and_discloses_nothing` both still pass **unmodified** — if the chosen rule requires editing either, the PR says so and the edit is reviewed as a change to AC-9.3.
+
+#### Implementation Notes
+- Read SPEC-081's `## Amendment — 2026-10-24` decision **9** / AC-9.3 and `_widest_trunk_base`'s docstring before touching anything. Without that context the obvious patch looks free; it is the direction the amendment forbids.
+- The information needed is already in hand and discarded: `_default_branch()` has the fully-qualified `refs/remotes/origin/main` in `result.stdout` and `rsplit("/", 1)[-1]`s the `origin/` off. The cheapest ADOPT shape is to stop discarding it — but that is a signature change on a function with **four** callers on `main`, so the SPEC must state whether callers change or a second resolver is added beside it.
+- **`_widest_trunk_base` is not the seam.** It corroborates a base that has already been resolved, and it only adopts a candidate whose merge-base is a strict ancestor; in this shape every candidate is a descendant, so it selects nothing and discloses nothing. Any fix placed inside it can only widen further.
+- `verify_ship_smoke` compares `_default_branch()` to `git branch --show-current` as a **name**. If the resolver starts returning a qualified spelling, that comparison fails on every clone — pin it, do not discover it in ship.
+- Git's DWIM order is the oracle; do not re-derive it from memory. Pin the measurement itself as a test (`git update-ref refs/remotes/origin/decoy HEAD`, then `git merge-base HEAD decoy` -> `fatal: Not a valid object name decoy`), per review lesson 4 — a hand-rolled mirror of an oracle must match the oracle's edge cases, not a recollection of them.
+- Fixture work: `tests/test_gate_evidence_contract.py::_repo_with_a_stale_local_trunk` builds the **adjacent but different** shape, where local `main` lags `origin/main` yet both merge-bases agree at the fork point (that is why the defect is invisible there). Add a sibling helper that advances `origin/main` **before** branching, so the fork point is ahead of local `main`; reuse `_init_repo`, `_with_origin`, `_consume`, and assert the distinguishing pins by sha rather than by narrative.
+- Review lesson 14 is why the SPEC is the first deliverable: the ACs above exist so the decision's artifact has acceptance criteria before any resolution code is written.
+- Do not reach for the tier as a relief valve. If the chosen rule blocks an honest repo, that is an AC-2 failure to be re-measured, not a reason to add `("review", "gate-evidence")` to `ADVISORY_PHASES`.
+- Do not fold in the `ruff` cleanup, and do not reformat the two files this diff touches.
+- Open questions, stated rather than filled in: (a) whether the strict-descendant precondition can be satisfied by an author who writes part of the branch into the remote-tracking ref is **unmeasured** — that is exactly what AC-5's decoy must settle; (b) whether a too-wide subject can also **credit** the branch with a trunk-authored test file in `implement/tests-written` or `implement/red` (both blocking) is **unmeasured** — if it can, this issue's blast radius gains a fail-open direction it does not currently claim, and the SPEC must say so rather than this block overstating it now; (c) how often the honest-stale-fork shape occurs in practice is unmeasured — this repo was measured on 2026-10-24 in the adjacent shape, where both merge-bases agree.
+
+#### Tests
+- [ ] `python3 scripts/validate_spec.py docs/specs/SPEC-089.md` exits 0 — at least 2 options, each carrying a measurable trade-off line.
+- [ ] Oracle pin: `git update-ref refs/remotes/origin/decoy HEAD` then `git merge-base HEAD decoy` fails with `fatal: Not a valid object name decoy`, and the same repo with a local `refs/heads/decoy` resolves — the local-wins premise is pinned, not recalled.
+- [ ] Honest-stale-fork real-git fixture, through `bash scripts/checkpoint.sh --skill review --phase gate-evidence`: trunk gate symbol absent, exit code equal to the same repo diffed from its real fork point, with the distinguishing sha pins asserted first.
+- [ ] Disclosure, both directions: the chosen behaviour's exact rendered string on the divergent repo, and `vc._BASE_WIDENED_DISCLOSURE` **absent** on an honest repo with no divergence.
+- [ ] Decoy replay over both `_DECOY_SHAPES`: verdict `False`, gate reported, gate-free line absent, disclosure present — unchanged from ISSUE-081.
+- [ ] Descendant-shaped decoy (AC-5): subject not narrowed past the branch's earliest commit, or the conceded behaviour pinned to the exact string the SPEC records.
+- [ ] `_changed_files_vs_base` on the same fixture: trunk-only paths absent, or the scoped-out caller's byte-unchanged behaviour pinned.
+- [ ] Four-fixture replay: exit codes 1 / 1 / 0 / 1 with the per-fixture blocking-vs-advisory split identical to the recorded post-split values.
+- [ ] Resolution-rule disarm mutation, with at least 1 kill observed through `bash scripts/checkpoint.sh --skill review --phase gate-evidence`.
+- [ ] `verify_ship_smoke` name-comparison regression: still passes on a clone whose `origin/HEAD` resolves.
+
+#### Rollback
+`git revert` the PR. On the review path the revert direction is the safe one: it restores the **wider** stale-local-trunk subject, which over-detects and can only add findings, so it cannot turn a FAIL into a PASS — what it restores is the false block this issue exists to remove. On the **implement** callers the direction of a wider subject is **unmeasured** (open question b), so a revert there is not demonstrably safe and must be re-measured rather than assumed. **Do not revert in halves**: never revert a disclosure while keeping a resolution change, because a resolution that moves the base and prints nothing is precisely the silent narrowing AC-9.3 forbids; if the rule must go, revert the rule and keep the disclosure. A revert must leave `_TRUNK_CORROBORATION_TIERS`' tier ordering and `BLOCKING_KINDS` untouched — a revert that moves either has reverted ISSUE-081's decision 6 or AC-9.3 by accident.
 
 ---
