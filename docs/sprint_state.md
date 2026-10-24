@@ -1141,3 +1141,24 @@ reason; the other was detected by accident.
   sub-tasks. The kit removed lint enforcement in ISSUE-028 and `ruff` is not in the `dev` extra, so
   filing it would re-open a settled decision. Recorded as noise. A third independent trip over it would
   be the frequency signal that justifies an issue about whether `ruff` belongs in `dev` at all.
+
+## ISSUE-081 rework — closing checks (2026-10-24)
+
+- **ISSUE-087 amendment** written under the lock as `main` **`6ce3965`**: boundaries 6-10 with their
+  measurements, a correction to boundary 1 that constrains AC-2 (module-level added lines are NOT
+  "unsearched" — they are filed under whichever `def` precedes them, so the bound-branch wording must
+  not be chosen as written), 2 ACs, 3 Tests bullets, a second split trigger naming boundaries 9 and 10
+  as the named exit, and `Estimate` **1d -> 1.5d**. `validate_issues.py`: 8 violations, all
+  pre-existing, **0** from ISSUE-087.
+- **Implement-phase checkpoints re-run on the reworked branch**, all exit 0: `test`, `push`, `pr`
+  (`PASS: PR #137 exists with closing keyword reference`), `registry`
+  (`PASS: ISSUE-081 registry updated (Status=doing, PR present)`). The earlier phases
+  (test-plan / issue / worktree / tests-written / red / code) were not re-run: this is a rework of an
+  issue already at Phase `implemented`, the worktree and GH issue predate it, and a RED gate on a
+  green suite would be theatre, not evidence. Each sub-task observed its own RED before changing
+  `scripts/`, and those observations are recorded above.
+- **Registry commits on `main` this phase:** `c1ad22b` (ISSUE-088 + ISSUE-081 Status doing),
+  `262a5e5` (ISSUE-089), `c82207c` (this record), `6ce3965` (ISSUE-087 amendment).
+- **Nothing dispatched above the watermark**, `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` never set,
+  `wt_setup.sh` never run against the worktree, PR #137 still a draft, worktree deliberately left in
+  place (ISSUE-083).
