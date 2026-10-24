@@ -65,6 +65,8 @@
 - [ ] ISSUE-092: Decide what the worktree branch resolver keys on — the ladder reads a cache artifact of one hard-coded remote _(track: platform, P1, 1d — ISSUE-083 / PR #139 review: the ISSUE-083 harm verbatim at four seams on paths the kit itself walks, two of them empirically reproduced (a branch on origin with no cached tracking ref, and a remote not named `origin`, both silently re-root onto HEAD at exit 0 announcing `source=new-from-base`); plus a stale-cache hard refusal and a pre-existing early return that bypasses the refusal while PR #139's header newly states the fail-closed guarantee ABSOLUTELY; decision issue, SPEC required; depends on 083)_
 - [ ] ISSUE-093: Harden the worktree fail-closed path's own failure modes — a defeated knob validator, an unnamed escape, an invisible hang, and two untested refusals _(track: platform, P2, 1d — ISSUE-083 / PR #139 review: five findings against the refusal machinery itself, the theme being a fail-closed guard whose failure modes are unguarded or misreported (a multi-line `KIT_WORKTREE_FETCH_TIMEOUT` passes `grep -q`, exits 125 and is reported as `reason=remote-unreachable` on a healthy remote — and the obvious `grep -Exq` fix was measured NOT to close it); depends on 083)_
 - [ ] ISSUE-094: Stop the hollow-test predicate from failing `tests/conftest.py` — editing it reddens a blocking implement gate _(track: platform, P2, 0.5d — ISSUE-083 implement discovered and review confirmed: `test_dir_pattern` classifies every `tests/*.py` as a test file and `_has_real_tests("tests/conftest.py", wt)` returns False, so the blocking `implement/tests-written` gate goes red on any branch that touches conftest.py — in direct conflict with the standing review lesson that tells implementers to put hermetic env guards there; ISSUE-083 had to route around it and the review accepted that only as narrower-not-tighter, conditional on this fix; depends on none)_
+- [ ] ISSUE-095: Close the telemetry emitter's remaining containment escape — swapping a directory component still redirects the append outside the root _(track: platform, P1, 1d — ISSUE-070 / PR #141 review residual GAP-070e (Medium), empirically reproduced by the reviewing agent 2026-10-25: `O_NOFOLLOW` binds only the FINAL component and the post-open `fstat` validates the node's TYPE not its LOCATION, so a `.claude` directory-symlink swap inside the check→open window made `emit_event` return **True** and write `<outside>/runs/toc.jsonl`; the last open leg of the containment invariant ISSUE-070 exists to make falsifiable, and ISSUE-075 is sequenced to adopt this module's contract; GAP-070f + GAP-070g folded in; depends on 070)_
+- [ ] ISSUE-096: Bind the delegated review to the PR's own diff — both runtime skills auto-collected an empty one on two consecutive PRs _(track: platform, P1, 1d — observed twice in one sprint (ISSUE-083 review / PR #139 and ISSUE-070 review / PR #141, 2026-10-25): `decide` returned `delegated` for both dimensions and the runtime skills then auto-collected their own diff against the MAIN checkout, so `security-review`'s prompt arrived with the literal `DIFF CONTENT: (Bash completed with no output)`; uncorrected, both passes would have returned a clean bill having reviewed nothing — a silent fail-open on a BLOCKING gate, on the primary path ISSUE-072 worked to make reachable; depends on none)_
 
 ### Doing
 
@@ -3935,10 +3937,10 @@ An issue registered in issues.md during a running sprint becomes visible to `spr
 - PRD-Ref: none (kit self-development; ISSUE-067 review triage, unresolved High; review lesson "New env-var knobs need one line of docs at introduction time" — the knob's producer and consumer are the other half of that lesson — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
+- Branch: issue/ISSUE-071-run-id-producer
+- GH-Issue: #142
 - PR:
 - Depends-On: ISSUE-067
 
@@ -5766,3 +5768,155 @@ A branch that edits `tests/conftest.py` alongside real tests passes the blocking
 `git revert`. The revert direction is safe for **detection** — it restores a stricter predicate that can only fail more files, never fewer, so no hollow test is let through by reverting. What it restores is the standing conflict between a blocking gate and the hermetic-guard convention, which means the next implementer either relocates a guard (narrowing it) or pushes past a blocking exit, both of which this issue exists to stop. Do **not** revert the exemption while keeping the AC-4 laundering test: that pairing asserts a boundary the code no longer has and turns the suite red for the wrong reason. A revert must leave `test_dir_pattern`, `test_pattern` and the AC-coverage check untouched — a revert that moves any of them has changed what the gate collects, which is outside this issue entirely.
 
 ---
+
+### ISSUE-095: Close the telemetry emitter's remaining containment escape — swapping a directory component still redirects the append outside the root
+
+> **Measured, not reasoned about.** Reproduced by the reviewing agent during the ISSUE-070 review (PR #141, 2026-10-25) and recorded there as **GAP-070e** at Medium, plus `docs/test_plan.md`'s open-gaps list. Driven through the same `kt.datetime` seam `tests/test_kit_telemetry.py::TestToctou` uses: after the containment check and the `runs_dir.mkdir` have both passed, replacing `<project>/.claude` with a symlink to an outside directory makes `os.open` follow it — `emit_event` returned **True** and created `<outside>/runs/toc.jsonl` with a well-formed event in it. The cause is structural: `O_NOFOLLOW` binds only the **final** path component, and the post-open `fstat` answers *what kind of file this descriptor is* (`S_ISREG`, `st_nlink`), never *where it is*.
+>
+> **Framed as a residual, not a regression.** ISSUE-070 **did** close the structural unfalsifiability — the containment root is no longer caller-supplied (`_containment_root()`), and the review's own fix anchored the `commondir` hop so a planted `.git` cannot move it. This is the window that remains. Two context points bound the severity honestly: the attacker needs write access **inside the project tree** to plant the swap, which is the same privilege level this module's threat model already assumes (ISSUE-070's AC-2 assumes an attacker who can plant a FIFO at the event path); and ISSUE-070's CHANGELOG entry already records this as an open residual. This issue's job is to **close** it, not to discover it.
+>
+> **The fix is a choice, and the choice is the deliverable.** The review named an `openat`/`dir_fd` walk — resolving each component under a directory handle instead of re-resolving the whole path — as the direction, explicitly as a candidate rather than a mandate. Alternatives to weigh: `O_DIRECTORY|O_NOFOLLOW` per component; a post-open `st_dev`/`st_ino` comparison of the opened file's containing directory against a directory handle taken **before** the containment check. Each has a different portability surface (`os.open in os.supports_dir_fd`) and a different per-emit syscall cost on a path that runs on every gate.
+>
+> **Two smaller same-module items folded in, both measured during the same review.** **GAP-070f** (Low): `_containment_root()`'s unconditional `Path.cwd()` makes **every** emit fail when the CWD has been deleted under the process — `skipped: emit failed ([Errno 2] No such file or directory)` — even when the caller passed a valid explicit `project_path`; reachable from a long-lived gate process whose worktree `worktree.sh remove` deleted mid-run. **GAP-070g** (Low): `_main_repo_root` ignores `GIT_DIR`/`GIT_WORK_TREE` while documenting itself as mirroring `bash scripts/worktree.sh root`; the divergence is in the narrowing (safe) direction, but `TestContainmentRootDerivation._oracle` asserts `returncode == 0` and the oracle exits 128 in such a shell, so both oracle-pinning tests **ERROR** rather than fail for any developer with those exported. The hermetic `delenv` cannot go in `tests/conftest.py` until **ISSUE-094** lands — editing `conftest.py` reddens the blocking `implement/tests-written` gate, measured first-hand during ISSUE-083's implement — so this issue is blocked on 094 only for that one placement, not for its substance.
+>
+> **One stated boundary this issue must not change by accident.** `CLAUDE_PROJECT_DIR` fully determines the containment root when the CWD is not inside a git work tree (reviewer-executed: from a non-git CWD the root became the named directory and a write into `<victim>/.ssh/.claude/runs/` succeeded). That is the **documented fallback working as designed** — the knob is set by the Claude Code runtime, not by caller data, and git wins wherever a work tree exists. Recorded, not filed; AC-6 exists so the fix does not silently move it.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-070 / PR #141 review residual GAP-070e, with GAP-070f and GAP-070g folded in — all three reproduced by the reviewing agent on 2026-10-25 at head `8626f8c`/`afbab1b`, recorded in `docs/review_notes/ISSUE-070.md` and `docs/test_plan.md`. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier"; "a newly added defence must be tested in the DISARM direction and through its real consumer"; "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence"; "a test that would hang the suite if the guard regressed is not acceptable")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-070
+
+#### Goal
+No swap of a **directory** component between the containment check and the open can make `emit_event` write outside the derived root — the review's own demonstration returns `False` and creates nothing — and a deleted CWD no longer disables an emit the caller rooted explicitly.
+
+#### Scope (In/Out)
+- In:
+  - **Pick the location-containment mechanism and state the trade-off as a number** (added syscalls per emit, and the behaviour where `os.supports_dir_fd` does not cover `os.open`), weighing at least: (a) an `openat`/`dir_fd` walk over the components under a directory handle; (b) `O_DIRECTORY|O_NOFOLLOW` per component; (c) a post-open `st_dev`/`st_ino` comparison against a directory handle taken before the containment check. The choice is demonstrated by AC-1/AC-2, not by which function names appear in the diff.
+  - The chosen mechanism in `scripts/kit_telemetry.py::emit_event`, keeping both existing `fstat` legs (`S_ISREG`, `st_nlink != 1`) — they answer *what kind*, the new check answers *where*.
+  - **GAP-070f**: guard `_containment_root()`'s `Path.cwd()` and decide which root wins when the CWD is gone (the fallback-semantics decision the review declined to take at review time).
+  - **GAP-070g**: make `TestContainmentRootDerivation` hermetic against exported `GIT_DIR`/`GIT_WORK_TREE`.
+  - Tests in `tests/test_kit_telemetry.py`, offline, with the hang direction kept in the bounded subprocess probe.
+- Out:
+  - The `CLAUDE_PROJECT_DIR` fallback's **semantics** when there is no git work tree (AC-6 pins it unchanged), and GAP-070c (a project root that *is* `$HOME`).
+  - ISSUE-071's `KIT_RUN_ID` producer and the `unattributed` fallback announcement.
+  - ISSUE-075's migration of `review_context.py::_emit_event` onto this seam — this issue strengthens the contract 075 adopts; it does not perform the adoption.
+  - The `_quote`/announcement surface and the 4 KiB cap, both settled in PR #141.
+  - Moving the hermetic `delenv` into `tests/conftest.py` — that placement waits for ISSUE-094.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The demonstrated escape is closed, asserted by the demonstration.** Given a contained project whose `.claude/runs` already exists, when `<project>/.claude` is replaced by a symlink to an outside directory inside the check→open window (driven through the same `kt.datetime` seam `TestToctou` uses) and `emit_event` runs, then it returns **False**, stdout carries **exactly one** `[kit-telemetry]` line naming a containment reason, and `<outside>/runs/` does not exist. The identical test run against `scripts/kit_telemetry.py` as of merge commit `bcc174e` returns **True** and creates the file — both runs recorded in the PR.
+- [ ] **Every directory component, not just the one that was demonstrated.** Given the same plant applied in turn to each directory component of `<project>/.claude/runs/<run-id>.jsonl` (`.claude`, then `runs`), when `emit_event` runs for each, then each returns **False** and `find <outside> -name '*.jsonl'` lists nothing. Parametrized over both components; a fix that special-cases `.claude` fails this AC.
+- [ ] **The guard is observable in the disarm direction.** Given the chosen location check mutated out (one textual mutant), when the AC-1 and AC-2 tests run, then at least **one** fails (KILLED), and the mutation run's literal pass/fail counts are recorded in the PR.
+- [ ] **The anti-hang contract survives the new syscalls.** Given a FIFO planted at a **directory** component of the event path (not just at the event path itself), when the bounded subprocess probe runs under `KIT_TELEMETRY_PROBE_TIMEOUT=5`, then the probe's return code is **not 124**, the process exits **0**, and its stderr contains no `Traceback` — so an `O_DIRECTORY` open on a planted node cannot reintroduce the 600 s stall ISSUE-070's own implement hit.
+- [ ] **A deleted CWD no longer disables an explicitly rooted emit (GAP-070f), in both arms.** Given a subprocess whose CWD has been removed under it, when `emit_event(..., project_path=<valid contained dir>)` runs with `CLAUDE_PROJECT_DIR=<that root>` exported, then it returns **True** and the line is appended; and when the same call runs with `CLAUDE_PROJECT_DIR` unset, then it returns **False** with a **named** reason rather than today's `skipped: emit failed ([Errno 2] No such file or directory)`, asserted against the exact rendered string. Today's behaviour (False in both arms) is the pre-fix measurement.
+- [ ] **The documented fallback is unmoved and the oracle tests are hermetic (GAP-070g).** Given `GIT_DIR` and `GIT_WORK_TREE` exported to values for which `bash scripts/worktree.sh root` exits **128**, when `pytest tests/test_kit_telemetry.py -k ContainmentRootDerivation` runs, then it exits **0** with **0 errors** (today both oracle tests ERROR on `_oracle`'s `returncode == 0` assertion); and `test_git_work_tree_wins_over_the_env_knob` plus the non-git `CLAUDE_PROJECT_DIR` case pass **unmodified**.
+
+#### Implementation Notes
+- The open is `os.open(runs_dir / f"{run_id}.jsonl", flags, 0o644)` in `emit_event`, with `flags = O_APPEND|O_CREAT|O_WRONLY|O_NOFOLLOW|O_NONBLOCK`. The containment legs that precede it are `resolved_project.is_relative_to(root)` and `runs_dir.resolve().is_relative_to(resolved_project)`; both are path-resolution checks, which is exactly why the swap defeats them. Keep the ISSUE-058 lesson about the control's **position** — anything new must sit before the `mkdir`, or hold a handle taken before it.
+- Portability is the live risk of candidate (a): `os.open in os.supports_dir_fd` is False on some platforms. Whatever that arm does — refuse with a named reason, or fall back to candidate (c) — must be **chosen and tested**, not defaulted. A fix whose fallback silently refuses every emit turns a best-effort instrument into a total outage, which is the exact shape the review's `UnicodeDecodeError` Medium had.
+- Hang hazard, from this module's own history: a readerless FIFO called **in-process** stalled the suite past 600 s during ISSUE-070's implement. Attach a reader before the emitter reaches the node and leave the hang direction to the bounded subprocess probe (`KIT_TELEMETRY_PROBE_TIMEOUT`, default 20 s) — that knob is a test-harness knob, not a product knob, and the CHANGELOG must keep saying so.
+- Any new announcement must pass caller-supplied text through `_quote` (review lesson 16 — PR #141's Medium was precisely a defence applied at one call site and absent at four others).
+- GAP-070g's `delenv` goes in `tests/test_kit_telemetry.py` (module or class scope) covering `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`, not in `tests/conftest.py`, until ISSUE-094 lands. That is the same route ISSUE-083 was forced onto, and it should be recorded as a workaround rather than presented as the preferred placement.
+- Keep the severity claim calibrated in the CHANGELOG: this needs write access inside the project tree **and** winning a race — strictly harder than the Critical PR #141 fixed, same attacker.
+- Open question, stated rather than filled in: whether the per-emit cost of the chosen mechanism is material on the gate path is **unmeasured**; AC's trade-off number is the first measurement, and a regression threshold is not in scope.
+
+#### Tests
+- [ ] Component-swap, parametrized over `.claude` and `runs`: `emit_event` returns False, exactly one `[kit-telemetry]` line, nothing created outside the root.
+- [ ] Same test body executed against the pre-fix module (merge commit `bcc174e`): returns True and creates the outside file — the pre-fix measurement, recorded in the PR rather than committed as a passing assertion.
+- [ ] Mutation: delete the new location check → at least one swap test fails (KILLED), counts recorded.
+- [ ] Healthy path, disarm direction: no plant, run from the main checkout **and** from a linked worktree → True, the line lands in `<root>/.claude/runs/<run-id>.jsonl`, stdout empty on the clean path.
+- [ ] Bounded probe with a FIFO at a directory component → rc != 124, exit 0, no `Traceback`.
+- [ ] Deleted CWD, both arms: `CLAUDE_PROJECT_DIR` set → True and appended; unset → False with the exact named reason.
+- [ ] `GIT_DIR`/`GIT_WORK_TREE` exported → `TestContainmentRootDerivation` passes with 0 errors.
+- [ ] The full pre-existing `tests/test_kit_telemetry.py` passes unmodified apart from the `GIT_*` hermeticity addition; any edited test is named in the PR as a change to an ISSUE-070 acceptance criterion.
+
+#### Rollback
+`git revert`. The revert direction restores the escape rather than losing data, so it is safe for existing event files — but note the asymmetry: if the chosen mechanism is `dir_fd`-based and a platform lacks `supports_dir_fd`, the failure mode is **every emit refusing**, which silences the instrument entirely; check that arm's named reason is firing before deciding a revert is the smaller harm. Do not revert the guard while keeping a test that asserts the post-fix end state — that combination reddens the suite on every branch. Leave GAP-070f's fallback change revertible on its own commit: it alters which root wins when the CWD is gone, which is a semantics change independent of the containment fix.
+
+### ISSUE-096: Bind the delegated review to the PR's own diff — both runtime skills auto-collected an empty one on two consecutive PRs
+
+> **Observed twice, on two different PRs, in the same sprint — by the reviewing agent each time, 2026-10-25.** During the ISSUE-083 review (PR #139) and again during the ISSUE-070 review (PR #141). Both times the reviewing agent observed a `Skill` tool, answered `present` at `skills/review/SKILL.md` step 3.1, and `python3 scripts/review_context.py decide` returned `"path": "delegated"` for **both** dimensions — the SPEC-019 primary path genuinely reached from a sub-task. The runtime skill then **auto-collected its own diff by running `git` against the main checkout rather than the PR branch**: `security-review`'s prompt arrived with the literal `DIFF CONTENT: (Bash completed with no output)` and a git status showing `main`. **Uncorrected, both passes would have returned a clean bill having reviewed nothing.** Recorded in `docs/sprint_state.md`'s risk table and phase log.
+>
+> **Both reviewers caught it manually**, re-ran with an explicit `git diff main...<head-oid>` plus the pinned worktree path, and on PR #141 the reviewer additionally materialised the diff to a file, verified it non-empty (**77801 bytes, 6 `diff --git` headers**) and required both runtime reviewers to echo the byte count back before reporting. That ad-hoc discipline is the thing this issue has to make structural: it currently exists only in two reviewers' heads.
+>
+> **Why P1 for a process defect.** The review phase is a **blocking** gate in the sprint pipeline, and this failure mode is **silent and fail-open** — an empty-diff pass is indistinguishable from a genuinely clean PR in its output. It is the same shape the kit repeatedly files against itself (a control whose defeated output is identical to its healthy output; four consecutive fail-opens already escalated into ISSUE-081). It also lands precisely on the primary path **ISSUE-072 worked to make reachable**, so the first two real uses of that path were both defective.
+>
+> **The deliverable is a decision plus the binding, not a new convention.** Where the contract lives — `skills/review/SKILL.md` step 3.1's prose, `scripts/review_context.py`, or both — and whether a zero-byte collection is a **refusal** or a **degrade to the `reviewer` agent** are the choices this issue makes. Note the constraint that shapes the second one: `review_context.py`'s reason vocabulary is a closed set of exactly three (`capability-absent` / `context-unreachable` / `inline-attempt-failed`), pinned by `tests/test_review_context.py` and by `argparse` `choices`, so a new reason is a vocabulary change with an existing test surface. Note also that both observations are of the **sub-task** context; whether the main-session path auto-collects the same way is **unmeasured**, and AC-6 is where that gets measured rather than assumed.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; observed by the reviewing agent on PR #139 and PR #141, both 2026-10-25, recorded in `docs/sprint_state.md` — the row says "not filed this iteration … this row is the durable record until it has an id", which this issue discharges. Native-memory review lessons: "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings"; "a newly added defence must be tested in the DISARM direction and through its real consumer"; "a deferred finding is only real if it has a durable carrier")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+The delegated review path cannot report a verdict on a diff it never received: the runtime skill is handed an explicit range anchored to the PR head oid and the worktree path, and a collection that yields zero bytes is refused or degraded — never reviewed.
+
+#### Scope (In/Out)
+- In:
+  - **Decide where the contract lives**, weighing at least: (a) `skills/review/SKILL.md` step 3.1 prose only; (b) `scripts/review_context.py` gains the collection + verification and refuses; (c) both, with the script computing and verifying and the prose consuming. The trade-off must be stated with a measurement (what each option detects, and what it still misses when the model skips a prose instruction — the failure mode that produced this defect).
+  - **Decide the zero-byte outcome**: refuse, or degrade to the `reviewer` agent with a reason, including whether the three-value reason vocabulary gains a fourth token.
+  - Distinguishing a **genuinely** empty diff (a no-op PR, or a head equal to its merge-base) from a **failed** collection.
+  - Counter-evidence in the review record: the byte count and head oid the reviewed diff was collected at.
+  - Measuring the main-session delegated path, which neither observation covers.
+  - Tests in `tests/test_review_context.py` and/or `tests/test_review_delegation_guard.py`, offline, against fixture repos.
+- Out:
+  - The **degraded** path (`reviewer` agent), which already receives its context from the kit.
+  - ISSUE-072's grant probe and ISSUE-082's post-restart re-probe — this issue assumes `delegated` was correctly decided; it constrains what happens next.
+  - ISSUE-075's migration of `_emit_event` onto `kit_telemetry.emit_event`.
+  - The synthesizer and merge-auditor (steps 3.14/3.15) and the `docs/.review/*.md` capture paths.
+  - `verify_checkpoint.py::_default_branch()`'s stale-local-trunk defect — **ISSUE-089** owns it. If the range computation needs a trunk, it must not re-introduce that bug; fixing it here is out of scope.
+  - Changing `wt_setup.sh`'s resolution behaviour (ISSUE-092/093).
+
+#### Acceptance Criteria (DoD)
+- [ ] **The delegation payload carries the range and the path, asserted by execution.** Given a fixture PR whose branch diff against its base is non-empty, when the diff-collection step named by step 3.1 runs (whichever command the decision lands on), then it prints a range of the form `<base>...<head-oid>` where `<head-oid>` is byte-equal to `gh pr view <n> --json headRefOid -q .headRefOid`, prints the collected diff's byte count as an integer **greater than 0**, prints the worktree path, and exits **0**.
+- [ ] **A zero-byte collection cannot be delegated.** Given a collection that returns zero bytes, when the review path runs for a dimension decided `delegated`, then exactly one of these holds and a test asserts which: the step exits **non-zero** with a named `reason=` and no runtime skill is invoked, **or** the dimension degrades and a `review_degraded_path_used` event with the chosen reason token is appended to `.claude/runs/<run-id>.jsonl`. In **both** arms, no `review_delegated_to_code_review` / `review_delegated_to_security_review` event appears for that dimension in that run. A run that proceeds to delegate on zero bytes fails this AC.
+- [ ] **A genuinely empty diff stays distinguishable from a failed collection.** Given PR A whose head oid equals its merge-base with the base branch (nothing changed) and PR B whose head carries changes but whose collection ran against the wrong checkout, when the step runs for each, then the two outcomes differ by **exit code or by `reason=` token**, and the test asserts both exact rendered strings. A single shared "empty diff" outcome for both inputs fails this AC.
+- [ ] **The measured failure shape is pinned as a regression test.** Given a fixture repo where the PR branch lives in `.worktrees/<slug>` and the collection is driven with CWD at the **main** checkout — the exact shape observed on PR #139 and PR #141 — when the step runs, then the resolved worktree path is the `.worktrees/<slug>` path (not the main checkout) and the reported byte count equals the fixture's known diff size exactly. Today the same input yields zero bytes; both numbers recorded in the PR.
+- [ ] **The review record carries counter-evidence.** Given a completed delegated review, when `docs/review_notes/<ISSUE>.md` is read, then it contains the collected diff's byte count and the head oid it was collected at, both byte-equal to the values the collection step printed. Review notes that carry a verdict without both fail this AC — so "reviewed nothing" can no longer render identically to "reviewed and found nothing".
+- [ ] **The main-session path is measured, not assumed.** Given one live `/review` run from a main-session (non-sub-task) context on a PR with a non-empty diff, when step 3.1 delegates, then the sub-agent skill-invocation area of `docs/cc_feature_matrix.md` gains a dated row carrying the **literal byte count** the runtime skill reported receiving and the verdict `auto-collection empty` / `auto-collection correct`. A row that describes the behaviour without a byte count fails this AC.
+- [ ] **No regression on the decision surface.** Given `python3 scripts/review_context.py decide --invocation-tools absent --issue ISSUE-999`, when it runs, then it prints the same JSON shape and exits **0**, and the full pre-existing `tests/test_review_context.py` and `tests/test_review_delegation_guard.py` pass **unmodified**; any test that must change is named in the PR as a change to an ISSUE-066 acceptance criterion.
+
+#### Implementation Notes
+- Step 3.1 lives at `skills/review/SKILL.md:79-96`; the delegation instruction is a single prose line ("invoke the runtime skill (`/code-review` / `/security-review`)") with no diff handed over at all — that absence is the defect. The worktree path is already in hand two steps earlier: `WT="$(bash scripts/wt_setup.sh "$BRANCH")"` at step 2.
+- `scripts/review_context.py` today has exactly two subcommands (`decide`, `emit`) and one emit call site (`_emit_event`), with the module docstring forbidding a second emission site. Respect that: any new event rides the existing seam.
+- The reason vocabulary is closed in three places — `INLINE_ATTEMPT_FAILED`, the `--reason` `choices=`, and `cmd_emit`'s cross-field validation. Adding a token touches all three plus `docs/telemetry_schema.md`'s event table.
+- A range computation that needs a trunk must not resolve it the way `verify_checkpoint.py::_default_branch()` does — a bare `main` DWIMs to the **local** ref, which ISSUE-089 measured as a wrong diff subject. Anchor on the PR head oid (`gh pr view --json headRefOid`) and on `git merge-base`, and say in the PR which ref each side came from.
+- Prefer a check the model cannot satisfy by narration: the measured discipline that worked on PR #141 was requiring the runtime reviewer to **echo the byte count back**. Whether that becomes an executable step or stays an instruction is part of the decision — but if it stays prose, AC-2 has to be satisfied by something else, because an instruction is exactly what was skipped twice.
+- Do **not** take the fixture PRs against the live repo. The ISSUE-083 review's own self-inflicted incident (two stray worktrees created on `main`) is the precedent; use `git init --bare` plus a clone, as `tests/test_worktree.py` already does, and stub `gh`.
+- Open questions, stated rather than filled in: (a) whether the runtime skills accept an explicit diff/range argument at all, or only a prompt, is **unmeasured** and determines whether option (a) is even viable; (b) whether the auto-collection ran against the main checkout because of CWD or because the runtime skill resolves its own repo root is **unmeasured** — one probe settles it and should precede the decision; (c) how many of this sprint's six earlier degraded reviews would have hit this had they delegated is **unknown** and is not a deliverable.
+
+- **Team-lead note at filing (2026-10-25):** AC-6 requires a live main-session `/review` run, which is an **interactive** obligation inside an issue filed `Manual: false` — the same tension that made ISSUE-082 `Manual: true`. This is acknowledged rather than designed around: AC-1..AC-5 are all auto-dispatchable and close the fail-open on the measured sub-task path, so if AC-6 blocks an otherwise-ready dispatch, split it into a `Manual: true` sibling rather than weakening it or deleting the measurement.
+
+#### Tests
+- [ ] Non-empty fixture PR: the step prints `<base>...<head-oid>`, a byte count > 0, the worktree path; exit 0.
+- [ ] Zero-byte collection: no `review_delegated_to_*` event for that dimension, and either a non-zero exit with a named reason or a `review_degraded_path_used` event with the chosen token — asserted against the run's JSONL.
+- [ ] Genuinely-empty PR vs failed collection: differing exit codes or `reason=` tokens, both exact strings pinned.
+- [ ] Regression pin of the measured shape: collection driven from the main checkout while the branch is in `.worktrees/<slug>` → resolved path is the worktree and the byte count equals the fixture's known size.
+- [ ] Counter-evidence: a synthesized `docs/review_notes/<ISSUE>.md` contains the byte count and head oid; a run missing either fails.
+- [ ] Disarm direction: mutate the non-empty check out → at least one of the above fails (KILLED), counts recorded.
+- [ ] Full `tests/test_review_context.py` and `tests/test_review_delegation_guard.py` pass unmodified.
+
+#### Rollback
+`git revert`. The revert direction restores a **silently fail-open blocking gate**, which is strictly worse than a noisy one, so prefer tuning the refusal over reverting: if the refusal arm fires on legitimate no-op PRs, widen AC-3's genuinely-empty branch rather than removing the check. If the contract landed in both `skills/review/SKILL.md.tmpl` and `scripts/review_context.py`, revert them **together** — a SKILL.md that instructs a collection step the script no longer provides leaves step 3.1 naming a command that does not exist, and `skills/review/SKILL.md` is generated, so regenerate with `scripts/gen_skills.py` after any template revert. A revert must leave ISSUE-066's `decide` decision table and its three-value reason vocabulary at their current behaviour.
