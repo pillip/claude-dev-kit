@@ -44,7 +44,14 @@ ISSUE-077 is **deliberately unstarted**. `next-action` returns `PIPELINE ISSUE-0
 |-------|--------|----------|------------|-------|
 | ISSUE-073 | done | 1 | - | shipped |
 | ISSUE-077 | backlog | 0 | - | backlog |
-| ISSUE-081 | waiting | 3 | review-rework (attempt 3 FAIL: 3 of 5 Criticals recur as the same class; the direction half is not lexically decidable) | implemented |
+| ISSUE-081 | doing | 3 | - (cleared 2026-10-24: the attempt-3 FAIL was answered by a user DECISION, Option A / the tier split, not by a retry — see the rework log below) | implemented |
+
+> **Attempts stays at 3 deliberately.** The 2026-10-24 work is a rework under a user decision that
+> changed the design; it is not a fourth attempt at the design the third review rejected. The
+> ORCHESTRATION STOP below still holds in full for **ISSUE-077** — reasons (a) and (b) are unchanged,
+> and (b) is now firmer, since SPEC-081 amendment decision 10 re-confirmed the `return None` class.
+> Reason (c) — "ISSUE-081's own disposition is a tier decision the orchestrator owns" — is **resolved**:
+> the user decided it on 2026-10-24 and SPEC-081 records it. Do not read that as clearance for 077.
 
 > **ORCHESTRATION STOP — read before dispatching anything.** Setting ISSUE-081 to `waiting` unblocks the
 > queue, and `sprint_queue.py next-action` now returns **`PIPELINE ISSUE-077`**. **Do not take it without a
@@ -686,3 +693,451 @@ in-worktree mutation was correctly denied by the permission layer and redone on 
 - [iteration 1, ISSUE-081 rework] **ISSUE-086**: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, **after repairing attribution** (durable carrier for SPEC-081 amendment decision 2; recall 4/6, and recovering it costs 1 false BLOCK per 2 recalls until attribution can see a battery driven through a test helper). Drafted by the **planner** agent, written under the lock via `registry_edit.sh`, committed on `main` as `daae35a`.
 - [iteration 1, ISSUE-081 rework] **ISSUE-087**: Widen or honestly bound the gate detection boundary, and stop reporting a miss as "no gate-adding change" (durable carrier for amendment decision 3). Same filing route and commit.
 - Both sit **above** the pinned `Roster-Watermark: ISSUE-081`, so the ISSUE-069/078 mechanism flags them without dispatching — the intended outcome. `validate_issues.py`: 8 violations, all pre-existing, **0** from these two blocks.
+
+## ISSUE-081 rework under Option A (2026-10-24, IMPLEMENT) — progress log
+
+Written as work lands, not at the end. Phase stays `implemented`; Status returns to `doing`; **Attempts
+stays 3** — this executes a user decision that changes the design, it is not a fourth retry of the
+previous one.
+
+### Measurements taken by this rework, on the COMMITTED tree (`1d1c134`), before any edit
+
+Recorded as observed output rather than as claims, because two ReDoS probes in earlier attempts reported
+false all-clears before a third reached the code.
+
+**M1 — the tier split's effect on the four committed fixtures.** `analyze()` run directly, findings
+classified by kind:
+
+| fixture | gates | blocking after split | advisory after split | exit now -> exit split |
+|---|---|---|---|---|
+| `issue_078_pre_fix.diff` | 2 | `cmd_validate` | **`sprint_status_is_running`** (`missing-composite-pin`) | 1 -> 1 |
+| `issue_078_post_fix.diff` | 2 | `cmd_validate` | - | 1 -> 1 |
+| `issue_074_non_gate.diff` | 0 | - | - | 0 -> 0 |
+| `issue_056_colliding_main.diff` | 6 | `run_literal_quote`, `run_signature_move`, `run_ai_tell`, `_py_function_asserts` | `main` x2 | 1 -> 1 |
+
+The reviewer's "identical exit code on all four fixtures" reproduces exactly. **What the aggregate
+hides, and what the SPEC amendment now states:** on the motivating fixture the exit 1 is carried by
+`cmd_validate`, NOT by `sprint_status_is_running` — the gate that actually failed open in ISSUE-078 is
+**advisory** after the split.
+
+**M2 — the `.gitattributes` disarm, reproduced end to end.** Throwaway two-commit repo, one predicate
+gate in `scripts/guard.py` with no evidence. Control: `FAIL ... [missing-disarm-battery]
+is_payload_allowed (scripts/guard.py:14)`, **exit 1**. Same repo plus one committed line `*.py -diff`:
+git renders the file as `Binary files /dev/null and b/scripts/guard.py differ`, `_parse` sees nothing,
+and the detector prints the byte-identical ordinary gate-free line `PASS: gate-evidence - no gate
+DETECTED in the diff ...`, **exit 0**. The CLI's "not a unified diff" refusal does not fire either,
+because the non-`.py` files still contribute `+++ ` headers. Re-rendering the same range with
+`git diff --text` restores **exit 1**.
+
+**M3 — the unbounded quadratic, on an ordinary hand-written shape** (N predicate gates in one source
+file, N parametrized three-variant batteries in one test file; nothing pathological per line):
+
+| added diff size | gates | wall clock |
+|---|---|---|
+| 19.5 KB | 50 | 0.05 s |
+| 38.9 KB | 100 | 0.20 s |
+| 78.7 KB | 200 | 0.64 s |
+| 158.2 KB | 400 | 2.22 s |
+
+~3.5x per 2x input. The driver is `_attributed` recomputing `_guard_literals(block)` for every
+(gate, battery) pair. Concatenating the four real fixtures is NOT a reproducer (332.7 KB in 0.04 s) —
+size alone does not trigger it, the gate x battery product does.
+
+### Landed
+
+- **`be5ec31`** `docs(spec)` — SPEC-081 amended with a dated `## Amendment — 2026-10-24` section:
+  decision 6 (the tier split, with the M1 table and the "a different symbol carries the exit code"
+  disclosure), decision 7 (what each AC now promises, including that AC-1 as originally written is NOT
+  met and is not claimed), decision 8 (the honest residual, in the body: the split makes the gate
+  truthful but NOT effective against an arm-only author; the successor is attestation plus a reviewer
+  obligation, not better diff analysis), decision 9 (the three input-handling holes move into scope,
+  each with an acceptance criterion AC-9.1..AC-9.4 — lesson 14), decision 10 (decision 2 / ISSUE-086
+  unchanged, its mirage independently reproduced). Open Questions gains ISSUE-088 as decision 8's
+  durable carrier. `python3 scripts/validate_spec.py docs/specs/SPEC-081.md` -> `All 1 SPEC(s) passed`.
+- **`c1ad22b`** (on `main`) `chore(registry)` — **ISSUE-088** filed as decision 8's durable carrier
+  (review lesson 15): "Decide the successor mechanism for the disarm-DIRECTION obligation, or decline
+  the property outright". P1, `Depends-On: ISSUE-081`, Spec-Required, drafted by the **planner** agent
+  and written under the lock via `registry_edit.sh` per the ISSUE-074 contract. Its Scope Out forbids
+  editing `_refusal_shaped`/`REFUSAL_PATTERNS`/`_CONSUMER_RE`/`BLOCKING_KINDS` and forbids re-opening
+  the tier split, so it cannot be mistaken for "tighten the direction predicate". Same commit returns
+  **ISSUE-081 Status `waiting` -> `doing`**. `validate_issues.py`: 8 violations, all pre-existing, **0**
+  from this change. ISSUE-088 sits above the pinned watermark, so it is flagged-not-dispatched.
+- **`e18776e`** `fix(gate-evidence)` — the tier split (amendment decisions 6 + 7). `BLOCKING_KINDS =
+  frozenset({"missing-disarm-battery"})` is the ONLY statement of which kinds block; `Finding.tier`,
+  `Report.blocking_findings`/`advisory_findings`, the rendered section, the CLI exit code and
+  `verify_checkpoint.verify_review_gate_evidence` all derive from it, pinned by an AST walk that forbids
+  a kind literal in code (not in prose) in any of the four consumers. The phase stays OUT of
+  `ADVISORY_PHASES`. Suite **2603 -> 2633** (+30, all in `tests/test_gate_evidence_contract.py`;
+  0 tests deleted, 7 renamed — e.g. `TestTheArmOnlyAttackIsBlocked` ->
+  `TestTheArmOnlyAttackIsSurfacedNotBlocked`, because a class name claiming a block that no longer
+  happens is the false-record failure this issue exists to stop). Baseline re-measured by stashing
+  rather than trusting the recorded 2603.
+
+  **Verified independently by team-lead, not taken from the sub-task's narration** — CLI on all four
+  committed fixtures after the change: `issue_078_pre_fix` exit **1** (blocking `cmd_validate`,
+  advisory `sprint_status_is_running`), `issue_078_post_fix` exit **1**, `issue_074_non_gate` exit
+  **0**, `issue_056_colliding_main` exit **1** (4 blocking, 2 advisory `main`). Full suite re-run by
+  team-lead: **2633 passed in 27.62s**. Matches the amendment's M1 table exactly.
+
+### Findings raised by the tier-split sub-task, dispositioned
+
+- **High — `/review` step 4.6 contract prose now mis-describes the gate.** `skills/review/SKILL.md.tmpl`
+  still reads "If exit code != 0: STOP immediately. Add the missing direction, or write a justified
+  exemption" and describes `missing-refusal-direction` without saying it is advisory. The phase now
+  passes that kind. **In scope for this rework** (amendment decision 6 requires the verdict vocabulary,
+  the exit-code contract and the consumer to agree) — team-lead's own follow-up commit, after the
+  remaining sub-tasks, because `skills/review/SKILL.md` is generated and `tests/test_gen_skills.py` pins
+  template-to-generated agreement.
+- **Medium — a sharper reproducible instance for ISSUE-087's detection boundary.** Stripping hunk
+  function hints from `issue_078_pre_fix.diff` removes the *only* blocking gate, because `cmd_validate`
+  is added by MODIFYING an existing function and the hunk hint is its only attribution; the diff then
+  exits 0. This was masked until the split, because the advisory kind used to carry the exit code.
+  **No new issue** — ISSUE-087 is the live carrier and already owns the boundary; recorded here so the
+  measurement is not lost. It also sharpens decision 8's residual: on the motivating fixture the
+  blocking tier's single finding depends on hunk-hint attribution surviving.
+- **`4312ad9`** `fix(gate-evidence)` — AC-9.1, the `.gitattributes` disarm, closed in **both** layers.
+  Layer 1: `verify_checkpoint._gate_evidence_diff` and `_untracked_diff_text` now render with
+  `git diff --text`, so the attribute cannot narrow the subject. Layer 2: `_parse` recognises the
+  `Binary files <a> and <b> differ` and `GIT binary patch` renderings and `analyze` emits a **blocking**
+  `unreadable-binary-rendering` finding for any non-test `.py` path rendered as binary — reachable
+  through `--diff-file` over text this process did not render, so it fails closed on its own. A `.png`
+  or a test-path `.py` does not trip it (AC-3 preserved). The new kind went into `BLOCKING_KINDS`,
+  keeping one source of truth; the `FAIL:` heading now names the kinds actually present and no longer
+  calls an unreadable file a "gate"; the "opt out with an exemption" footer is suppressed for the
+  refusal, because the marker is read from the added lines of the very file that could not be read.
+
+  **Verified independently by team-lead** by re-running the same probe script used for M2, unchanged:
+  the ATTACK case now prints `FAIL: ... [unreadable-binary-rendering] REFUSED: scripts/guard.py is a
+  non-test .py source file, but this diff renders it as BINARY ...` at **exit 1**, where before it
+  printed the gate-free PASS at exit 0. `grep '"--text"' scripts/verify_checkpoint.py` -> both call
+  sites. Four fixtures still exit **1 / 0 / 1 / 1**. Full suite re-run by team-lead: **2659 passed**.
+
+  The sub-task's own one-at-a-time mutation evidence, which team-lead did not re-run: reverting
+  `--text` from both renders -> **6 failed**; dropping the new kind from `BLOCKING_KINDS` -> **9
+  failed**; restored -> 2659 passed. End-to-end through the REAL consumer
+  (`verify_review_gate_evidence`), before: `consumer verdict: True`, after: `consumer verdict: False`
+  **with the gate named** — layer 1 restored the subject rather than layer 2 masking its loss, which is
+  the stronger of the two outcomes.
+
+  Disclosed residual, in the code's own docstring: `Binary files <a> and <b> differ` cannot be
+  disambiguated when an **unquoted** path contains the literal `" and "`. Git quotes non-ASCII,
+  control characters, `"` and `\` but not a space. It fails toward naming the wrong path, not toward
+  silence. Left as a disclosed residual.
+- **`bbbd94a`** `perf(gate-evidence)` — AC-9.2, the wall-clock bound plus the memoisation.
+  `KIT_GATE_EVIDENCE_TIMEOUT` (seconds, default **60**; non-numeric / zero / negative fall back to the
+  default) bounds `analyze`, fails **CLOSED** with a message that names the knob, and is documented in
+  the module docstring, `README.md`'s behaviour-control list and `docs/troubleshooting.md` — the three
+  places `KIT_CHECKPOINT_TEST_TIMEOUT` already lives (review lesson 2). The per-block predicates are
+  hoisted out of the per-gate loop, and `_calls` — which the sub-task found by profiling and which was
+  NOT on its brief — became `_called_names`, extracted once per block, with its boundary rules pinned
+  by 8 params written before the refactor plus an A/B against the old `_calls` over every
+  (gate, battery) pair the four fixtures produce.
+
+  **Stated precisely, because "the quadratic is gone" would be half true** — and this is team-lead's own
+  measurement with execution counts, not the sub-task's narration. The quadratic *work* is gone: at
+  n=800 gates x 800 batteries, `_guard_literals` / `_asserts_refusal` / `_has_consumer_outcome` run
+  **800** times each, i.e. exactly O(batteries), where the n^2 figure would be 640 000. What remains is
+  the attribution **pair enumeration** — "is battery b attributed to gate g" is inherently a G x B
+  question — so wall clock is still super-linear:
+
+  | gates = batteries | added diff size | wall clock | ratio per 2x |
+  |---|---|---|---|
+  | 50 | 19.5 KB | 0.008 s | - |
+  | 100 | 38.9 KB | 0.019 s | 2.47x |
+  | 200 | 78.7 KB | 0.059 s | 3.04x |
+  | 400 | 158.2 KB | **0.199 s** | 3.39x |
+  | 800 | 317.1 KB | 0.723 s | 3.64x |
+
+  Against M3's pre-fix 2.22 s at 158.2 KB that is an **11x** constant-factor win on the same bytes with
+  the same builder, and the residual term is pure set intersection (~70 ns/pair vs ~8 us before). **The
+  bound, not the memoisation, is the guarantee.** Headroom: 60 s default against 0.723 s for a 317 KB
+  diff adding 800 gates each attributed by 800 batteries — far beyond any real PR — and an order of
+  magnitude under the runner's 600 s watchdog, so the operator sees the refusal rather than a killed
+  agent.
+
+  **Bound verified by team-lead directly through the CLI**, on a 324 748-character subject:
+  `KIT_GATE_EVIDENCE_TIMEOUT=0.01` -> `exit 2`, `ERROR: REFUSED (not clean): gate-evidence analysis
+  exceeded its wall-clock budget after 0.020s of 0.01s ... this is NOT a pass`, knob named, and the
+  output does **not** contain the gate-free verdict string. `=0.2` -> exit 2 at 0.201 s. `=60` -> exit
+  0. `banana` / `0` / `-5` all fall back to the 60 s default and complete. Full suite re-run by
+  team-lead after this commit: see the roll-up below.
+
+  The sub-task's own critical-constraint test, which team-lead did not re-run: it INJECTED the
+  text-keyed module-level cache an author reaches for when `lru_cache` refuses an unhashable `_Block`,
+  and `TestTheMemoisationDoesNotOutliveOneCall` killed it on `REQUIRE_REFUSAL_DIRECTION` and
+  `REQUIRE_CONSUMER_OUTCOME` while correctly *surviving* on `_guard_tokens` (which reads no tunable) —
+  a pin that discriminates rather than firing on everything. That was the specific way this change could
+  have silently disarmed the AC-5 mutation matrix.
+
+  **Deliberate, flagged rather than silent:** `KIT_GATE_EVIDENCE_TIMEOUT=inf` parses as a positive float
+  and therefore disables the bound. Treated as an explicit operator opt-out, documented, not
+  special-cased.
+- **`26e9de7`** `fix(gate-evidence)` — AC-9.3, the ancestor-base relocation. `_gate_evidence_diff` keeps
+  its two equality refusals and adds corroboration: the merge-base against the resolved default branch
+  is compared with the merge-base against tiered trunk candidates (remote-tracking `origin/main`,
+  `origin/master` first; local `main`, `master` only when no remote candidate resolves), and when a
+  candidate yields a strictly MORE ancestral merge-base the **wider** base is used. Widening is chosen
+  over refusing because a wider subject can only ADD findings, never remove them, so it cannot turn a
+  FAIL into a PASS and cannot halt an honest review over a stale ref. The disagreement prints an
+  unmissable `WARN:` disclosure naming both refs, both short SHAs, which was used, and the range the
+  resolved base was hiding. `_default_branch` and `_changed_files_vs_base` are byte-for-byte untouched.
+
+  **Reproduced end to end by team-lead with an independent script**, against the REAL consumer
+  `verify_review_gate_evidence`, same repo shape, module pair loaded at `bbbd94a` vs HEAD:
+
+  ```
+  == THE ATTACK: origin/HEAD -> origin/decoy at the mid-branch commit ==
+  BEFORE (bbbd94a): consumer verdict: True
+    | PASS: gate-evidence - no gate DETECTED in the diff. ...
+  AFTER (HEAD):     consumer verdict: False
+    | WARN: gate-evidence - the resolved diff base NARROWED this phase's subject, so a WIDER one was used.
+    |   resolved:     `refs/remotes/origin/HEAD` -> 'decoy', merge-base 3210421a6d5b
+    |   corroborated: 'origin/main', merge-base ea0bafe9c3cb - an ANCESTOR of the resolved base ...
+    |   USED: ea0bafe9c3cb, from 'origin/main'. Widening can only ADD findings, never remove them.
+    | FAIL: ... [missing-disarm-battery] is_payload_allowed (scripts/guard.py:14) ...
+  == POSITIVE CONTROL: origin/HEAD -> origin/main, same repo shape ==
+  BEFORE: consumer verdict: False (no WARN)    AFTER: consumer verdict: False (no WARN)
+  ```
+
+  The sub-task's own one-at-a-time mutations, which team-lead did not re-run: equality test restored ->
+  **7 failed**; disclosure print dropped -> **3 failed** (verdict stays False, the kill is purely the
+  missing `WARN:` line — a silent widen is a different defect from no widen, and the boolean cannot
+  tell them apart); corroboration call deleted -> **5 failed**. Suite 2702 -> **2713**.
+
+  Measured side-finding that raises the attack's cost: a bare ref name does **not** DWIM to
+  `refs/remotes/origin/<name>`, so the attack needs a same-named **local** ref too — two local,
+  never-pushed, PR-invisible writes rather than one. Team-lead hit this independently while building
+  the reproduction (the first attempt did not reach the base logic at all).
+
+  Residual, in `_widest_trunk_base`'s own docstring rather than papered over: an author who rewrites
+  **every** local trunk ref can still narrow the subject. There is no offline fix. What this buys is
+  that narrowing stops being silent and stops being a one-ref edit.
+
+  One judgement call the sub-task flagged, and team-lead accepts: where "use `origin/main`" and "never
+  narrow" conflict (a branch forked from `origin/main`'s tip while local `main` lags), it chose
+  **never narrow**, and added `test_consulting_a_local_trunk_first_would_false_block_that_repo` so the
+  tier ORDERING is load-bearing rather than incidental — it flattens the tiers on an honest repo and
+  observes the false block the ordering prevents.
+- **`5ce208f`** `docs(review)` — team-lead's own commit: `/review` step 4.6 now says which half blocks.
+  The contract text still read "If exit code != 0 ... Add the missing direction" and described
+  `missing-refusal-direction` without saying the phase now passes it. It now carries all four kinds with
+  their tiers (including `unreadable-binary-rendering`), the two refusals that are **not** findings
+  (`KIT_GATE_EVIDENCE_TIMEOUT`, the narrowed-base `WARN:`), the rule that advisory findings must still
+  be recorded in `findings.json`, and **decision 8's residual stated in the reviewer-facing text**: the
+  split makes the phase truthful, not effective against an arm-only author, carrier ISSUE-088.
+  Regenerated via `gen_skills.py`; `test_gen_skills.py` pins template-to-generated agreement. **No test
+  asserts the prose matches the engine** — a derived-fact documentation lint is an issue generator,
+  which is one of this repo's own recorded lessons, so the agreement is maintained by the commit rather
+  than policed by a test. Suite unchanged at **2713 passed**.
+- **`832bebe`** `test(gate-evidence)` — AC-9.4, the three surviving AC-5 mutants now die. Tests only; no
+  engine behaviour changed and no fixture pin moved. Every new pin is a verdict about a diff, not an
+  assertion that a constant equals a value: `_CONDITIONAL` is pinned by a refusal with **no**
+  conditional that must NOT be a gate, with a positive control on otherwise-identical bytes (the same
+  refusal plus one added ternary) that IS one; `MIN_VARIANTS` by a two-variant battery that must not
+  count (the pre-existing floor pin removed the floor entirely, which a floor of 1 passes unharmed);
+  `_TERNARY_GAP` by a real ternary whose measured gap is 110 characters, parked between the mutant's 40
+  and the shipped 400, with the load-bearing case narrowing the SHIPPED pattern rather than re-typing
+  it (`assert narrowed.pattern != vge._CONDITIONAL.pattern` stops the substitution no-opping).
+
+  **Team-lead re-ran all three mutations independently**, one at a time against the worktree source
+  with `git checkout --` restore and a byte-identity check between runs (tree was fully committed
+  first; the script refuses to start otherwise):
+
+  | mutant | module suite with the mutant | killed tests |
+  |---|---|---|
+  | `_CONDITIONAL` -> `r""` | **4 failed**, 316 passed | `test_a_refusal_with_no_conditional_is_not_a_gate`, `test_the_conditional_half_is_load_bearing`, +2 ternary cases |
+  | `MIN_VARIANTS: 3 -> 1` | **2 failed**, 318 passed | `test_two_variants_are_not_a_battery`, `test_the_variant_floor_sits_at_three_not_lower` |
+  | `_TERNARY_GAP: 400 -> 40` | **2 failed**, 318 passed | `test_a_ternary_inside_the_gap_bound_is_a_conditional`, `test_the_ternary_gap_bound_is_load_bearing` |
+
+  All three restored byte-identical; HEAD unchanged; tree clean after each. Suite 2713 -> **2720**.
+- **`9f2a16d`** `docs(gate-evidence)` — team-lead's own commit, correcting a **sixth** instance of the
+  "stated provenance is not the measured thing" class the attempt-3 review counted five of on this
+  branch. `_TERNARY_GAP`'s comment cited `TestAPathologicalLineCannotHangTheCheckpoint` as its pin, but
+  that test asserts only a wall-clock budget — which a NARROWER bound satisfies strictly better — so it
+  could never have been holding 400 in place, and the AC-9.4 mutant measured the consequence directly
+  (`400 -> 40`, suite green). Same shape as the `_GIT_TIMEOUT` comment this file already records as
+  untrue. Corrected in place and labelled as a correction. Comment only; suite unchanged at 2720.
+
+### The self-run — the gate BLOCKED its own branch, and that is the finding
+
+Run by team-lead through the real blocking checkpoint at `9f2a16d`, exit code captured on its own line
+rather than through a pipe (piping reports the exit of the last pipeline stage — a mistake already made
+once on this issue):
+
+```
+$ bash scripts/checkpoint.sh --skill review --phase gate-evidence --issue ISSUE-081
+EXEMPT: scripts/verify_gate_evidence.py:_is_predicate_shaped — ...      (5 pre-existing exemptions)
+FAIL: gate-evidence — 2 finding(s) in the BLOCKING tier (missing-disarm-battery) (ISSUE-081 / SPEC-081)
+  - [missing-disarm-battery] _is_strict_ancestor (scripts/verify_checkpoint.py:977) ...
+  - [missing-disarm-battery] check (scripts/verify_gate_evidence.py:1653) ...
+ADVISORY: gate-evidence — 1 finding(s), REPORTED and NOT BLOCKING ...
+TRUE checkpoint exit=1
+```
+
+This rework added two gates — `_is_strict_ancestor` (the AC-9.3 relation guard) and `_Deadline.check`
+(the AC-9.2 budget check) — and evidenced **neither** in the form its own rule demands. The phase
+caught its own authors on its first self-application after the tier split. It is recorded here as the
+sharpest available evidence that the blocking half is real, and it is being closed with **real disarm
+batteries, not exemptions**: the author of the rule exempting himself from it on its first application
+would be the worst possible precedent for this phase.
+- **`ce5538c`** `test(gate-evidence)` — the self-run FAIL closed with **real disarm batteries, not
+  exemptions**: `_is_strict_ancestor` driven over genuinely distinct non-ancestor relations (same
+  commit, the relation reversed, a disjoint graft) asserting `is False` on every one with a
+  strict-ancestor positive control, and `_Deadline.check` driven over distinct over-budget conditions
+  asserting `pytest.raises(AnalysisTimeout)` with an inside-budget control.
+
+### Self-run after the fix — exit 0, and exactly WHY it is 0
+
+```
+$ bash scripts/checkpoint.sh --skill review --phase gate-evidence --issue ISSUE-081
+TRUE checkpoint exit=0
+PASS: gate-evidence — no BLOCKING finding. 1 gate(s) carry both directions: main
+  | 3 ADVISORY, NOT blocking and NOT evidenced: scripts/verify_checkpoint.py:_is_strict_ancestor,
+    scripts/verify_checkpoint.py:verify_review_gate_evidence, scripts/verify_gate_evidence.py:check
+  | 3 exempted, NOT evidenced: _has_consumer_outcome, _is_battery, _is_predicate_shaped
+```
+
+**The uncomfortable part, measured rather than left implicit.** Team-lead re-scored the *identical*
+subject — 854.3 KB, acquired by the real consumer's own `_gate_evidence_diff` — under the PRE-split
+rule (every kind blocking, as at `1d1c134`):
+
+```
+gates detected: 7   findings: 3   blocking: 0   advisory: 3   SHIPPED exit code: 0
+  [advisory] missing-composite-pin  _is_strict_ancestor          (scripts/verify_checkpoint.py)
+  [advisory] missing-composite-pin  verify_review_gate_evidence  (scripts/verify_checkpoint.py)
+  [advisory] missing-composite-pin  check                        (scripts/verify_gate_evidence.py)
+PRE-SPLIT scoring (every kind blocking): 3 blocking -> exit 1
+```
+
+**So: this branch passes its own gate only because of the demotion this branch introduced.** Stated
+plainly because the brief required it and because the previous attempt's self-run PASS turned out to
+rest on style choices. Two qualifications, both load-bearing and neither of them a defence:
+
+1. The two findings the gate raised that are **decidable** were closed with real batteries, so the
+   blocking half is honestly satisfied, not waived. The gate caught its authors and the authors
+   complied.
+2. The three remaining findings are all `missing-composite-pin`, demoted on the principled ground that
+   polarity is undecidable (amendment decision 6) — not demoted because they were inconvenient here.
+   But the *order of events* is the honest problem: the demotion was decided before this measurement
+   was taken, and it is what makes this branch green.
+
+This is decision 8's residual made concrete on the mechanism's own code: three of its seven detected
+gates are evidenced **at the helper only**, and the phase now says so and passes. **ISSUE-088** is the
+carrier.
+
+Two further observations from the self-run, recorded rather than fixed:
+- Two exemption markers are now **orphaned**: `_attributed` and `_is_non_vacuous` still carry
+  `GATE-EVIDENCE-EXEMPT` comments but are no longer detected as gates (`bbbd94a` split them into
+  `_attributed_by`/`_non_vacuous`). They still print as `EXEMPT:` lines but waive nothing — the PASS
+  line correctly counts only the 3 that intersect real gates. Harmless, stale. Low.
+- `Gate.line` is the **diff** line number, rendered as `path:line`, which reads like a file line
+  (`scripts/verify_checkpoint.py:977` is not line 977 of that file). Pre-existing, not introduced here,
+  and a verdict-accuracy defect of the same family ISSUE-087 carries. Low/Medium, recorded not filed.
+
+## ISSUE-081 rework roll-up (2026-10-24) — IMPLEMENT phase returning
+
+| | |
+|---|---|
+| Phase | **implemented** (unchanged — this was a rework, not a re-entry) |
+| Status | **doing** (was `waiting`) |
+| Attempts | **3** — unchanged. A user decision changed the design; this is not a fourth retry of the previous one. |
+| Branch | `issue/ISSUE-081-gate-evidence`, `1d1c134` -> **`ce5538c`**, 9 commits, pushed, upstream `origin/issue/ISSUE-081-gate-evidence` in sync |
+| PR | **#137, still a DRAFT** — confirmed `{"draft":true,"state":"OPEN"}` immediately after the push. The orchestrator decides when it leaves draft. |
+| Suite | **2603 -> 2740 passed** (+137). The ISSUE-072 signature is broken: every defect closed here moved the count. |
+| `validate_spec.py docs/specs/SPEC-081.md` | `All 1 SPEC(s) passed validation`, exit 0 |
+| Four committed fixtures | exit **1 / 1 / 0 / 1**, blocking/advisory split unchanged, no pin edited |
+| Registry | `main` commits `c1ad22b` (ISSUE-088 + Status doing) and `262a5e5` (ISSUE-089). `validate_issues.py`: 8 violations, all pre-existing, 0 from either. |
+| Worktree | **deliberately NOT cleaned up** — ISSUE-083 means `wt_setup.sh` would re-create it from main's HEAD with no upstream while reporting success. Verified clean, in sync, correct upstream. |
+
+### What landed against the amendment's acceptance criteria
+
+| AC | Commit | Evidence team-lead observed directly |
+|---|---|---|
+| decision 6/7 — tier split, one source of truth | `e18776e` | four fixtures re-measured; AST pin forbids a kind literal in any consumer |
+| AC-9.1 — `.gitattributes` disarm | `4312ad9` | own probe: attack exit 0 -> exit 1 with a named refusal; `--text` at both render sites |
+| AC-9.2 — wall-clock bound + memoisation | `bbbd94a` | own counts: per-block predicates 800 not 640 000 at n=800; bound fires at exit 2 naming the knob; `banana`/`0`/`-5` fall back |
+| AC-9.3 — ancestor base | `26e9de7` | own repro through the real consumer: `True` -> `False` with the `WARN:` disclosure |
+| AC-9.4 — surviving AC-5 mutants | `832bebe` | own one-at-a-time mutation: 4 / 2 / 2 kills, restored byte-identical |
+| contract text agrees with the tier | `5ce208f` | team-lead's own; regenerated, `test_gen_skills.py` green |
+| record defect | `9f2a16d` | sixth instance of the false-provenance class, corrected and labelled |
+| AC-5 self-application | `ce5538c` | gate blocked its own branch at `9f2a16d`; closed with batteries, not exemptions |
+
+### Not done, and deliberately so
+
+- **Nothing was dispatched for ISSUE-077, 079, 080, 082, 083, 084, 085, 086, 087**, the emitter family,
+  or the two issues filed this phase. `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` was never set. The
+  `Roster-Watermark: ISSUE-081` line in `## Meta` is unchanged.
+- **The review was not run and the PR was not taken out of draft.** This was an IMPLEMENT phase only.
+- `ruff`: 18 pre-existing findings across the two touched files, flagged independently by two
+  sub-tasks. **Deliberately not filed** — the kit removed lint enforcement in ISSUE-028, `ruff` is not
+  in the `dev` extra, and the findings are cosmetic. Recorded here as noise, not as backlog. If a third
+  rework trips over it, that frequency is the signal that would justify an issue.
+
+## ISSUE-081 rework — Discovered Issues and findings disposition (2026-10-24)
+
+### Filed as durable carriers this phase
+
+- **ISSUE-088** (`main` `c1ad22b`) — Decide the successor mechanism for the disarm-DIRECTION obligation,
+  or decline the property outright. Carrier for SPEC-081 amendment **decision 8**. P1, Depends-On
+  ISSUE-081, Spec-Required. Framed as a DECISION issue and explicitly forbidden from being read as
+  "tighten the direction predicate": its Scope Out bars edits to `_refusal_shaped`,
+  `REFUSAL_PATTERNS`, `_CONSUMER_RE` and `BLOCKING_KINDS`, and bars re-opening the tier split.
+- **ISSUE-089** (`main` `262a5e5`) — Decide what corroboration makes it safe to resolve trunk through
+  the remote-tracking ref. `_default_branch()` strips `refs/remotes/origin/main` to the bare `main`,
+  which git DWIMs to `refs/heads/main`, so a branch forked from `origin/main`'s tip while the local
+  trunk lags is diffed against the STALE LOCAL trunk. P2 — a wrong-subject / false-BLOCK risk, **not**
+  a fail-open. Blast radius includes `_changed_files_vs_base`, shared with `implement/red` and
+  `implement/tests-written` (both blocking). It could not be fixed inside ISSUE-081 because the obvious
+  fix NARROWS, which AC-9.3 forbids.
+
+Both sit **above** the pinned `Roster-Watermark: ISSUE-081`, so the ISSUE-069/078 mechanism flags them
+without dispatching. That is the intended outcome — the watermark was not widened and
+`KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` was never set.
+
+### Carried onto ISSUE-087 rather than farmed into new issues
+
+SPEC-081 decision 3 gave ISSUE-087 "the per-boundary widen-or-bound decisions and the full boundary
+enumeration", so the five detection-boundary findings measured this phase are an **amendment to
+ISSUE-087**, not new rows. Drafted by the planner agent, written under the lock.
+
+- **High — a COMMENT armed a gate, mis-attributed 281 lines away.** `_Deadline.check`'s own 13-line
+  body carries zero refusal signal (`raise AnalysisTimeout(` is invisible to `REFUSAL_PATTERNS`, and
+  `-> None` gives `_BOOL_REFUSAL` nothing). `_parse` filed **331** added module-level lines under
+  `def check`, and attributed-index 281 — the comment
+  `#: A non-zero integer literal: \`exit 1\`, \`exit 3\`, \`return 2\`.` — matched
+  `REFUSAL_PATTERNS[0]`. Reword that comment and the gate disappears. **The obligation to evidence this
+  branch's own wall-clock bound rested on a comment 281 lines away.** The same attribution window can
+  file a real gate's lines under a preceding `def`, which is an UNDER-detection.
+- **High — `REFUSAL_PATTERNS` cannot see a custom refusal exception.** Only `raise \w*(Error|Exception)`
+  matches; `raise AnalysisTimeout` — this branch's own blocking refusal — is invisible.
+- **High — a leading underscore makes a SCREAMING constant invisible.** `\b[A-Z][A-Z0-9_]{2,}\b` loses
+  its `\b` to a leading `_`: `_SCREAMING_NAME_RE` on `'_REFUSED_PREFIX'` -> `[]`, on `'sq.ROSTER_EXIT'`
+  -> `['ROSTER_EXIT']`; `_LITERAL_EXPECTED_RE` on `'_REFUSED_PREFIX'` -> `False`. Found by accident
+  when a genuine refusal battery written against a module-private constant was silently demoted.
+  Module-private SCREAMING constants are this repo's dominant convention.
+- **Medium — a predicate written as ONE boolean expression is never a gate.** `is_scanned_source`,
+  `_non_vacuous`, `_attributed_by`, `_asserts_refusal`, `_attributed`, `_calls`, `_is_non_vacuous`,
+  `is_test_path`; plus `_refusal_shaped` (`return bool(...)`) and `detect_gates` itself (`continue`).
+- **Medium — a WRAPPED signature hides `-> bool`.** `_attributed_by` is structurally identical to
+  `_is_strict_ancestor` and escapes on line-wrapping alone.
+- **Medium — the hunk-hint instance** recorded earlier: stripping hunk function hints from
+  `issue_078_pre_fix.diff` removes the only blocking gate.
+
+**The honest framing, which the ISSUE-087 amendment carries unsoftened:** the detector's reading of
+code is driven as much by an author's formatting and vocabulary as by the code's behaviour. Of the two
+gates this rework was blocked on, exactly **one** (`_is_strict_ancestor`) was detected for a genuine
+reason; the other was detected by accident.
+
+### Recorded and deliberately NOT filed
+
+- **`Gate.line` is the DIFF line number rendered as `path:line`** — `scripts/verify_checkpoint.py:977`
+  is not line 977 of that file. Pre-existing, not introduced here, same verdict-accuracy family
+  ISSUE-087 carries. Low/Medium.
+- **Two orphaned exemption markers.** `_attributed` and `_is_non_vacuous` still carry
+  `GATE-EVIDENCE-EXEMPT` comments but are no longer detected (`bbbd94a` split them into
+  `_attributed_by`/`_non_vacuous`). They print as `EXEMPT:` lines and waive nothing; the PASS line
+  correctly counts only the 3 that intersect real gates. Low, stale-not-wrong.
+- **`ruff`: 18 pre-existing findings** across the two touched files, flagged independently by two
+  sub-tasks. The kit removed lint enforcement in ISSUE-028 and `ruff` is not in the `dev` extra, so
+  filing it would re-open a settled decision. Recorded as noise. A third independent trip over it would
+  be the frequency signal that justifies an issue about whether `ruff` belongs in `dev` at all.
