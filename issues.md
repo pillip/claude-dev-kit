@@ -69,6 +69,7 @@
 - [ ] ISSUE-096: Bind the delegated review to the PR's own diff — both runtime skills auto-collected an empty one on two consecutive PRs _(track: platform, P1, 1d — observed twice in one sprint (ISSUE-083 review / PR #139 and ISSUE-070 review / PR #141, 2026-10-25): `decide` returned `delegated` for both dimensions and the runtime skills then auto-collected their own diff against the MAIN checkout, so `security-review`'s prompt arrived with the literal `DIFF CONTENT: (Bash completed with no output)`; uncorrected, both passes would have returned a clean bill having reviewed nothing — a silent fail-open on a BLOCKING gate, on the primary path ISSUE-072 worked to make reachable; depends on none)_
 - [ ] ISSUE-097: Harden trace_query.py's read path and bound its timestamp coercion — the telemetry READER kept the defences its writer gained _(track: platform, P1, 1d — ISSUE-071 review Mediums without a carrier until now: a planted FIFO at a read target hangs it, `_parse_ts`'s catch is too narrow, and the AC-4 root gap leaves worktree streams unread from main; the write side was hardened by ISSUE-070/058 and the read side was never revisited)_
 - [ ] ISSUE-098: Retire the stale silent-no-op docstrings in synthesize_gate_results.py _(track: platform, P2, 0.5d — ISSUE-071 review Medium; the module still documents the emit behaviour ISSUE-067 replaced, so the file argues against its own code)_
+- [ ] ISSUE-099: Make the containment-oracle test location-independent — it fails in every git worktree outside the main repo directory _(track: platform, P1, 0.5d — shipped to main by ISSUE-070 and reproduced on pure main at a scratch path by the 2026-10-25 ISSUE-081 re-review; worktrees are how every sprint phase runs, so a location-sensitive test in the suite the gates execute is a standing false signal)_
 
 ### Doing
 
@@ -6033,3 +6034,59 @@ No docstring in `synthesize_gate_results.py` describes emit behaviour the module
 
 #### Rollback
 `git revert` — documentation-only, no behavioural surface.
+
+---
+
+### ISSUE-099: Make the containment-oracle test location-independent — it fails in every git worktree outside the main repo directory
+
+> Found by the 2026-10-25 independent re-review of ISSUE-081 while establishing that main's movement changed no verdict. `tests/test_kit_telemetry.py::TestContainmentRootDerivation::test_matches_the_oracle_in_this_checkout`, shipped to main by ISSUE-070, **fails in any git worktree located outside the main repo directory**. It is not a merge consequence and not an ISSUE-081 defect — the reviewer's decisive control reproduced it on **pure main at the same scratch path**.
+>
+> Two independent measurements reconcile it exactly: a clone of the merged tree measures `2815 passed, 1 skipped`; a detached worktree of the same tree at a scratch path measures `2814 passed, 1 skipped, 1 failed`. The delta is this one test and nothing else.
+>
+> Why it is P1 despite being a single test: **worktrees are how every sprint phase runs.** `wt_setup.sh` puts implement, review and ship inside `.worktrees/`, and the blocking `test` and `smoke` checkpoints execute this suite there. A test whose verdict depends on the checkout's filesystem location is a standing false signal in exactly the harness the kit's gates run under — and the class is worse than the instance, because it teaches every future reader that a red result might be the location rather than the code. This session already paid that tax twice: a reviewer's own in-worktree mutation probe produced 12 phantom failures, and a sprint brief carried a wrong `2740` baseline for the same family of reasons (`test_sprint_queue.py` parametrizes over real `docs/sprint_state.archive-*.md` files, so main collects tests no worktree can reach).
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; 2026-10-25 ISSUE-081 re-review, recorded as owed a carrier independent of the ISSUE-081 decision; review lesson "Numbers copied into docs must be generated from the canonical environment" in its test-suite form)
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-070
+
+#### Goal
+The suite returns the same verdict from the main checkout and from any worktree, so a red result means the code is wrong rather than the test ran somewhere unexpected.
+
+#### Scope (In/Out)
+- In:
+  - Make `TestContainmentRootDerivation::test_matches_the_oracle_in_this_checkout` location-independent, or scope it to the condition it actually verifies and skip with a stated reason elsewhere. A silent pass is not acceptable — the oracle comparison is worth keeping where it is meaningful.
+  - Sweep the suite for the same class and report what is found: tests whose verdict depends on the checkout's filesystem location, and the already-known `test_sprint_queue.py` archive-glob parametrization that makes main collect tests no worktree can reach. Fix what is cheap; carrier what is not.
+  - Record the canonical measurement procedure where a reader will hit it — if the main checkout and a worktree legitimately collect different counts, that fact belongs next to the suite command, not in a sprint log.
+- Out:
+  - Changing `scripts/kit_telemetry.py`'s containment behaviour. ISSUE-070 shipped it, its contract is pinned, and ISSUE-095 carries the remaining directory-swap leg.
+  - The worktree tooling itself (ISSUE-083 shipped the remote-tip fix; ISSUE-091 carries the ref-deletion leak).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the suite run from the main checkout and from a worktree at an unrelated path, when both complete, then the pass/fail verdict is identical and any legitimate count difference is explained by a documented, enumerable cause.
+- [ ] Given the specific test, when it runs in a worktree outside the main repo directory, then it either passes or skips with a reason naming the condition — never fails for a location reason.
+- [ ] Given the location-sensitivity sweep, when it completes, then every instance found is either fixed or carried, with the list in the PR body.
+- [ ] Given the fix, when the condition it guards is genuinely violated, then the test still fails — mutation-tested in both directions, so location-independence was not bought by making the assertion vacuous.
+
+#### Implementation Notes
+- Provenance: the 2026-10-25 re-review's measurement, recorded in `docs/sprint_state.md` under the ISSUE-081 re-review log with both reconciling numbers.
+- The vacuity risk is the real hazard here: the cheapest way to make a location-sensitive test location-independent is to stop asserting anything. AC-4 exists to forbid that, and review lesson 16's disarm direction applies — a test that cannot fail is the same defect wearing a green badge.
+- Prefer deriving the expected root from the same oracle the production code consults rather than from the test's own path arithmetic; re-typing the oracle is the class with six recorded instances (ISSUE-084 carries the detectability question).
+
+#### Tests
+- [ ] Same-verdict assertion across both checkout shapes, with any count difference enumerated.
+- [ ] Mutation pair on the guarded condition: violated → fails, satisfied → passes.
+
+#### Rollback
+`git revert` — test-only, no production surface. Reverting restores a test that fails by location, which is the state this issue was filed against.
