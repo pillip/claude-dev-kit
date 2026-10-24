@@ -44,7 +44,7 @@ ISSUE-077 is **deliberately unstarted**. `next-action` returns `PIPELINE ISSUE-0
 |-------|--------|----------|------------|-------|
 | ISSUE-073 | done | 1 | - | shipped |
 | ISSUE-077 | backlog | 0 | - | backlog |
-| ISSUE-081 | doing | 3 | - (cleared 2026-10-24: the attempt-3 FAIL was answered by a user DECISION, Option A / the tier split, not by a retry — see the rework log below) | implemented |
+| ISSUE-081 | waiting | 4 | review-rework (2026-10-25): FIRST review of the Option A design. Honesty PASSES; the blocking half does NOT — 4 independent disarms through the real consumer (string-literal def mis-attribution; AC-9.3 silent narrowing at 1 ref edit / 0 rewrites; --text UnicodeDecodeError regression; space-and-space filename layer-2 bypass) + a false BLOCK on honest repos | implemented |
 
 > **Attempts stays at 3 deliberately.** The 2026-10-24 work is a rework under a user decision that
 > changed the design; it is not a fourth attempt at the design the third review rejected. The
@@ -1066,7 +1066,10 @@ Two further observations from the self-run, recorded rather than fixed:
 
 - **Nothing was dispatched for ISSUE-077, 079, 080, 082, 083, 084, 085, 086, 087**, the emitter family,
   or the two issues filed this phase. `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` was never set. The
-  `Roster-Watermark: ISSUE-081` line in `## Meta` is unchanged.
+  roster-watermark field pinning ISSUE-081 in `## Meta` is unchanged. (Reworded 2026-10-25 by the
+  review phase: as originally written this line was itself a SECOND watermark field line, so the
+  detector rejected the real boundary with `2 field lines found, expected exactly one`. See the
+  review record at the end of this file.)
 - **The review was not run and the PR was not taken out of draft.** This was an IMPLEMENT phase only.
 - `ruff`: 18 pre-existing findings across the two touched files, flagged independently by two
   sub-tasks. **Deliberately not filed** — the kit removed lint enforcement in ISSUE-028, `ruff` is not
@@ -1162,3 +1165,177 @@ reason; the other was detected by accident.
 - **Nothing dispatched above the watermark**, `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` never set,
   `wt_setup.sh` never run against the worktree, PR #137 still a draft, worktree deliberately left in
   place (ISSUE-083).
+
+## ISSUE-081 review (iteration 1, REVIEW — the FIRST review of the Option A design) — FAIL, review-rework
+
+**Verdict: `review-rework`. Phase stays `implemented`; Status -> `waiting`; Attempts -> 4.**
+This was the first review of the **Option A tier split** the user decided on 2026-10-24, judged
+against SPEC-081's amended ACs — not a fourth attempt at the superseded design. Review notes
+committed `73c8ac6` and pushed. PR #137 left a **draft**, deliberately. All 13 review checkpoints
+exit 0; suite **2740 passed**; `validate_spec.py docs/specs/SPEC-081.md` passes.
+
+### The two questions the brief named, answered separately — they do NOT get the same answer
+
+**Q2, "does the artifact tell the truth about what it does and does not deliver?" — YES, emphatically.**
+This is the strongest part of the branch and it should survive rework untouched. All three
+volunteered disclosures reproduce. SPEC-081 decision 7 states in its own words that
+**"AC-1 as originally written — the ISSUE-078 symbol blocked — is NOT met and is not claimed."**
+Decision 8 puts the residual in the body, not a footnote. The gate-free PASS line disclaims its own
+coverage inline. `skills/review/SKILL.md` leads its 4.6 block with *"Read this before you treat a
+green `gate-evidence` as assurance."* Nowhere in the repo does any text claim the gate blocks on
+direction or composite. The artifact consistently understates rather than overstates.
+
+**Q1, "is the blocking half genuinely safe?" — NO. Four independent disarms, all through the real consumer.**
+
+### Blocking findings (full detail + reproductions in `docs/review_notes/ISSUE-081.md`)
+
+| # | Sev | Finding | Verified by |
+|---|-----|---------|-------------|
+| 1 | Critical | Gate **detection** mis-buckets on a `def`-shaped line inside a string literal: `_parse` matches `_DEF_RE` against the RAW line (`:826`) before `_destring` (`:980`), and `enclosing` never resets on dedent. A real gate-adding diff returns `no gate DETECTED`, **exit 0**. Docstring-first variant instead names a **phantom symbol** that no battery or exemption can satisfy, since both key on `(path, symbol)`. `_destring` has **zero** test references. | team-lead directly |
+| 2 | Critical | **AC-9.3 silent narrowing survives.** One `git update-ref` on any non-`main`/`master` trunk (`develop`/`trunk`/`release`/`dev`/`production` all exit 0, silent) — root cause is `_default_branch()` keeping only the last path component of `origin/HEAD`'s target. Also: poisoned tier 1 discards an honest tier 2 via the `break` (`:1489`); and a **zero-rewrite** variant using `refs/tags/main` shadowing. Falsifies the SPEC's "must rewrite EVERY local trunk ref" residual. | sub-task, real consumer |
+| 3 | High | **AC-9.1 regression** — `--text` makes `_run` (`text=True`, no `errors=`) raise an **uncaught UnicodeDecodeError** at `:1574` and `:1392` on any PR touching a PNG/font/latin-1 file, including PRs that would otherwise PASS. Pre-fix handled the same repo. The module's own `--diff-file` reader already does this right at `verify_gate_evidence.py:1844`. | team-lead directly |
+| 4 | High | **AC-9.1 layer 2 bypassed** by a filename containing ` and `: `rsplit(" and ", 1)` yields `test_y.py` instead of `scripts/x and test_y.py` -> refusal skipped -> **exit 0**. Fails toward **silence**, the exact opposite of its own committed docstring. The sibling `GIT binary patch` branch gets it right via `_diff_git_b_field`. | team-lead directly |
+| 5 | High | **AC-9.3 widening produces a FALSE BLOCK** on honest repos with no attacker (remote-less repo + leftover `master`; non-`main` trunk + stale local `main`) — AC-3 violation. The suite contains `test_consulting_a_local_trunk_first_would_false_block_that_repo`, which proves it exists and assumes it unreachable. | sub-task, real consumer |
+| 6 | High | **AC-9.2 check PLACEMENT unpinned** — removing BOTH in-loop `deadline.check()` calls leaves **340/340 green**, deleting the bound from exactly the super-linear region it exists to bound. Review lesson 12 recurrence. | sub-task, mutation |
+| 7-10 | Medium | Unchecked parse prefix (`wall <= prefix + budget`, `_destring` at 146 KB/s); `inf`/`Infinity`/`1e400` disable the bound and match none of the three documented fallback categories; `issues.md` ACs not synced to the amendment (ticking AC-1 at ship would record a false claim); the load-bearing "4 of 6 recall" figure is unreproducible (corpus uncommitted). | mixed |
+| 11-13 | Low | 2 of 5 exemption markers orphaned; `format_report`'s ADVISORY heading hard-codes a rationale no test ties to `BLOCKING_KINDS`; `_engine_finding_kinds()` enumerates only `analyze`, so a kind minted elsewhere silently inherits advisory. | sub-task |
+| S-1 | Critical (sec) | The silent narrowing above, framed as security: every ref involved is local, author-writable, never pushed, invisible in the PR, and the defeated output is byte-identical to an honest gate-free PASS. | sub-task |
+| S-2 | Medium (sec) | A committed `*.py diff=X` plus a local textconv still yields a gate-free PASS at exit 0; `--text` does not defeat textconv and layer 2 has no marker. Two lines not one, so arguably outside AC-9.1 — but disclosed nowhere. | sub-task |
+
+### Final tally and the findings the last dimension added
+
+**3 Critical, 4 High, 7 Medium, 10 Low** (24), all in `docs/review_notes/ISSUE-081.md`
+(`73c8ac6` + `6aeaf3d`, pushed). Added by the fail-open / provenance / minimality sweep after the
+table above was written:
+
+- **Two FRESH false-provenance instances, in the comment added by the commit that fixed the last
+  one.** `DEFAULT_TIMEOUT_SECONDS`' justification claims the 245 KB / 800-gate benchmark is "roughly
+  8x this repo's largest real PR" and that "the slowest honest input measured for this change is
+  0.187 s". Re-measured: the largest squashed PR on `main` is 184,420 chars / **0** gates / 0.015 s,
+  and **this branch's own subject is 874,834 chars / 7 gates / 41 batteries / 0.322 s** — so 245 KB
+  is 1.35x the largest real PR and 0.29x this PR's own, 800 gates is 114x the 7 actually seen, and
+  the claimed worst case is beaten 1.7x by the PR's own dogfood input. The conclusion (60 s is
+  ample) survives; the provenance does not. Medium.
+- **AC-9.3's corroboration conflates a git FAILURE with a negative answer.** `_is_strict_ancestor`
+  returns `rc == 0`, and `_run` manufactures `rc=124`/`rc=127` for timeout and missing-binary, while
+  `merge-base --is-ancestor` exits 128 on a bad object — so "not an ancestor" and "git could not
+  answer" are indistinguishable, and the guard silently declines to widen. A fail-open *inside* the
+  guard AC-9.3 added, untested. Medium.
+- SPEC decision 5's in-place engine-size record is itself stale by 2.2x (848 recorded, 1882
+  measured) — by the discipline decision 5 established. Low.
+- `unreadable-binary-rendering` is unwaivable (CLI-only reach); `_Deadline` skips its final poll when
+  the diff adds no gate; a marker in a docstring BODY does exempt, and the test denying it passes for
+  the wrong reason (its marker has no `#` at all). Low, the last one pre-existing.
+- **Minimality: ~165 removable lines, only ~36 of them executable.** Almost all is prose restating
+  SPEC-081 *inside the module*. This is not stylistic: **four of this review's findings are claims in
+  exactly that duplicated prose that measurement contradicted** — a second copy of a SPEC paragraph
+  is a second thing that can go false. `_attributed`/`_is_non_vacuous` are now dead wrappers with
+  zero production callers.
+
+Also recorded as HOLDING by that sweep: `_parse` is byte-identical to the base (no new silent file
+skip); `unquote_c_style` remains the single shared decoder; **no fresh oracle RE-TYPING anywhere** —
+`is_scanned_source` actually removed a third copy of the test-path predicate; no `except` swallows
+`AnalysisTimeout`; the 598/4047 (14.8%) and 332.7 KB / 0.04 s figures regenerate exactly; and the
+5908-line test module pins behaviour, not prose (only 28 of 662 asserts check message wording).
+
+### Verified HOLDING — rework must not re-litigate these
+
+- **The demotion is NOT circular.** Ordering evidence settles it: at `1d1c134` and `be5ec31` (pre-demotion) the branch scored **0 findings / exit 0** under the all-blocking rule, by both the then-current and the current detector — there was nothing to rescue. The split was recommended by the attempt-3 reviewer, ratified by the user, and written into the SPEC (`be5ec31`, 20:53) *before* it was implemented (`e18776e`, 21:13). The blocking half then fired on its own authors for five consecutive commits, and `ce5538c` closed it by **adding 192 lines of real batteries** (`tests/` only), explicitly refusing the waiver route.
+- **Disclosure 2 re-score CONFIRMED exactly**: 3 blocking / exit 1 under the pre-split rule, all three `missing-composite-pin`.
+- **Tier consistency is CLEAN** — one source of truth in practice, not just prose. All four consumers derive from `BLOCKING_KINDS`; zero illegitimate re-statements in `scripts/`; **5 mutants all killed**, including a module-level mirrored frozenset that the AST pin cannot see but the monkeypatch load-bearing tests do. Phase still double-pinned blocking.
+- **AC-9.4 CONFIRMED by re-run**: the three previously-surviving mutants now kill **4 / 2 / 2**, each with at least one genuinely behavioural (not tautological) test, byte-identical restore verified by shasum.
+- **AC-4 is now genuinely evidenced** — `TestAC4AGateAddingDiffPassesCleanly` asserts `report.findings == ()` (no finding in **either** tier) and `report.exemptions == ()`, with a vacuity guard and a real-consumer proof. The misnamed `..._passes_a_post_fix_diff` now documents that it asserts `rc == 1`.
+- **AC-9.2's substance holds**: bound fires, fails CLOSED at exit **2** (CLI) and `False` (consumer), names the knob; `0`/negative/non-numeric/`nan` all fall back safely; memoisation is real (13-39x, no verdict moved); README + troubleshooting match code with **no drift**.
+- **Minimality: lean.** Every new top-level symbol maps to AC-9.1/9.2/9.3 or decision 6. No unrequested surface in the rework.
+- The `.md` exemption fix holds — the self-run was byte-identical before and after committing this review's own notes.
+
+### The strategic fact the user should weigh, independent of rework
+
+**The blocking half fires on 0 of 6 of the historical instances that motivated ISSUE-081**, measured
+on real diffs under two independent bases, nothing inferred: #121, #135, #127, #129 detect **no gate
+at all**; #128 and #133 exit 1 but on an *incidental neighbouring symbol* (`cmd_next_action`,
+`cmd_validate`) while the function that actually failed open draws an advisory or nothing. That is
+the user's **accepted residual**, not a defect — decision 8 says so in its own words — but it bounds
+what this mechanism can be worth. The successor (**ISSUE-088**, attestation + reviewer obligation)
+already exists as a carrier.
+
+So the orchestrator should put a real question to the user alongside the rework brief: the
+disarm-direction property that ISSUE-081 was filed to enforce is **already** routed to ISSUE-088,
+and what remains here is a narrower decidable property that currently has four working disarms. It
+is legitimate to fix findings 1-6 and ship it; it is equally legitimate to decide that diff analysis
+is the wrong instrument and spend the effort on ISSUE-088 instead. **Finding 2 and finding 1 are the
+decision-relevant ones** — both are in the *detection/subject-acquisition* stage, which is the stage
+every future tightening also depends on.
+
+### Rework brief, in dependency order
+
+1. **Finding 2 + 5 together** — resolve trunk candidates by **full ref path** and corroborate against
+   `origin/HEAD`'s **target ref**, not its stripped last component. Closes the one-ref, tier-poison and
+   tag-shadow disarms *and* the false block in one change. Then correct AC-9.3's residual paragraph.
+   (The bare-name resolution *decision* is ISSUE-089's; the false BLOCK via widening is new here.)
+2. **Finding 1** — give `_parse` string/comment state before matching `_DEF_RE`, reset `enclosing` on
+   dedent, and pin both directions. Explicitly NOT ISSUE-087: its five boundaries are all "gate outside
+   an added `def`"; this is mis-attribution *inside* one.
+3. **Finding 3** — `errors="replace"` at both new `_run` seams, plus a test with a REAL non-UTF-8 byte.
+4. **Finding 4** — route the `Binary files` b-side through the tracked `header`/`_diff_git_b_field`.
+5. **Finding 6** — pin check placement with a budget that clears the prefix + a call-count assertion.
+6. Mediums 7-10, then Lows. Finding 9 (`issues.md` AC sync) is a **planner** task, not team-lead's.
+
+### Record
+
+- Review path: **degraded on both dimensions**, reason `context-unreachable` — my tool list carried no
+  `Skill` and no `SlashCommand` (answered from the observed list per SKILL step 3.1).
+- Checkpoints, all exit 0: `checkout`, `figma-compliance`, `computed-styles`, `structural-match`,
+  `layout`, `visual-diff`, `ui-review` (five auto-skipped, non-UI), `test-quality`, `test`,
+  `gate-evidence`, `debt` (advisory: 14 markers, 3 no-trigger, 1 malformed — pre-existing), `review`,
+  `push`.
+- **Measurement hazard recorded against myself:** an early `review/test` run reported `12 failed,
+  2728 passed`. That was MY OWN concurrent mutation probe mid-flight in the worktree, not a branch
+  defect — re-run on the restored tree gives `PASS: tests passed`. Mutation probes must be isolated to
+  scratchpad copies; two sub-agents also collided in the shared scratchpad root.
+- Worktree deliberately **NOT** cleaned up (ISSUE-083); `wt_setup.sh` never run against it; left clean
+  at `73c8ac6` with the correct upstream. `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` never set. Nothing
+  dispatched. PR #137 still a **draft**.
+
+### Incidental find, fixed in place: this file's own prose had DISARMED the roster watermark
+
+Not an ISSUE-081 finding — a live defect in `docs/sprint_state.md` itself, noticed while verifying my
+edit preserved the watermark. Before this phase, `next-action` reported:
+
+```
+[roster-watermark: rejected (2 field lines found, expected exactly one) — fell back to the max rostered ID derivation]
+```
+
+The second "field line" was **prose from a prior phase's own record** (line ~1069), which read
+a sentence quoting the field name together with ISSUE-081 inside backticks, indented, and
+plainly intended as a *description* (the verbatim text is deliberately NOT reproduced here). `_WATERMARK_FIELD_RE` is deliberately broad
+(`^[\s ​>+*\-_~`]*roster-watermark[*_~`\s ]*:`, ISSUE-069's "detect broadly, accept
+narrowly"), so a backtick is a leading-noise character and the sentence matched as a duplicate
+declaration. The duplicate guard then refused the whole field.
+
+**This is ISSUE-069's own lesson recurring, and the same shape as attempt 2's "documenting the
+vulnerability exploited it": a record written ABOUT a safety boundary disarmed that boundary.**
+Harmless in outcome — the fallback derived the same ISSUE-081 boundary from the max rostered ID, and
+all 7 above-boundary issues stayed flagged-not-dispatched either way — which is exactly why it had
+survived unnoticed across phases. Reworded so the sentence no longer parses as a declaration;
+`next-action` now reports `[roster-watermark: pinned at ISSUE-081 — 7 of 13 Board backlog issue(s)
+are above it]`. The canonical `- Roster-Watermark: ISSUE-081` line in `## Meta` is untouched and
+verbatim.
+
+**And it reproduced on me while writing this very paragraph.** My first draft quoted the offending
+line verbatim, which re-armed the duplicate and flipped `next-action` straight back to `rejected` —
+caught only because I re-ran the probe after appending. That is the third observation of this shape
+on this issue: attempt 2's review notes armed the `.md` exemption hole, a prior phase's record armed
+this one, and now mine did. The durable lesson is narrow and worth carrying: **in a file that a
+detector reads, never quote the detector's own trigger verbatim — describe it.**
+
+Worth a carrier decision by the orchestrator, not fixed here: the general problem is that this file
+is both the watermark's *home* and the place every phase writes prose about it, so any future record
+quoting the field name re-arms this. A fence/indent exclusion, or confining detection to the `##
+Meta` block, would close it — but that changes a safety detector's acceptance surface, which needs
+its own issue.
+
+**ORCHESTRATION STOP still applies.** `next-action` returns `PIPELINE ISSUE-077` both before and
+after this fix. Do **not** take it: ISSUE-081 is `waiting`, 077 would be cut from a main where
+`review/gate-evidence` does not exist, and SPEC-081 decision 10 re-confirms the 081->077 self-test is
+void regardless. Nothing was dispatched by this phase.
