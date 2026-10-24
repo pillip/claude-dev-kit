@@ -36,6 +36,21 @@ Common issues and solutions when using the claude-dev-kit pipeline.
   - a `/files`- or `/commits`-suffixed PR URL pasted from the browser address bar, or a `www.github.com` host — `gh` itself resolves both, so these refuse a ref that would otherwise have worked. The whitelist is deliberately narrower than `gh`; widening it for an unattested shape is the fail-open direction.
 - **Solution**: normalize the `PR:` field to a single accepted form — `123`, `#123`, or the full `https://github.com/<owner>/<repo>/pull/123` URL. The refusal is fail-safe, not a blocker: the ship path still runs and the real `gh pr merge` surfaces the true state. Normalizing also removes a reader divergence — `scripts/verify_checkpoint.py` reads the same field with a trailing-digits `re.search`, so it accepts compound values that `sprint_queue.py` refuses.
 
+### Problem: `worktree.sh create` / `wt_setup.sh` refuses with a `reason=` on stderr
+- **Symptom**: non-zero exit, nothing on stdout (so `WT="$(bash scripts/wt_setup.sh <branch>)"` fails), and a stderr line of the form `worktree.sh: ERROR: refusing to create worktree for '<branch>': reason=<code> — …`
+- **Cause**: the branch exists only on the remote (its local ref was deleted — `worktree.sh remove` deletes it unconditionally on every review-phase cleanup) but the remote tip cannot be established. Rather than re-root the branch onto your current HEAD and lose the reviewed commits, `create` refuses. The codes:
+  - `reason=remote-unreachable` — `origin` is configured but could not be read (offline, moved, unauthenticated).
+  - `reason=no-remote-configured` — a stale `refs/remotes/origin/<branch>` exists but no remote named `origin` is configured.
+  - `reason=no-such-remote-ref` — `origin` no longer has the branch; the local remote-tracking ref is stale.
+  - `reason=remote-fetch-timeout` — the consultation exceeded the wall-clock bound.
+  - `reason=remote-fetch-failed` — `origin` advertised the branch but fetching it failed.
+- **Solution**: restore access to the remote and re-run, or raise `KIT_WORKTREE_FETCH_TIMEOUT=<seconds>` (default `60`) for a merely slow remote. If the remote branch is genuinely gone and you want a fresh branch from your current base, prune the stale ref first: `git remote prune origin` (or `git update-ref -d refs/remotes/origin/<branch>`). Nothing is created by a refusal — no local branch, no worktree directory — so retrying is safe.
+
+### Problem: `worktree.sh create` warns about a divergence
+- **Symptom**: `worktree.sh: WARNING: divergence for '<branch>': local <sha> vs origin/<branch> <sha> — …; resolving to the LOCAL ref`
+- **Cause**: both `refs/heads/<branch>` and `refs/remotes/origin/<branch>` exist at different shas. The local ref always wins — forcing the remote over it would discard unpushed local commits.
+- **Solution**: the worktree is usable as-is; reconcile deliberately with `git merge`, `git rebase`, or `git reset --hard origin/<branch>` once you know which side you want. Note the origin sha in the warning is the **cached** remote-tracking ref — no fetch runs on this path — so run `git fetch origin <branch>` before trusting the comparison.
+
 ## Sprint Queue Visibility
 
 ### Problem: Sprint queue exits 2 refusing to dispatch off an "under-read roster"
