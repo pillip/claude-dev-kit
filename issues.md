@@ -58,6 +58,7 @@
 - [ ] ISSUE-085: Backfill the paired gate evidence for the ten shipped gates SPEC-081 recorded as unevidenced _(track: platform, P2, 1d — ten blocking guards carry neither a disarm battery nor a composite pin, and `verify_hollow_tests.py` has no test module at all; test surface only, behaviour unchanged; depends on 081)_
 - [ ] ISSUE-086: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, after repairing attribution _(track: platform, P1, 1.5d — durable carrier for SPEC-081 amendment decision 2: recall is 4/6 genuine gate-adders, both false negatives refuse by `return None`, and recovering the recall costs 1 false BLOCK per 2 recalls because attribution cannot see a battery driven through a test helper — attribution must be repaired first; depends on 081)_
 - [ ] ISSUE-087: Widen or honestly bound the gate-evidence detection boundary, and stop reporting a miss as "no gate-adding change" _(track: platform, P2, 1d — durable carrier for SPEC-081 amendment decision 3: a gate is seen only inside an added `def` in a changed non-test `.py` file, so module-level gates, the kit's own eight `.sh` scripts, test-named source files and `class`-hinted hunks all print the byte-identical gate-free PASS line; commit 7949ccb, written to harden this gate, is invisible to it; depends on 081)_
+- [ ] ISSUE-088: Decide the successor mechanism for the disarm-DIRECTION obligation, or decline the property outright _(track: platform, P1, 1d — durable carrier for SPEC-081 amendment decision 8: after the 2026-10-24 tier split the direction property is advisory, so the arm-only shape that shipped four consecutive fail-opens passes with a printed note; polarity is undecidable for a detector-shaped gate (598 of 4047 assert lines credited, ~40% bare counts), Option A and Option D are each 0 of 4, and the per-battery misclassification rate is 16 of 27 — decision issue, SPEC required, not a tightening of the direction predicate; depends on 081)_
 
 ### Doing
 
@@ -4683,7 +4684,7 @@ The step-4f boundary gate can no longer be disarmed by a `Status:` value it does
 - PRD-Ref: none (kit self-development; learning-loop escalation per the ISSUE-033 native-memory review-lessons rule, Frequency >= 3 + High; instance carriers ISSUE-080, GAP-076*, GAP-078h..p)
 - Priority: P1
 - Estimate: 1d
-- Status: waiting
+- Status: doing
 - Owner:
 - Branch: issue/ISSUE-081-gate-evidence
 - GH-Issue: 136
@@ -5184,5 +5185,85 @@ The `review/gate-evidence` phase either sees a gate at module level, in a non-Py
 
 #### Rollback
 `git revert` the PR. The verdict-vocabulary half is wording plus a generated-template regeneration, so reverting restores the misleading `no gate-adding change` line — which is the defect, not a safe state; prefer reverting a widening and **keeping** the wording fix. Each widening is independently revertible: reverting one restores today's silent miss for that boundary only, which under-detects and therefore cannot block an honest review. If a widening is reverted, the verdict line must be updated in the same commit to re-disclose the boundary it stops searching, or the revert reintroduces the false claim this issue exists to remove.
+
+---
+
+### ISSUE-088: Decide the successor mechanism for the disarm-DIRECTION obligation, or decline the property outright
+
+> Durable carrier for **SPEC-081 amendment decision 8** (2026-10-24), filed because a deferred finding is only real if it has a durable carrier and a PR body is not one (review lesson 15). The 2026-10-24 tier split (decision 6) keeps `missing-disarm-battery` blocking — it is decidable, firing only when `attributed == []` — and demotes `missing-refusal-direction` and `missing-composite-pin` to **advisory**, because both route through `_refusal_shaped` and predicate polarity is not decidable. **The split makes the gate truthful; it does not make it effective against an arm-only author.** An arm-only author's tests do call the gate and do carry a vacuity guard, so they are *attributed* and never trip the decidable half; what they trip is `missing-refusal-direction`, which now advises. **The exact authoring shape that shipped four consecutive fail-opens passes `review/gate-evidence` with a printed note.** This issue owns the decision about what, if anything, replaces the lost property.
+>
+> **This is a DECISION issue first (SPEC required), not an implementation issue.** Four measurements, all already taken, are the evidence that a better regex is the wrong answer — this issue must not be read as "tighten the direction predicate":
+>
+> 1. **Polarity is undecidable for a detector-shaped gate.** For a detector, the disarm direction is correctly written `assert detected is True` — the arm-shaped expectation **is** the refusal. No lexical rule can resolve this; it depends on the gate's semantics.
+> 2. **The credited-assertion census is mostly noise.** Over this repo's own **4047** assert lines, **598 (14.8%)** are credited as refusal assertions, and about **40%** of the credited lines are bare `== 1` / `== 2` counts that say nothing about refusal.
+> 3. **The committed decisive fixture returned to `exit 0` through the real consumer** on batteries whose only "refusal" was `assert response.status_code == 200` — 2xx is success, and `_refusal_shaped` hard-codes non-zero-int-means-refusal.
+> 4. **The direction predicate's hand-classified per-battery misclassification rate is 16 of 27** (recorded by the 2026-10-14 amendment).
+>
+> **The candidate successor named by the amendment: attestation plus a reviewer obligation** — a per-gate declaration naming the test that carries the refusal and the polarity that test asserts, checked by a human reviewer who is *told which gates were detected*, with the **detection** half (decidable, already works) feeding it the gate list mechanically.
+>
+> **The tension this issue must resolve rather than paper over.** SPEC-081 already measured attestation-shaped mechanisms at **0 of 4**: Option A (prose obligation, native-memory lesson live for 2 of the 4) is 0 of 4, and Option D (PR-body checklist) is 0 of 4 because all four PR bodies were conscientious and accurate-sounding. A successor that is *only* an attestation therefore repeats a measured failure. The one thing that distinguishes the candidate is that the detection half supplies the gate list **mechanically**, so the obligation is not self-reported from nothing. The SPEC must argue that difference with a stated falsifier, or decline the whole property explicitly. A third deferral is not an outcome.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-081 amendment decision 8 carrier. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier — a PR body is not one", "work added to satisfy a request for a DECISION ships without acceptance criteria", "a newly added defence must be tested in the DISARM direction and through its real consumer", "a hand-rolled parser must match the oracle's edge cases AND its intended boundary — prefer an occurrence-whitelist to a phrasing blacklist")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-081
+
+#### Goal
+The disarm-**direction** property has an owner and a written verdict: either a successor mechanism is adopted with a measured argument for why it is not the attestation shape SPEC-081 already measured at 0 of 4, or the property is declined outright and `review/gate-evidence` is recorded — in SPEC-081 and in its user-facing text — as permanently limited to its decidable half.
+
+#### Scope (In/Out)
+- In:
+  - **A SPEC whose Decision is one of exactly two outcomes**: ADOPT a named successor mechanism for the disarm-direction property, or DECLINE the property. The three measurements above are inputs to that choice, not a tuning backlog.
+  - On the ADOPT branch: the measured argument that separates the successor from Option A (**0 of 4**) and Option D (**0 of 4**), naming what the detection half supplies that neither prior had, plus the one mechanical seam that makes the claim real — the detection half emitting a per-gate declaration slot into the phase output — and that seam's disarm-direction test through the real consumer.
+  - On the DECLINE branch: writing the limitation into SPEC-081 and into the user-facing phase text, so no artifact claims the phase enforces direction.
+  - Resolving SPEC-081's `ISSUE-088` Open Question entry either way, with a one-line pointer to the Decision.
+- Out:
+  - **Re-tightening `_refusal_shaped`, `REFUSAL_PATTERNS`, or the direction regex.** The four measurements are the evidence that a better regex is the wrong instrument; a PR that edits those vocabularies fails AC-4 by construction.
+  - **Re-opening the tier split.** Decision 6 stands: `BLOCKING_KINDS` membership is unchanged by this issue, in either direction, and the phase stays out of `ADVISORY_PHASES`.
+  - ISSUE-084's duplicated-oracle decision; ISSUE-085's backfill of the ten unevidenced shipped gates; ISSUE-086's refusal vocabulary and attribution repair (blocked behind repairing attribution); ISSUE-087's detection boundary, verdict vocabulary, and the self-application-criterion question. This issue **consumes** whatever detection half those leave and must not pre-empt any of them.
+  - A general attestation framework for other review phases. The subject is `review/gate-evidence`'s detected gates and nothing else.
+  - SPEC-081's 5th-PR tuning Open Question (`MIN_VARIANTS`, refusal vocabulary).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given SPEC-088 at `Status: accepted`, when its Decision section is read, then it records exactly one of two outcomes — **ADOPT** a named successor mechanism or **DECLINE** the disarm-direction property — and the unchosen branch is recorded together with the measurement that rejected it. A Decision that defers the choice to a further carrier fails this AC.
+- [ ] Given the **ADOPT** branch, when the Decision is read, then it states in writing why the successor is not Option A (**0 of 4**) or Option D (**0 of 4**), names the mechanical property that distinguishes it (the detection half supplies the gate list rather than the author self-reporting from nothing), and states the **falsifier** — the observation that would prove the successor is Option D with extra steps. A Decision asserting the difference with no falsifier fails this AC.
+- [ ] Given the **DECLINE** branch, when the review path's artifacts are read, then SPEC-081 and the user-facing phase text both state that `review/gate-evidence` is permanently limited to the decidable half (a gate with **no attributed battery at all**) and that the arm-only authoring shape is **not** caught; and the exact claim strings this issue removes occur **0** times across `skills/review/SKILL.md.tmpl`, the generated `skills/review/SKILL.md`, `agents/team-lead.md` and the rendered verdict strings in `scripts/verify_gate_evidence.py` — asserted as an occurrence count over the literal strings actually removed (an occurrence-whitelist), never as a phrasing blacklist.
+- [ ] Given the impl PR's own diff, when `scripts/verify_gate_evidence.py` is inspected, then `_refusal_shaped`, `REFUSAL_PATTERNS`, `_CONSUMER_RE` and `BLOCKING_KINDS` are **byte-unchanged** — this issue changes the mechanism that carries the property, not the predicate the measurements already rejected, and not the tier split that created the residual.
+- [ ] Given a detector-shaped gate fixture whose genuine disarm battery is written `assert detected is True`, when the shipped branch runs through `bash scripts/checkpoint.sh --skill review --phase gate-evidence`, then **exactly one** of these holds and a test asserts which, by the exact rendered string: the successor surfaces a per-gate declaration slot naming that gate, **or** the output states that the direction property is not enforced for it. Today this class is the permanently undecidable one the amendment concedes, so pinning the chosen behaviour is what stops it being narration.
+- [ ] Given the **ADOPT** branch, when the gate-list hand-off is mutated out (detected gates no longer reach the declaration surface), then at least **1** test fails, and at least **1** of the failing tests drives the real consumer `bash scripts/checkpoint.sh --skill review --phase gate-evidence` rather than `analyze()` alone — the successor's own new defence is pinned in the disarm direction and through its real consumer.
+- [ ] Given ISSUE-081's four committed fixtures, when they are replayed after this change, then the exit codes are unchanged at `issue_078_pre_fix` **1**, `issue_078_post_fix` **1**, `issue_074_non_gate` **0**, `issue_056_colliding_main` **1**, and the per-fixture blocking/advisory finding split is identical to the post-split table — a successor that re-tiers anything as a side effect fails this AC.
+- [ ] Given this issue closes, when SPEC-081's Open Questions and `issues.md` are read, then the `ISSUE-088` entry is marked resolved with a pointer to the Decision, and every residual this issue does not close carries its own named durable carrier rather than prose — including, on the ADOPT branch, how the successor's own failure rate will be measured after it lands.
+
+#### Implementation Notes
+- Read `docs/specs/SPEC-081.md` `## Amendment — 2026-10-24` decisions **6** and **8** before anything else. Decision 6 is what makes this residual exist; without the tier split there is no advisory direction finding to succeed.
+- Review lesson 14 is why the SPEC is the deliverable and not a preamble: work added to satisfy a request for a *decision* ships without acceptance criteria, and that is where the defects are. The ACs above exist so the decision's artifact has them before any code is written.
+- The honest framing of the ADOPT case, which the SPEC must either sustain or abandon: Options A and D failed as **unassisted** obligations — a prose lesson nobody re-reads and a checklist filled in from memory. The candidate's only structural difference is that the gate list arrives mechanically from a detection half that is decidable and already works. If a reviewer can satisfy a per-gate declaration without opening the named test, the successor **is** Option D, and the SPEC should say so and decline.
+- `BLOCKING_KINDS` is the single source of truth for the tier (amendment decision 6). If the successor renders anything, derive from it; a kind that is advisory in the renderer and blocking in the consumer — or the reverse — is a new fail-open of exactly the shape ISSUE-081 exists to stop.
+- `skills/review/SKILL.md` is **generated**; write any wording in `skills/review/SKILL.md.tmpl` and regenerate with `python3 scripts/gen_skills.py`, or `tests/test_gen_skills.py` will fail on template-to-generated drift.
+- Do **not** state the successor's self-run as a required output number. ISSUE-087 recorded the measured hazard: an instruction to make a self-application figure come out at a particular value created an incentive to write code the detector could not see. Ask for the self-run to be reported and explained.
+- Split trigger: if the ADOPT branch's implementation grows beyond the SPEC plus the gate-list hand-off and its tests, land those two here and file a durable carrier for the rest rather than pushing past the estimate. A successor shipped half-measured is the failure this issue was filed to avoid.
+- Open questions, stated rather than filled in: (a) **who the reviewer obligation binds on the primary review path** is unmeasured — the correctness dimension is delegated to a runtime skill whose prompt the kit does not own (SPEC-081 Context), and on CC 2.1.224 a `Skill` grant does not imply provisioning (ISSUE-072); (b) whether a per-gate **polarity declaration** subsumes the existing `GATE-EVIDENCE-EXEMPT(<symbol>)` escape or duplicates it is undecided — SPEC-081's final Open Question asks the same thing from the other end, and two overlapping escapes are worse than one; (c) the attestation's own failure rate **cannot be measured from history**, because no attestation surface has ever run in this repo, so the SPEC must state how it will be measured after landing instead of claiming a rate.
+
+#### Tests
+- [ ] `python3 scripts/validate_spec.py docs/specs/SPEC-088.md` exits 0 — at least 2 options, each carrying a measurable trade-off line.
+- [ ] Four-fixture replay: exit codes 1 / 1 / 0 / 1 and the per-fixture blocking-vs-advisory finding split identical to the recorded post-split values.
+- [ ] Detector-shaped gate fixture (`assert detected is True` as the genuine disarm battery): the chosen behaviour asserted as an exact rendered string through the real consumer.
+- [ ] ADOPT branch only — gate-list hand-off test plus its disarm mutation, with at least 1 kill observed through `bash scripts/checkpoint.sh --skill review --phase gate-evidence`.
+- [ ] DECLINE branch only — occurrence count of each exact removed claim string is 0 across the four named artifacts, and the generated `skills/review/SKILL.md` matches its template.
+- [ ] No-tax regression: `issue_074_non_gate.diff` stays at 0 gates / 0 findings / exit 0 — a successor must cost an ordinary PR nothing.
+
+#### Rollback
+`git revert` the PR. On the **ADOPT** branch, reverting removes the declaration surface and returns the direction property to today's advisory printed note — the post-split state, which under-enforces but cannot block an honest review, so the revert is safe in the over-detection direction. On the **DECLINE** branch, reverting restores text that over-claims what the phase enforces, which is the defect rather than a safe state; prefer re-landing the wording over reverting it. In **neither** case may a revert move a finding kind between tiers: `BLOCKING_KINDS` is untouched by this issue, and a revert that changes it has reverted decision 6 by accident.
 
 ---
