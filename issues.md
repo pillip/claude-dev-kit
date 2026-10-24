@@ -3877,11 +3877,11 @@ An issue registered in issues.md during a running sprint becomes visible to `spr
 - PRD-Ref: none (kit self-development; ISSUE-067 review triage — unresolved High + 2 Mediums in the same module; review lesson "Workspace-persisted state consumed by auto-running hooks is untrusted input — validate on read", write-side corollary from the ISSUE-058 review — native memory review-lessons.md)
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-070-telemetry-containment
+- GH-Issue: #140
+- PR: #141 https://github.com/pillip/claude-dev-kit/pull/141
 - Depends-On: ISSUE-067
 
 #### Goal
