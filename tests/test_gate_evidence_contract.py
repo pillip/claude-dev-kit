@@ -42,6 +42,11 @@ AC coverage map:
 * AC-5 → ``TestAC5TheMechanismIsSubjectToItsOwnRule`` (disarm battery),
   ``TestAC5CompositePinThroughTheRealConsumer`` (composite, via the
   ``verify_checkpoint.py`` CLI), ``TestAC5MutationMatrix`` (both directions)
+* AC-9.4 → ``TestAC5MutationMatrix``'s AC-9.4 section: the three mutants the
+  attempt-3 review measured SURVIVING — ``_CONDITIONAL`` neutered to match
+  every line, ``MIN_VARIANTS: 3 -> 1``, ``_TERNARY_GAP: 400 -> 40`` — each
+  isolated on a constructed diff, because the four committed fixtures are
+  byte-identical under all three and would record false survivors.
 """
 
 from __future__ import annotations
@@ -1112,6 +1117,66 @@ _SINGLE_CASE_DIFF = _DEMO_GATE_SOURCE + _DEMO_TEST_HEADER + """@@ -0,0 +1,6 @@
 _DEMO_GATE = "blocked_marker_is_absent"
 _DEMO_GATE_PATH = "scripts/demo_gate.py"
 
+# ── AC-9.4: the three mutants attempt 3 measured SURVIVING ───────────
+#
+# Each is isolated on a CONSTRUCTED diff for exactly the reason the note above
+# `_REAL_MUTANTS` gives, not because a real-fixture pin would be nicer:
+# neutering `_CONDITIONAL` to match every line left all four committed
+# fixtures BYTE-IDENTICAL and the suite green, so adding it to the real-fixture
+# matrix would have recorded a fourth false survivor instead of a kill.
+
+#: A REFUSAL with NO CONDITIONAL — the ordinary "write the complaint, hand back
+#: the failing exit code" reporter. SPEC-081 defines "adds a gate" as BOTH a
+#: conditional AND a refusal among the diff-added lines, and this supplies only
+#: the refusal half, so it must not be detected. Neutering `_CONDITIONAL`
+#: deletes the other half of that definition and makes this a gate.
+_NO_CONDITIONAL_GATE = "refuse_zzmarked_payload"
+_NO_CONDITIONAL_REFUSAL_DIFF = (
+    "diff --git a/scripts/zz_reporter.py b/scripts/zz_reporter.py\n"
+    "--- a/scripts/zz_reporter.py\n"
+    "+++ b/scripts/zz_reporter.py\n"
+    "@@ -0,0 +1,3 @@\n"
+    f"+def {_NO_CONDITIONAL_GATE}(text: str) -> int:\n"
+    "+    sys.stderr.write(text)\n"
+    "+    return 1\n"
+)
+
+#: The POSITIVE control, on otherwise identical bytes: the SAME function with
+#: the SAME refusal (`return 1` survives verbatim), made CONDITIONAL by one
+#: added ternary. Without it the pin above would pass just as happily over a
+#: diff nothing ever parsed.
+_CONDITIONAL_CONTROL_DIFF = _NO_CONDITIONAL_REFUSAL_DIFF.replace(
+    "+    return 1\n", '+    return 1 if "ZZMARK" in text else 0\n'
+)
+
+#: A gate whose ONLY conditional is a ternary, so `_TERNARY_GAP` alone decides
+#: whether it is seen. `TestAPathologicalLineCannotHangTheCheckpoint` pinned
+#: that constant with a wall-clock budget only, and a NARROWER bound satisfies
+#: a wall-clock budget even better — which is why `400 -> 40` survived.
+_WIDE_TERNARY_GATE = "refuse_wide_ternary_payload"
+
+
+def _ternary_gate_diff(terms: int) -> str:
+    """A one-ternary gate whose `if`...`else` gap grows with `terms`."""
+    condition = " and ".join(
+        f"not flags.marker_{index}" for index in range(terms)
+    )
+    return (
+        "diff --git a/scripts/zz_ternary.py b/scripts/zz_ternary.py\n"
+        "--- a/scripts/zz_ternary.py\n"
+        "+++ b/scripts/zz_ternary.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        f"+def {_WIDE_TERNARY_GATE}(flags) -> int:\n"
+        f"+    return 1 if {condition} else 0\n"
+    )
+
+
+def _ternary_gap(diff_text: str) -> int:
+    """Characters between the ternary's `if` and its `else`, measured."""
+    line = next(line for line in diff_text.split("\n") if " if " in line)
+    return line.index(" else ") - (line.index(" if ") + len(" if "))
+
+
 # A diff in which git rendered a non-test `.py` SOURCE file as BINARY instead
 # of as text — what ONE committed `.gitattributes` line (`*.py -diff`) does to
 # every `.py` file in a repository. Byte-for-byte the shape real `git diff`
@@ -1197,6 +1262,15 @@ _ARM_ONLY_DIFF = (
              "blocked_marker_is_absent(text) is True")
     .replace("assert rc == 1", "assert rc == 0")
     .replace("cannot_be_disarmed", "is_armed")
+)
+
+#: The same diff with ONE variant removed and nothing else changed, so the two
+#: batteries are right in every respect except that they varied the input
+#: twice. Isolates the VALUE of `MIN_VARIANTS`, which `_SINGLE_CASE_DIFF`
+#: cannot: one case is below every candidate floor, so removing the floor
+#: entirely (0) kills a mutant that a floor of 1 survives. AC-9.4.
+_TWO_VARIANT_DIFF = _BOTH_DIRECTIONS_DIFF.replace(
+    '+    "**BLOCKED-MARKER**",\n', ""
 )
 
 
@@ -1352,6 +1426,134 @@ class TestAC5MutationMatrix:
         assert _finding_for(disarmed, _DEMO_GATE) is None, (
             "mutant SURVIVED: removing the variant floor must let a single "
             "case clear both halves"
+        )
+
+    # ── AC-9.4: the three survivors attempt 3 measured ───────────────
+
+    def test_a_refusal_with_no_conditional_is_not_a_gate(self):
+        """Both halves of "adds a gate" are required, on near-identical bytes.
+
+        Measured before this pin existed: replacing `_CONDITIONAL`'s body with
+        `r""` so it matches every line left the whole suite green and all four
+        committed fixtures byte-identical — half of SPEC-081's own definition
+        of its subject was deletable in silence. A function that ALWAYS
+        refuses is an error reporter, and charging its author with evidencing
+        a disarm direction is the false-positive tax AC-3 forbids.
+        """
+        # Fixture pin, read from the module's own vocabulary rather than
+        # re-typed: the REFUSAL half really IS satisfied here, so the
+        # non-detection below can only be the conditional half's doing.
+        assert any(
+            pattern.search("    return 1") for pattern in vge.REFUSAL_PATTERNS
+        ), vge.REFUSAL_PATTERNS
+
+        assert vge.analyze(_NO_CONDITIONAL_REFUSAL_DIFF).gates == (), (
+            "a refusal with no conditional is not a gate; if this now passes, "
+            "`_CONDITIONAL` has stopped being half of the definition of "
+            "'adds a gate' and every unconditional `return 1` arms the phase"
+        )
+
+        # POSITIVE CONTROL on otherwise identical bytes — the same refusal,
+        # made conditional by one added ternary. Without it the assertion
+        # above would pass over a diff the parser never read.
+        assert _NO_CONDITIONAL_GATE in {
+            gate.symbol for gate in vge.analyze(_CONDITIONAL_CONTROL_DIFF).gates
+        }, "control: one added ternary must make the same bytes a gate"
+
+    def test_the_conditional_half_is_load_bearing(self, monkeypatch):
+        """Mutation pin: matching everything must turn the reporter INTO a gate."""
+        assert vge.analyze(_NO_CONDITIONAL_REFUSAL_DIFF).gates == ()
+        monkeypatch.setattr(vge, "_CONDITIONAL", re.compile(""))
+        assert _NO_CONDITIONAL_GATE in {
+            gate.symbol
+            for gate in vge.analyze(_NO_CONDITIONAL_REFUSAL_DIFF).gates
+        }, "mutant SURVIVED: `_CONDITIONAL` is not what holds this diff off"
+
+    def test_two_variants_are_not_a_battery(self):
+        """The floor's VALUE, not only the rule: `MIN_VARIANTS: 3 -> 1` survived.
+
+        `test_the_variant_floor_is_load_bearing` above removes the floor
+        ENTIRELY (0) on a one-case diff, and a floor of 1 passes that pin
+        unharmed. Two variants is the smallest input that can tell 3 from 1.
+        """
+        kept = [
+            line
+            for line in _TWO_VARIANT_DIFF.split("\n")
+            if line.startswith('+    "') and "BLOCKED-MARKER" in line
+        ]
+        assert len(kept) == 2, kept          # fixture pin: exactly two
+
+        two = vge.analyze(_TWO_VARIANT_DIFF)
+        assert _verdict(two, _DEMO_GATE) == {"disarm": False, "composite": False}
+        finding = _finding_for(two, _DEMO_GATE)
+        assert finding is not None and finding.kind == "missing-disarm-battery"
+
+        # POSITIVE CONTROL on otherwise identical bytes: put the third variant
+        # back and the very same two batteries clear both halves.
+        assert vge.analyze(_BOTH_DIRECTIONS_DIFF).findings == ()
+
+    def test_the_variant_floor_sits_at_three_not_lower(self, monkeypatch):
+        """Mutation pin: at a floor of 2, the two-variant diff must clear."""
+        finding = _finding_for(vge.analyze(_TWO_VARIANT_DIFF), _DEMO_GATE)
+        assert finding is not None, "baseline: two variants are not a battery"
+        monkeypatch.setattr(vge, "MIN_VARIANTS", 2)
+        assert _finding_for(vge.analyze(_TWO_VARIANT_DIFF), _DEMO_GATE) is None, (
+            "mutant SURVIVED: lowering the floor to 2 must let a two-variant "
+            "battery clear both halves"
+        )
+
+    def test_a_ternary_inside_the_gap_bound_is_a_conditional(self):
+        """`_TERNARY_GAP: 400 -> 40` survived, because only a BUDGET pinned it.
+
+        `TestAPathologicalLineCannotHangTheCheckpoint` asserts the scan is
+        fast, and a narrower bound is faster still, so nothing said how wide a
+        REAL ternary is allowed to be. 110 characters between `if` and `else`
+        is an ordinary multi-clause condition, and losing it is a fail-OPEN:
+        the gate stops being detected at all.
+        """
+        diff_text = _ternary_gate_diff(5)
+        # Fixture pin: deliberately parked between the mutant's 40 and the
+        # shipped 400, so this diff separates them and nothing else does.
+        assert _ternary_gap(diff_text) == 110, _ternary_gap(diff_text)
+        assert _WIDE_TERNARY_GATE in {
+            gate.symbol for gate in vge.analyze(diff_text).gates
+        }, (
+            "the ternary is the only conditional here; if it stopped "
+            "counting, `_TERNARY_GAP` was narrowed below any real ternary and "
+            "gate detection fails OPEN on every ternary-guarded refusal"
+        )
+
+    def test_a_ternary_past_the_gap_bound_is_the_documented_blind_spot(self):
+        """The direction the bound DOES fail — deliberately, and recorded.
+
+        Same shape as `_MAX_SCAN_CHARS`'s blind-spot pin: a bound tested on
+        one side only is a claim, not a boundary.
+        """
+        diff_text = _ternary_gate_diff(23)
+        assert _ternary_gap(diff_text) > vge._TERNARY_GAP   # fixture pin
+        assert vge.analyze(diff_text).gates == (), (
+            "`_TERNARY_GAP` is documented as far past any real ternary; if "
+            "this now passes the bound was widened and the docstring is stale"
+        )
+
+    def test_the_ternary_gap_bound_is_load_bearing(self, monkeypatch):
+        """Mutation pin: narrowing ONLY the gap must hide the 110-char ternary."""
+        diff_text = _ternary_gate_diff(5)
+        assert _WIDE_TERNARY_GATE in {
+            gate.symbol for gate in vge.analyze(diff_text).gates
+        }
+        # The SHIPPED pattern with only its gap quantifier rewritten — not a
+        # re-typed copy of it, which would be a second oracle to keep in sync.
+        narrowed = re.compile(
+            vge._CONDITIONAL.pattern.replace(
+                f"{{0,{vge._TERNARY_GAP}}}", "{0,40}"
+            )
+        )
+        assert narrowed.pattern != vge._CONDITIONAL.pattern, narrowed.pattern
+        monkeypatch.setattr(vge, "_CONDITIONAL", narrowed)
+        assert vge.analyze(diff_text).gates == (), (
+            "mutant SURVIVED: the `if`...`else` gap bound is not what admits "
+            "this ternary"
         )
 
 
