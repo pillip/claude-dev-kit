@@ -105,6 +105,52 @@ release tags are `claude-dev-kit--v<version>`.
 
 ### Fixed
 
+- **The telemetry fallback announcement is scarce again — the unset knob is
+  recorded, not announced, and the stream finally has a named consumer**
+  (ISSUE-071, PR #143) — the last unresolved High carried out of the ISSUE-067
+  review. `KIT_RUN_ID` had **no producer anywhere in the kit**, so ISSUE-067's
+  fallback announcement fired on **100% of runs**: every gate checkpoint in
+  every project printed one `[kit-telemetry] fallback: KIT_RUN_ID unset …` line
+  and appended to a file **no code read on any default path**. A line emitted on
+  every run carries zero information, which defeated ISSUE-067's own Goal that
+  "'no signal' can no longer be confused with 'all clear'" — that requires the
+  signal be **scarce**.
+  **Resolution (b), taken to zero lines.** An **unset** knob is the kit's
+  default state, so it is now recorded only in the event body
+  (`run_id_fallback`) and announced on **no stream at all**. An **invalid**
+  value is a human misconfiguration — rare and actionable — so it keeps its
+  single stdout line **naming the knob**. Exactly one announcement went quiet:
+  an AST diff of announcement sites during review confirmed **12 before and 12
+  after**, with one guard changed.
+  **Resolution (a) was rejected on a mechanism fact, not a preference.** A
+  `SessionStart` hook cannot export an env var into the agent's later Bash
+  calls, so a producer would need a run-id **file** read as untrusted workspace
+  input, two hook surfaces kept in sync, and — under an installed-plugin layout
+  — new lifetime and containment contracts inside the *user's* project.
+  Recorded as **GAP-071a**.
+  **The stream now has a named consumer.** `scripts/trace_query.py summary`
+  reads `.claude/runs/*.jsonl` on its default path and reports script events
+  plus an `unattributed events` count, so the file the emitter writes is a file
+  something reads. Written-path == read-path is pinned by **object identity**
+  between the production constants, not a re-typed literal.
+  Review verdict **PASS-with-fixes**, and the review found and fixed a **High**
+  on the new reader: `print_summary` interpolated untrusted `session_id` /
+  `event_type` **unescaped**, letting a crafted event forge a clean-looking
+  aggregate (`unattributed events: 0` while the true count was **2**) with raw
+  ANSI — reproduced end-to-end through the real emitter CLI. Per
+  `CONTRIBUTING.md`'s Kept-Surface Criterion this is **bucket C (verification
+  core)**. On `main` the suite goes **2464 → 2486 passing** with **1 skipped**
+  (an unprivileged `mknod` of a character device); the +22 decomposes as 25 new
+  ids against 3 renamed away, and the totals are measured on a working copy
+  carrying untracked `docs/sprint_state.archive-*.md` files that three
+  parametrized classes glob, so they are not a reproducible floor.
+  **Known residuals, recorded rather than overstated.** `trace_query.py`'s
+  **read** path still lacks the write path's node/symlink hardening — a planted
+  FIFO hangs it; nothing auto-invokes it, so it wedges a terminal, not a gate —
+  and the emitter and the consumer share the path **layout** constant but not
+  the **root**, so worktree-emitted streams are not read by a default invocation
+  from the main root. The team-lead is filing carriers for both.
+
 - **The telemetry emitter's containment check can now fail, a planted FIFO can
   no longer hang a gate, and the "NEVER raises" contract is true rather than
   advertised** (ISSUE-070, PR #141) — the three defects carried out of the
