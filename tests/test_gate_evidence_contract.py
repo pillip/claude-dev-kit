@@ -5070,6 +5070,59 @@ _TINY_BUDGET = "0.000001"
 _TIMEOUT_GATES = 80
 _TIMEOUT_INPUT = _dense_pair(_TIMEOUT_GATES, _TIMEOUT_GATES)
 
+#: The character count handed to `_Deadline`, so the refusal message's `{size}`
+#: field has a constant to be checked against across every variant.
+_DEADLINE_SIZE = 4096
+
+
+class _Clock:
+    """A `time`-shaped stand-in whose SECOND reading is `advance` later.
+
+    `_Deadline` reads the clock once in `__init__` and once per `check()`, so
+    this is the whole surface it needs. It replaces the module-global name
+    ``vge.time``, not the stdlib module: a `sleep` long enough to blow a 60 s
+    default is not a test, and patching `time.monotonic` itself would reach
+    into pytest's own internals for the duration.
+    """
+
+    def __init__(self, advance: float) -> None:
+        self._advance = advance
+        self._started = False
+
+    def monotonic(self) -> float:
+        if not self._started:
+            self._started = True
+            return 0.0
+        return self._advance
+
+
+#: `(knob value, seconds the clock advances before `check()`)`. Every row is a
+#: genuinely different way to arrive past the budget: the knob's own value, and
+#: each of the three paths through `_timeout_budget`'s FALLBACK (empty,
+#: non-numeric, non-positive) — a bound that only holds when the operator set a
+#: valid knob is not a bound — plus a raised knob, and the one-microsecond case
+#: that pins the `<=` boundary from the refusal side. The parameters feed only
+#: the INPUT: the expectation is the same constant refusal on every row.
+_OVER_BUDGET_CONDITIONS = [
+    pytest.param("0.000001", 0.001, id="tiny_knob_budget"),
+    pytest.param("", 3600.0, id="empty_knob_falls_back_and_still_bounds"),
+    pytest.param("abc", 120.0, id="non_numeric_knob_falls_back_and_still_bounds"),
+    pytest.param("-5", 60.5, id="non_positive_knob_falls_back_and_still_bounds"),
+    pytest.param("90", 90.5, id="a_raised_knob_is_still_a_bound"),
+    pytest.param("", 60.000001, id="one_microsecond_past_the_default"),
+]
+
+#: The positive control for the battery above: without it, a `check()` that
+#: raised unconditionally would satisfy every row of it. Includes both
+#: exactly-at-budget cases, because `elapsed <= budget` returns and the two
+#: tables together are what hold that boundary where it is.
+_INSIDE_BUDGET_CONDITIONS = [
+    pytest.param("0.000001", 0.0, id="no_time_has_passed"),
+    pytest.param("", 59.9, id="inside_the_default"),
+    pytest.param("", 60.0, id="exactly_at_the_default_is_inside"),
+    pytest.param("90", 90.0, id="exactly_at_a_raised_budget_is_inside"),
+]
+
 
 class TestTheAnalysisBudgetKnob:
     """`KIT_GATE_EVIDENCE_TIMEOUT`, with the house semantics of its siblings.
@@ -5134,6 +5187,50 @@ class TestTheAnalysisRefusesPastItsBudget:
     the DISARM direction and through its real consumers, not only at its
     helper.
     """
+
+    @pytest.mark.parametrize("knob,advanced", _OVER_BUDGET_CONDITIONS)
+    def test_the_deadline_refuses_every_over_budget_condition(
+        self, monkeypatch, knob, advanced
+    ):
+        """The DISARM battery for `_Deadline.check` itself (ISSUE-081 AC-5).
+
+        The gate this phase adds is subject to its own rule, so the bound gets
+        the battery it demands of everyone else: every distinct way of being
+        past the budget, each asserting that `check()` REFUSES rather than
+        returning, with a constant expectation on every row.
+        """
+        monkeypatch.setenv(_TIMEOUT_ENV, knob)
+        monkeypatch.setattr(vge, "time", _Clock(advanced))
+
+        deadline = vge._Deadline(_DEADLINE_SIZE)
+        with pytest.raises(vge.AnalysisTimeout) as excinfo:
+            deadline.check()
+
+        message = str(excinfo.value)
+        # A refusal must ANNOUNCE itself as one. An analysis that stopped
+        # half-way and renders like a verdict is the fail-open the bound
+        # exists to stop, and the boolean alone cannot tell the two apart.
+        assert message.split(":")[0] == "REFUSED (not clean)", message
+        assert GATE_FREE not in message, message
+        # Review lesson 2 — print the knob that remediates it, and the input
+        # size, so the operator can act on the refusal without reading source.
+        assert _TIMEOUT_ENV in message, message
+        assert str(_DEADLINE_SIZE) in message, message
+
+    @pytest.mark.parametrize("knob,advanced", _INSIDE_BUDGET_CONDITIONS)
+    def test_the_deadline_returns_inside_its_budget(
+        self, monkeypatch, knob, advanced
+    ):
+        """Positive control: the battery above is not false for ALL inputs.
+
+        A `check()` that raised unconditionally would satisfy every row of it
+        and would also make this blocking phase unusable, so the arm direction
+        is pinned on the same clock, including both exactly-at-budget cases.
+        """
+        monkeypatch.setenv(_TIMEOUT_ENV, knob)
+        monkeypatch.setattr(vge, "time", _Clock(advanced))
+
+        assert vge._Deadline(_DEADLINE_SIZE).check() is None
 
     def test_analyze_refuses_rather_than_returning_a_report(self, monkeypatch):
         monkeypatch.setenv(_TIMEOUT_ENV, _TINY_BUDGET)
@@ -5467,6 +5564,71 @@ def _repo_with_a_stale_local_trunk(tmp_path: Path) -> tuple[Path, str, str]:
     return repo, root, fork
 
 
+def _relation_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """Every graph shape `_is_strict_ancestor` can be asked about, in one repo.
+
+    ``root -> fork -> mid -> head`` on `work`; `sibling` diverges from `fork`,
+    so the two share an ancestor and neither reaches the other; `island` is an
+    ORPHAN root, so there is no shared ancestor at all. Those last two are
+    different graph shapes rather than two spellings of one — a defence
+    exercised only across the graft is not exercised on the far commoner
+    diverged-branch case — and the same-commit pair never reaches git, because
+    `merge-base --is-ancestor` reports a commit as its OWN ancestor at exit 0.
+
+    Returns ``(repo, {name: sha})``. Read-only for every caller.
+    """
+    repo = _init_repo(tmp_path, "relation")
+    commits = {"root": _rev_parse(repo, "HEAD")}
+
+    _git(repo, "checkout", "-q", "-b", "work")
+    for name in ("fork", "mid", "head"):
+        (repo / "scripts" / f"{name}.py").write_text(_FILLER, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", f"work: {name}")
+        commits[name] = _rev_parse(repo, "HEAD")
+
+    _git(repo, "checkout", "-q", "-b", "sibling", commits["fork"])
+    (repo / "scripts" / "sibling.py").write_text(_FILLER, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "sibling: diverged from the fork point")
+    commits["sibling"] = _rev_parse(repo, "HEAD")
+
+    _git(repo, "checkout", "-q", "--orphan", "island")
+    (repo / "island.txt").write_text("alone\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "island: an unrelated root commit")
+    commits["island"] = _rev_parse(repo, "HEAD")
+    return repo, commits
+
+
+#: `(ancestor, descendant)` selectors into `_relation_repo`'s map, one per way
+#: the strict-ancestor relation can be ABSENT: the same commit (the
+#: short-circuit git would get wrong on its own), the relation REVERSED at one
+#: and at three hops, a diverged sibling read in both directions, and an
+#: unrelated history read in both directions. The parameters feed only the
+#: INPUT — the expectation is the constant `False` on every row, because the
+#: refusal direction is the whole point of the battery.
+_NON_ANCESTOR_PAIRS = [
+    pytest.param("head", "head", id="same_commit"),
+    pytest.param("mid", "fork", id="relation_reversed_one_hop"),
+    pytest.param("head", "root", id="relation_reversed_three_hops"),
+    pytest.param("sibling", "head", id="diverged_sibling_as_ancestor"),
+    pytest.param("head", "sibling", id="diverged_sibling_as_descendant"),
+    pytest.param("island", "head", id="unrelated_history_as_ancestor"),
+    pytest.param("head", "island", id="unrelated_history_as_descendant"),
+]
+
+#: The positive control for the battery above: without it, a function that
+#: returned `False` unconditionally would satisfy every row of it — and would
+#: also disable the base widening AC-9.3 exists to perform.
+_STRICT_ANCESTOR_PAIRS = [
+    pytest.param("root", "fork", id="one_hop_from_the_root"),
+    pytest.param("fork", "mid", id="one_hop_mid_branch"),
+    pytest.param("root", "head", id="three_hops"),
+    pytest.param("fork", "sibling", id="onto_the_diverged_branch"),
+]
+
+
 class TestAnAncestorBaseCannotNarrowTheSubject:
     """AC-9.3, in the DISARM direction, through the REAL consumer.
 
@@ -5712,22 +5874,35 @@ class TestAnAncestorBaseCannotNarrowTheSubject:
         assert verdict is False, out
         assert _REPO_GATE in out, out
 
-    def test_the_ancestor_relation_answers_the_four_shapes(self, tmp_path):
-        """Arm AND disarm at the helper, including both ways to say `no`."""
-        repo, mid = _repo_with_an_early_gate(tmp_path, "relation")
-        head = _rev_parse(repo, "HEAD")
-        fork = vc._merge_base(str(repo), "main")
+    @pytest.mark.parametrize("ancestor,descendant", _NON_ANCESTOR_PAIRS)
+    def test_the_relation_refuses_every_non_ancestor_shape(
+        self, tmp_path, ancestor, descendant
+    ):
+        """The DISARM battery for `_is_strict_ancestor` (ISSUE-081 AC-5).
 
-        assert vc._is_strict_ancestor(str(repo), fork, mid) is True
-        assert vc._is_strict_ancestor(str(repo), mid, fork) is False
-        assert vc._is_strict_ancestor(str(repo), head, head) is False
+        Reshaped from the four sequential shapes this used to assert in one
+        body, because the gate this phase adds is subject to its own rule and
+        the rule asks for a battery. Nothing it asserted is dropped: the
+        reversed relation, the same commit and both directions across the
+        graft are rows here, and the diverged sibling and the three-hop
+        reversal are new. `_widest_trunk_base` only ever WIDENS when this
+        answers True, so every False here is a base that cannot be narrowed.
+        """
+        repo, commits = _relation_repo(tmp_path)
 
-        # Unrelated histories answer False in BOTH directions, so nothing is
-        # widened across a graft.
-        _git(repo, "checkout", "-q", "--orphan", "island")
-        (repo / "island.txt").write_text("alone\n", encoding="utf-8")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-qm", "island: unrelated root")
-        island = _rev_parse(repo, "HEAD")
-        assert vc._is_strict_ancestor(str(repo), island, head) is False
-        assert vc._is_strict_ancestor(str(repo), head, island) is False
+        relation = vc._is_strict_ancestor(
+            str(repo), commits[ancestor], commits[descendant]
+        )
+        assert relation is False, (ancestor, descendant)
+
+    @pytest.mark.parametrize("ancestor,descendant", _STRICT_ANCESTOR_PAIRS)
+    def test_the_relation_holds_for_a_genuine_strict_ancestor(
+        self, tmp_path, ancestor, descendant
+    ):
+        """Positive control: the battery above is not false for ALL inputs."""
+        repo, commits = _relation_repo(tmp_path)
+
+        relation = vc._is_strict_ancestor(
+            str(repo), commits[ancestor], commits[descendant]
+        )
+        assert relation is True, (ancestor, descendant)
