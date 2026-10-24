@@ -4,14 +4,22 @@
 - Started: 2026-10-14
 - Iteration: 1 / 20
 - Parallel: 3
-- Status: paused
+- Status: running
 - Roster-Watermark: ISSUE-081
 - Scope: **stop the recurring pattern, then close the integrity hole.** ISSUE-081 (require disarm-direction evidence and a composite end-to-end pin for any PR that adds a gate — the mechanical carrier for a pattern that has recurred at High severity in four consecutive sprints) and ISSUE-077 (bind the `gh` merge-state probe to the issue's own PR — a whitelist-conforming wrong-target `PR:` ref still forges a MERGED verdict, and a second module reads the same untrusted field).
 - Ship order: **081 -> 077**, deliberately. ISSUE-077 adds gates, so shipping 081 first makes 077 the FIRST PR reviewed under the new requirement — an in-batch self-test of whether the mechanism is real rather than prose. If 077's review completes before 081 merges, its review must be re-run or extended under the new requirement before it ships.
 - Deferred to the next sprint: ISSUE-080 (078's residual fail-open classes — also a gate-adding PR, so it benefits from landing after 081), ISSUE-070 + ISSUE-071 + ISSUE-075 (emitter family), ISSUE-079 (ISSUE-069's unrequested surface), ISSUE-083 (worktree upstream leak). ISSUE-082 is `Manual: true` — it needs a session restart plus a plugin update and cannot be dispatched autonomously.
 - Boundary note: the watermark is pinned at ISSUE-081, so ISSUE-082 and ISSUE-083 sit above it and are flagged-not-dispatched by the ISSUE-069/078 mechanism. That restraint is intended — never set `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK`.
 
-## Orchestrator Hold (2026-10-14)
+## Orchestrator Decision (2026-10-24) — resuming on Option A
+
+The user chose **Option A: the tier split.** `missing-disarm-battery` stays blocking (it is decidable — it fires only when `attributed == []`, pure syntax, never consulting the classifier); `missing-refusal-direction` and `missing-composite-pin` are demoted to advisory, because predicate polarity is undecidable for a detector-shaped gate. SPEC-081 is amended to record this and to restate what the ACs promise; the honest residual stands and must be written into the SPEC rather than softened: **the split makes the gate truthful but not effective against an arm-only author.**
+
+Consequence for scope: since the blocking half is the half we keep, the three input-handling holes that can silently disarm or hang it are now IN scope, not carriers — a blocking gate that one committed `.gitattributes` line turns off without printing a waiver, or that a 7-line diff can hang, is the false-assurance harm this whole issue exists to prevent.
+
+Attempts 3 reflects three review cycles of the previous design. This rework executes a user decision that changes the design, so it is not a fourth retry of the same approach.
+
+## Superseded Hold Record (2026-10-14)
 
 **Status `paused`, not `completed` — the scope was not delivered and the record must say so.**
 
