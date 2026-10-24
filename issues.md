@@ -67,6 +67,8 @@
 - [ ] ISSUE-094: Stop the hollow-test predicate from failing `tests/conftest.py` — editing it reddens a blocking implement gate _(track: platform, P2, 0.5d — ISSUE-083 implement discovered and review confirmed: `test_dir_pattern` classifies every `tests/*.py` as a test file and `_has_real_tests("tests/conftest.py", wt)` returns False, so the blocking `implement/tests-written` gate goes red on any branch that touches conftest.py — in direct conflict with the standing review lesson that tells implementers to put hermetic env guards there; ISSUE-083 had to route around it and the review accepted that only as narrower-not-tighter, conditional on this fix; depends on none)_
 - [ ] ISSUE-095: Close the telemetry emitter's remaining containment escape — swapping a directory component still redirects the append outside the root _(track: platform, P1, 1d — ISSUE-070 / PR #141 review residual GAP-070e (Medium), empirically reproduced by the reviewing agent 2026-10-25: `O_NOFOLLOW` binds only the FINAL component and the post-open `fstat` validates the node's TYPE not its LOCATION, so a `.claude` directory-symlink swap inside the check→open window made `emit_event` return **True** and write `<outside>/runs/toc.jsonl`; the last open leg of the containment invariant ISSUE-070 exists to make falsifiable, and ISSUE-075 is sequenced to adopt this module's contract; GAP-070f + GAP-070g folded in; depends on 070)_
 - [ ] ISSUE-096: Bind the delegated review to the PR's own diff — both runtime skills auto-collected an empty one on two consecutive PRs _(track: platform, P1, 1d — observed twice in one sprint (ISSUE-083 review / PR #139 and ISSUE-070 review / PR #141, 2026-10-25): `decide` returned `delegated` for both dimensions and the runtime skills then auto-collected their own diff against the MAIN checkout, so `security-review`'s prompt arrived with the literal `DIFF CONTENT: (Bash completed with no output)`; uncorrected, both passes would have returned a clean bill having reviewed nothing — a silent fail-open on a BLOCKING gate, on the primary path ISSUE-072 worked to make reachable; depends on none)_
+- [ ] ISSUE-097: Harden trace_query.py's read path and bound its timestamp coercion — the telemetry READER kept the defences its writer gained _(track: platform, P1, 1d — ISSUE-071 review Mediums without a carrier until now: a planted FIFO at a read target hangs it, `_parse_ts`'s catch is too narrow, and the AC-4 root gap leaves worktree streams unread from main; the write side was hardened by ISSUE-070/058 and the read side was never revisited)_
+- [ ] ISSUE-098: Retire the stale silent-no-op docstrings in synthesize_gate_results.py _(track: platform, P2, 0.5d — ISSUE-071 review Medium; the module still documents the emit behaviour ISSUE-067 replaced, so the file argues against its own code)_
 
 ### Doing
 
@@ -5920,3 +5922,114 @@ The delegated review path cannot report a verdict on a diff it never received: t
 
 #### Rollback
 `git revert`. The revert direction restores a **silently fail-open blocking gate**, which is strictly worse than a noisy one, so prefer tuning the refusal over reverting: if the refusal arm fires on legitimate no-op PRs, widen AC-3's genuinely-empty branch rather than removing the check. If the contract landed in both `skills/review/SKILL.md.tmpl` and `scripts/review_context.py`, revert them **together** — a SKILL.md that instructs a collection step the script no longer provides leaves step 3.1 naming a command that does not exist, and `skills/review/SKILL.md` is generated, so regenerate with `scripts/gen_skills.py` after any template revert. A revert must leave ISSUE-066's `decide` decision table and its three-value reason vocabulary at their current behaviour.
+
+---
+
+### ISSUE-097: Harden trace_query.py's read path and bound its timestamp coercion — the telemetry READER kept none of the defences its writer gained
+
+> ISSUE-071 / PR #143 review (2026-10-25), three Mediums that had no `issues.md` carrier when the sprint closed. The team-lead flagged the gap itself: they were recorded in Discovered Issues and in the committed `docs/review_notes/ISSUE-071.md`, "but that is weaker than an issue" — review lesson 15 exactly, so this is the durable carrier.
+>
+> The asymmetry is the point. `scripts/kit_telemetry.py`'s **write** path has been hardened twice — ISSUE-058 gave it `O_NOFOLLOW`, realpath containment, an id whitelist and detail truncation, and ISSUE-070 made its containment falsifiable, made a planted FIFO unable to hang a gate, and made the "NEVER raises" contract true. `scripts/trace_query.py` **reads the same attacker-influenced directory** and received none of it: a planted FIFO at a read target hangs it with no timeout, and `_parse_ts`'s `except` is narrow enough that an unmodelled malformation escapes as a traceback rather than a skipped record. Both are the untrusted-workspace-input lesson applied to the half nobody revisited.
+>
+> The third item is a coverage gap rather than a hardening one: ISSUE-071's AC-4 root resolution leaves **worktree-written streams unread from main**, so events emitted during a sprint phase are invisible to the summary a human would run afterwards — the reader silently under-reports rather than failing.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-071 / PR #143 review Mediums; review lessons "Workspace-persisted state consumed by auto-running hooks is untrusted input — validate on read", "The first numeric coercion of externally-authored text needs a bounded pattern, not a try/except", and "A deferred finding is only real if it has a durable carrier")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-070
+
+#### Goal
+`trace_query.py` carries the same read-side defences the writer gained, cannot be hung or crashed by anything a workspace writer can place, and either reads worktree-written streams or reports that it did not.
+
+#### Scope (In/Out)
+- In:
+  - Read-path hardening on every path `trace_query.py` opens: refuse non-regular files (the FIFO hang), honour the same containment and id-whitelist rules the writer enforces, and bound the read so a large or adversarial stream cannot stall a human-invoked command.
+  - Replace `_parse_ts`'s narrow catch with a bounded pattern, so a malformed timestamp skips its record with a reason rather than escaping as a traceback.
+  - Decide the AC-4 root gap explicitly: either resolve worktree-written streams from main, or have the summary state which roots it did not read. Silent under-reporting is the one outcome that is not acceptable.
+- Out:
+  - Any change to the write path (`kit_telemetry.py`) — ISSUE-070 shipped it and its contract is pinned.
+  - New telemetry dimensions, or the deferred ISSUE-001 analytics scope.
+  - `synthesize_gate_results.py`'s stale docstrings (ISSUE-098).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a FIFO planted at a path `trace_query.py` would read, when the command runs, then it completes with the file skipped and a reason reported — asserted with an execution-bounded test, not a wall-clock-free assertion.
+- [ ] Given a stream containing a malformed timestamp, when the summary runs, then that record is skipped with a stated reason and every well-formed record is still counted — no traceback.
+- [ ] Given events written from inside a worktree, when the summary runs from main, then those events are either included or the output names the root that was not read.
+- [ ] Given each new read-side guard, when its target defect is introduced and then removed, then the verdict flips in both directions — the disarm direction included (review lesson 16).
+
+#### Implementation Notes
+- Provenance: `docs/review_notes/ISSUE-071.md` (committed on the ISSUE-071 branch) and the Discovered Issues table of `docs/sprint_state.archive-*` for the 2026-10-25 sprint.
+- Import the writer's predicates rather than re-typing them — ISSUE-084 carries the detectability question, but reuse is already the convention and the re-typed-oracle class has six recorded instances.
+- Any new bound is a timing constant: env-configurable, documented in the module docstring AND a user-facing doc, with the knob named in the failure message it remediates (review lesson 2).
+
+#### Tests
+- [ ] FIFO fixture: bounded completion, file skipped, reason reported.
+- [ ] Malformed-timestamp fixture: record skipped with reason, siblings counted.
+- [ ] Worktree-root fixture: events included, or the unread root named.
+- [ ] Mutation pairs in both directions for each guard.
+
+#### Rollback
+`git revert` — read-side hardening is additive and the writer is untouched, so reverting restores today's unhardened reader rather than breaking a consumer.
+
+---
+
+### ISSUE-098: Retire the stale silent-no-op docstrings in synthesize_gate_results.py
+
+> ISSUE-071 / PR #143 review (2026-10-25), Medium, carried here for the same reason as ISSUE-097: it was recorded only in review notes, which review lesson 15 says is not a carrier. `scripts/synthesize_gate_results.py` still documents the emit behaviour that ISSUE-067 replaced — the module describes a silent no-op where the shared emitter now announces its fallback. The file argues against its own code, which is the shape that makes a future reader trust the wrong half.
+>
+> Deliberately narrow: this is a documentation correction with no behavioural component, filed separately from ISSUE-097 so the hardening work is not held up by it and so neither issue inherits the other's risk profile.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; ISSUE-071 / PR #143 review Medium; review lesson "A deferred finding is only real if it has a durable carrier")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-071
+
+#### Goal
+No docstring in `synthesize_gate_results.py` describes emit behaviour the module no longer has, and the correction is pinned so the next emitter change cannot silently restore the drift.
+
+#### Scope (In/Out)
+- In:
+  - Correct every docstring and comment in `synthesize_gate_results.py` that describes the pre-ISSUE-067 silent-no-op emit.
+  - A guard that fails if the retired wording reappears, written as an occurrence-whitelist against the actually-removed strings rather than a phrasing blacklist (review lesson 4's absence-guard corollary).
+  - Sweep the sibling modules the same emitter touches for the identical stale wording; fix what is found or record that none exists.
+- Out:
+  - Any behavioural change to emission, synthesis, or the gate-results contract.
+  - `docs/specs/SPEC-058.md` and `docs/review_notes/ISSUE-058.md`, which are point-in-time records and correctly describe what was true when written.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the module after the change, when its docstrings are read against the shipped emit behaviour, then no statement contradicts the code — enumerated in the PR body, not asserted in general.
+- [ ] Given the retired wording reintroduced verbatim, when the guard runs, then it fails naming the location; given the corrected wording, then it passes — mutation-tested in both directions against the strings actually removed.
+- [ ] Given the sibling sweep, when it completes, then every module the shared emitter touches is either corrected or recorded as clean, with the list in the PR body.
+
+#### Implementation Notes
+- Provenance: `docs/review_notes/ISSUE-071.md`.
+- Point-in-time records stay untouched: a SPEC or a review note describing the behaviour of its own date is accurate, and "fixing" it would destroy the audit trail. Only live module documentation is in scope.
+- Keep the guard cheap. This is a P2 docs correction; a heavyweight mechanism here would be the unrequested-surface failure ISSUE-079 records.
+
+#### Tests
+- [ ] Occurrence-whitelist guard, mutation-tested in both directions.
+
+#### Rollback
+`git revert` — documentation-only, no behavioural surface.
