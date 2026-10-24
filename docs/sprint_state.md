@@ -1335,6 +1335,20 @@ quoting the field name re-arms this. A fence/indent exclusion, or confining dete
 Meta` block, would close it — but that changes a safety detector's acceptance surface, which needs
 its own issue.
 
+**OWED, not done — the preventive carrier for this class was NOT filed.** The lessons-escalation
+check fired (Frequency 3, High, no existing carrier) and a `planner` sub-task was dispatched to add
+**ISSUE-090** for the structural decision — confine watermark detection to the `## Meta` bounds,
+exclude fenced/indented/quoted contexts (note `_unfenced()` already exists in that module and is
+applied to the `## Issue Progress` scan but not to `## Meta`), or move the field out of the narrative
+file entirely. The sub-task did not return and wrote nothing: `grep -c ISSUE-090 issues.md` = 0 and the
+registry is clean. **The orchestrator should re-dispatch it.** Constraints to restate when it does:
+`Spec-Required: true`, P2, platform, 0.5d, `Depends-On: none` (the live instance is already fixed);
+the acceptance criteria need a two-direction mutation pin — a *descriptive* sentence mentioning the
+field must not be accepted as a declaration, AND a genuine duplicate declaration must still be
+refused, so the fix does not reopen ISSUE-069's duplicate hole; and it must **not** be answered with a
+documentation lint, because a test that checks the accuracy of records is an issue generator (recorded
+project-owner preference).
+
 **ORCHESTRATION STOP still applies.** `next-action` returns `PIPELINE ISSUE-077` both before and
 after this fix. Do **not** take it: ISSUE-081 is `waiting`, 077 would be cut from a main where
 `review/gate-evidence` does not exist, and SPEC-081 decision 10 re-confirms the 081->077 self-test is
