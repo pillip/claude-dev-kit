@@ -4,7 +4,7 @@
 - Started: 2026-10-14
 - Iteration: 1 / 20
 - Parallel: 3
-- Status: running
+- Status: paused
 - Roster-Watermark: ISSUE-081
 - Scope: **stop the recurring pattern, then close the integrity hole.** ISSUE-081 (require disarm-direction evidence and a composite end-to-end pin for any PR that adds a gate — the mechanical carrier for a pattern that has recurred at High severity in four consecutive sprints) and ISSUE-077 (bind the `gh` merge-state probe to the issue's own PR — a whitelist-conforming wrong-target `PR:` ref still forges a MERGED verdict, and a second module reads the same untrusted field).
 - Ship order: **081 -> 077**, deliberately. ISSUE-077 adds gates, so shipping 081 first makes 077 the FIRST PR reviewed under the new requirement — an in-batch self-test of whether the mechanism is real rather than prose. If 077's review completes before 081 merges, its review must be re-run or extended under the new requirement before it ships.
@@ -38,6 +38,31 @@ ISSUE-077 is **deliberately unstarted**. `next-action` returns `PIPELINE ISSUE-0
 **Worktree left in place on purpose** (`.worktrees/issue-ISSUE-081-gate-evidence`, verified at the right upstream): ISSUE-083 means `wt_setup.sh` would re-create it from main's HEAD with no upstream while reporting success. PR #137 stays a **draft** so two Criticals are not one click from main. No tracked file in the worktree was modified by either review; all mutation testing ran on scratchpad copies.
 
 **Backlog untouched by this sprint:** ISSUE-070, 071, 075, 077, 079, 080, 083, 084, 085, 086, 087 remain open; ISSUE-082 is `Manual: true` (needs a session restart plus a plugin update). None was dispatched; `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` was never set.
+
+## Orchestrator Hold #2 (2026-10-25) — Option A measured, decision returned to the user
+
+**Status `paused`. ISSUE-081 is at `waiting` / Attempts 4 and is NOT being re-dispatched.** The first review of the Option A design reached the two questions it was asked, and they answered oppositely.
+
+**Honesty: PASS, emphatically — and this should survive whatever happens next.** All three disclosures the implementer volunteered reproduce under independent verification. SPEC-081 decision 7 states in its own words that *"AC-1 as originally written … is NOT met and is not claimed."* The gate-free PASS line disclaims its own coverage, and the `/review` contract text leads with *"Read this before you treat a green `gate-evidence` as assurance."* A control that refuses to overstate itself is the thing this whole line of work was for.
+
+**Blocking half: FAIL — four independent disarms through the real consumer**, two reproduced by the reviewer's own execution rather than sub-agent narration: gate *detection* mis-buckets on a `def`-shaped line inside a string literal (`_parse` matches `_DEF_RE` before `_destring`; a docstring-first variant names a phantom symbol no battery or exemption can satisfy, and `_destring` has zero test references); AC-9.3 silent narrowing survives at one `update-ref` on a non-`main`/`master` trunk or zero rewrites via tag shadowing; an uncaught `UnicodeDecodeError` from the `--text` fix on any PR touching a PNG or latin-1 file, *including PRs that would otherwise pass*; and a layer-2 bypass via a filename containing ` and `, failing toward silence against its own docstring.
+
+**Disclosure 2 is CLEARED — the demotion is not circular.** Verified: at the demotion commit the branch scored 0 findings under the all-blocking rule, SPEC-081 recorded the split before the code implemented it, and `ce5538c` closed the blocking half with real batteries rather than waivers. Tier consistency (5 mutants killed), AC-9.4 (4/2/2 behavioural, byte-identical restore, measured by the reviewer directly) and AC-4 also hold.
+
+### The number that decides this
+
+**The blocking half fires on 0 of the 6 historical instances that motivated ISSUE-081.** That is the accepted residual of Option A, not a defect — but it reframes the remaining work: closing four more disarms would ship a gate that would not have caught any of the cases it exists to prevent. The reviewer put this to the orchestrator rather than deciding it, and the orchestrator returns it to the user rather than spending another cycle, because the choice is about what the kit should invest in, not about whether the code is correct.
+
+**Orchestrator recommendation: stop Option A and move to ISSUE-088** (the attestation-plus-reviewer-obligation successor that SPEC-081 decision 8 already names). Rationale: the decidable half is decidable precisely because it is syntactic, and the pattern's six instances were all semantic. Salvage, not discard — the input-handling hardening already on the branch (`.gitattributes` disarm, the wall-clock bound and `KIT_GATE_EVIDENCE_TIMEOUT` knob, the ancestor-base guard, the AC-5 mutant closure) is needed under any design and should be lifted onto whatever succeeds this.
+
+### Reviewer conduct worth preserving in the record
+Three self-reports, all unprompted. An early `review/test` showing 12 failures was the reviewer's *own* mutation probe running mid-flight in the shared worktree — clean re-run passes; recorded as a measurement hazard rather than a finding. It found and fixed a live defect in which this sprint's own prose had disarmed the roster watermark (`2 field lines found` → silent fallback across phases; now `pinned at ISSUE-081`), and caught its own first fix note re-arming it. And it **wrote a false record and corrected it in place with the reason left visible** — it concluded a slow planner sub-task had failed and wrote "OWED, not done" into sprint state before ISSUE-090 actually landed.
+
+### Two live items the user owns
+1. **ISSUE-074's defect has a live instance.** The planner could not take the registry lock (no `Bash`) during this phase — the exact safety-removal shape ISSUE-074 was filed against and shipped a contract for. The contract did not reach this path.
+2. `validate_issues.py` moved 8 → 9 violations on a cosmetic AC-format violation in ISSUE-090 (filed, 88 lines, additive, `Spec-Required: true`, P2). The planner also corrected the orchestrator's brief in three ways, chiefly that the roster-watermark defect is a **window mismatch**: `hits` counts every line while `_meta_section_bounds()` is consulted only after the duplicate check, so narrative prose can never be honoured, only veto.
+
+**State:** PR #137 stays a draft. Worktree `.worktrees/issue-ISSUE-081-gate-evidence` deliberately left in place (ISSUE-083). ISSUE-077 untouched and still not a valid self-test. Nothing above the watermark dispatched; `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK` never set. Backlog: ISSUE-070, 071, 075, 077, 079, 080, 083–090 open; ISSUE-082 is `Manual: true`.
 
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
