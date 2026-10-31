@@ -4,12 +4,30 @@
 - Started: 2026-10-31
 - Iteration: 0 / 20
 - Parallel: 3
-- Status: running
+- Status: completed
 - Roster-Watermark: ISSUE-088
 - Scope: **ISSUE-088 alone — a DECISION issue, deliberately unbatched.** It must reach one of exactly two outcomes for the disarm-direction property: ADOPT a named successor mechanism with a measured argument, or DECLINE the property outright and record the limitation. Its predecessor ISSUE-081 consumed four review cycles; batching a second issue alongside a decision this contested would dilute the attention the decision needs and make a FAIL ambiguous about which issue caused it.
 - Predecessor status: **ISSUE-081 is dropped** (2026-10-31), its SPEC preserved on main at Status `superseded`, PR #137 closed unmerged with the branch retained for ISSUE-088 to lift from. `Depends-On` was moved to `none` and the consequence recorded in the issue: there is no detection half on main, so the ADOPT branch owns landing it.
 - NOT in scope: ISSUE-077 (still held), ISSUE-079, ISSUE-080, ISSUE-084 through ISSUE-087, ISSUE-089 through ISSUE-099. ISSUE-082 is `Manual: true` — it needs a session restart plus a plugin update and cannot be dispatched autonomously.
 - Boundary note: the watermark is pinned at ISSUE-088, so ISSUE-089 and above are flagged-not-dispatched. That restraint is intended — never set `KIT_SPRINT_DISPATCH_ABOVE_WATERMARK`.
+
+## Sprint Close-out (2026-10-31, orchestrator)
+
+**ISSUE-088 shipped as DECLINE** (PR #145, squash `64a1654`), main green at `765a5cb`, 2501 passed / 1 skipped. Attempts 1, no retries, no escalation. The sprint was deliberately single-issue because the predecessor consumed four review cycles and a batched FAIL would have been ambiguous about its cause.
+
+**The decision stands on three re-derived measurements, each independently reproduced by the reviewer rather than quoted:** detection recall is **1 of 5** against the symbol that actually failed open, so a mechanism handing a reviewer the gates a PR adds would present an empty list on most historical cases — an unassisted obligation's 0-of-4 failure wearing a mechanical badge; `detect_gates` iterates `REFUSAL_PATTERNS` directly to decide gate-hood, so the amendment's *permitted* "widen detection" and AC-4's *forbidden* edit are **the same bytes**, a tension resolved explicitly rather than straddled (the widening was probed and rejected — `^\s*continue` moves whole-tree gates 101 → 152, the +51 being loop-skip idioms); and refusal by **omitting** a line is unreachable by any pattern vocabulary, since a pattern matches an added line and omission adds none, capping a vocabulary-only fix at 3 of 5.
+
+Deliverable shape is worth recording: **zero files under `scripts/`** — the decision plus one test module. A DECLINE that ships no mechanism is the cheapest possible outcome for a property that four cycles failed to build, and it is a real result rather than a deferral.
+
+**Review PASS with three Highs fixed in-review, all one species — a claim stated more strongly than measured, inside a decision document.** The sharpest is the issue's own rule turned on itself: SPEC-088 assigned falsification of its own DECLINE to an unassisted prose obligation on a future reviewer, which is structurally the very mechanism it had just measured at 0 of 4 and used as its main reason to decline ADOPT. Carried by ISSUE-101.
+
+**Three corrections the team-lead made rather than passed along.** The implement sub-task set `Status: done` on main while PR #145 was still open — because `skills/implement/SKILL.md` step 12 instructs exactly that and it contradicts the team-lead contract; reverted under the lock and filed as **ISSUE-105**. The orchestrator's brief carried a stale test baseline again (2486 vs 2490 collected) — the second time this session that a number passed forward in a brief was wrong, which is the canonical-environment lesson in its briefing form. And the review's "11 CI validator violations" did not reproduce: main has 22 SPECs and **zero** violations, so the control is defeated-*capable* with nothing currently to catch — **ISSUE-104 states that weaker, accurate claim** instead of the reported one.
+
+**Carriers filed with real ids, not a carrier-for-carriers.** The review found 4 of 7 SPEC-088 Open Questions naming a *role* rather than an owner. Filing one issue meaning "file four carriers" would have been a fourth deferral in disguise, so each was read and resolved: OQ 1 and 7 are one decision (**ISSUE-100**); OQ 6 is **ISSUE-101**; OQ 2 was discharged in place as a close amendment. **ISSUE-102/103/104** each carry a gate defect found by turning a control on itself — `spec_gate.py` can never return `proceed` for the issues it fires on (reproduced from both call sites), the `implement/red` checkpoint accepts **any** pre-existing failure as RED, and SPEC validation is not enforced in CI. ISSUE-096 and ISSUE-099 were amended.
+
+**Live-hazard outcomes.** ISSUE-096 reproduced a **fourth** time — `security-review` arrived with `On branch main` and an empty diff and would have returned a clean bill on nothing; the byte-count echo caught it, and a new leg emerged: the file-path handoff is unreliable across contexts, so the digest must be echoed **by the consumer**, not merely printed by the producer. ISSUE-091 reproduced with its mechanism identified — `--delete-branch` is not atomic, the local delete failed because the worktree still held the branch, and that cascade aborted the remote delete; the orphaned remote ref was deleted explicitly. **ISSUE-099 did NOT reproduce**, measured by two sub-agents in separate contexts who were each told to expect a failure and each measured a pass — the issue is amended rather than closed, since the original measurement reconciled two independent counts and the discrepancy is now itself unexplained.
+
+**Open backlog:** ISSUE-077 (still held), 079, 080, 084–087, 089–105 minus the shipped and dropped. ISSUE-082 is `Manual: true` — a session restart plus a plugin update, not autonomously dispatchable.
 
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
