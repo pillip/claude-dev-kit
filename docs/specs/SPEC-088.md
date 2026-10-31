@@ -35,14 +35,21 @@ below is quoted from a prior table; the commands are named so each number is re-
 - **The retained branch is the only place detection exists.** `git diff --stat
   main...issue/ISSUE-081-gate-evidence` is **15341 insertions across 17 files**:
   `scripts/verify_gate_evidence.py` 1881 lines, `tests/test_gate_evidence_contract.py` 5908 lines,
-  four committed fixtures 6310 lines, `scripts/verify_checkpoint.py` +399/-21, and 21 lines each in
+  four committed fixtures 6310 lines, `scripts/verify_checkpoint.py` +379/-20, and 21 lines each in
   `skills/review/SKILL.md` and its template.
-- **Detection's vocabulary is `REFUSAL_PATTERNS` itself.** `detect_gates`
-  (`verify_gate_evidence.py:974-998` on the retained branch) iterates `REFUSAL_PATTERNS` directly to
-  decide whether an added `def` is a gate at all. There is no second vocabulary beneath it.
+- **`REFUSAL_PATTERNS` is detection's PRIMARY vocabulary, but not its only one.** `detect_gates`
+  (`verify_gate_evidence.py:974-994` on the retained branch) iterates `REFUSAL_PATTERNS` directly to
+  decide whether an added `def` is a gate. Three further module-level vocabularies participate in the
+  same decision: `_CONDITIONAL` (line 357) is a hard precondition — a `def` with no conditional is
+  skipped before `REFUSAL_PATTERNS` is ever consulted; `_BOOL_REFUSAL` (line 334) is a **second
+  refusal vocabulary**, reached at line 989 when `REFUSAL_PATTERNS` finds nothing; and
+  `_PREDICATE_SHAPE` (line 376) is the name-shape vocabulary that admits that fallback. The file's own
+  comment at line 320 concedes the split. Corrected in review — the original claim read "there is no
+  second vocabulary beneath it", which is false and which M2 below leaned on.
 - ISSUE-088's Scope/Out forbids editing `_refusal_shaped`, `REFUSAL_PATTERNS` or the direction regex,
   and AC-4 requires them byte-unchanged. The 2026-10-31 amendment separately permits *widening
-  detection*. At the measured seam those two permissions are the same bytes.
+  detection*. For the `REFUSAL_PATTERNS` seam those two permissions are the same bytes; for
+  `_CONDITIONAL` / `_BOOL_REFUSAL` / `_PREDICATE_SHAPE` they are **not** — see M2.
 - SPEC-081 measured **Option A** (prose obligation plus a live native-memory lesson) at **0 of 4** and
   **Option D** (PR-body checklist) at **0 of 4**. Those are the comparators any successor must beat.
 - Native-memory review lesson 6: *an attestation that can satisfy a gate is forgeable — shape
@@ -71,13 +78,28 @@ hand-classified symbol that actually failed open.
 **Recall = 1 of 5.** The human is handed an **empty list** on 2 of 5 under the wide subject and 3 of 5
 under the narrow one, and a **non-empty list naming a different symbol** on 2 of 5.
 
-### M2 — The one available widening is forbidden by AC-4 by construction
+### M2 — The widening that was measured is forbidden by AC-4; the AC-4-legal seam is unmeasured
 
-`detect_gates` consults `REFUSAL_PATTERNS` directly, so "widen detection" and "`REFUSAL_PATTERNS`
-byte-unchanged" are the same bytes read two ways. The 2026-10-31 amendment's permission to widen and
-ISSUE-088's own Scope/Out and AC-4 are mutually exclusive **at the measured seam**, not merely in
-tension. Taking the widening means editing exactly the predicate four prior measurements rejected;
-honouring AC-4 means detection stays at M1's recall.
+`detect_gates` consults `REFUSAL_PATTERNS` directly, so for **that** vocabulary "widen detection" and
+"`REFUSAL_PATTERNS` byte-unchanged" are the same bytes read two ways. The widening M3 measures is
+therefore the one AC-4 forbids outright: taking it means editing exactly the predicate four prior
+measurements rejected.
+
+**Corrected in review — this measurement originally overclaimed.** It asserted that the amendment's
+permission to widen and AC-4 are "mutually exclusive at the measured seam, not merely in tension".
+That is false. `_CONDITIONAL`, `_BOOL_REFUSAL` and `_PREDICATE_SHAPE` also decide gate-hood (Context
+above) and **none of them is named by AC-4** (`_refusal_shaped`, `REFUSAL_PATTERNS`, `_CONSUMER_RE`,
+`BLOCKING_KINDS`) **or by ISSUE-088's Scope/Out** (`_refusal_shaped`, `REFUSAL_PATTERNS`, the
+direction regex). An AC-4-legal widening seam exists, and this SPEC did not measure it.
+
+What that seam can reach is bounded by M4 rather than by M2, which is why the Decision survives the
+correction. Instances 2, 3 and 5 are unreachable by any vocabulary (M4). Only instance 1 is in
+principle reachable, and reaching it through the legal seam needs **two** edits — `_BOOL_REFUSAL` to
+admit `continue`, and `_PREDICATE_SHAPE` to admit `augment_roster_from_board`, which matches none of
+its prefixes — for the same **+1 instance** M3 already measured, at a false-positive cost that is
+**unmeasured and plausibly worse** than M3's +51, since `_PREDICATE_SHAPE` gates the fallback for
+every predicate-named function in the tree. Measuring that cost is a residual, carried in Open
+Questions.
 
 ### M3 — And the widening does not work anyway
 
@@ -94,7 +116,7 @@ Probe (in-memory only, never written to a file): append `re.compile(r"^\s*contin
   `compare_structure`, `dedupe_exportable_assets`. A declaration list for a human would be **+50%
   longer and dominated by Figma/CSS extraction loops**.
 
-### M4 — Two of the five misses are unreachable by *any* pattern vocabulary
+### M4 — Three of the five instances are unreachable by *any* pattern vocabulary, in two classes
 
 - **Refusal by omission** (instances 2 and 3). A pattern matches an **added line**; a refusal
   expressed by *not emitting* a line adds none. This is a category error, not a vocabulary gap, and
@@ -103,8 +125,13 @@ Probe (in-memory only, never written to a file): append `re.compile(r"^\s*contin
 - **The guard is itself a test** (instance 5). `is_test_path` excludes test paths **upstream** of any
   vocabulary, in `detect_gates`'s first `continue`. M3 measured it: empty under both vocabularies.
 
-So the reachable ceiling for a vocabulary-only widening is 3 of 5, and the only step toward it that was
-measured costs +51 whole-tree false entries.
+**Corrected in review — the arithmetic, which the original understated against its own case.** Three
+instances (2, 3, 5) are unreachable in two classes; the header originally said "two", counting classes
+where the sentence read instances. With 2, 3 and 5 unreachable, the only detectable instances are 1 and
+4, so the reachable ceiling for a vocabulary-only widening is **2 of 5** — not the 3 of 5 originally
+derived. M3 already **reached** that ceiling, at a cost of +51 whole-tree false entries. So the
+vocabulary-widening escape is not merely expensive, it is **exhausted**: there is no remaining step
+toward a higher number, which strengthens rather than weakens the case for Option C.
 
 ### M5 — The ADOPT branch's own ACs are unsatisfiable inside the split trigger's budget
 
@@ -114,7 +141,7 @@ measured costs +51 whole-tree false entries.
   lift alone would fit the budget, which is why this SPEC does not reject ADOPT on size alone.
 - But AC-5 and AC-6 drive `bash scripts/checkpoint.sh --skill review --phase gate-evidence`, which
   exits **2** with `unknown phase` on main. Routing it means landing the retained branch's
-  `verify_checkpoint.py` **+399/-21**.
+  `verify_checkpoint.py` **+379/-20**.
 - And AC-7 requires the four committed fixtures (6310 lines) to replay at exit **1 / 1 / 0 / 1** with a
   blocking-vs-advisory split identical to the post-split table. A detection-only engine has no
   findings, no `BLOCKING_KINDS` and no tiers: all four fixtures exit **0**. AC-7 is **unsatisfiable by
@@ -164,8 +191,9 @@ measured costs +51 whole-tree false entries.
     this seam.
   - M3: the measured widening moves recall 1 of 5 → 2 of 5 while adding 51 whole-tree symbols that are
     loop-skip idioms in Figma/CSS extraction code.
-  - M4: 2 of the 5 misses — refusal by omission, and a guard that is itself a test — cannot be reached
-    by any pattern vocabulary at all. The ceiling is 3 of 5 and the path there is unmeasured.
+  - M4: 3 of the 5 instances — refusal by omission (2 and 3), and a guard that is itself a test (5) —
+    cannot be reached by any pattern vocabulary at all. The ceiling is 2 of 5, and M3 already reached
+    it, so there is no remaining step toward a higher number.
 - **Trade-off**: +1 historical instance detected (1 of 5 → 2 of 5) for +51 whole-tree gate symbols
   (101 → 152, a +50% longer declaration list) and 1 acceptance criterion failed by construction.
 
@@ -176,8 +204,10 @@ measured costs +51 whole-tree false entries.
   Question with a pointer to this Decision; and state the measured re-opener that would overturn the
   decline. Ship no engine, no phase, no attestation surface.
 - **Pros**:
-  - It is the only outcome the measurements support. M1 plus review lesson 6 reduce the candidate to
-    Option D (0 of 4) on 4 of 5 instances and to Option A (0 of 4) on the empty-list instances.
+  - It is the only outcome the measurements support. On the 4 of 5 instances that miss, M1 plus review
+    lesson 6 reduce the candidate to a mechanism SPEC-081 already measured at 0 of 4 — to **Option A**
+    on the 2 empty-list instances (1 and 5), and to **Option D** on the 2 wrong-symbol instances (2
+    and 3). Corrected in review: this line originally attributed 4 of 5 to Option D alone.
   - Removes the standing invitation to re-attempt a 15341-line lift whose own ACs it cannot satisfy.
   - Costs an ordinary PR nothing: no new blocking phase, no new review wall-time, no false-positive
     tax on any diff.
@@ -222,7 +252,8 @@ indistinguishable from SPEC-081's Option A (prose, 0 of 4), and on a wrong-symbo
 indistinguishable from Option D (checklist, 0 of 4) — the reviewer declares accurately about a function
 that did not fail open. Option B's escape is closed twice over: M2 shows the widening is an edit to
 `REFUSAL_PATTERNS` that AC-4 forbids, and M3 shows it buys +1 instance for +51 whole-tree false
-entries. M4 shows 2 of the 5 misses are unreachable by any pattern vocabulary in principle. Option D
+entries. M4 shows 3 of the 5 instances are unreachable by any pattern vocabulary in principle, which
+caps a vocabulary-only widening at 2 of 5 — the number M3 already measured. Option D
 is excluded by AC-1.
 
 **Recorded explicitly, because declining must not become unfalsifiable** — the **re-opener** for this
@@ -245,9 +276,11 @@ not re-tighten any predicate. It does not pre-empt ISSUE-084, ISSUE-085, ISSUE-0
 any of them lands a detection half, the re-opener above is the measurement that should be run against
 it.
 
-### The AC audit this Decision owes, because four of ISSUE-088's seven ACs were written against a tree that does not exist
+### The AC audit this Decision owes, because four of ISSUE-088's eight ACs were written against a tree that does not exist
 
-ISSUE-088's AC-4 through AC-7 were authored on the assumption that ISSUE-081 had landed. It did not.
+ISSUE-088 has **eight** acceptance criteria (corrected in review — this section originally said seven,
+while the audit below correctly enumerates AC-1 … AC-8). AC-4 through AC-7 were authored on the
+assumption that ISSUE-081 had landed. It did not.
 Claiming them as met would be the defect this SPEC exists to avoid, so each is recorded with the
 measurement showing its status:
 
@@ -277,9 +310,31 @@ measurement showing its status:
   skipped.
 - **AC-7 — unroutable.** `tests/fixtures/gate_evidence/` does not exist on main; there are no fixtures
   to replay. Needs an issue-level amendment.
-- **AC-8 — met.** SPEC-081's `ISSUE-088` Open Question is resolved below with a pointer to this
-  Decision, `issues.md` carries the pointer, and every residual this SPEC leaves open carries a named
-  carrier in Open Questions.
+- **AC-8 — PARTIALLY met. Corrected in review; the original entry claimed "met".** AC-8 has two
+  clauses and only the first is satisfied by this PR.
+  - *First clause — met.* SPEC-081's `ISSUE-088` Open Question is resolved below with a pointer to
+    this Decision, and `issues.md` on main carries `Spec: docs/specs/SPEC-088.md`. The "marked
+    resolved" half is a **close-time** obligation (`Status:` is still `doing` at review time), so it
+    is owed by the ship phase, not by this diff.
+  - *Second clause — NOT met.* AC-8 requires that "every residual this issue does not close carries
+    its own **named durable carrier rather than prose**". Measured against the Open Questions below:
+    **2 of 6 carry a named carrier** (the two owned by `ISSUE-087`, which exists in `issues.md` at
+    line 5113). The other **4 name a role, not a carrier** — "next sprint planner" (×2),
+    "orchestrator / team-lead", and "the reviewer who next records a 'newly added defence fails OPEN'
+    finding". By this repo's own precedent a named durable carrier is an `ISSUE-NNN` entry in
+    `issues.md`: ISSUE-088 itself exists **because** SPEC-081's decision 8 needed one, review lesson
+    15 being that a deferred finding is only real if it has a durable carrier.
+  - **This matters most for the fifth Open Question**, and the point is worth stating against this
+    SPEC's own argument rather than hiding in a status word. That question — how this DECLINE's own
+    failure rate will be measured — is assigned to an unassisted prose obligation on a future
+    reviewer. That is **structurally Option A**, the mechanism this SPEC measured at **0 of 4** and
+    cited as its primary reason to decline ADOPT. Turning the SPEC's own rule on the SPEC: if a prose
+    obligation nobody re-reads is not good enough to carry the direction property, it is not good
+    enough to carry this Decision's falsification either. The honest record is that the re-opener's
+    enforcement is **as unmechanised as the mechanism it rejected**, and Option C's own Cons already
+    concede the shape ("no mechanism enforces that") — this entry stops the AC audit from claiming
+    otherwise. Filing the four missing carriers is **out of scope for this PR** (ISSUE-088 may not
+    touch another issue's entry) and is owed to the team-lead.
 
 ### The self-run, reported rather than required to hit a number
 
@@ -354,6 +409,13 @@ review lesson 15.
 - [ ] **ISSUE-088's AC-5 and AC-7 are unroutable and AC-4 is vacuous on main** (measured in the AC audit
       above). They need an issue-level amendment rather than a silent claim of coverage — owner:
       orchestrator / team-lead, by: when ISSUE-088 is closed.
+- [ ] **What does the AC-4-legal widening seam actually cost?** Added in review. M2 originally claimed
+      no AC-4-legal widening exists; it does — `_CONDITIONAL`, `_BOOL_REFUSAL` and `_PREDICATE_SHAPE`
+      decide gate-hood and none is named by AC-4 or ISSUE-088's Scope/Out. M4 caps what it could buy at
+      **+1 instance** (instance 1 only), but its false-positive cost is **unmeasured**, and widening
+      `_PREDICATE_SHAPE` is plausibly worse than M3's +51 because it gates the boolean-refusal fallback
+      for every predicate-named function in the tree. This is a detection-boundary question, not a
+      direction-property one — owner: ISSUE-087, by: when its detection boundary is decided.
 - [ ] **Is refusal-by-omission detectable by any instrument at all?** M4 argues it is not reachable by a
       pattern vocabulary, because a pattern matches an added line and omission adds none. Whether an
       AST- or dataflow-level instrument could reach it is unmeasured, and that question belongs with

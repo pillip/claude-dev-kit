@@ -532,12 +532,18 @@ Option D (0 of 4) was that the gate list arrives mechanically instead of from th
 mechanical supply is measurably absent on the instances it was meant to cover, so on an empty list the
 obligation is indistinguishable from Option A and on a wrong-symbol list from Option D.
 
-The widening escape is closed twice, measured: `detect_gates` reads `REFUSAL_PATTERNS` directly, so
-widening detection **is** an edit to the predicate ISSUE-088's AC-4 requires byte-unchanged; and the one
-widening that was measured moves recall 1 of 5 → 2 of 5 while taking the whole-tree gate count from 101
-to 152. Two of the five misses — refusal by **omitting a line**, and a guard that **is** a test — are
-unreachable by any pattern vocabulary in principle: a pattern matches an added line, and omission adds
-none, while `is_test_path` excludes test paths upstream of any vocabulary.
+The widening escape is closed, measured: the one widening that was measured moves recall 1 of 5 → 2 of
+5 while taking the whole-tree gate count from 101 to 152, and because `detect_gates` reads
+`REFUSAL_PATTERNS` directly, **that** widening is an edit to the predicate ISSUE-088's AC-4 requires
+byte-unchanged. **Corrected in review (2026-10-31):** this paragraph originally claimed the escape was
+closed *twice*, on the ground that any widening is an AC-4 edit. That is false and SPEC-088's M2 now
+records the correction — `_CONDITIONAL`, `_BOOL_REFUSAL` and `_PREDICATE_SHAPE` also decide gate-hood
+and none is named by AC-4 or by ISSUE-088's Scope/Out, so an AC-4-legal widening seam exists and was
+not measured. What closes the escape is the ceiling, not the AC: **three** of the five instances —
+refusal by **omitting a line** (instances 2 and 3), and a guard that **is** a test (instance 5) — are
+unreachable by any pattern vocabulary in principle, because a pattern matches an added line and
+omission adds none, while `is_test_path` excludes test paths upstream of any vocabulary. That caps a
+vocabulary-only widening at **2 of 5**, which the measured widening already reached.
 
 **What this means for what any artifact may claim.** `review/gate-evidence` is **permanently limited to
 its decidable half** — a gate with **no attributed battery at all** — and the **arm-only authoring shape
@@ -615,8 +621,9 @@ Added by the 2026-10-24 amendment:
   **decision 11** above. The candidate successor is **not adopted**: the detection half's recall for the
   declaration use case is **1 of 5** historical instances and the human is handed an **empty list** on
   2 of 5, so the one property that distinguished it from Option A (0 of 4) and Option D (0 of 4) — a
-  mechanically supplied gate list — is absent exactly where it was needed. The widening escape is an
-  edit to `REFUSAL_PATTERNS` (which AC-4 forbids) and buys +1 instance for +51 whole-tree gate symbols.
+  mechanically supplied gate list — is absent exactly where it was needed. The measured widening buys
+  +1 instance for +51 whole-tree gate symbols and is an edit to `REFUSAL_PATTERNS` (which AC-4
+  forbids); the AC-4-legal seam that does exist is capped at the same 2 of 5 by M4's ceiling.
   The property is enforced by nothing, and decision 11 states so. Re-opener: a detection mechanism
   measured at **>= 4 of 5** without editing `REFUSAL_PATTERNS`, `_refusal_shaped` or the direction
   regex — owner: ISSUE-088 (closed), by: resolved.
