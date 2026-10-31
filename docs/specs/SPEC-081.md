@@ -513,6 +513,56 @@ The consequence this makes binding is also unchanged: **a green `gate-evidence` 
 not evidence that this mechanism works**, and ISSUE-077 is not the in-batch self-test the sprint plan
 assumed.
 
+## Amendment — 2026-10-31 (the disarm-direction property is DECLINED, not deferred)
+
+> Recorded by ISSUE-088 / **SPEC-088**, the durable carrier decision 8 asked for. Nothing above this
+> heading is edited; read it as the reasoning of its date. This amendment adds the one thing decision 8
+> left open, and closes it in the direction decision 8 itself anticipated ("If the disarm-*direction*
+> property must ever actually be enforced, diff analysis is the wrong instrument").
+
+### Decision 11 — the successor is DECLINED; the property is enforced by nothing, and that is written down
+
+**Decision: `docs/specs/SPEC-088.md`, Option C — DECLINE.** The candidate successor decision 8 named —
+attestation plus a reviewer obligation, fed the gate list mechanically by the detection half — is **not
+adopted**. The measurement that decided it, re-derived on 2026-10-31 from this repo's own history rather
+than quoted from the table above: over the five historical fail-open instances, the detection half's
+recall **for the declaration use case is 1 of 5**, and the human is handed an **empty list** on 2 of 5
+instances. The single structural claim ever made for the candidate over this SPEC's Option A (0 of 4) and
+Option D (0 of 4) was that the gate list arrives mechanically instead of from the author's memory; the
+mechanical supply is measurably absent on the instances it was meant to cover, so on an empty list the
+obligation is indistinguishable from Option A and on a wrong-symbol list from Option D.
+
+The widening escape is closed twice, measured: `detect_gates` reads `REFUSAL_PATTERNS` directly, so
+widening detection **is** an edit to the predicate ISSUE-088's AC-4 requires byte-unchanged; and the one
+widening that was measured moves recall 1 of 5 → 2 of 5 while taking the whole-tree gate count from 101
+to 152. Two of the five misses — refusal by **omitting a line**, and a guard that **is** a test — are
+unreachable by any pattern vocabulary in principle: a pattern matches an added line, and omission adds
+none, while `is_test_path` excludes test paths upstream of any vocabulary.
+
+**What this means for what any artifact may claim.** `review/gate-evidence` is **permanently limited to
+its decidable half** — a gate with **no attributed battery at all** — and the **arm-only authoring shape
+is NOT caught**, by this phase or by anything else in the kit. No artifact may state otherwise.
+
+**Measured, and stated plainly rather than papered over:** this amendment changes no claim string,
+because there is nothing on main to change. ISSUE-081 was dropped unmerged, so
+`scripts/verify_gate_evidence.py` does not exist, `review/gate-evidence` is an unknown phase
+(`bash scripts/checkpoint.sh --skill review --phase gate-evidence --issue ISSUE-088` exits 2), and the
+occurrence count of any gate-evidence claim string in `skills/review/SKILL.md.tmpl`, the generated
+`skills/review/SKILL.md` and `agents/team-lead.md` is already **0** — produced by the drop, not by any
+edit. The user-facing-phase-text half of ISSUE-088's AC-3 is therefore **unroutable**: there is no phase
+text, and describing the limits of a gate that does not exist would itself be a false claim. It becomes
+live only if a future issue lands the phase.
+
+**The re-opener, so the decline is falsifiable rather than permanent by default.** If a detection
+mechanism is ever measured at **>= 4 of 5** on SPEC-088's five instances **without** editing
+`REFUSAL_PATTERNS`, `_refusal_shaped` or the direction regex, the mechanical-supply claim becomes true in
+fact and ADOPT should be re-filed. Until that measurement exists, a successor is Option D with extra
+steps.
+
+**Decision 6 is untouched.** `BLOCKING_KINDS` does not exist on main and SPEC-088's PR does not create
+it, so the tier split is unchanged in both directions, and `("review", "gate-evidence")` is still not in
+`ADVISORY_PHASES` — it is in no registry at all.
+
 ## Trade-offs Accepted
 
 - **The detector is syntactic, and its attribution rides on the vacuity guard.** A composite battery with no input-side vacuity guard is not credited to the gate even if a human would credit it, so the first PRs under this rule will sometimes have to *add* a guard to a test that was already adequate. Accepted deliberately: the alternative is crediting batteries that may be vacuous, which is how the arm-only diffs passed four times. The cost is bounded — one assertion per composite test.
@@ -560,14 +610,16 @@ Added by the 2026-10-14 amendment — each of these is a *durable carrier* for s
 - [ ] **ISSUE-087 — widen or honestly bound the detection boundary (amendment decision 3).** A gate is seen only inside an added `def` in a changed non-test `.py` file; module-level gates, gates in the kit's own eight `.sh` scripts, gates in source files whose names match the test-path heuristics, and tightened predicates in `class`-hinted hunks are all invisible and print byte-identically to a gate-free PR. Includes the sub-case that commit `7949ccb` demonstrated on this branch — a gate added by *modifying an existing function* — which contradicts this SPEC's own "a tightened predicate inside an existing function counts" claim — owner: ISSUE-087, by: the sprint after ISSUE-081 ships.
 Added by the 2026-10-24 amendment:
 
-- [ ] **ISSUE-088 — decide the successor for the disarm-DIRECTION obligation (amendment decision 8).**
-  After the tier split, the direction property is advisory and the arm-only shape that shipped four
-  fail-opens passes with a printed note. Three independent measurements say diff analysis cannot carry
-  it: polarity is undecidable for a detector-shaped gate (598 of 4047 of this repo's own assert lines
-  credited, ~40% of them bare counts), Option A is 0 of 4 and Option D is 0 of 4, and the per-battery
-  misclassification rate is 16 of 27. The candidate successor is **attestation plus a reviewer
-  obligation** — a per-gate declaration naming the test that carries the refusal and the polarity it
-  asserts, fed by the *detection* half (which is decidable and works) and checked by a human — which is
-  a different mechanism with a different failure mode and needs its own SPEC. Do not re-attempt it as a
-  tightening of this phase — owner: ISSUE-088, by: the sprint after ISSUE-081 ships.
+- [x] **RESOLVED 2026-10-31 — ISSUE-088 — decide the successor for the disarm-DIRECTION obligation
+  (amendment decision 8).** **Decision: `docs/specs/SPEC-088.md`, Option C — DECLINE.** See
+  **decision 11** above. The candidate successor is **not adopted**: the detection half's recall for the
+  declaration use case is **1 of 5** historical instances and the human is handed an **empty list** on
+  2 of 5, so the one property that distinguished it from Option A (0 of 4) and Option D (0 of 4) — a
+  mechanically supplied gate list — is absent exactly where it was needed. The widening escape is an
+  edit to `REFUSAL_PATTERNS` (which AC-4 forbids) and buys +1 instance for +51 whole-tree gate symbols.
+  The property is enforced by nothing, and decision 11 states so. Re-opener: a detection mechanism
+  measured at **>= 4 of 5** without editing `REFUSAL_PATTERNS`, `_refusal_shaped` or the direction
+  regex — owner: ISSUE-088 (closed), by: resolved.
+  The original entry's framing is preserved in decision 8 and in SPEC-088's Problem section; it is
+  marked resolved here rather than deleted, so the question and its answer stay adjacent.
 - [ ] Re-examine the direction predicate's **59% per-battery misclassification rate** once real PRs have exercised it. `any()` semantics masks it today; the measured reachable case is one deleted smoke battery away. Specifically decide whether the undecidable **predicate-polarity** class (for a detector-shaped gate, `assert detected is True` *is* the refusal) should be handled by a per-gate polarity declaration rather than by the attestation escape — owner: the reviewer of the 5th PR under this phase, by: 5 PRs after merge.
