@@ -58,12 +58,28 @@
 > written only by the `delegate` subcommand, which emits **only** when the
 > runtime reviewer echoes that digest back, so a delegation recorded with
 > them is a delegation whose subject was verified at the consumer rather than
-> merely printed at the producer. Four observed runs would otherwise have
-> recorded a delegation for a diff of zero bytes. The reason vocabulary below
-> is UNCHANGED: an echo-gate rejection degrades through the existing
-> `inline-attempt-failed` token, and the subject-refusal vocabulary
-> (`SUBJECT_REASONS` in `scripts/review_context.py`) is a separate, disjoint
-> set that is never written into an event.
+> merely printed at the producer. Five observed runs would otherwise have
+> recorded a delegation for a diff the reviewer never read — four of zero
+> bytes, and one (2026-10-31) of 48.5KB of the **wrong** subject, which is
+> why `diff_sha256` and not `diff_bytes` is the load-bearing field.
+>
+> **These three events are also a RECEIPT, not only telemetry.** `delegate`
+> reads the written line back and refuses if it is not there, and
+> `record-subject` requires a line matching the issue, head oid, byte count
+> and digest before it will write the counter-evidence block into
+> `docs/review_notes/<ISSUE>.md` — a record that recomputed its own evidence
+> would render identically whether the echo gate passed, was rejected, or
+> never ran. Two consequences for this stream: (a) on that path the run id is
+> required rather than best-effort (`reason=verification-unconfigured`), and
+> (b) the file is read as untrusted input — regular-file only, `O_NOFOLLOW`,
+> non-blocking open, byte-bounded tail read, malformed lines skipped. The
+> events are written under the resolved **branch worktree's**
+> `.claude/runs/`, not the CWD's, so they are co-located with the notes they
+> attest to. The reason vocabulary below is UNCHANGED: an echo-gate rejection
+> degrades through the existing `inline-attempt-failed` token, and the
+> subject-refusal vocabulary (`SUBJECT_REASONS` in
+> `scripts/review_context.py`) is a separate, disjoint set that is never
+> written into an event.
 >
 > The shared emit SEAM is `scripts/kit_telemetry.py` (ISSUE-067) — that title
 > moved there when ISSUE-067 landed. `review_context.py` still carries its own
