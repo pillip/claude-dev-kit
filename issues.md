@@ -58,7 +58,7 @@
 - [ ] ISSUE-085: Backfill the paired gate evidence for the ten shipped gates SPEC-081 recorded as unevidenced _(track: platform, P2, 1d — ten blocking guards carry neither a disarm battery nor a composite pin, and `verify_hollow_tests.py` has no test module at all; test surface only, behaviour unchanged; depends on 081)_
 - [ ] ISSUE-086: Close the gate-evidence detector's under-detection class — recognise `return None` and withheld refusals, after repairing attribution _(track: platform, P1, 1.5d — durable carrier for SPEC-081 amendment decision 2: recall is 4/6 genuine gate-adders, both false negatives refuse by `return None`, and recovering the recall costs 1 false BLOCK per 2 recalls because attribution cannot see a battery driven through a test helper — attribution must be repaired first; depends on 081)_
 - [ ] ISSUE-087: Widen or honestly bound the gate-evidence detection boundary, and stop reporting a miss as "no gate-adding change" _(track: platform, P2, 1d — durable carrier for SPEC-081 amendment decision 3: a gate is seen only inside an added `def` in a changed non-test `.py` file, so module-level gates, the kit's own eight `.sh` scripts, test-named source files and `class`-hinted hunks all print the byte-identical gate-free PASS line; commit 7949ccb, written to harden this gate, is invisible to it; depends on 081)_
-- [ ] ISSUE-088: Decide the successor mechanism for the disarm-DIRECTION obligation, or decline the property outright _(track: platform, P1, 1d — durable carrier for SPEC-081 amendment decision 8: after the 2026-10-24 tier split the direction property is advisory, so the arm-only shape that shipped four consecutive fail-opens passes with a printed note; polarity is undecidable for a detector-shaped gate (598 of 4047 assert lines credited, ~40% bare counts), Option A and Option D are each 0 of 4, and the per-battery misclassification rate is 16 of 27 — decision issue, SPEC required, not a tightening of the direction predicate; depends on 081)_
+- [x] ISSUE-088: Decide the successor mechanism for the disarm-DIRECTION obligation, or decline the property outright _(track: platform, P1, 1d — durable carrier for SPEC-081 amendment decision 8: after the 2026-10-24 tier split the direction property is advisory, so the arm-only shape that shipped four consecutive fail-opens passes with a printed note; polarity is undecidable for a detector-shaped gate (598 of 4047 assert lines credited, ~40% bare counts), Option A and Option D are each 0 of 4, and the per-battery misclassification rate is 16 of 27 — decision issue, SPEC required, not a tightening of the direction predicate; ISSUE-081 was DROPPED, so this issue inherited the decision outright. **DECLINED 2026-10-31 (PR #145, SPEC-088 at Status accepted)**: detection recall re-derived at 1 of 5 against the symbol that actually failed open, detect_gates iterates REFUSAL_PATTERNS directly so the permitted widening and the forbidden edit are the same bytes, refusal-by-omission is unreachable by any pattern vocabulary, and ADOPT was satisfiable only by a 15341-insertion lift the split trigger forbids. Residuals carried by ISSUE-100, ISSUE-101 and ISSUE-087)_
 - [ ] ISSUE-089: Decide what corroboration makes it safe to resolve trunk through the remote-tracking ref — a bare branch name binds to the stale LOCAL `main` _(track: platform, P2, 1d — ISSUE-081 2026-10-24 rework residual: `_default_branch()` strips `refs/remotes/origin/main` to the bare `main`, which git DWIMs to `refs/heads/main`, so a branch forked from `origin/main`'s tip while the local trunk lags is diffed against the STALE LOCAL trunk and charged with commits it did not author — a wrong subject for the blocking `_gate_evidence_diff` AND for `_changed_files_vs_base`, shared with implement/red + implement/tests-written; the obvious fix NARROWS, which AC-9.3 forbids, so it needs a decision no ISSUE-081 AC names; decision issue, SPEC required; depends on 081)_
 - [ ] ISSUE-090: Decide how a record ABOUT a detector's trigger can live in the file that detector parses — three self-disarms in one issue _(track: platform, P2, 0.5d — learning-loop escalation: the review lesson "in a file a detector reads, never quote the detector's own trigger verbatim" reached Frequency 3 at High inside ISSUE-081 with no carrier (committed review notes' exemption marker moved a gate from evidenced to waived; a prior phase's descriptive prose parsed as a SECOND watermark declaration and `next-action` reported `rejected (2 field lines found, expected exactly one)`, disarming the sprint boundary silently across phases; the reviewer's own fix note re-armed it immediately); the live instance is fixed, the STRUCTURAL cause is not — in `parse_roster_watermark` the duplicate-count window is the whole file while acceptance is `## Meta`-scoped, so narrative prose can never be honoured but can always veto; decision issue, SPEC required, NOT a documentation lint; depends on none)_
 - [ ] ISSUE-091: Make the ship path delete both branch refs — `gh pr merge --delete-branch` deleted neither _(track: platform, P2, 0.5d — ISSUE-083 implement-phase discovery, mandated by ISSUE-083's AC-6 ("filed as its own issue rather than left in a PR body"), so ISSUE-083 cannot close until this exists; separate root cause from 083's resolution defect — worktree tenancy plus an unsurfaced remote-delete step, and no script-level call site to verify either; depends on 083)_
@@ -70,6 +70,12 @@
 - [ ] ISSUE-097: Harden trace_query.py's read path and bound its timestamp coercion — the telemetry READER kept the defences its writer gained _(track: platform, P1, 1d — ISSUE-071 review Mediums without a carrier until now: a planted FIFO at a read target hangs it, `_parse_ts`'s catch is too narrow, and the AC-4 root gap leaves worktree streams unread from main; the write side was hardened by ISSUE-070/058 and the read side was never revisited)_
 - [ ] ISSUE-098: Retire the stale silent-no-op docstrings in synthesize_gate_results.py _(track: platform, P2, 0.5d — ISSUE-071 review Medium; the module still documents the emit behaviour ISSUE-067 replaced, so the file argues against its own code)_
 - [ ] ISSUE-099: Make the containment-oracle test location-independent — it fails in every git worktree outside the main repo directory _(track: platform, P1, 0.5d — shipped to main by ISSUE-070 and reproduced on pure main at a scratch path by the 2026-10-25 ISSUE-081 re-review; worktrees are how every sprint phase runs, so a location-sensitive test in the suite the gates execute is a standing false signal)_
+- [ ] ISSUE-100: Decide whether the decidable half of gate-evidence ships on its own — and whether the 15341-insertion retained branch keeps living _(track: platform, P1, 1d — SPEC-088 Open Questions 1 and 7, which named only the role "next sprint planner". Detection-only closure measured at 23 symbols / 268 definition lines (vs 1310 for the full engine), but routing it needs a new review/gate-evidence phase plus four fixtures, and the blocking half was re-derived at 0 of 6. Deciding this is NOT deciding the direction property, which ISSUE-088 declined)_
+- [ ] ISSUE-101: Re-run the arm-only fail-open census on a schedule — the DECLINE's own failure rate currently rests on a prose obligation _(track: platform, P1, 0.5d — SPEC-088 Open Question 6, flagged High in the ISSUE-088 review as the sharpest self-application failure: it assigned falsification of the DECLINE to an unassisted obligation on "the reviewer who next records a fail-open finding", which is structurally the Option A that SPEC-088 itself measured at 0 of 4 and used as its main reason to decline ADOPT)_
+- [ ] ISSUE-102: spec_gate.py's SPEC-path resolution makes the sprint-mode auto_spec gate unsatisfiable — it can never return proceed _(track: platform, P1, 0.5d — measured during ISSUE-088 from BOTH locations by the implementer and independently re-reproduced by team-lead: the kit's own two rules guarantee the Spec: field and the SPEC file never co-locate until merge, and implement step 0c says STOP on a non-proceed re-run)_
+- [ ] ISSUE-103: Scope the implement/red checkpoint to the branch's own tests — any pre-existing failure certifies RED _(track: platform, P1, 0.5d — found during ISSUE-088: verify_implement_red runs the whole suite and treats any non-zero exit as RED, so the inverted-logic gate fails open on an unrelated red test. It did not bite on PR #145 only because RED was separately shown genuine on the new file alone)_
+- [ ] ISSUE-104: Make SPEC validation actually enforce — two measured fail-open routes in one control _(track: platform, P1, 0.5d — found during the ISSUE-088 review and re-measured by team-lead: CI runs validate_spec.py in directory mode without --strict so violations print and the job still exits 0, and validate() short-circuits on an empty chosen_option so a deferral-shaped SPEC passes with zero errors — the exact outcome ISSUE-088's AC-1 forbids)_
+- [ ] ISSUE-105: Resolve the Status=done contradiction between implement step 12 and the team-lead contract _(track: platform, P2, 0.5d — observed on ISSUE-088: skills/implement/SKILL.md step 12 sets Status=done at the end of IMPLEMENT while the team-lead contract forbids done before the PR is merged. The sub-task complied with the skill and left a false done on main with PR #145 open; team-lead reverted it under the lock)_
 
 ### Doing
 
@@ -5251,20 +5257,36 @@ The `review/gate-evidence` phase either sees a gate at module level, in a non-Py
 >
 > **The falsifier this issue must state is now sharper.** The re-review measured the blocking half at **0 of 6** and showed five of six misses are *detection* failures. A successor whose gate list is supplied by today's detection would therefore present a human with an **empty list** on five of six historical cases — Option A's 0-of-4 failure wearing a mechanical badge. The ADOPT branch must either show, measured per instance, that detection's recall is adequate for the declaration use case, or widen detection as part of this issue with that widening's own disarm test. Asserting "mechanically supplied, therefore different" without the measurement is the outcome AC-4 forbids.
 
+> **AMENDMENT — 2026-10-31 (close, team-lead).** Discharges **SPEC-088 Open Question 2**, which asked for an issue-level amendment rather than a silent claim of coverage. Outcome: **DECLINE**, recorded in `docs/specs/SPEC-088.md` at `Status: accepted`; review PASS on PR #145.
+>
+> **This issue has EIGHT acceptance criteria, not seven.** The orchestration brief and SPEC-088's own AC-audit heading both said seven; the block below contains 8 `- [ ]` AC bullets, counted independently by the reviewer and by team-lead. The SPEC's audit *body* enumerates AC-1…AC-8 correctly, so only the heading was wrong, and it was corrected in review.
+>
+> **Four ACs were authored against a tree that does not exist, and are hereby recorded as unmeetable rather than met.** ISSUE-081 was dropped unmerged after these ACs were written, so the artifacts they name never reached main. Measured at `cc9fe5d`:
+> - **AC-4 — VACUOUS.** `scripts/verify_gate_evidence.py` is absent from main, so `_refusal_shaped`, `REFUSAL_PATTERNS`, `_CONSUMER_RE` and `BLOCKING_KINDS` cannot be byte-changed. The intent (do not touch the rejected predicate) is honoured trivially — the PR changes **0** files under `scripts/` — and is asserted in the SPEC's prose rather than by a test that could never fail.
+> - **AC-5 — UNROUTABLE.** `bash scripts/checkpoint.sh --skill review --phase gate-evidence` exits **2** with `unknown phase`; 12 review phases are registered and `gate-evidence` is not among them.
+> - **AC-7 — UNROUTABLE.** `tests/fixtures/gate_evidence/` does not exist on main, so the four-fixture 1/1/0/1 replay has nothing to replay.
+> - **AC-3 — SPLIT three ways.** Its SPEC-081 half is **met** (Decision 11 states both required limitations verbatim). Its user-facing-phase-text half is **unroutable**: there is no phase and no text, and describing the limits of a gate that does not exist would itself be a false claim. Its occurrence-count half is **vacuous**: `git grep` returns **0** occurrences across `skills/review/SKILL.md.tmpl`, the generated `skills/review/SKILL.md` and `agents/team-lead.md` — but that 0 was produced **by ISSUE-081's drop, not by any edit this issue makes**, so the occurrence-whitelist is over the empty set. Declining to write that test is the correct call, not an evasion: a guard asserting the absence of strings that were never present passes trivially and can never fail, which is the manufactured-record pattern retired in `2a93d09`.
+>
+> **AC-2 and AC-6 are ADOPT-conditional** and do not bind a DECLINE. AC-2 was nonetheless satisfied in the form the DECLINE branch can satisfy it: the SPEC records both the ADOPT falsifier *and* a symmetric re-opener for the decline, so the verdict is falsifiable from both sides. AC-6 had nothing to mutate out, since no hand-off seam was landed — stated rather than silently skipped.
+>
+> **AC-1 and AC-8 bind and are met.** AC-8 was initially claimed `met` while 4 of 7 Open Questions named only a *role*; the review caught this as a High finding, and the four are now discharged — Open Questions 1 and 7 by **ISSUE-100**, Open Question 6 by **ISSUE-101**, and Open Question 2 by this amendment. Three were already owned by ISSUE-087.
+>
+> **No AC was re-scoped to make it passable.** The unmeetable ones are recorded as unmeetable. A future PR proposing to revive this mechanism should read AC-4/5/7 as describing ISSUE-081's tree and consult **ISSUE-100**, which owns whether any of that tree returns.
+
 - Track: platform
 - UI: false
 - Platform: web
 - Manual: false
 - Spec-Required: true
-- Spec: none
+- Spec: docs/specs/SPEC-088.md
 - PRD-Ref: none (kit self-development; SPEC-081 amendment decision 8 carrier. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier — a PR body is not one", "work added to satisfy a request for a DECISION ships without acceptance criteria", "a newly added defence must be tested in the DISARM direction and through its real consumer", "a hand-rolled parser must match the oracle's edge cases AND its intended boundary — prefer an occurrence-whitelist to a phrasing blacklist")
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-088-disarm-direction-successor
+- GH-Issue: 144
+- PR: https://github.com/pillip/claude-dev-kit/pull/145
 - Depends-On: none
 
 #### Goal
@@ -5869,6 +5891,12 @@ No swap of a **directory** component between the containment check and the open 
 >
 > **The deliverable is a decision plus the binding, not a new convention.** Where the contract lives — `skills/review/SKILL.md` step 3.1's prose, `scripts/review_context.py`, or both — and whether a zero-byte collection is a **refusal** or a **degrade to the `reviewer` agent** are the choices this issue makes. Note the constraint that shapes the second one: `review_context.py`'s reason vocabulary is a closed set of exactly three (`capability-absent` / `context-unreachable` / `inline-attempt-failed`), pinned by `tests/test_review_context.py` and by `argparse` `choices`, so a new reason is a vocabulary change with an existing test surface. Note also that both observations are of the **sub-task** context; whether the main-session path auto-collects the same way is **unmeasured**, and AC-6 is where that gets measured rather than assumed.
 
+> **AMENDMENT — 2026-10-31 (team-lead, ISSUE-088 / PR #145 review).** **A fourth instance, observed live and corrected in flight.** The `security-review` harness again auto-collected its own subject and arrived with `GIT STATUS: On branch main` and the literal `DIFF CONTENT: (Bash completed with no output)`; uncorrected it would have returned a clean bill on a PR it never read. This instance is on the **delegated** path with `Skill` observed `present` and `decide` returning `delegated` for both dimensions — the same shape as #139 and #141, so the count of reproductions is now **four across three sprints**, and the first four real uses of the path ISSUE-072 made reachable have all been defective.
+>
+> **A new, distinct leg this instance adds:** the countermeasure's own hand-off is unreliable across contexts. The reviewing agent materialised the diff to a file and passed the path, but the **code** reviewer reported that path *not present from its own context* and regenerated the diff from the explicit `main...<head-oid>` range. The regenerated byte count and sha256 matched exactly, so the subject held — but only because the **byte-count echo** was required and caught it. A file path is therefore NOT a sufficient carrier for the subject between contexts; the range plus a verifiable digest is. AC-1 should require the digest (or byte count) to be echoed by the consumer rather than merely printed by the producer, since a printed-but-unread number is the same fail-open this issue is about.
+>
+> The discipline that has now worked four times, and which this issue must make structural: materialise the diff, record **byte count + `diff --git` header count + sha256**, pin the worktree path, pass the explicit `<base>...<head-oid>` range, and **require every delegated reviewer to echo the digest back before its verdict is accepted**. On PR #145 that was 42762 bytes / 3 headers / sha256 `4933656585…`, echoed by all three passes.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -6057,6 +6085,10 @@ No docstring in `synthesize_gate_results.py` describes emit behaviour the module
 >
 > Why it is P1 despite being a single test: **worktrees are how every sprint phase runs.** `wt_setup.sh` puts implement, review and ship inside `.worktrees/`, and the blocking `test` and `smoke` checkpoints execute this suite there. A test whose verdict depends on the checkout's filesystem location is a standing false signal in exactly the harness the kit's gates run under — and the class is worse than the instance, because it teaches every future reader that a red result might be the location rather than the code. This session already paid that tax twice: a reviewer's own in-worktree mutation probe produced 12 phantom failures, and a sprint brief carried a wrong `2740` baseline for the same family of reasons (`test_sprint_queue.py` parametrizes over real `docs/sprint_state.archive-*.md` files, so main collects tests no worktree can reach).
 
+> **AMENDMENT — 2026-10-31 (team-lead, ISSUE-088).** **The reported failure did not reproduce, measured independently twice.** `tests/test_kit_telemetry.py::TestContainmentRootDerivation::test_matches_the_oracle_in_this_checkout` **passed** in the ISSUE-088 worktree (`.worktrees/issue-ISSUE-088-disarm-direction-successor`, 12 of 12 in the class) for both the implement sub-task and the review sub-task, and passes on main. Two sub-agents in separate contexts were each told to expect a failure and each measured a pass, so this is not one agent's mis-read.
+>
+> **Why this matters more than a stale row.** This issue currently instructs every implementer to expect and ignore a failure in the suite the blocking gates execute. **An instruction to ignore a test that does not actually fail trains the reader to ignore one that does** — it is a manufactured fail-open in the reader rather than in the code. Before any fix is attempted, the first task is to establish the condition under which it fires: the original observation was on pure main at a *scratch path*, not in a `.worktrees/` sibling, so "any worktree outside the main repo directory" is likely the wrong predicate and the real variable may be path depth, symlink resolution, or containment-root derivation relative to the git common dir. Either pin the firing condition with a test or close this issue as not-reproducible — but do not leave the ignore-instruction standing unqualified.
+
 - Track: platform
 - UI: false
 - Platform: web
@@ -6102,3 +6134,366 @@ The suite returns the same verdict from the main checkout and from any worktree,
 
 #### Rollback
 `git revert` — test-only, no production surface. Reverting restores a test that fails by location, which is the state this issue was filed against.
+
+### ISSUE-100: Decide whether the decidable half of gate-evidence ships on its own — and whether the 15341-insertion retained branch keeps living
+
+> Durable carrier for **SPEC-088 Open Questions 1 and 7**, both of which named only the role "next sprint planner". Filed by team-lead at ISSUE-088's close because a residual whose owner is a role is not a durable carrier (review lesson 15), and because the ISSUE-088 review found AC-8 claimed `met` while 4 of 7 Open Questions were role-only.
+>
+> **These are one decision, not two.** Whether to lift the detection-only half from `issue/ISSUE-081-gate-evidence` and whether to keep that branch alive are the same question asked from opposite ends: the branch exists *because* the lift might happen, so a decision to decline the lift is also the decision that retires the branch. Deciding them separately is how one of them becomes permanent by default.
+>
+> **Measured inputs, all from SPEC-088 and re-verified during its review — treat as input, but re-derive anything the Decision rests on.** The detection-only dependency closure is **23 symbols / 268 definition lines**, against **1310** for the full engine and 1881 lines in the file — comfortably inside a normal issue budget, which is what makes this a live question rather than a rhetorical one. Against that: the blocking half was re-derived at **0 of 6** historical instances, detection recall at **1 of 5** against the symbol that actually failed open, and routing the phase at all needs a new `review/gate-evidence` entry in `VERIFIERS` plus the four committed fixtures. The branch is **15341 insertions across 17 files** with no consumer.
+>
+> **This issue must not re-open the direction property.** ISSUE-088 declined it, with a falsifier and a re-opener recorded in SPEC-088's Decision. A PR that re-litigates the decline fails this issue by construction; the subject here is whether the *decidable* half — a gate with no attributed battery at all — is worth routing on its own.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-088 Open Questions 1 and 7. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier — a PR body is not one", "work added to satisfy a request for a DECISION ships without acceptance criteria", "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: none
+
+#### Goal
+There is a written verdict on the decidable half: either it ships as a routed phase with its own measured value, or it is declined and `issue/ISSUE-081-gate-evidence` is retired with its measurements preserved in the SPEC record rather than in a branch ref.
+
+#### Scope (In/Out)
+- In:
+  - A SPEC whose Decision is one of exactly two outcomes — **ROUTE** the decidable half as a `review/gate-evidence` phase, or **DECLINE** it and delete the branch — with the unchosen branch recorded together with the measurement that rejected it.
+  - On the ROUTE branch: the detection-only closure actually extracted (not the 1881-line file), the phase registered in `VERIFIERS`, the four fixtures committed as text, and the value argument stated as what the phase catches that no existing phase does — measured against history, not asserted.
+  - On the DECLINE branch: preserving the measurements that justify retention today (they are already in `docs/specs/SPEC-081.md` at Status `superseded`, which survives branch deletion) and then deleting the remote and local refs.
+  - Either way: a statement of what happens to the four fixtures, which are the only reproducible artifact the branch carries.
+- Out:
+  - **Re-opening ISSUE-088's declined direction property.** Its Decision, falsifier and re-opener stand.
+  - Attribution in any form. The re-review's six remaining disarms all live there, two of them fabricating blocking findings on honest PRs; a decidable-half phase needs detection only.
+  - ISSUE-087's detection boundary and verdict vocabulary, ISSUE-086's refusal vocabulary, ISSUE-085's backfill, ISSUE-084's duplicated-oracle decision.
+  - Widening `REFUSAL_PATTERNS` or any gate-hood vocabulary — ISSUE-087 owns the detection boundary.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given SPEC-100 at `Status: accepted`, when its Decision is read, then it records exactly one of ROUTE or DECLINE for the decidable half, and states the fate of `issue/ISSUE-081-gate-evidence` explicitly in the same Decision rather than leaving it implied.
+- [ ] Given the ROUTE branch, when the phase runs against the four committed fixtures, then the exit codes are 1 / 1 / 0 / 1 and `issue_074_non_gate.diff` stays at 0 gates / 0 findings / exit 0, asserted by a test — a decidable-half phase must cost an ordinary PR nothing.
+- [ ] Given the ROUTE branch, when the extracted engine is measured, then it is the detection-only closure and a test pins that no attribution symbol was lifted with it, so the layer carrying all six known disarms cannot arrive as a side effect.
+- [ ] Given the DECLINE branch, when the branch refs are checked after the PR merges, then both the local and the remote ref are absent, and `docs/specs/SPEC-081.md` still contains the per-instance measurement table — the record outlives the ref. Note ISSUE-091: `wt_cleanup.sh` deletes the local ref while the remote survives, so verify both.
+- [ ] Given either branch, when the PR's own diff is read, then ISSUE-088's Decision text in `docs/specs/SPEC-088.md` is byte-unchanged — this issue consumes that decision and does not revise it.
+
+#### Implementation Notes
+- Read `docs/specs/SPEC-088.md`'s Decision and M5 first: the 23/268 closure figure is the whole reason this is a real option, and it was re-verified to the digit during review.
+- The honest framing: a phase that fires on "no attributed battery at all" is decidable and was never the part that failed. What failed was deciding *polarity*. Keep that distinction in the Decision's own words, or the next reader will re-run ISSUE-081.
+- If ROUTE is chosen, the phase's own disarm test must drive the real consumer `bash scripts/checkpoint.sh`, not `analyze()` alone — review lesson 16, six observations at High.
+- `skills/review/SKILL.md` is generated; write wording in `skills/review/SKILL.md.tmpl` and regenerate with `python3 scripts/gen_skills.py`.
+
+#### Tests
+- [ ] `python3 scripts/validate_spec.py docs/specs/SPEC-100.md --strict` exits 0.
+- [ ] ROUTE only — four-fixture replay at 1 / 1 / 0 / 1, plus the no-tax regression on `issue_074_non_gate.diff`.
+- [ ] ROUTE only — an attribution-symbol absence pin, mutation-tested in both directions so it fails if an attribution symbol is reintroduced and passes on the honest tree.
+- [ ] DECLINE only — both refs absent post-merge; SPEC-081's measurement table still present.
+
+#### Rollback
+`git revert`. On ROUTE, reverting removes a phase that had just started reporting, which is safe in the under-detection direction. On DECLINE, reverting cannot resurrect a deleted branch — so delete the refs in a **separate** commit after the SPEC lands, and treat ref deletion as the irreversible step it is.
+
+---
+
+### ISSUE-101: Re-run the arm-only fail-open census on a schedule — the DECLINE's own failure rate currently rests on a prose obligation
+
+> Durable carrier for **SPEC-088 Open Question 6**, raised to High by the ISSUE-088 review as the sharpest instance of the issue's own rule turned on itself. SPEC-088 declined the disarm-direction property partly *because* Option A — an unassisted prose obligation on a reviewer — measured **0 of 4**. It then assigned the measurement of its own failure rate to "the reviewer who next records a fail-open finding, at that finding's review". That is Option A again, pointed at the decision that rejected Option A.
+>
+> **The asymmetry that makes this worth a carrier rather than a rewrite.** A prose obligation fails silently and indistinguishably from success: if no reviewer ever re-runs the census, the DECLINE looks exactly as healthy as if the census had been run and found nothing. That is the kit's recurring shape — a control whose defeated output is identical to its healthy output — and it is the reason four consecutive fail-opens escalated into ISSUE-081 in the first place.
+>
+> **What is already measured and must not be re-derived from scratch.** SPEC-081 ran this census once: four recorded instances of "a newly added defence fails OPEN" (ISSUE-068/#121, ISSUE-076/#128, ISSUE-078/#133, ISSUE-072/#135), later re-derived per instance at **0 of 6** for the blocking half and **1 of 5** detection recall. Those are the baseline the next count compares against.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-088 Open Question 6, promoted by the ISSUE-088 review. Native-memory review lessons: "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings", "a deferred finding is only real if it has a durable carrier", "a disclosed residual is a CLAIM — measure it, or the disclosure itself becomes the defect")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: none
+
+#### Goal
+The question "has the arm-only fail-open shape recurred since ISSUE-088 declined the property?" is answered by running something, not by remembering to look — and the answer is recorded where the next reader of SPEC-088 will hit it.
+
+#### Scope (In/Out)
+- In:
+  - A re-runnable census of the arm-only fail-open shape over merged history, producing a count and a per-instance list against the recorded baseline of 4.
+  - Deciding where its output lands so that **not having run it is visible**: an absent or stale result must be distinguishable from a clean one. The whole defect being carried here is a measurement that is silent when skipped.
+  - A stated trigger. "At the next fail-open review" is what failed; prefer something a person or a job actually reaches.
+- Out:
+  - Re-deciding the direction property. ISSUE-088 declined it; this issue measures the consequence.
+  - Building the gate. This is a census, not a blocking phase — ISSUE-100 owns the question of whether anything gets routed.
+  - Changing `REFUSAL_PATTERNS` or any detection vocabulary (ISSUE-087 owns the boundary).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the census, when it is run against merged history, then it prints a count and a per-instance list, and the count for the pre-ISSUE-088 window equals the recorded baseline of **4** — the instrument is calibrated against known instances before it is trusted on new ones.
+- [ ] Given the census has never been run, or its recorded result is older than its stated trigger window, when its output is read, then that state is **distinguishable from a clean result** — asserted by a test that drives the absent-result and stale-result cases, not only the fresh one.
+- [ ] Given a hand-constructed arm-only fixture with a known fail-open, when the census runs over it, then it is counted — and when the fixture's disarm battery is added, then it is not. Mutation-tested in both directions, so a census that counts nothing is distinguishable from a repo with nothing to count.
+- [ ] Given SPEC-088's Open Question 6, when it is read after this lands, then it names this issue rather than a role.
+
+#### Implementation Notes
+- The calibration AC is the load-bearing one. A census that reports 0 on a clean window and 0 because it is broken are the same output; checking it reproduces the baseline of 4 is the only cheap way to tell those apart.
+- Do **not** state a target number for the new count. ISSUE-087 measured the Goodhart hazard: requiring a self-application figure to come out at a particular value created an incentive to write code the control could not observe.
+- The four baseline instances and their shas are in `docs/specs/SPEC-081.md`'s Problem section and its Supersession table; use those rather than re-finding them.
+- Prefer the cheapest instrument that calibrates. This is a counting job, not a gate, and it has no authority to block anything.
+
+#### Tests
+- [ ] Calibration: the pre-ISSUE-088 window yields exactly the baseline of 4, with the per-instance list matching the recorded shas.
+- [ ] Absent-result and stale-result cases each render distinguishably from a clean result.
+- [ ] Arm-only fixture counted; same fixture with a disarm battery not counted.
+
+#### Rollback
+`git revert` — measurement-only, no production surface and no gate. Reverting returns the DECLINE's failure rate to the unassisted prose obligation this issue exists to replace, which is the defect rather than a safe state; prefer re-landing.
+
+---
+
+### ISSUE-102: spec_gate.py's SPEC-path resolution makes the sprint-mode auto_spec gate unsatisfiable — it can never return proceed
+
+> **Measured during ISSUE-088 from both locations by the implement sub-task, then independently re-reproduced by team-lead before filing.** `spec_path_exists` resolves the issue's `Spec:` value against the directory of the `issues.md` it read (`scripts/spec_gate.py:92` — `(issues_md_dir / spec_path).resolve().exists()`). The kit's Shared-Registry rule puts the `Spec:` field on **main's** `issues.md` and forbids committing registry files to feature branches; `/spec`'s Output Contract writes the SPEC file on the **branch**. So the two artifacts the gate must see together are, by the kit's own two rules, **guaranteed never to co-locate until merge**.
+>
+> Reproduced both ways on ISSUE-088 at `cc9fe5d`, identical reason string each time:
+> - From main: `Spec: docs/specs/SPEC-088.md` is set, `docs/specs/SPEC-088.md` does not exist → `auto_spec`.
+> - From the worktree: `docs/specs/SPEC-088.md` exists, but the branch's `issues.md` is frozen at the base commit reading `Spec: none` → `auto_spec`.
+>
+> **Why this is High and not cosmetic.** `skills/implement/SKILL.md` step 0c instructs: re-run the gate after `/spec` and "if it is still not `proceed`, STOP and report." Taken literally, **every `Spec-Required` issue in sprint mode halts after writing its SPEC** — the gate blocks precisely the issues it was built to help. ISSUE-088 only completed because the sub-task judged the gate's intent satisfied and proceeded anyway, which is a human-shaped override of a mechanical gate and not a thing to rely on twice. A co-located control (both artifacts in one temp dir) returns `proceed`, confirming the logic is right and only the path resolution is wrong.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; measured on ISSUE-088 / PR #145, 2026-10-31, from both locations and re-reproduced by team-lead. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer", "hand-rolled parsers must match the oracle's edge cases AND its intended boundary")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: none
+
+#### Goal
+A sprint-mode `Spec-Required` issue that has actually produced its SPEC reaches `proceed`, from the main checkout and from its worktree alike, without any agent having to override the gate's verdict by judgement.
+
+#### Scope (In/Out)
+- In:
+  - Fixing the resolution so the gate can see a SPEC that exists on the branch while the `Spec:` field lives on main — by resolving against the worktree root, consulting both roots, or accepting the branch's own copy. The choice is the issue's to make; it must be stated with the failure mode it accepts.
+  - Pinning **both** configurations with tests: field-on-main / file-on-branch, and both co-located. The co-located case already passes, so a test suite that only covers it would have missed this defect entirely.
+  - Reviewing `skills/implement/SKILL.md` step 0c's "STOP and report" so a gate that cannot be satisfied does not halt the pipeline silently.
+- Out:
+  - Changing the Shared-Registry rule or `/spec`'s Output Contract. Both are deliberate; the gate must work with them rather than the reverse.
+  - The `hold` / `bypassed` / signal-detection paths, which are unaffected.
+  - `validate_spec.py`'s own enforcement holes — **ISSUE-104** owns those.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a sprint-mode `Spec-Required` issue whose `Spec:` field is on main's `issues.md` and whose SPEC file exists only in the branch worktree, when `spec_gate.py` runs from the worktree **and** from the main checkout, then both return `decision: "proceed"` — both locations asserted, since the defect was invisible from either one alone.
+- [ ] Given a sprint-mode `Spec-Required` issue whose SPEC genuinely does **not** exist anywhere, when the gate runs from either location, then it still returns `auto_spec` — the fix must not be bought by making the check vacuous. Mutation-tested: delete the SPEC file and the decision must change.
+- [ ] Given the co-located configuration, when the gate runs, then it still returns `proceed` — the legacy caller class is pinned and not regressed (review lesson 8).
+- [ ] Given `skills/implement/SKILL.md` step 0c, when it is read after this change, then its STOP instruction cannot fire for a configuration the kit's own rules make unavoidable.
+
+#### Implementation Notes
+- The one-line diagnosis is at `scripts/spec_gate.py:92`; the kit's conflicting rules are in `skills/implement/SKILL.md`'s Shared Registry Files section and `skills/spec/SKILL.md`'s Output Contract.
+- AC-2 is the important one. Resolving against "either root" is the obvious fix and is also the obvious way to make the gate unable to say no; the mutation pin is what separates those.
+- `git rev-parse --show-toplevel` from the issue's worktree is the natural oracle for the branch root, but note ISSUE-089: a bare branch name binds to the stale local `main`, so do not introduce a trunk resolution here.
+
+#### Tests
+- [ ] Field-on-main / file-on-branch → `proceed`, asserted from both the worktree and the main checkout.
+- [ ] SPEC absent everywhere → `auto_spec`, from both locations (the disarm direction).
+- [ ] Co-located → `proceed` (legacy pin).
+
+#### Rollback
+`git revert`. Reverting restores a gate that halts every issue it fires on, which is the defect rather than a safe state; prefer re-landing the fix.
+
+---
+
+### ISSUE-103: Scope the implement/red checkpoint to the branch's own tests — any pre-existing failure certifies RED
+
+> **Found during ISSUE-088.** `verify_implement_red` in `scripts/verify_checkpoint.py` runs the **whole** suite and treats any non-zero exit as a successful RED. Its logic is deliberately inverted — pytest failing is the expected outcome — so **any** pre-existing unrelated failure anywhere in the suite certifies the TDD RED phase regardless of whether the branch's new tests fail, or even assert anything. The verifier already carries a hazard note covering exit-5 and JS mis-runs; this route is not covered.
+>
+> **The reason to file it even though it did not bite.** On PR #145 the RED was separately shown genuine by withholding the artifact under test and running the new module alone (11 failed / 1 passed, then 12 passed once restored). So the gate reported healthy *and* the underlying property happened to hold — which is exactly the state in which a defeated-capable control is cheapest to fix and least likely to be noticed. ISSUE-099 is a live example of the enabling condition: a standing suite failure that implementers are instructed to expect would silently satisfy this gate for every issue.
+>
+> This is the kit's own recurring shape — a control whose defeated output is identical to its healthy output — applied to the gate that is supposed to prove tests test something.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; found on ISSUE-088 / PR #145, 2026-10-31. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer", "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: none
+
+#### Goal
+The RED checkpoint passes only when the branch's **own** new or modified tests fail, so a green RED means the new tests have teeth rather than that the suite happened to be red somewhere else.
+
+#### Scope (In/Out)
+- In:
+  - Scoping the RED run to the branch's added/modified test files, or requiring the observed failure to originate inside them.
+  - Distinguishing "the new tests failed" from "the suite was already failing" in the verifier's rendered output, so the reason for a RED pass is visible rather than inferred.
+  - Extending the verifier's existing hazard note to name this route.
+- Out:
+  - The `implement/test` (GREEN) checkpoint, whose logic is not inverted and does not have this failure mode.
+  - `_has_real_tests` and the hollow-test predicate — **ISSUE-094** owns its `tests/conftest.py` defect.
+  - Fixing whichever suite failure happens to be standing (ISSUE-099 carries the current candidate, and its reproduction is itself disputed).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a branch whose new tests all **pass** but where an unrelated pre-existing test in the suite fails, when `implement/red` runs, then it exits **non-zero** — today it exits 0, and both numbers belong in the PR.
+- [ ] Given a branch whose new tests genuinely fail, when `implement/red` runs, then it exits 0 and its output names which of the branch's own test files failed — the arm direction, with the reason made visible rather than implied.
+- [ ] Given a branch whose new tests fail **and** an unrelated test also fails, when the checkpoint runs, then it still exits 0 — the fix must not be bought by refusing whenever the suite is imperfect.
+- [ ] Given the verifier's hazard note, when it is read after this change, then it names this route alongside the existing exit-5 and JS-mis-run cases.
+
+#### Implementation Notes
+- `verify_implement_red` is in `scripts/verify_checkpoint.py`; `_changed_files_vs_base` and `_existing` already compute the branch's own test-file delta for `verify_implement_tests_written`, so the scoping input exists and should be reused rather than re-derived — re-typing an oracle is the class with six recorded instances.
+- AC-3 is the one that keeps this honest. The cheap fix is "refuse if anything else is red", which trades a fail-open for a fail-closed that will be bypassed within a sprint.
+- Note the interaction with ISSUE-094: if the hollow-test predicate reddens on an edited `tests/conftest.py`, that failure would also satisfy today's RED gate.
+
+#### Tests
+- [ ] New tests pass + unrelated test fails → non-zero (the disarm direction; this is the defect).
+- [ ] New tests fail → 0, with the failing branch test file named.
+- [ ] New tests fail + unrelated test fails → 0 (no over-refusal).
+
+#### Rollback
+`git revert` — reverting restores a RED gate that any unrelated red test satisfies. Safe only in the sense that it blocks nothing; prefer re-landing.
+
+---
+
+### ISSUE-104: Make SPEC validation actually enforce — two measured fail-open routes in one control
+
+> **Found during the ISSUE-088 review and re-measured by team-lead before filing.** Two independent routes by which a SPEC can be invalid and nothing says so. They are filed together because they are the same control's two legs and fixing either alone still leaves SPEC validity unenforced — but each has its own AC and its own disarm test.
+>
+> **Route 1 — CI runs the validator in a mode that cannot fail.** `.github/workflows/ci.yml:45` runs `uv run python3 scripts/validate_spec.py docs/specs/`. `main()` ends with `return 1 if args.strict or target.is_file() else 0`, so in **directory mode without `--strict`** violations are printed and the process exits **0**. CI prints a violation list and goes green. Measured on main at `cc9fe5d`: 22 SPECs, 0 violations, exit 0 — so the control is currently defeated-capable with nothing to catch, which is why it has gone unnoticed. One flag fixes it.
+>
+> **Route 2 — a deferral-shaped SPEC passes with zero errors.** `validate()` guards the chosen-option check with `if spec["chosen_option"] and spec["options"]:` (`scripts/validate_spec.py:176`), and nothing anywhere asserts `chosen_option` is non-empty (`parse_spec` initialises it to `""`). So a SPEC whose Decision names **no** option validates clean. Confirmed by execution, not by reading: taking the real, currently-passing `SPEC-066.md`, `validate()` returns 0 errors unmutated, and still returns **0 errors** with `chosen_option` emptied.
+>
+> **Why Route 2 matters beyond tidiness.** A SPEC that decides nothing is exactly the artifact ISSUE-088's AC-1 forbids ("A Decision that defers the choice to a further carrier fails this AC") — and the validator that the sprint's spec gate leans on cannot see it. At present the only thing in the repo closing this hole is a single guard in `tests/test_spec_088_decision_contract.py`, which is a test for one specific SPEC rather than a property of the validator.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; found in the ISSUE-088 / PR #145 review, both routes re-measured by team-lead 2026-10-31. Native-memory review lessons: "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence", "a newly added defence must be tested in the DISARM direction and through its real consumer", "a disclosed residual is a CLAIM")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: none
+
+#### Goal
+An invalid SPEC fails something: CI goes red on a violation, and a SPEC whose Decision chooses nothing is a violation.
+
+#### Scope (In/Out)
+- In:
+  - Route 1: make the CI invocation enforce (the `--strict` flag, or a directory-mode default that exits non-zero), and decide which, stating what the chosen default does to a repo that already has violations.
+  - Route 2: make an empty `chosen_option` an error in `validate()`, so a deferral-shaped SPEC cannot validate clean.
+  - A pass over the existing 22 SPECs before enforcement lands, so turning the gate on does not immediately red CI for pre-existing content — and a statement of what was found.
+  - Folding `tests/test_spec_088_decision_contract.py`'s generic guards into `tests/test_validate_spec.py` once Route 2 lands, since a property of the validator belongs in the validator's tests rather than in one SPEC's bespoke module. Verified during the ISSUE-088 review: all 23 SPECs pass today, so a `glob("SPEC-*.md")` parametrize is viable.
+- Out:
+  - The content of any individual SPEC. This issue makes the validator honest; it does not re-decide anybody's Decision.
+  - `scripts/spec_gate.py`'s path resolution — **ISSUE-102** owns that.
+  - `validate_issues.py`'s warn-without-enforcing behaviour, which is the same shape in a different script and should get its own carrier if it is worth fixing.
+  - Adding new required sections or changing the measurable-trade-off heuristic.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a directory containing at least one SPEC with a violation, when the **CI invocation as written in `.github/workflows/ci.yml`** runs, then it exits non-zero. Asserted by driving the real consumer's command form, not `validate()` alone — the defect lives in the invocation, so a unit test on the function would not have caught it.
+- [ ] Given a directory where every SPEC is valid, when the same invocation runs, then it exits 0 — the enforcement is not bought by refusing unconditionally.
+- [ ] Given a SPEC whose Decision names no option, when `validate()` runs, then it returns at least one error naming the missing choice. Mutation-tested from a real passing SPEC by emptying `chosen_option`, which today yields 0 errors.
+- [ ] Given every SPEC currently in `docs/specs/`, when the enforcing invocation runs after this change, then it exits 0 — enforcement lands on a clean tree, or the PR says which SPECs were fixed to get there.
+- [ ] Given `tests/test_spec_088_decision_contract.py` after the fold, when the generic validator properties are located, then they live in `tests/test_validate_spec.py` and the mutation coverage recorded in ISSUE-088's review (14 mutants, 13 killed, 1 deliberate negative control) is preserved or improved — a consolidation that loses guards is a regression.
+
+#### Implementation Notes
+- Route 1 is one word. Route 2 is one condition. The work here is almost entirely in the disarm tests and the pre-enforcement sweep; budget accordingly and resist expanding the validator.
+- AC-1's "drive the real consumer" clause is the lesson this defect teaches: the function was fine and the *call* was wrong, so unit coverage of `validate()` could never have found it.
+- Keep the negative control when folding. The ISSUE-088 review's 14th mutant deliberately un-bullets a trade-off line that the oracle legitimately accepts, proving the guards do not fire on honest input; a consolidation that drops it loses the both-directions property.
+- `_iter_spec_files` globs `SPEC-*.md`, so a parametrized test over real SPECs is a two-line change — but note the user-level rule that derived facts about records should not be linted. Pin the validator's behaviour, not the documents' prose.
+
+#### Tests
+- [ ] CI command form against a directory with a violation → non-zero; against a clean directory → 0.
+- [ ] Empty `chosen_option` on a real passing SPEC → at least one error (mutation from the honest tree).
+- [ ] Full `docs/specs/` sweep under the enforcing invocation → 0.
+- [ ] Post-fold mutation count at least matches the recorded 13 killed + 1 negative control.
+
+#### Rollback
+`git revert`. Reverting restores a validator that prints violations into a green CI job and accepts SPECs that decide nothing — the defect rather than a safe state. Prefer re-landing. If CI reddens on pre-existing content after the fact, fix the content rather than reverting the enforcement.
+
+---
+
+### ISSUE-105: Resolve the Status=done contradiction between implement step 12 and the team-lead contract
+
+> **Observed on ISSUE-088, 2026-10-31.** `skills/implement/SKILL.md` step 12 instructs: "Record PR URL in issues.md; set Status=done". `agents/team-lead.md`'s quality criteria instruct: "Never mark an issue as 'done' unless it has been shipped (PR merged)". Both are mandatory, they contradict each other, and an implement sub-task following its own skill faithfully leaves `Status: done` on main's `issues.md` while the PR is still open and unreviewed.
+>
+> That is what happened: ISSUE-088 was marked `done` at the end of IMPLEMENT with PR #145 open, and team-lead reverted it to `doing` under `registry_edit.sh` before dispatching review. **The cost is only visible if the session dies in between** — a crash between implement and ship would have left a merged-looking `done` on an unmerged PR, and the sprint queue's next-action logic reads exactly that field. Fifteen infrastructure deaths occurred in the session that observed this, so the window is not hypothetical.
+>
+> The deliverable is a decision about which document yields, not a patch to whichever one is noticed first. Note that `/implement` is also used **standalone**, outside a sprint, where there is no ship phase to finalise the registry — so "just delete step 12's status write" may strand the non-sprint caller.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; observed on ISSUE-088 / PR #145, 2026-10-31. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier", "relaxing a shared contract for a new caller class must be scoped to that class, with legacy failure modes pinned")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: none
+
+#### Goal
+An issue's `Status` field means one thing, and no skill instructs an agent to write a value another contract forbids — in sprint mode or standalone.
+
+#### Scope (In/Out)
+- In:
+  - Deciding which document yields, with the **standalone `/implement`** caller explicitly considered: in sprint mode `/ship` finalises the registry, but there is no ship phase outside a sprint, so the two caller classes may legitimately need different terminal states.
+  - Making the two documents agree in writing once decided (`skills/implement/SKILL.md.tmpl` and `agents/team-lead.md`).
+  - Checking whether any consumer reads `Status: done` as "merged" — `scripts/sprint_queue.py` and `validate_issues.py` are the candidates — since the field's meaning is only as good as its readers' agreement.
+- Out:
+  - The `Board` checkbox convention, which is a separate surface with its own update path.
+  - `scripts/registry_edit.sh` and the locking contract (ISSUE-074), which worked correctly here.
+  - Adding a new Status value, unless the Decision explicitly concludes the vocabulary is the problem.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `skills/implement/SKILL.md` and `agents/team-lead.md` after this change, when both are read, then neither instructs a `Status` write the other forbids, for either the sprint-mode or the standalone caller — asserted as an occurrence count over the literal instruction strings actually changed, never as a phrasing blacklist.
+- [ ] Given a standalone `/implement` run with no sprint and no ship phase, when it completes, then the issue reaches a terminal state the Decision names, and that state is reachable without a ship phase — the legacy caller class is pinned rather than stranded (review lesson 8).
+- [ ] Given every consumer that reads the `Status` field, when they are enumerated in the PR body, then each is listed with whether it treats `done` as "merged" — so the field's meaning is agreed by its readers and not only by its writers.
+
+#### Implementation Notes
+- `skills/implement/SKILL.md` is **generated** — edit `skills/implement/SKILL.md.tmpl` and regenerate with `python3 scripts/gen_skills.py`, or `tests/test_gen_skills.py` will fail on drift.
+- The occurrence-whitelist form in AC-1 matters: assert zero occurrences of the exact strings this PR removes, not of a paraphrase. A phrasing blacklist is the hand-rolled-parser failure the kit has recorded repeatedly.
+- The standalone path is the reason this is a decision and not a one-line deletion. Measure what a non-sprint `/implement` leaves behind today before choosing.
+
+#### Tests
+- [ ] Occurrence count of each removed instruction string is 0 in both generated files and their templates; generated files match their templates.
+- [ ] Standalone-mode terminal state reached without a ship phase.
+
+#### Rollback
+`git revert` — documentation and skill text only. Reverting restores the contradiction, which is the defect; prefer re-landing.
+
+---

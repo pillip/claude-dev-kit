@@ -5,6 +5,42 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+### Decided
+- **The disarm-DIRECTION obligation is DECLINED, not deferred again** (ISSUE-088,
+  PR #145) — `docs/specs/SPEC-088.md` lands at `Status: accepted` recording
+  **DECLINE** for the property that `review/gate-evidence` was built to enforce.
+  Its predecessor ISSUE-081 consumed four review cycles and was dropped unmerged;
+  this closes the question rather than passing it on, which the issue's own AC-1
+  required. **No engine surface changed — zero files under `scripts/`.**
+
+  The measurements that decided it, re-derived rather than quoted: detection
+  recall is **1 of 5** against the symbol that actually failed open, so a
+  mechanism handing a reviewer the gates a PR adds would present an empty list on
+  most historical cases — the 0-of-4 failure of an unassisted prose obligation
+  wearing a mechanical badge. `detect_gates` iterates `REFUSAL_PATTERNS` directly
+  to decide gate-hood, so "widen detection" and "leave `REFUSAL_PATTERNS`
+  byte-unchanged" are **the same bytes**; a widening was measured as a probe and
+  rejected rather than landed, because adding `^\s*continue` moves whole-tree
+  detected gates 101 → 152 and the +51 are loop-skip idioms, not gates. And
+  refusal expressed by **omitting** a line is unreachable by any pattern
+  vocabulary at all, since a pattern matches an added line and omission adds
+  none — capping a vocabulary-only fix at 3 of 5.
+
+  `docs/specs/SPEC-081.md` is updated in place to stop over-claiming what a
+  widening would cost. Residuals carry named issues rather than roles:
+  **ISSUE-100** (does the decidable half ship on its own, and does the retained
+  15341-insertion branch survive), **ISSUE-101** (re-run the fail-open census, so
+  the decline's own failure rate is measured rather than remembered), and
+  ISSUE-087 for the three detection-boundary questions.
+
+### Fixed
+- Nothing — this release entry is a decision record, not a behaviour change.
+  `tests/test_spec_088_decision_contract.py` pins the artifact as structurally a
+  decision (≥2 options, each with a measurable comparator, exactly one chosen
+  option among those declared) and is mutation-tested in both directions:
+  **14 mutants, 13 killed, 1 deliberate negative control** covering the
+  does-not-fire-on-honest-input direction.
+
 ### Added
 - **Review execution context is decided once, with degradations reason-tagged**
   (ISSUE-066, PR #122) — new `scripts/review_context.py` replaces `/review`
