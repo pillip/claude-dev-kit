@@ -35,15 +35,43 @@ Steps:
    ```
    The JSON output carries one decision per dimension (`code` → runtime `/code-review`, `security` → runtime `/security-review`). Follow it per dimension:
    - `"path": "degraded"` → invoke the `reviewer` agent (`--dimension code` / `--dimension security`) with NO inline runtime-skill attempt and NO retry — `decide` already recorded the decision with its reason (`capability-absent` or `context-unreachable`).
-   - `"path": "delegated"` → invoke the runtime skill (`/code-review` / `/security-review`), then record the delegation:
+   - `"path": "delegated"` → **bind the subject first, then invoke the runtime skill, then accept the verdict only through the echo gate.** A delegated reviewer that collects its own subject reviews the wrong thing: on five PRs across four sprints the harness either arrived with the literal `DIFF CONTENT: (Bash completed with no output)` and a git status showing `main`, or — on 2026-10-31 — **discarded the pinned subject arguments entirely** and auto-collected `DIFF CONTENT: <persisted-output> Output too large (48.5KB)`, 48.5KB of the main checkout's dirty registry churn. Uncorrected, each would have returned a clean bill on something other than the PR (ISSUE-096). Note which check catches the second shape: it is **not empty**, so a byte count greater than zero passes it — only the sha256 comparison rejects it.
+
+     First make sure the run has an id, because the echo gate's verification is written to the run file and step 5.3 reads it back (the kit has no other producer for `KIT_RUN_ID`; use the same literal value in every command of this review):
      ```bash
-     python3 scripts/review_context.py emit --event review_delegated_to_code_review --issue $ARGUMENTS
-     # (--event review_delegated_to_security_review for the security dimension; add --pr <number> when known)
+     mkdir -p "$WT/.claude/runs"
      ```
-     If the inline invocation fails despite the decision (probe-2 ambiguity), record the failure and fall back to the degraded `reviewer` agent for that dimension:
+
+     **(a) Collect the subject — run this command once, before any runtime invocation:**
+     ```bash
+     SUBJ="$(python3 scripts/review_context.py collect --pr <pr_number> --issue $ARGUMENTS)"
+     ```
+     Exit 0 prints one JSON object: `range` (`<base-oid>...<head-oid>`), `worktree_path`, `diff_command`, `diff_bytes`, `diff_headers`, `diff_sha256`, `head_oid`, `base_ref`. A **non-zero exit is a REFUSAL**: stdout is empty and stderr names `reason=`. Do NOT invoke the runtime skill on a refusal — report the reason and treat the dimension as unreviewed:
+     - `reason=empty-diff-head-is-merge-base` — genuine no-op PR, nothing to review.
+     - `reason=empty-diff-unexplained` — computed and empty, but the head moved (a change and its revert).
+     - anything else (`head-oid-unreachable`, `base-ref-unresolvable`, `worktree-path-missing`, `gh-*`, `collection-error`, …) — the subject **could not be computed**. That is NOT an empty diff; fix the named cause and re-run. (`worktree-path-missing` means a registered worktree directory is gone: `git worktree prune`.)
+     The collection is re-run inside `delegate` and `record-subject` too — four git collections per review run, each re-establishing the subject rather than trusting an artifact that was measured not to survive the hand-off.
+
+     **(b) Hand the subject over explicitly.** Put `range`, `worktree_path`, `diff_bytes` and `diff_sha256` verbatim into the runtime skill's prompt, tell it to run the payload's **`diff_command` exactly as printed** (it already carries `-C <worktree_path>`, `--no-ext-diff` and `--no-textconv`; a differently-flagged diff produces a different digest and an honest review would be rejected), and require it to **echo back the byte count and sha256 it measured** before stating its verdict. Do not let it auto-collect its own subject, and do not hand it a file path as the only carrier — a materialised diff file was measured "not present" from the code reviewer's own context on PR #145, and only the byte-count echo caught it. **Do not fabricate an echo**, and do not copy the digest from (a) on the reviewer's behalf: a pasted digest is the one remaining way past this gate, and using it means recording a verdict on a diff nobody read.
+
+     > **Measured constraint (2026-10-31, ISSUE-096 / PR #147 review) — the runtime `/security-review` accepts no review target.** Its harness **discarded** the pinned subject arguments (they appeared nowhere in the prompt it produced) and auto-collected instead: from the main checkout it arrived with `GIT STATUS: On branch main` and 48.5KB of the wrong subject; from the worktree it collects nothing at all (`(Bash completed with no output)`). **Neither CWD works, so step (b) cannot be executed for the security dimension on this runtime.** Its echo can never match, `delegate` will refuse with `reason=echo-mismatch`, and the security dimension therefore **degrades to the `reviewer` agent** through the `inline-attempt-failed` token below — report it as degraded, do not fabricate an echo to get past it. The code dimension is unmeasured in this shape and is attempted normally. Recorded as a dated row in `docs/cc_feature_matrix.md`; re-probe it when the runtime changes.
+
+     **(c) Record the delegation through the echo gate** (it re-collects and compares; it emits `review_delegated_to_code_review` / `review_delegated_to_security_review` only on a match, and that event is the receipt step 5.3 consumes):
+     ```bash
+     KIT_RUN_ID=review-$ARGUMENTS python3 scripts/review_context.py delegate --dimension <code|security> --pr <pr_number> --issue $ARGUMENTS \
+       --head-oid <the head_oid from (a)> \
+       --echoed-bytes <the number the reviewer reported> --echoed-sha256 <the sha256 the reviewer reported>
+     ```
+     A non-zero exit means the verdict is not usable:
+     - `reason=echo-mismatch` — the reviewer's verdict is about something other than this PR: **discard the verdict** and do not use its findings.
+     - `reason=head-moved` — the branch advanced while the reviewer was reading. The verdict is about the older head; re-run (a) and re-review rather than discarding the reviewer's work as dishonest.
+     - `reason=verification-unconfigured` — the receipt had nowhere to go; create `$WT/.claude/runs` and set `KIT_RUN_ID` as above, then re-run.
+
+     On `echo-mismatch` (and for the security dimension per the measurement above), fall back to the degraded `reviewer` agent for that dimension and record the fallback with the existing token (this issue added no fourth reason):
      ```bash
      python3 scripts/review_context.py emit --event review_degraded_path_used --dimension <code|security> --reason inline-attempt-failed --issue $ARGUMENTS
      ```
+     The same `emit` call covers an inline invocation that fails outright despite the decision (probe-2 ambiguity).
 
    Mixed mode (one runtime + one degraded) is supported. Run code-quality and security in parallel where possible; capture outputs to `docs/.review/code-review.md` and `docs/.review/security-review.md` (the synthesizer expects these paths). Decide-time degradations are emitted by `decide` itself — do not re-emit `review_degraded_path_used` for them.
 
@@ -153,6 +181,17 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.13 com
 > Record any `no-trigger` markers as Low-severity `code_findings` entries (title prefixed `[debt]`) in `docs/.review/findings.json` so deferrals don't become permanent. Does NOT block the review.
 
 5) `docs/review_notes/$ARGUMENTS.md` is **already produced by step 3.14** (synthesizer) with the canonical 2-section format (Code Review + Security Findings, minimality/debt findings folded into Code Review with their tags) plus any kit-distinctive sections (UI Review / Design Audit / Accessibility Audit / Figma Compliance) that ran. If fixes applied in step 4 changed the underlying findings, or step 4.7 added `[debt]` entries, re-run `python3 scripts/synthesize_review_notes.py` with the updated `docs/.review/findings.json`. Do not edit `docs/review_notes/$ARGUMENTS.md` by hand — the kit's SSOT contract (`/ship`, `/sprint` consumers) depends on the synthesizer-produced shape.
+
+5.3) **Record the review subject in the notes** (ISSUE-096 counter-evidence). This runs HERE, downstream of the synthesizer at step 3.14 and of any re-synthesis in step 5, because those rewrite the very file it checks — placed upstream it would gate a surface that is overwritten afterwards, and pass anyway:
+   ```bash
+   KIT_RUN_ID=review-$ARGUMENTS python3 scripts/review_context.py record-subject --pr <pr_number> --issue $ARGUMENTS
+   ```
+   It writes the byte count, head oid, range and verified dimensions into `<worktree>/docs/review_notes/$ARGUMENTS.md` — **copied from the receipt the passing echo gate in step 3.1(c) wrote, not recomputed here.** That is the point: a block the command computes for itself is byte-identical whether the echo gate passed, was rejected, or never ran. An existing block is replaced in place, so a second review cycle (step 6 commits and pushes these notes, which moves the head) does not wedge. A non-zero exit means:
+   - `reason=verification-missing` / `reason=verification-unconfigured` — no passing delegation to attest to. Either no dimension delegated (then skip this step), or the echo gate was never run / was rejected / had no run id.
+   - `reason=review-notes-missing` — run the synthesizer first.
+   - `reason=subject-duplicate-block` / `reason=subject-unparseable` — the notes carry two blocks or an unreadable one; delete the stale block and re-run.
+
+   Fix the cause before shipping, so "reviewed nothing" can never render identically to "reviewed and found nothing". Skip only when no dimension delegated.
 
 5.5) **Learning Extraction → native memory** (kit-distinctive, not duplicated by runtime). Identify findings in `docs/review_notes/$ARGUMENTS.md` that could have been prevented earlier (at kickoff or implementation time), and record each preventable pattern as a **review lesson in Claude Code's native persistent memory** so it auto-recalls into future sessions — replacing the retired `docs/review_lessons.md` registry (ISSUE-033).
    - Persist to the project memory topic file `review-lessons.md` (in the native auto-memory directory — `${autoMemoryDirectory}` if set, else `~/.claude/projects/<project>/memory/`; use your memory capability rather than a hard-coded path). Add a one-line pointer under a `## Review Lessons` heading in `MEMORY.md` so the index surfaces it at session start.

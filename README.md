@@ -695,6 +695,14 @@ optional — the defaults are safe for local and CI runs:
   refusal, distinct from `reason=remote-unreachable`, because an offline remote
   stalls rather than failing fast. Requires `timeout` (or `gtimeout`); where
   neither exists the consultation runs unbounded and says so on stderr.
+- `KIT_REVIEW_GH_TIMEOUT` — default `30`; wall-clock seconds allowed for the
+  single `gh pr view` consultation `scripts/review_context.py collect` makes to
+  read the PR's head oid (ISSUE-096). Invalid or non-positive values fall back
+  to the default. Every other command on that path is a local git read that
+  terminates immediately and is deliberately unbounded. Exceeding the bound is
+  reported as its own `reason=gh-timeout` refusal — distinct from
+  `reason=gh-failed` and from an empty diff — because a stalled network call
+  would otherwise hang the blocking review gate instead of failing it.
 - `KIT_ALLOW_BROWSER_INSTALL` — set to `1` to let the visual-diff and
   computed-styles gates auto-install Playwright + Chromium (heavy network +
   subprocess provisioning) when the browser is missing. Unset (the default) or
@@ -725,7 +733,15 @@ optional — the defaults are safe for local and CI runs:
   noise rather than signal (ISSUE-071). Set to a value outside
   `[A-Za-z0-9_-]{1,64}`: the same fallback **plus** one `[kit-telemetry]`
   stdout line naming this knob, because that one is a misconfiguration you
-  can fix. Read the events back — both this stream and the ISSUE-001 hook
+  can fix. **One exception, added by ISSUE-096:** on the `/review` delegation
+  path the event `scripts/review_context.py delegate` writes is not telemetry
+  but a *receipt* — `record-subject` reads it back to prove the review notes
+  describe a diff some reviewer actually echoed. There, an unset or invalid
+  id is a named refusal (`reason=verification-unconfigured`) rather than a
+  fallback, because a receipt written under a shared `unattributed` id could
+  not be attributed to this run. `skills/review/SKILL.md` step 3.1 supplies
+  `KIT_RUN_ID=review-<ISSUE>` for exactly those commands. Read the events
+  back — both this stream and the ISSUE-001 hook
   trace, on the default path — with
   `python3 scripts/trace_query.py summary`, whose `unattributed events`
   count is the aggregate the per-emit line used to report.
