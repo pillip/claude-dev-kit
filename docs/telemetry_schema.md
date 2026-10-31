@@ -42,8 +42,8 @@
 
 | Event type                          | Owner skill | Payload fields                          | Notes |
 |-------------------------------------|-------------|-----------------------------------------|-------|
-| `review_delegated_to_code_review`    | review      | `pr_number: int | str`                  | Emitted when runtime `/code-review` is invoked. |
-| `review_delegated_to_security_review`| review      | `pr_number: int | str`                  | Emitted when runtime `/security-review` is invoked. |
+| `review_delegated_to_code_review`    | review      | `pr_number: int | str`, `diff_bytes?: int`, `diff_sha256?: str`, `head_oid?: str` | Emitted when runtime `/code-review` is invoked. The three subject fields are added by `delegate` (ISSUE-096); the pre-096 `emit` call path writes `pr_number` only and those lines stay valid legacy. |
+| `review_delegated_to_security_review`| review      | `pr_number: int | str`, `diff_bytes?: int`, `diff_sha256?: str`, `head_oid?: str` | Emitted when runtime `/security-review` is invoked. Same subject fields as above. |
 | `review_degraded_path_used`          | review      | `dimension: "code" | "security", reason: "capability-absent" | "context-unreachable" | "inline-attempt-failed"` | One emission per degraded dimension. `reason` was added by ISSUE-066 — pre-066 lines without it are valid legacy. |
 
 > ISSUE-066: `scripts/review_context.py` is the review path's single emit
@@ -52,6 +52,18 @@
 > `capability-absent` / `context-unreachable`, ONCE per degraded dimension
 > per review run); its `emit` subcommand is the prose-side call site for the
 > delegated events and the `inline-attempt-failed` degradation.
+>
+> ISSUE-096: the delegated events gained `diff_bytes` / `diff_sha256` /
+> `head_oid` — the subject the runtime reviewer actually read. They are
+> written only by the `delegate` subcommand, which emits **only** when the
+> runtime reviewer echoes that digest back, so a delegation recorded with
+> them is a delegation whose subject was verified at the consumer rather than
+> merely printed at the producer. Four observed runs would otherwise have
+> recorded a delegation for a diff of zero bytes. The reason vocabulary below
+> is UNCHANGED: an echo-gate rejection degrades through the existing
+> `inline-attempt-failed` token, and the subject-refusal vocabulary
+> (`SUBJECT_REASONS` in `scripts/review_context.py`) is a separate, disjoint
+> set that is never written into an event.
 >
 > The shared emit SEAM is `scripts/kit_telemetry.py` (ISSUE-067) — that title
 > moved there when ISSUE-067 landed. `review_context.py` still carries its own

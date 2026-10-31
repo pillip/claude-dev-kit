@@ -695,6 +695,14 @@ optional — the defaults are safe for local and CI runs:
   refusal, distinct from `reason=remote-unreachable`, because an offline remote
   stalls rather than failing fast. Requires `timeout` (or `gtimeout`); where
   neither exists the consultation runs unbounded and says so on stderr.
+- `KIT_REVIEW_GH_TIMEOUT` — default `30`; wall-clock seconds allowed for the
+  single `gh pr view` consultation `scripts/review_context.py collect` makes to
+  read the PR's head oid (ISSUE-096). Invalid or non-positive values fall back
+  to the default. Every other command on that path is a local git read that
+  terminates immediately and is deliberately unbounded. Exceeding the bound is
+  reported as its own `reason=gh-timeout` refusal — distinct from
+  `reason=gh-failed` and from an empty diff — because a stalled network call
+  would otherwise hang the blocking review gate instead of failing it.
 - `KIT_ALLOW_BROWSER_INSTALL` — set to `1` to let the visual-diff and
   computed-styles gates auto-install Playwright + Chromium (heavy network +
   subprocess provisioning) when the browser is missing. Unset (the default) or
