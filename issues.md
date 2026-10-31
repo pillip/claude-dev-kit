@@ -76,6 +76,7 @@
 - [ ] ISSUE-103: Scope the implement/red checkpoint to the branch's own tests — any pre-existing failure certifies RED _(track: platform, P1, 0.5d — found during ISSUE-088: verify_implement_red runs the whole suite and treats any non-zero exit as RED, so the inverted-logic gate fails open on an unrelated red test. It did not bite on PR #145 only because RED was separately shown genuine on the new file alone)_
 - [ ] ISSUE-104: Make SPEC validation actually enforce — two measured fail-open routes in one control _(track: platform, P1, 0.5d — found during the ISSUE-088 review and re-measured by team-lead: CI runs validate_spec.py in directory mode without --strict so violations print and the job still exits 0, and validate() short-circuits on an empty chosen_option so a deferral-shaped SPEC passes with zero errors — the exact outcome ISSUE-088's AC-1 forbids)_
 - [ ] ISSUE-105: Resolve the Status=done contradiction between implement step 12 and the team-lead contract _(track: platform, P2, 0.5d — observed on ISSUE-088: skills/implement/SKILL.md step 12 sets Status=done at the end of IMPLEMENT while the team-lead contract forbids done before the PR is merged. The sub-task complied with the skill and left a false done on main with PR #145 open; team-lead reverted it under the lock)_
+- [ ] ISSUE-106: Measure whether the main-session delegated review auto-collects the PR's own diff — the path ISSUE-096 binds but never observed _(track: platform, P1, 0.5d — **Manual**: ISSUE-096 AC-6 split out as its sibling, per ISSUE-096's own team-lead note at filing, following the ISSUE-082/072 shape. Needs one live `/review` from a main-session context, which no agent can supply because every sprint-pipeline context IS a sub-task — which is why the measurement is still missing after four reproductions of the sub-task fail-open. Deliverable is one dated matrix row carrying the literal byte count the runtime skill echoed back plus `auto-collection empty` / `auto-collection correct`; depends on 096)_
 
 ### Doing
 
@@ -5906,11 +5907,11 @@ No swap of a **directory** component between the containment check and the open 
 - PRD-Ref: none (kit self-development; observed by the reviewing agent on PR #139 and PR #141, both 2026-10-25, recorded in `docs/sprint_state.md` — the row says "not filed this iteration … this row is the durable record until it has an id", which this issue discharges. Native-memory review lessons: "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings"; "a newly added defence must be tested in the DISARM direction and through its real consumer"; "a deferred finding is only real if it has a durable carrier")
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: doing
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-096-bind-review-diff
+- GH-Issue: 146
+- PR: https://github.com/pillip/claude-dev-kit/pull/147
 - Depends-On: none
 
 #### Goal
@@ -6495,5 +6496,79 @@ An issue's `Status` field means one thing, and no skill instructs an agent to wr
 
 #### Rollback
 `git revert` — documentation and skill text only. Reverting restores the contradiction, which is the defect; prefer re-landing.
+
+---
+
+### ISSUE-106: Measure whether the main-session delegated review auto-collects the PR's own diff — the path ISSUE-096 binds but never observed
+
+> **Split out of ISSUE-096 AC-6, exactly as ISSUE-096's own team-lead note at filing directs:** "AC-6 requires a live main-session `/review` run, which is an **interactive** obligation inside an issue filed `Manual: false` — the same tension that made ISSUE-082 `Manual: true`. This is acknowledged rather than designed around: AC-1..AC-5 are all auto-dispatchable and close the fail-open on the measured sub-task path, so if AC-6 blocks an otherwise-ready dispatch, **split it into a `Manual: true` sibling rather than weakening it or deleting the measurement**." ISSUE-096 ships AC-1..AC-5 and AC-7 (PR #147); this issue is the sibling, and the measurement is carried over **unweakened**.
+>
+> **This issue IS the durable carrier.** The obligation is not discharged by a note in ISSUE-096's PR body — review lesson 15, "a deferred finding is only real if it has a durable carrier — a PR body is not one", is the reason ISSUE-082, ISSUE-084 and ISSUE-097 exist in this file at all. A deferral recorded only in #147's PR body would be the same unreal deferral, so it is recorded here instead.
+>
+> **What is unknown, and why either answer is worth half a day.** ISSUE-096 binds the delegated review to an explicit `<base>...<head-oid>` range for the **sub-task** path — the path on which the silent fail-open was reproduced **four times across three sprints** (PR #139, PR #141, PR #145, all auto-collecting against the main checkout and arriving with the literal `DIFF CONTENT: (Bash completed with no output)`). Whether the **main-session** path auto-collects the same way is **unmeasured**. If it does not, ISSUE-096's binding is belt-and-braces there and the kit can say so. If it does, the same silent fail-open is **live on a blocking gate nobody has checked**. Either answer is useful; the current state — unknown, while the matrix row's own scope limit says in writing that "the MAIN-SESSION path was never probed" — is what is not.
+>
+> **Why `Manual: true`.** The measurement needs a `/review` begun from a **main-session, non-sub-task** context. Every agent context in the sprint pipeline **is** a Task sub-task — team-lead, planner, implement and review all run as sub-agents — so a `/review` dispatched from any of them is, by construction, the sub-task path that has already been measured four times. The main-session path is reachable **only** by a human typing `/review` at an interactive prompt; it is structurally unreachable from automation. That is the entire reason this measurement is still missing after four reproductions of its sibling. The flag is the guard; the reason is stated here so a future reader does not helpfully clear it and auto-dispatch a run that can only re-measure the sub-task path.
+>
+> **Precedent, deliberately followed:** ISSUE-082 is the existing `Manual: true` measurement sibling of a `Manual: false` parent (ISSUE-072), split for the identical reason — an AC demanding a live run in a context the shipping session cannot enter. This issue copies that shape: one measurement, one matrix row, one narrow shape guard, and an explicit instruction to leave the issue **open** rather than record a result the run could not produce.
+>
+> **Why P1.** The subject is a **blocking** gate whose defeated output is byte-identical to its healthy output, and the unknown sits on the half of it nobody has looked at — the same class the kit escalated into ISSUE-081 after four consecutive fail-opens. It is P1 rather than P2 because P2 is where this repo's standing measurement obligations go stale (ISSUE-075, ISSUE-079, ISSUE-084, ISSUE-085 are all long-dormant), and a *stale* unknown on a blocking gate is the thing to avoid. P1 here means "take it the next time a human is in the loop" — **not** "schedule it ahead of code work": `Manual: true` already makes it undispatchable by a sprint iteration, so it cannot displace autonomous capacity.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: true
+- Spec-Required: false
+- Spec: none (a measurement is not a design; ISSUE-096 made the decision this run observes)
+- PRD-Ref: none (kit self-development; carries ISSUE-096 AC-6 verbatim per ISSUE-096's team-lead note at filing, 2026-10-25, split by team-lead on 2026-10-31 during the ISSUE-096 implement phase. Native-memory review lessons: "a deferred finding is only real if it has a durable carrier — a PR body is not one" (this issue IS the carrier); "an attestation that can satisfy a gate is forgeable — a producer-printed digest is an attestation, a consumer-echoed digest is a verification"; "a gate whose subject is COMPUTED must distinguish 'computed and empty' from 'could not compute'"; "before concluding a runtime capability is absent, check whether your own configuration caused the absence"; "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: ISSUE-096
+
+#### Goal
+`docs/cc_feature_matrix.md` records, from one live main-session `/review` run on post-ISSUE-096 code, the **literal byte count the runtime review skill reported receiving** and the verdict `auto-collection empty` or `auto-collection correct` — so the main-session delegated path is either known to be sound (ISSUE-096's binding is belt-and-braces there) or known to be the only thing standing between a blocking gate and a clean bill on a diff nobody read.
+
+#### Scope (In/Out)
+- In:
+  - **One live `/review` run from a main-session (non-sub-task) context**, on a PR whose diff against its base is non-empty, against a checkout that **already carries ISSUE-096's merged fix** — the measurement is of post-fix behaviour.
+  - Recording the result as **one new dated row** in `docs/cc_feature_matrix.md`'s sub-agent skill-invocation area, carrying the byte count, the verdict string, the date, the `claude --version` build, and the observed invocation context.
+  - Requiring the byte count to be **echoed by the runtime skill** and comparing it against the kit-side count, recording both when they differ.
+  - A **narrow both-directions shape guard** on the new row, sized to the shape pins only (byte count, verdict string, date present and load-bearing).
+  - Recording a **blocker** and leaving this issue open if the run cannot produce a number.
+- Out:
+  - **Fixing** the main-session path. If the verdict is `auto-collection empty`, the fix needs its own carrier — this issue's deliverable is the measurement, and growing it into a fix is how a 0.5d measurement becomes an undispatchable programme.
+  - ISSUE-096's AC-1..AC-5 and AC-7 — all shipped by ISSUE-096 and treated as given here.
+  - ISSUE-082's session restart and plugin update, and its two-sided `Skill`-grant re-probe. If a human happens to be in a restarted session, both can be *run* in one sitting, but they are **not** folded: ISSUE-082 amends an existing row in place and pins its row count, and conflating them would put this issue's new row inside that pin.
+  - ISSUE-104's `validate_spec.py` fail-open routes, ISSUE-105's `Status: done` contradiction, ISSUE-099's location-sensitive containment test. None are prerequisites and none belong in this row.
+  - Any change to `scripts/review_context.py`'s decision logic or its three-value reason vocabulary.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The row exists and carries a literal byte count.** Given one `/review` run begun from a main-session (non-sub-task) context, on a PR whose diff against its base is non-empty, against a checkout containing ISSUE-096's merged fix, when step 3.1 delegates and the runtime skill reports what it received, then `docs/cc_feature_matrix.md` gains **one** new row in the sub-agent skill-invocation area whose Notes cell contains an **integer byte count** for the diff the runtime skill received, exactly one of the literal verdict strings **`auto-collection empty`** or **`auto-collection correct`**, the ISO date of the run, and the `claude --version` string. **A row that describes the behaviour without a byte count fails this AC** — as does a row whose only number is a `diff --git` header count or a sha256, which are corroboration and not the required measurement.
+- [ ] **The byte count is consumer-echoed, not producer-printed.** Given the reviewing context computed its own byte count for the same range, when the row is written, then the number recorded as the measurement is the one the **runtime skill stated in its own output**, and the row names **both** numbers — kit-side and skill-echoed — together with whether they matched. A row recording only the count the kit printed *at* the skill fails this AC: a producer-printed digest is an attestation, and only a consumer echo is a verification. The precedent is PR #145, where the code reviewer's regenerated count matched **only because the echo was required and checked**.
+- [ ] **"Empty" and "could not measure" are distinct recorded outcomes, and the second does not close this issue.** Given a run in which no byte count is obtained — the skill echoed none, or the delegation never occurred, when the result is recorded, then the row carries the literal string **`could-not-compute`** plus the named reason, **`auto-collection empty` is not written**, and this issue **stays open** with the blocker recorded. A run that records `auto-collection empty` without a byte count behind it fails this AC, because an absent measurement and a measured zero are different facts and only one of them is evidence.
+- [ ] **The observed invocation context is stated, not inferred.** Given the new row, when it is read, then it states how the context was determined to be a main session rather than a Task sub-task, which tool actually carried the delegation (`Skill`, `SlashCommand`, or neither), and the plugin version resolved for the session. A row stating only the outcome fails this AC: a null main-session result is indistinguishable from a **configuration artifact** — a frozen agent registry or a stale plugin cache — without it, which is precisely the trap ISSUE-082 was filed around after a 0.5.0 cache was nearly measured as evidence about 0.7.0 code.
+- [ ] **The new row does not redden the existing guard, and its own shape pins are load-bearing in both directions.** Given the new row added, when `tests/test_subagent_skill_grant.py` runs, then `test_exactly_one_subagent_skill_invocation_row_exists` **passes unmodified** and the full pre-existing module passes unmodified; any test that must change is named in the PR as a change to an ISSUE-072 acceptance criterion. And given the new row mutated one field at a time — byte count removed, verdict string removed, date removed — when the new shape guard runs on each, then **each** mutation fails it, and the unmutated row passes, so the guard pins the row's shape rather than its existence.
+
+#### Implementation Notes
+- **What the human has to do, and why no agent can.** Open an interactive session, be on a checkout that already has ISSUE-096 merged, pick a PR with a non-empty diff, type `/review` **at the main prompt** (not via `Task`, not inside any `claude-dev-kit:*` sub-agent), let step 3.1 delegate, and then read back the byte count the runtime skill states for the diff it received. The reason this cannot be delegated: every agent context in the sprint pipeline **is** a sub-task, so a `/review` issued from team-lead, planner, implement or review re-measures the already-measured sub-task path by construction. Four reproductions of the sub-task failure exist and zero main-session observations do, and that asymmetry is a property of who can type, not of anyone's diligence.
+- **The matrix guard collision is real and is the one gotcha here.** `tests/test_subagent_skill_grant.py` selects matrix rows whose FEATURE cell matches **both** `_FEATURE_CUE = r"sub-agent context"` and `_SKILL_WORD = r"\bSkill\b"`, and `test_exactly_one_subagent_skill_invocation_row_exists` asserts exactly one such row — with ISSUE-082 independently chartered to pin that row's count while amending it in place. So word the new row's FEATURE cell for the feature it actually measures (the **main-session** delegated path's diff auto-collection) **without** the literal phrase `sub-agent context`; it then lands adjacent to the existing row in the same area, satisfying AC-1's placement, while both cues fail to match and the existing pin stays green. Verify by running that module, not by reading it. (Line numbers deliberately omitted — the file is edited by other issues; locate the predicates by name.)
+- **Key on the feature name, never the row number.** The matrix renumbers on insertion — the test file says so in its own comment. Do not write a row number into any guard.
+- **The existing row already states the gap this issue closes.** Its Notes cell carries the scope limit verbatim: "the MAIN-SESSION path was never probed … this row is evidence about sub-task contexts only, not against the interactive path." That sentence is the unknown; this issue's row is its answer. Leave that row's own text alone — amending it is ISSUE-082's job and the two edits would collide under the lock.
+- **Shrink the guard rather than grow it.** ISSUE-082's notes record why: the existing row's ~60-line `ROW_REQUIREMENTS` phrasing lint is a record-accuracy test, i.e. an issue generator that fails on the next CC bump for reasons that are not defects. The new row's guard is three shape pins and nothing more. Do **not** write a test that re-checks the *conclusion* against a live runtime.
+- **If the run cannot happen** — no interactive session available, ISSUE-096 not yet merged, no suitable PR — the honest outcome is to record the blocker and leave this issue open. Recording a negative result from a context that could not have produced a positive one is the false-negative failure `Manual: true` exists to prevent.
+- Files touched: `docs/cc_feature_matrix.md` (one new row), one narrow shape guard (new test, or a new class in `tests/test_subagent_skill_grant.py` kept clear of the existing cue predicates), and `issues.md` only to the extent of this issue's own fields — under the registry lock via `scripts/registry_edit.sh`.
+
+#### Tests
+- [ ] New-row shape guard, arm direction: the complete row passes.
+- [ ] New-row shape guard, disarm direction: byte count removed → fails; verdict string removed → fails; date removed → fails. Each mutation asserted separately, counts recorded in the PR.
+- [ ] Verdict vocabulary pin: the row's verdict cell matches exactly one of `auto-collection correct`, `auto-collection empty`, `could-not-compute`; a row carrying two of them, or none, fails.
+- [ ] `test_exactly_one_subagent_skill_invocation_row_exists` and the full pre-existing `tests/test_subagent_skill_grant.py` pass **unmodified** with the new row present.
+
+#### Rollback
+`git revert`. The deliverables are one record plus one narrow shape guard, so a revert loses no behaviour — but **keep the measurement even on a revert**: it stays true independently of what the kit decides to do about it, and discarding it returns the main-session path to the unmeasured state this issue exists to end, which is the ISSUE-014 "verify in the feature matrix before relying" rule running backwards. If the row recorded `auto-collection empty`, do **not** revert it while leaving any document describing ISSUE-096's binding as belt-and-braces on the main-session path — that combination asserts, in the kit's own voice, the opposite of the only observation anyone has made.
 
 ---
