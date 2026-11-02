@@ -14,7 +14,7 @@
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
 |-------|--------|----------|------------|-------|
-| ISSUE-096 | doing | 2 | review attempt 2: all checkpoints exit 0, but 1 High (4th fail-open, inside the new guard) + 4 Medium. Rework 2 elected over shipping a non-gating gate. | implemented |
+| ISSUE-096 | doing | 2 | rework 2 IN FLIGHT: the one remaining High (per-dimension receipt binding) + 3 Medium + 4 Low + a scope trim that must shrink the diff. | implementing |
 | ISSUE-102 | backlog | 0 | - | backlog |
 | ISSUE-103 | backlog | 0 | - | backlog |
 
@@ -78,6 +78,25 @@ The reviewer regenerated the subject digest and it **matched exactly** (169229 /
 **Decision: rework 2 rather than ship with follow-up carriers.** The team-lead contract does permit shipping with unresolved Highs carried as follow-up issues, and all checkpoints passed, so `reviewed` was available. It was declined: the remaining High is a fail-open *inside the new guard* and is a two-line fix, and the Medium above is one checkpoint assertion. Deferring either would hand the next sprint the same defect class this one exists to remove. Attempts is recorded as 2; attempt 2 was a checkpoint-pass-with-findings, not a failure, so this is not two consecutive review failures. If re-verification still shows a High, ISSUE-096 goes to `waiting` / `review-rework` for a human.
 
 Other Mediums folded into rework 2: notes are mutated **before** the read-back, so one unpaired fence wedges `record-subject` permanently while accumulating a block per retry; and step 3.1's degradation `emit` omits the run id, silently dropping the very event that proves a degradation happened (`emit` anchors on CWD while `delegate` anchors on the worktree). Lows folded in: a tracked, pushed file publishes an absolute `/Users/<name>/…` path; the `main-checkout` fallback writes notes where its own docstring says it will not; "nothing else exits 1" is true but unenforced because the exit code is a free parameter; the PR declares no Kept-Surface bucket (it is **C**); and a scope-discipline trim of surface with no AC and no consumer (`head_ref` written-never-read, `base_oid` duplicating `range`) — ISSUE-079's species, in a diff that nearly doubled during a rework.
+
+## Baseline re-measured on main at `fa9daad` (team-lead, this iteration)
+
+`uv run pytest -q` = **2504 passed, 1 skipped in 28.55s**. Measured directly rather than inherited: the figure carried in the dispatch brief (2501) is wrong for the third time this session, and the measured one is unchanged from the previous iteration's measurement at `778ccc7`. The archive-parametrization gap between main and a worktree is unchanged, so test-count deltas are still only legible through `--collect-only`.
+
+Diff size pinned before the rework so "it shrank" is checkable rather than asserted. The product diff — `git diff --no-ext-diff $(git merge-base origin/main HEAD)..HEAD -- . ':(exclude)docs/review_notes/ISSUE-096.md'` — measures **169229 bytes / 7 headers**, byte-identical to the digest review 2 verified, which confirms the excluded file is the reviewer's own artifact and not product surface. The full `base..head` diff is 202098 / 8. The shrink target for rework 2 is therefore the product figure, and the comparison is like-for-like.
+
+## Rework 2 — dispatched (2026-11-02)
+
+Dispatched to one `developer` sub-task at `opus`, scoped to the named findings only, with the review-2 record as its input and no licence to redesign. The predecessor's decision is honoured rather than re-litigated.
+
+Required: the High (bind `delegate`'s read-back to `args.dimension` — `_require_verification`'s return value is discarded today, so another dimension's receipt satisfies it, and `verification-missing` already exists so no vocabulary change is needed) with its per-dimension disarm test at the arm nothing reaches — a readable-but-unappendable run file plus a pre-existing receipt for the OTHER dimension, driven through the real CLI. Written test-first, red observed before the fix. Three Mediums: write-the-notes-once (validate the candidate before mutating, so a refusal leaves the file byte-untouched and retries stop accumulating), the degradation `emit`'s missing run id, and the checkpoint assertion that makes the binding gated rather than prose-enforced. Four Lows: the absolute home path out of the committed block, the `main-checkout` write making code and docstring agree, the exit-code/reason pairing enforced as a real check rather than left a free parameter, and the bucket declaration.
+
+Three constraints the sub-task was given as hard limits rather than preferences:
+- **The diff must shrink below 169229 product bytes.** It nearly doubled during rework 1, which is ISSUE-079's species. `head_ref` (written, never read) and `base_oid` (the left half of `range`) are deleted outright; the six-way restatement of the 2026-10-31 anecdote collapses to a citation of the measurement registry that owns it; and the minimality pass's test trims are taken only in the loss-free form it specified, with the two M22 killers explicitly kept.
+- **No new reason tokens and no shared-contract change.** The unterminated-fence refusal reuses an existing token with a message that names the real cause. The degradation event is fixed in the skill (prefix the knob, run from the worktree) rather than by re-anchoring `cmd_emit`, whose `Path.cwd()` contract is pinned by ISSUE-066 tests that AC-7 forbids touching — review lesson 8.
+- **`KIT_REVIEW_GH_TIMEOUT` is kept, against the minimality finding.** Deleting the override to hard-code the 30s bound would reinstate the hard-coded-subprocess-timeout class this repo already learned (ISSUE-046/047), and review lesson 2 is fully satisfied for this knob. Kept surface, declared in the PR body.
+
+The nested-fence defect (a 4-backtick fence wrapping a 3-backtick fence re-opens the parser) is deliberately NOT fixed here: its fix belongs in `sprint_queue`'s shared helper so both consumers inherit it, which is a shared-contract change with no AC in this issue. It needs its own carrier.
 
 ## Discovered Issues
 - [iter 1] **ISSUE-106 filed** (`Manual: true`, P1, Depends-On ISSUE-096) — ISSUE-096's AC-6 split out as a sibling, exactly as ISSUE-096's own team-lead note at filing directs. AC-6 needs a live main-session, non-sub-task `/review` run; every sprint-pipeline context IS a sub-task, so the measurement is structurally unreachable from automation and cannot be dispatched by an iteration. Applied by team-lead under `registry_edit.sh` (planner drafted the content and has no `Bash` — see the ISSUE-074 counter-instance row below). Adds zero new `validate_issues.py` violations (15 pre-existing, 15 after; one AC was reworded from an em-dash to a comma before `when` to satisfy the GWT pattern).
