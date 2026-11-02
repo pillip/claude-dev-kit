@@ -14,7 +14,7 @@
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
 |-------|--------|----------|------------|-------|
-| ISSUE-096 | doing | 2 | review 3 IN FLIGHT: re-verifying the per-dimension receipt binding, the 3 Mediums and the scope trim at `710092c`. | reviewing |
+| ISSUE-096 | doing | 2 | - | reviewed |
 | ISSUE-102 | backlog | 0 | - | backlog |
 | ISSUE-103 | backlog | 0 | - | backlog |
 
@@ -153,6 +153,79 @@ Recorded because two of these checks had to be set up BEFORE the sub-task ran an
 - **The nested-fence defect is NOT fixed** (a 4-backtick fence wrapping a 3-backtick one lets the inner fence re-open the parser, exposing a heading inside an illustration). The fix belongs in `sprint_queue`'s shared fence helper so both consumers inherit it — a shared-contract change for a new caller class, with no AC in this issue. Every wedge case is fail-CLOSED today, so nothing false is ever recorded. **Needs its own issue.**
 - **The echo-gate receipt still lives inside the worktree under review**, so anything executing there during a review — including the PR's own tests and hooks — could append a well-formed receipt. Moving it out of tree or binding it with a per-run MAC is a design change with no AC. The docstring's disclosed residual WAS corrected to name the real writer set, which was the finding's own stated minimum. **Needs its own issue.**
 - `cmd_emit`'s `Path.cwd()` anchor was left alone and the degradation event fixed in the skill instead (its contract is pinned by ISSUE-066 tests AC-7 forbids touching); refusing the `main-checkout` write was declined because no token in the closed vocabulary fits a legitimate fallback, so the success line now prints where the block went; `KIT_REVIEW_GH_TIMEOUT` was kept and declared as bucket-C surface rather than deleted, because hard-coding that bound would reinstate a defect class this repo already learned (ISSUE-046/047).
+
+## The test-trim claim, MEASURED rather than accepted (team-lead, review 3 iteration)
+
+The rework was given a shrink constraint and its sub-task claimed "nothing load-bearing was removed". That claim is exactly what a numeric target incentivises, so it was measured. **It holds.** The measurement is recorded here because the method matters more than the verdict: a diff reading would not have settled it, and three of the counts that look alarming are artefacts of counting the wrong thing.
+
+Method: set-diff of test FUNCTION NAMES between `47ad48b` and `710092c`, then body-level verification that each removal was absorbed. **84 -> 80 functions: 9 removed, 5 added.** All nine removals are genuine consolidation:
+
+- `test_a_wrong_but_non_empty_echo_is_refused` + `test_the_empty_collection_digest_cannot_satisfy_the_gate` -> both absorbed into one parametrized `test_wrong_echo_is_refused_and_records_nothing`, ids `["bytes", "sha", "received-nothing", "wrong-but-bigger"]`. The replacement is **stronger than the sum of the two**: the ids name the reproduction shapes ("the first four reproductions" and "the FIFTH reproduction (2026-10-31) … a `bytes > 0` check passes this; only the digest rejects it"), and it adds a premise assertion that the echo under test really is wrong, `_no_events`, and a **same-fixture positive control** (correct echo DOES record, exactly 1 event) — the arm and disarm paired in one test, which is what lesson 16 asks for.
+- `test_an_unmodelled_exception_becomes_a_named_could_not_compute` -> a strict SUBSET of the surviving parametrized `test_every_subject_subcommand_is_covered_by_the_mapping`. The deleted one raised at the `_pr_refs` seam for `collect` only; the survivor raises at the same seam for **all three** subcommands and asserts exit 2 + empty stdout + `collection-error` + the exception class in stderr. High (a)'s dispatcher pin survived and widened; the only delta is `RuntimeError` vs `OSError`, both equally unmodelled.
+- `test_genuinely_empty_pr_refuses_with_its_own_reason` + `test_unreachable_head_oid_refuses_with_a_different_code_and_reason` -> absorbed into a combined construction that asserts the two reasons DIFFER (lines 534-535), plus `empty-diff-unexplained` at 571-572 which carries a **negative** arm (`"reason=empty-diff-head-is-merge-base" not in out.err`). That is the both-directions discipline of review lesson 4, which neither deleted test had.
+- `test_an_incomplete_block_is_completed` -> the behaviour it pinned **no longer exists**. The Medium fix replaced complete-the-block with refuse-without-writing, now pinned by the two new `test_an_unterminated_fence_refuses_without_writing` and `test_three_retries_do_not_accumulate_blocks`. Deleting a test whose subject was removed is correct, not loss.
+- `test_a_forged_block_is_replaced_by_the_verified_one` -> renamed `test_a_pre_existing_block_is_replaced_by_the_verified_one`.
+- `test_decide_still_prints_its_json_and_exits_0` -> was a DUPLICATE of a legacy pin that lives in `tests/test_review_context.py`, which this iteration confirmed **byte-identical to `origin/main`** (empty `git diff --stat`) and which carries 34 test functions with six-plus `decide` sites. The legacy contract is pinned in the file AC-7 forbids touching, which is where review lesson 8 says it belongs.
+- `test_the_notes_flag_decoy_is_gone` -> the weakest of the nine and the only one worth a note: `--notes` is now structurally absent from `scripts/review_context.py` (grep: zero hits), so argparse rejects it by construction. An absence-guard asserting a flag does not exist is also the `[record]` class the backlog triage gate now excludes, so its removal is consistent with this repo's own deflation decision rather than a gap.
+
+**Three counts that mislead, recorded so the next reader does not repeat the error.** Function count 84 -> 80 understates coverage badly: the two PR test files collect **266 cases** (`tests/test_review_subject_binding.py` **121**, `tests/test_verify_checkpoint.py` **145**), so parametrization carries most of the weight. A grep for `echo-mismatch` assertion SITES falls 4 -> 2 while the executed cases stay at 4, because the survivor is parametrized. A grep for `collection-error` falls 2 -> 1 while executed cases RISE 2 -> 3. **Count executions, never grep hits or function definitions** — the same rule that applies to a sub-agent's narration.
+
+## The new checkpoint's FAIL direction — already pinned at fixture level
+
+`TestVerifyReviewRequiresTheSubjectBinding` in `tests/test_verify_checkpoint.py` collects **8** cases, and the refusal path is among them rather than missing: `test_fail_when_a_receipt_exists_but_the_block_does_not`, `test_fail_loudly_when_the_receipt_cannot_be_read`, `test_fail_loudly_when_review_context_cannot_be_imported`, `test_fail_when_the_notes_carry_two_blocks`, against `test_pass_when_a_receipt_exists_and_so_does_the_block`.
+
+This also **measures the disclosed residual** rather than leaving it a claim: `test_pass_without_the_block_when_no_receipt_triggers_it` is parametrized `[no-run-file]` / `[no-runs-dir]` / `[other-issue]`, so the three inputs that suppress the trigger are pinned as intended behaviour. The residual is therefore a **tested design limit, not an unclosed gap** — which caps its severity. The open question that remains is only whether a stronger trigger exists in existing surface (`decide` already knows which dimensions it routed `delegated`), and that is a follow-up carrier at most, not a blocker.
+
+What is still owed is the **real-consumer** probe: every one of those 8 cases is a fixture, and lesson 16 asks for the defence through its real consumer. Team-lead will run `checkpoint.sh --skill review --phase review --issue ISSUE-096` against the LIVE worktree in both directions (block present -> expect 0; block withheld with the real receipt in place -> expect non-zero), with a checksum taken before and after so the restore is proven byte-exact. Sequenced AFTER the reviewer finishes writing the notes, because two writers in that worktree would land a second `## Review Subject` block and wedge the gate on `subject-duplicate-block` — re-creating, on the PR that fixes it, the exact wedge review 1 found.
+
+## Concurrency note — sole ownership of the worktree established
+
+The rework-2 team-lead was still alive when review 3 was dispatched (`ListAgents` had reported it completed; it had not). It detected the overlap by measurement — digests it never computed, its own progress row rewritten to `reviewing`, fresh gate writes in the worktree run file — and yielded rather than duplicating. Recorded because the reasoning generalises: concurrent `record-subject` calls are not merely wasteful, they are **wedging**, so the worktree has exactly one writer at a time by construction and not by convention.
+
+## Baseline figures: the orchestrator-supplied number was wrong a THIRD time
+
+The dispatch brief for this iteration quoted 2501 passed. Main measured **2504 passed, 1 skipped** at both `778ccc7` and `fa9daad`. Team-lead re-measures on main before the merge rather than carrying any quoted figure, and deliberately did NOT run main's suite while the reviewer held the worktree: several kit tests drive real-repo worktree operations, so a concurrent run risks damaging the tree under review — a false failure would cost more than the wall time saved.
+
+## Carriers still unfiled, with their id allocation resolved
+
+`issues.md` allocates by next-free-number and the max id is **ISSUE-106**, so the two deliberately-unfiled carriers take **ISSUE-107** and **ISSUE-108**: the nested-fence Medium (a 4-backtick fence wrapping a 3-backtick fence re-opens the parser; its fix belongs in `sprint_queue`'s shared helper so both consumers inherit it, which is a shared-contract change with no AC in ISSUE-096) and the receipt-in-worktree Low. They are filed by team-lead in ONE batch after the review verdict, not now — the nested-fence item's priority depends on what review 3 concludes, and a single batched write avoids repeated `issues.md` churn under the lock. The `planner` agent has no `Bash` in this environment, so its content is applied by team-lead under `registry_edit.sh` as usual.
+
+## Review attempt 3 — ISSUE-096 / PR #147 at `710092c` — PASS, no High remains
+
+**All 12 review checkpoints exit 0** (`checkout`, the five UI phases auto-skipping correctly for `UI: false`, `test`, `test-quality` over 74 files, `debt` advisory, **`review`**, `push`). **No Critical, no High. Two Mediums, twelve Lows.** The predecessor's escalation condition is therefore NOT met, and ISSUE-096 ships.
+
+**The reviewer's digests match team-lead's independent measurements byte-for-byte** — full **200322 / 10 / `e75fc65b5ab832df…`**, product-only **167453 / 9 / `4c73e35a0bbe40c7…`**. Neither party was given the other's numbers, which is the only form of agreement that means anything here: two independent collections of the same subject, rather than one party echoing a figure the other printed. That is lesson 6's distinction applied to the review process itself.
+
+**The remaining High is closed, established by MUTATION rather than by reading.** Arm: with the run file `chmod 0444` (readable, un-appendable) and only the code receipt present, `delegate(security)` exits 2 with `reason=verification-missing` naming `verified there: code`. Disarm, two independent mutants, both killed by `test_delegate_refuses_when_only_another_dimension_was_recorded` — reverting the membership test to truthiness (`if not verified:`) fails with the vacuous pass printed verbatim (`echo verified: security reviewed 810 bytes … assert 0 == 2`), and dropping the `event_type` comparison inside `_verified_dimensions` fails identically. Caveat recorded rather than glossed: fix and test landed in one commit, so **committed history cannot establish test-first/red-observed** — the mutation result substitutes for it and is the stronger evidence anyway.
+
+**The three earlier Highs hold.** Exit 1 is reachable only from the two computed-empty constructions, both reason-tagged (`empty-diff-head-is-merge-base`, `empty-diff-unexplained`); everything else lands at exit 2 with a named reason (`gh-unavailable`, `git-unavailable`, `worktree-path-missing`, `base-ref-unresolvable`, `head-oid-unreachable`, `gh-bad-output`, `collection-error`), and a broken pipe exits 120 rather than 1.
+
+### The real-consumer probe team-lead owed — run, and conclusive
+
+Every one of the eight new `TestVerifyReviewRequiresTheSubjectBinding` cases is a fixture, and lesson 16 asks for the defence through its real consumer. Team-lead ran it against the LIVE tree via `checkpoint.sh`, with both files checksummed before and after:
+
+1. no receipt, no block -> **exit 0** (the trigger legitimately does not fire)
+2. a VALID-shaped receipt planted (real head oid, bytes and digest), 0 blocks -> **exit 1**, printing the exact remediation command
+3. run file restored, **both checksums byte-identical to baseline** (`9b6f6e7c…` / `a9996137…`)
+4. re-run -> **exit 0**
+
+So the refusal path works through the real consumer on the real tree, not only in fixtures. The eighth-observation risk is retired by measurement rather than argued away.
+
+### This review ran fully DEGRADED, and that is the honest result
+
+`decide` returned `degraded` / `context-unreachable` for **both** dimensions: the reviewing context had neither a `Skill` nor a `SlashCommand` tool, which is ISSUE-072's "a grant does not imply provisioning" observed again. Two `review_degraded_path_used` events were written and **no delegation receipt exists**, so step 5.3 was correctly skipped and the notes carry **zero** `## Review Subject` blocks — by design, not by omission. The reviewer declined to manufacture a receipt to produce the expected shape, which is exactly right: a forged attestation used to satisfy this gate is the defect ISSUE-096 exists to prevent.
+
+Two consequences worth carrying forward. **This is NOT reproduction #7** — the runtime `/security-review` was unreachable, so its target-discard behaviour was neither reproduced nor refuted; the count stays at six. And **the PR that binds the delegated review could not exercise its own binding on its own final review**, because the binding only engages on the delegated path. Review 2 did reach that path; review 3 did not. On the degraded path the apparatus is inert, so a degraded review's notes are identically shaped whether or not the reviewer read the diff — recorded in the notes as a `[note]` finding carrying the reviewer's independently measured digest, which is the available substitute.
+
+### Suite
+
+Worktree **2615 passed, 1 skipped, 0 failed**. Delta decomposed with `--collect-only` rather than by totals: 2616 worktree vs 2505 main = **+121** (new `test_review_subject_binding.py`) **+8** (`test_verify_checkpoint.py`, 145 vs 137) **−18** (`test_sprint_queue.py`, 189 vs 207 — main carries 10 untracked archive files to the worktree's 4, times three parametrized tests), reconciling exactly. The one skip is environmental and pre-existing (`tests/test_kit_telemetry.py`, mknod of a character device not permitted). **ISSUE-099 did not bite.** Team-lead re-measured main independently at `f80b077`: **2504 passed, 1 skipped** — confirming 2504/1 for the third time and the brief's 2501 wrong for the third time.
+
+### Two reviewer claims checked against the tree; one was wrong
+
+Narration is not evidence, so the two load-bearing artifact claims were re-measured. "Zero username leaks" is **correct** — the single `/Users/` hit in the new notes is a deliberately redacted `/Users/<username>/…` inside the very finding about publishing that identifier, and the reviewer said so explicitly. But "`docs/sprint_state.md` is untracked" is **false**: `git ls-files --error-unmatch` resolves it. The reviewer's conclusion survives its wrong reason — a carrier in sprint_state is still not durable, because the file is archived and reset at each sprint boundary — but the reason is corrected here so it is not inherited.
+
+The stale block committed at `47ad48b` published an absolute `/Users/<account>` path and attested to the previous head; the synthesizer rewrote the file wholesale and the review-3 notes were committed and pushed fast-forward `710092c..0c380f6` (no force). The committed artifact now carries **0** real-username leaks, verified after the push.
 
 ## Discovered Issues
 - [iter 1] **Two carriers from rework 2 are PENDING and deliberately unfiled** — the nested-fence defect in the shared fence predicate (Medium; fix belongs in `sprint_queue`'s helper so both consumers inherit it) and the echo-gate receipt living inside the worktree under review (Low; anything executing there during a review, including the PR's own tests and hooks, could append a well-formed receipt). Both are described in full in the rework-2 section above. They were NOT filed because **two team-lead instances are live on this issue and `issues.md` allocates ids by next-free-number**: concurrent filing would hand both carriers the same id. Whichever instance resolves ownership files them, under `registry_edit.sh`, after confirming the next free id against the committed file. Neither is Critical or High, so no auto-created follow-up was owed.
