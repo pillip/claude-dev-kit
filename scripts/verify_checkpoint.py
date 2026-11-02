@@ -616,11 +616,44 @@ def _check_ac_test_coverage(issue_id: str, wt_path: str, test_files: list[str]) 
     return False
 
 
+_PYTEST_SUMMARY_RE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
+
+
+def _failed_test_files(output: str, scope) -> list[str]:
+    """Which of ``scope``'s paths the test runner's summary blamed, in order.
+
+    Oracle: pytest's "short test summary info" section (requested explicitly with
+    ``-rfE`` so the format does not depend on the project's ``addopts``), whose
+    lines are ``FAILED <nodeid> - <msg>`` for failures and ``ERROR <path>`` for
+    collection errors. Both forms were measured against pytest 8.3.4 and 9.0.3,
+    not assumed.
+
+    Attribution is by changed test FILE and is deliberately conservative: a path
+    is reported only when the summary names it AND it is a member of the scoped
+    set. A nodeid relative to a different rootdir, or a JS runner with another
+    output format, therefore yields an empty list — which the caller renders as
+    an explicit "attribution unavailable" rather than as a guess.
+    """
+    want = set(scope)
+    found: list[str] = []
+    for nodeid in _PYTEST_SUMMARY_RE.findall(output):
+        path = nodeid.split("::", 1)[0]
+        if path in want and path not in found:
+            found.append(path)
+    return found
+
+
 def verify_implement_red(issue_id: str, **_) -> bool:
     """TDD Red phase: tests exist with real assertions but FAIL (no implementation yet).
 
     This verifier has inverted logic — pytest returning non-zero is the expected outcome.
     If tests pass, it means they were written after implementation (not TDD).
+
+    Because the logic is inverted, every way of producing a non-zero exit that is
+    NOT "the branch's own new tests failed" is a *fake* RED pass. Three such
+    routes are closed here (see the hazard note at the test-run step below):
+    a JS repo mis-run through pytest, a run that evaluated nothing, and — the
+    ISSUE-103 route — an unrelated pre-existing failure elsewhere in the suite.
     """
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
@@ -645,6 +678,19 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     all_test_files = sorted(set(test_files + test_dir_files))
 
     if not all_test_files:
+        # A gate whose subject is COMPUTED must distinguish "computed and empty"
+        # from "could not compute". An unresolvable diff base means the branch's
+        # delta is UNKNOWN, not empty, and telling the implementer to write tests
+        # would send them after the wrong problem.
+        if _merge_base(wt_path, base) is None and _run(
+            ["git", "rev-parse", "--verify", "--quiet", base], cwd=wt_path
+        ).returncode != 0:
+            print(
+                f"FAIL: RED phase — cannot compute the branch's test-file delta: "
+                f"no merge-base with '{base}' and '{base}' does not resolve in the "
+                f"worktree — inconclusive, and NOT the same as 'no tests were written'"
+            )
+            return False
         print("FAIL: no test files found — write tests before RED phase")
         return False
 
@@ -654,49 +700,86 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         print(f"FAIL: test files have no real assertions: {', '.join(shallow)}")
         return False
 
-    # Now run tests — they SHOULD FAIL (exit code != 0).
-    # Use explicit runner detection so a JS/TS repo with a `tests/` dir isn't
-    # mis-run through pytest (which collects 0 tests → exit 5 → a *fake* RED
-    # pass even when the real JS suite would have passed).
-    has_python, has_js = _detect_test_runners(wt)
+    # Now run tests — they SHOULD FAIL (exit code != 0) — but the run is SCOPED
+    # to `all_test_files`, the branch's own delta computed above. Hazard note,
+    # one route per paragraph; all three make a non-zero exit mean something
+    # other than "the branch's new tests failed":
+    #
+    #  - Whole-suite run (ISSUE-103): running every test in the worktree let ANY
+    #    unrelated pre-existing failure certify RED, even when the branch's new
+    #    tests passed or asserted nothing. A standing suite failure that
+    #    implementers are told to expect would have satisfied this gate for every
+    #    issue. Scoping the argv to the branch's own test files closes it.
+    #  - JS mis-run: explicit runner detection so a JS/TS repo with a `tests/`
+    #    dir isn't mis-run through pytest (which collects 0 tests → exit 5).
+    #  - Evaluated nothing: pytest exit 5 (nothing collected) and exit 4 (usage
+    #    error) — both measured as reachable through the SCOPED path, e.g. a
+    #    branch whose only changed test file is `tests/conftest.py`, or a `.py`
+    #    path pytest refuses. Scoping makes these common where the whole-suite
+    #    run made them near-impossible, so they are refused as inconclusive
+    #    rather than counted as RED.
+    #
+    # Residual, by design: the unit of attribution is the changed test FILE, so
+    # this proves "a failure originated in the branch's own test files", which is
+    # weaker than "the new test fails because the implementation is absent".
+    _, has_js = _detect_test_runners(wt)
 
     timeout = _test_timeout()
 
-    # JS first: an explicit scripts.test is the strongest signal.
+    # JS first: an explicit scripts.test is the strongest signal. Everything
+    # else runs pytest — an explicit Python signal and no signal at all took
+    # byte-identical branches before, so the two collapse into one here.
     if has_js:
-        result = _run(["npm", "test", "--", "--passWithNoTests"], cwd=wt_path, timeout=timeout)
-        if result.returncode == 124:
-            print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
-            return False
-        if result.returncode == 0:
-            print("FAIL: RED phase — tests passed but should fail before implementation.")
-            print("  TDD requires: write failing tests first, then implement to make them pass.")
-            return False
-        print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
-        return True
+        runner = "npm test"
+        scoped = [f for f in all_test_files if f.endswith((".ts", ".tsx", ".js", ".jsx"))]
+        cmd = ["npm", "test", "--", "--passWithNoTests", *scoped]
+        no_run_codes: tuple[int, ...] = ()
+    else:
+        runner = "pytest"
+        scoped = [f for f in all_test_files if f.endswith(".py")]
+        cmd = ["python3", "-m", "pytest", "-q", "--tb=short", "-rfE", *scoped]
+        no_run_codes = (4, 5)
 
-    if has_python:
-        result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=timeout)
-        if result.returncode == 124:
-            print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
-            return False
-        if result.returncode == 0:
-            print("FAIL: RED phase — tests passed but should fail before implementation.")
-            print("  TDD requires: write failing tests first, then implement to make them pass.")
-            return False
-        print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
-        return True
+    if not scoped:
+        print(
+            f"FAIL: RED phase — the branch changed {len(all_test_files)} test file(s) "
+            f"but none that {runner} can execute: {', '.join(all_test_files)}"
+        )
+        print("  Inconclusive: RED cannot be judged without a runnable branch test.")
+        return False
 
-    # Fallback: try pytest
-    result = _run(["python3", "-m", "pytest", "-q", "--tb=short"], cwd=wt_path, timeout=timeout)
+    result = _run(cmd, cwd=wt_path, timeout=timeout)
+
     if result.returncode == 124:
         print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
         return False
+    if result.returncode in no_run_codes:
+        print(
+            f"FAIL: RED phase — {runner} evaluated none of the branch's own tests "
+            f"(exit {result.returncode}: nothing collected / usage error) — "
+            f"inconclusive, cannot verify genuine RED"
+        )
+        print(f"  Scope was: {', '.join(scoped)}")
+        return False
     if result.returncode == 0:
         print("FAIL: RED phase — tests passed but should fail before implementation.")
+        print(f"  The branch's own tests all passed: {', '.join(scoped)}")
+        print("  TDD requires: write failing tests first, then implement to make them pass.")
+        print("  An unrelated failure elsewhere in the suite no longer certifies RED (ISSUE-103).")
         return False
 
-    print(f"PASS: RED phase — tests fail as expected (exit {result.returncode})")
+    failed = _failed_test_files(result.stdout or "", scoped)
+    if failed:
+        where = f"failing: {', '.join(failed)}"
+    else:
+        where = (
+            f"scope was {', '.join(scoped)} "
+            f"(per-file attribution unavailable from {runner}'s output)"
+        )
+    print(
+        f"PASS: RED phase — the branch's own tests fail as expected "
+        f"(exit {result.returncode}) — {where}"
+    )
     return True
 
 
