@@ -209,26 +209,35 @@ def _declares_spec(value: str) -> bool:
     return bool(value) and value.strip().lower() != "none"
 
 
-def _contain(root: Path, spec_path: str) -> Path | None:
-    """Resolve ``spec_path`` under ``root``, or ``None`` if it escapes it.
+def _contain(root: Path, spec_path: str) -> tuple[Path | None, bool]:
+    """Resolve ``spec_path`` under ``root``: ``(resolved, is_regular_file)``.
+
+    ``(None, False)`` means REFUSED for this root — the value escaped it, or
+    the stat itself failed. ``(path, False)`` is the different outcome "inside
+    this root, statted, and no regular file there", i.e. absent from this
+    checkout, which the reasons keep apart from a refusal.
 
     The ``Spec:`` value comes from a markdown registry and is untrusted;
     widening the roots widens what a ``..`` escape or a symlink can reach, so
     containment is checked per root instead of being inherited from the
-    single-root version's bare ``.resolve().exists()``.
+    single-root version's bare ``.resolve().exists()``. The regular-file stat
+    runs inside the same guard rather than at the call site: ``is_file()``
+    raises on EACCES and ENAMETOOLONG (pathlib ignores only the not-found
+    class) where non-strict ``resolve()`` raises on neither, so outside the
+    guard a root this gate had merely ENUMERATED could kill the whole lookup.
     """
     candidate = Path(spec_path)
     if candidate.is_absolute():
-        return None
+        return None, False
     try:
         resolved = (root / candidate).resolve()
         root_resolved = root.resolve()
+        if root_resolved not in resolved.parents:
+            return None, False
+        return resolved, resolved.is_file()
     except (OSError, ValueError):
         # ValueError: an embedded NUL in the registry value.
-        return None
-    if root_resolved not in resolved.parents:
-        return None
-    return resolved
+        return None, False
 
 
 def _spec_field_from_other_checkout(
@@ -280,11 +289,11 @@ def spec_lookup(
     refused: list[Path] = []
     if _declares_spec(declared):
         for root in roots:
-            resolved = _contain(root, declared)
+            resolved, is_regular_file = _contain(root, declared)
             if resolved is None:
                 refused.append(root)
                 continue
-            if resolved.is_file():
+            if is_regular_file:
                 found_at = root
                 break
 

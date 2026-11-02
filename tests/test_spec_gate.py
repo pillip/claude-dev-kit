@@ -1,5 +1,6 @@
 """Unit tests for scripts/spec_gate.py — covers every row of the decision table."""
 
+import errno
 import json
 import os
 import subprocess
@@ -274,6 +275,32 @@ _REPRO_BLOCK = """### ISSUE-500: Reproduction issue
 Produce a SPEC on the branch while the registry field lives on main.
 """
 
+#: A second, UNRELATED issue block, written BEFORE `_REPRO_BLOCK` in every
+#: registry copy the fixture builds. Its `Spec:` value is therefore the FIRST
+#: `- Spec:` line in the file, so a sibling-registry read that is not id-scoped
+#: selects THIS one — which is the only way the id-scoping claim is exercised
+#: at all. With the single-block registry this replaces, "first `- Spec:` in
+#: the file" and "ISSUE-500's `Spec:`" were the same string and the mutant that
+#: drops id-scoping entirely survived. The value must not be `none`, or the
+#: fixture's own `- Spec: none` substitution would rewrite it too.
+_DECOY_BLOCK = """### ISSUE-499: Unrelated issue that already produced its SPEC
+- Track: platform
+- PRD-Ref: none
+- Priority: P2
+- Estimate: 1d
+- Status: done
+- Spec-Required: true
+- Spec: docs/specs/SPEC-499.md
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+Occupy the registry's first `- Spec:` line.
+"""
+
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(
@@ -294,10 +321,15 @@ def _two_checkouts(
     ``main`` ONLY — committing it on the branch is exactly what the kit's
     Shared-Registry rule forbids, so the fixture must not do it either or the
     test would pin a configuration that cannot occur.
+
+    The registry carries `_DECOY_BLOCK` ahead of ISSUE-500 so that every read
+    of it has something to mis-select.
     """
     main_ck = tmp_path / "main"
     main_ck.mkdir()
-    (main_ck / "issues.md").write_text(_REPRO_BLOCK, encoding="utf-8")
+    (main_ck / "issues.md").write_text(
+        f"{_DECOY_BLOCK}\n{_REPRO_BLOCK}", encoding="utf-8"
+    )
     subprocess.run(
         ["git", "init", "-q", "-b", "main", str(main_ck)], check=True, capture_output=True
     )
@@ -427,6 +459,43 @@ class TestStillRefusesWhenSpecAbsentEverywhere:
         (other / "SPEC-999.md").write_text("# SPEC-999\n", encoding="utf-8")
         assert _gate_cli(wt)["decision"] == "auto_spec"
 
+    def test_sibling_field_read_selects_this_issues_block_not_the_first(
+        self, tmp_path: Path
+    ):
+        """The sibling registry's FIELD read is id-scoped — the test above
+        plants another issue's SPEC *file*, which is a different guard.
+
+        The registry holds two issue blocks and the decoy's `Spec:` is the
+        first `- Spec:` line in it, so a read that takes the first line instead
+        of this issue's selects `SPEC-499.md`, which EXISTS on the branch, and
+        the gate flips to `proceed` on an unrelated issue's SPEC. Driven from
+        the WORKTREE because that is the only side whose own field reads
+        `none`, and therefore the only side that reads a sibling copy at all
+        (the M11 lesson, generalised to this guard)."""
+        main_ck, wt = _two_checkouts(tmp_path, write_spec=False)
+        decoy_spec = wt / "docs" / "specs" / "SPEC-499.md"
+        decoy_spec.parent.mkdir(parents=True)
+        decoy_spec.write_text("# SPEC-499\n", encoding="utf-8")
+
+        # PREMISE: the decoy's field really does precede this issue's in the
+        # copy that gets read, its file really is present, and this issue's
+        # SPEC really is absent — otherwise a mis-scoped read has nothing to
+        # select and the assertions below hold vacuously.
+        sibling = (main_ck / "issues.md").read_text(encoding="utf-8")
+        assert sibling.index("- Spec: docs/specs/SPEC-499.md") < sibling.index(
+            "- Spec: docs/specs/SPEC-500.md"
+        )
+        assert "- Spec: none" in (wt / "issues.md").read_text(encoding="utf-8")
+        assert decoy_spec.is_file()
+        assert not (wt / "docs" / "specs" / "SPEC-500.md").exists()
+
+        result = _decide_at(wt)
+        assert result["decision"] == "auto_spec", result["reasons"]
+        reasons = " ".join(result["reasons"])
+        assert "SPEC-500" in reasons, reasons
+        assert "SPEC-499" not in reasons, reasons
+        assert _gate_cli(wt)["decision"] == "auto_spec"
+
 
 class TestUntrustedSpecFieldUnderWidenedRoots:
     """Widening the resolution roots widens what a traversal in the untrusted
@@ -503,6 +572,105 @@ class TestUntrustedSpecFieldUnderWidenedRoots:
         assert (main_ck / "docs" / "specs").is_dir()
         result = _decide_at(main_ck, sprint=True)
         assert result["decision"] == "auto_spec", result["reasons"]
+
+
+class TestUnstattableRootIsRefusedNotFatal:
+    """A root the widened enumeration merely LISTED must not be able to kill
+    the gate when it is statted.
+
+    ``Path.is_file()`` RAISES for EACCES and ENAMETOOLONG — pathlib's
+    ``_ignore_error`` ignores only the not-found class (ENOENT/ENOTDIR/ELOOP)
+    — while non-strict ``resolve()`` raises on neither, which is why the stat
+    is the reachable half. So the stat belongs inside the same guard as the
+    resolution: an unstattable root is REFUSED, named as such in ``reasons``,
+    and the next checkout is tried.
+
+    Disarm direction, through the real consumer: both tests drive the step-0c
+    CLI by subprocess, so removing the guard makes the process exit non-zero
+    and ``_gate_cli``'s exit-code assertion fails.
+    """
+
+    @staticmethod
+    def _premise_the_stat_raises(target: Path, expected_errno: int) -> None:
+        """PREMISE assertion — the kernel must really hand this code the
+        raiser, and the resolution must really not pre-empt it.
+
+        Without this the probe passes vacuously: with ``docs/specs/`` absent
+        the kernel answers ENOENT first, pathlib ignores it and ``is_file()``
+        returns ``False`` (measured — the reviewer's PROBE N did exactly that
+        before PROBE N4 reached the code).
+        """
+        with pytest.raises(OSError) as exc:
+            target.is_file()
+        assert exc.value.errno == expected_errno, exc.value
+        target.resolve()  # must NOT raise, or the stat is never reached
+
+    def test_unreadable_sibling_checkout_is_refused_not_fatal(self, tmp_path: Path):
+        """EACCES. The CWD's checkout has no ``docs/`` at all; the SIBLING
+        holds the declared path under a mode-000 ``docs/specs``. On
+        ``origin/main`` this configuration exits 0 with ``auto_spec`` — only
+        the widened enumeration reaches the sibling's stat."""
+        main_ck, wt = _two_checkouts(tmp_path, write_spec=False)
+        specs = wt / "docs" / "specs"
+        specs.mkdir(parents=True)
+        (specs / "SPEC-500.md").write_text("# SPEC-500\n", encoding="utf-8")
+        assert not (main_ck / "docs").exists()
+
+        os.chmod(specs, 0o000)
+        try:
+            self._premise_the_stat_raises(specs / "SPEC-500.md", errno.EACCES)
+            result = _gate_cli(main_ck)
+        finally:
+            os.chmod(specs, 0o700)  # leave the tree readable/removable
+
+        assert result["decision"] == "auto_spec", result["reasons"]
+        reasons = " ".join(result["reasons"])
+        # "could not determine for this root" is not "the SPEC is absent": the
+        # refused root has to be named.
+        assert "REFUSED" in reasons, reasons
+        assert str(wt.resolve()) in reasons, reasons
+
+    def test_overlong_spec_value_is_refused_not_fatal(self, tmp_path: Path):
+        """ENAMETOOLONG — the class PROBE N4 hit with a real 544-byte `Spec:`
+        value from this repo's own registry. ``docs/specs/`` is created in BOTH
+        checkouts because the parent must exist, or the kernel returns ENOENT
+        first and the probe gives a false all-clear."""
+        overlong = "docs/specs/" + "L" * 300 + ".md"
+        main_ck, wt = _two_checkouts(tmp_path, write_spec=False, spec_field=overlong)
+        for root in (main_ck, wt):
+            (root / "docs" / "specs").mkdir(parents=True)
+        self._premise_the_stat_raises(main_ck / overlong, errno.ENAMETOOLONG)
+
+        result = _gate_cli(main_ck)
+        assert result["decision"] == "auto_spec", result["reasons"]
+        assert "REFUSED" in " ".join(result["reasons"]), result["reasons"]
+
+    def test_a_refused_root_does_not_end_the_enumeration(self, tmp_path: Path):
+        """The refusal must SKIP that checkout, not terminate the lookup.
+
+        The reviewer's PROBE O configuration: the CWD's own checkout has an
+        unreadable `docs/specs` — holding a file at the declared path that
+        cannot be statted — while ANOTHER checkout holds the SPEC readably, so
+        the correct answer is `proceed`. Refusing and stopping would report
+        `auto_spec` for a SPEC that exists."""
+        main_ck, wt = _two_checkouts(tmp_path, write_spec=False)
+        readable = main_ck / "docs" / "specs"
+        readable.mkdir(parents=True)
+        (readable / "SPEC-500.md").write_text("# SPEC-500\n", encoding="utf-8")
+        unreadable = wt / "docs" / "specs"
+        unreadable.mkdir(parents=True)
+        (unreadable / "SPEC-500.md").write_text("# unstattable\n", encoding="utf-8")
+
+        os.chmod(unreadable, 0o000)
+        try:
+            self._premise_the_stat_raises(unreadable / "SPEC-500.md", errno.EACCES)
+            # Driven from the unreadable checkout, which is always roots[0].
+            result = _gate_cli(wt)
+        finally:
+            os.chmod(unreadable, 0o700)
+
+        assert result["decision"] == "proceed", result["reasons"]
+        assert str(main_ck.resolve()) in " ".join(result["reasons"]), result["reasons"]
 
 
 class TestComputedEmptyVersusCouldNotCompute:
