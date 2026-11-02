@@ -1134,8 +1134,61 @@ def verify_review_checkout(issue_id: str, **_) -> bool:
     return verify_implement_worktree(issue_id)
 
 
+def _review_subject_bound(wt: Path, issue_id: str, content: str) -> bool:
+    """ISSUE-096: the ``## Review Subject`` block, required only if delegated.
+
+    The requirement is CONDITIONAL on a ``review_delegated_to_*`` receipt for
+    this issue, so a fully degraded review is not asked for counter-evidence it
+    cannot produce. Both halves reuse ``review_context`` rather than re-spelling
+    it: the heading detector there is fence-aware (a review note that quotes
+    the heading is an illustration, never a record) and the receipt reader
+    validates workspace-persisted state on read.
+    """
+    try:
+        import review_context as rc
+    except ImportError as exc:
+        # Loud, not a skip (the `verify_gates` sibling degrades; this may not):
+        # a gate that cannot load its own matcher has checked nothing.
+        print(f"FAIL: cannot import review_context to check the {issue_id} "
+              f"review-subject binding: {exc}")
+        return False
+
+    # The run id step 3.1 documents; an explicitly set one wins.
+    if not os.environ.get(rc.RUN_ID_ENV, "").strip():
+        os.environ[rc.RUN_ID_ENV] = f"review-{issue_id}"
+    try:
+        receipts = rc._read_receipts(wt)
+    except rc.SubjectRefused as exc:
+        if exc.reason in ("verification-unconfigured", "verification-missing"):
+            return True  # no receipt can exist / none was written
+        print(f"FAIL: the delegation receipt for {issue_id} exists but could not "
+              f"be read (reason={exc.reason}): {exc.detail}")
+        return False
+
+    if not any(event.get("issue_id") == issue_id for event in receipts):
+        return True
+    spans = rc._subject_blocks(content)
+    if len(spans) != 1:
+        print(f"FAIL: this run delegated a review of {issue_id} but its notes "
+              f"carry {len(spans)} {rc.SUBJECT_HEADING!r} block(s), not 1 — run "
+              f"`KIT_RUN_ID=review-{issue_id} python3 scripts/review_context.py "
+              f"record-subject --pr <n> --issue {issue_id}` (review step 5.3) so "
+              "'reviewed nothing' cannot render as 'reviewed and found nothing'")
+        return False
+    return True
+
+
 def verify_review_review(issue_id: str, **_) -> bool:
-    """review_notes.md has Code Review, Security Findings, and Over-Engineering headers."""
+    """review_notes.md has Code Review, Security Findings and Over-Engineering
+    headers — plus the ISSUE-096 ``## Review Subject`` counter-evidence block
+    when this run recorded a delegation receipt.
+
+    Blind spot, disclosed rather than left to be discovered: the TRIGGER is the
+    receipt, so if the runs directory cannot be read at all (no ``KIT_RUN_ID``,
+    no ``<wt>/.claude/runs``) the requirement cannot fire and a delegated
+    review that skipped the binding passes here. A receipt that exists and
+    cannot be read is a loud FAIL, never a silent pass.
+    """
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
         print(f"FAIL: no worktree found for {issue_id}")
@@ -1161,6 +1214,9 @@ def verify_review_review(issue_id: str, **_) -> bool:
 
     if missing:
         print(f"FAIL: review_notes.md missing header sections: {', '.join(missing)}")
+        return False
+
+    if not _review_subject_bound(Path(wt_path), issue_id, content):
         return False
 
     print("PASS: review_notes.md has required sections")

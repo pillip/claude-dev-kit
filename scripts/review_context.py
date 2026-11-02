@@ -78,28 +78,120 @@ is derived from the process CWD's main git work tree, else
 ``CLAUDE_PROJECT_DIR``, else the CWD, and a ``project_path`` resolving
 outside it is refused with an announcement and nothing written.
 
-Env knobs (no new ones — ``KIT_RUN_ID`` is pre-documented in README and
+Subject binding (ISSUE-096) — what a ``delegated`` dimension may review
+-----------------------------------------------------------------------
+
+``decide`` only answers WHETHER to delegate. **Five times across four sprints**
+the runtime skill was then reached on the ``delegated`` path and **collected
+its own subject instead of the one it was handed** — four as zero-byte
+collections against the MAIN checkout, the fifth as a NON-empty collection of
+the wrong subject. The dated measurements live in the review-target row of
+``docs/cc_feature_matrix.md`` (the kit's canonical measurement registry,
+self-contained by design) and are deliberately not restated here. What they
+dictate: the **digest**, not the byte count, is the load-bearing check,
+because a "greater than zero" test passes the fifth shape. The same row
+records that the runtime ``/security-review`` accepts no review target from
+either CWD, so for that dimension the hand-off cannot be executed on this
+runtime: its echo can never match and it degrades through
+``inline-attempt-failed``.
+
+Three subcommands close that, and the division of labour is the decision this
+issue made (`option (c)`: the script owns everything checkable, the step-3.1
+prose consumes it — prose alone is precisely what was skipped five times).
+Each one's contract is on its own handler; in one line each:
+
+- ``collect`` establishes the subject from the PR record and REFUSES rather
+  than yielding an empty one (:func:`collect_subject`).
+- ``delegate`` is the ECHO GATE: the delegation is recorded only when the
+  CONSUMER echoes back the digest (:func:`cmd_delegate`).
+- ``record-subject`` writes the counter-evidence it CONSUMES from that
+  receipt, never a digest it recomputed (:func:`cmd_record_subject`).
+
+The collection is deliberately re-run rather than passed around:
+**four times per review run** — ``collect``, each of the two ``delegate``
+calls, and ``record-subject`` — each re-establishing the subject from the PR
+record instead of trusting an artifact measured not to survive the hand-off.
+
+Refusal vocabulary (``SUBJECT_REASONS``) is closed and deliberately DISJOINT
+from the three-value ``review_degraded_path_used`` vocabulary below: this
+issue adds no fourth token there, and an echo-gate rejection degrades through
+the existing ``inline-attempt-failed``. A refusal prints ``reason=<token>`` on
+stderr and NOTHING on stdout, so ``SUBJ="$(… collect …)"`` cannot carry a
+usable payload out of a failure (the ``wt_setup.sh``/ISSUE-083 precedent).
+**Every** failure renders that way, the unmodelled ones included: an escaping
+exception would otherwise exit 1 — this module's code for "computed and EMPTY"
+— with no reason token at all, a fail-open inside the guard (reproduced with a
+``prunable`` ``.worktrees/<slug>`` registration, routine after
+``wt_cleanup.sh`` without ``git worktree prune``).
+
+**Disclosed residuals, both claims and not measurements.** (1) The echo is
+checked for equality, not provenance: an orchestrator holding ``collect``'s
+output could paste it (review lesson 6 — an attestation that can satisfy a
+gate is forgeable). What the gate removes is the SILENT arm: a reviewer handed
+nothing measures ``0``/``sha256(b"")`` and cannot match, so the fail-open
+becomes an explicit fabrication rather than an invisible default. (2) The
+receipt is writable by anything executing inside the worktree during the
+review — the PR's own tests and hooks included, not merely the orchestrator —
+so it removes the self-attestation, not the forgeability. (3) The
+pre-ISSUE-096 ``emit --event review_delegated_to_*`` path stays ungated
+because the ISSUE-066 acceptance tests pin it, so it remains a bypass for a
+caller that ignores step 3.1.
+
+Env knobs (``KIT_RUN_ID`` is pre-documented in README and
 docs/telemetry_schema.md):
-    KIT_RUN_ID — run id for best-effort telemetry appends to
-        ``<cwd>/.claude/runs/<run-id>.jsonl``. Unset or no runs dir =>
-        emission is a silent no-op.
+    KIT_RUN_ID — run id for telemetry appends to
+        ``<root>/.claude/runs/<run-id>.jsonl``. For ``decide``/``emit`` the
+        root is the CWD and an unset id or missing runs dir is a silent no-op
+        (the ISSUE-066 contract, pinned by tests). For ``delegate`` /
+        ``record-subject`` the root is the resolved branch worktree and the
+        file is the delegation RECEIPT the counter-evidence is built from, so
+        an unset id is a named refusal there rather than a no-op; the kit has
+        no other producer for the knob, which is why step 3.1 supplies one.
+    KIT_REVIEW_GH_TIMEOUT — seconds to wait for the one ``gh pr view``
+        consultation per collection (default 30; invalid or non-positive
+        values fall back to the default). ``gh`` talks to the network and can
+        STALL rather than fail, which would hang the review gate instead of
+        failing it; a timeout is reported as ``reason=gh-timeout`` and the
+        message names this knob. Also documented in README's environment
+        table, next to ``KIT_WORKTREE_FETCH_TIMEOUT``.
 
 Usage (from the project root — ``skills/review/SKILL.md`` step 3.1):
     python3 scripts/review_context.py decide --invocation-tools absent --issue ISSUE-066
+    python3 scripts/review_context.py collect --pr 139 --issue ISSUE-096
+    KIT_RUN_ID=review-ISSUE-096 python3 scripts/review_context.py delegate \\
+        --dimension code --pr 139 --issue ISSUE-096 --head-oid <oid> \\
+        --echoed-bytes 77801 --echoed-sha256 <hex>
+    KIT_RUN_ID=review-ISSUE-096 python3 scripts/review_context.py \\
+        record-subject --pr 139 --issue ISSUE-096
     python3 scripts/review_context.py emit --event review_delegated_to_code_review --issue ISSUE-066 [--pr 123]
     python3 scripts/review_context.py emit --event review_degraded_path_used \\
         --dimension code --reason inline-attempt-failed --issue ISSUE-066
 
-Exit codes: 0 = decision computed / event handled (telemetry no-op included);
-2 = bad input (closed-vocabulary violation, bad issue id format ISSUE-<digits>).
+Exit codes: 0 = decision computed / event handled (telemetry no-op included)
+/ subject established / gate passed;
+1 = subject REFUSED because it was computed and is EMPTY (a no-op PR, or a
+change that cancels itself out) — nothing to review, so nothing is delegated.
+**Nothing else exits 1**;
+2 = bad input (closed-vocabulary violation, bad issue id format
+ISSUE-<digits>), or the subject COULD NOT BE COMPUTED (including an unmodelled
+failure, mapped to ``collection-error``), or the consumer's echo did not match,
+or the counter-evidence has no delegation receipt to consume. The 1/2 split is
+load-bearing: a gate whose subject is computed must distinguish "computed and
+empty" from "could not compute", and an uncaught exception may never land on
+the former.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import shlex
+import shutil
+import stat
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,6 +232,88 @@ RUN_ID_ENV = "KIT_RUN_ID"
 _RUN_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _MAX_EVENT_BYTES = 4096
 _MAX_DETAIL_CHARS = 512
+
+# ── review-subject binding constants (ISSUE-096) ─────────────────────
+
+#: Closed refusal vocabulary for the subject-collection step. DISJOINT from
+#: the ``review_degraded_path_used`` reasons on purpose — a subject refusal is
+#: not a degradation reason, and this issue adds no fourth token there.
+SUBJECT_REASONS: tuple[str, ...] = (
+    # computed, and empty (exit 1) — and NOTHING else may exit 1
+    "empty-diff-head-is-merge-base",
+    "empty-diff-unexplained",
+    # could not compute (exit 2)
+    "git-unavailable",
+    "gh-unavailable",
+    "gh-failed",
+    "gh-timeout",
+    "gh-bad-output",
+    "not-a-git-repo",
+    "worktree-path-missing",
+    "base-ref-unresolvable",
+    "head-oid-unreachable",
+    "merge-base-unresolvable",
+    "git-diff-failed",
+    "collection-error",
+    # the consumer did not read what was collected (exit 2)
+    "echo-mismatch",
+    "head-moved",
+    # the delegation receipt the counter-evidence is built from (exit 2)
+    "verification-unconfigured",
+    "verification-unreadable",
+    "verification-missing",
+    # counter-evidence in the review record (exit 2)
+    "review-notes-missing",
+    "review-notes-not-a-file",
+    "review-notes-outside-project",
+    "subject-unparseable",
+    "subject-duplicate-block",
+    "subject-incomplete",
+)
+
+#: Heading of the counter-evidence block in the review notes.
+SUBJECT_HEADING = "## Review Subject"
+
+#: Delegation events that can serve as an echo-gate receipt.
+DELEGATION_EVENTS: frozenset[str] = frozenset(
+    f"review_delegated_to_{skill.replace('-', '_')}"
+    for skill in DIMENSION_SKILLS.values()
+)
+
+#: Bound on the receipt read. The run file is appended to, so when it is
+#: larger than this only its TAIL is read (the recent receipts) — a bound
+#: rather than a refusal, because a long run is legitimate.
+_MAX_RECEIPT_BYTES = 4 * 1024 * 1024
+
+GH_TIMEOUT_ENV = "KIT_REVIEW_GH_TIMEOUT"
+_GH_TIMEOUT_DEFAULT = 30
+
+#: ``gh`` output crosses a trust boundary into a git argv. An oid must be
+#: hex and a ref name must not be option-shaped.
+_OID_RE = re.compile(r"[0-9a-f]{7,64}")
+_REF_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/+-]{0,199}")
+_PR_RE = re.compile(r"[0-9]{1,12}")
+_DIFF_HEADER_PREFIX = b"diff --git "
+
+#: A fenced code block is illustration, never a record. Byte-equal to
+#: ``sprint_queue._FENCE_RE`` (the kit's existing fence predicate, ISSUE-076
+#: review) and pinned against it by test, so the two cannot drift.
+_FENCE_RE = re.compile(r"^(?:`{3,}|~{3,})")
+
+#: The counter-evidence heading, LINE-ANCHORED and exact. A bare substring
+#: search matched ``### Review Subject``, ``## Review Subject (archived)``,
+#: the heading inside a fenced block, and prose quoting it — all four
+#: confirmed, and the last is self-referential because a review note that
+#: discusses this gate quotes the heading.
+_SUBJECT_HEADING_RE = re.compile(r"^##[ \t]+Review Subject[ \t]*$")
+
+#: The block ends at the next heading of level 1 OR 2. Stopping only at
+#: ``## `` let a later ``# `` h1 — a legitimate document structure — keep the
+#: block open and swallow its lines.
+_BLOCK_END_RE = re.compile(r"^#{1,2}[ \t]")
+
+#: One ``- key: value`` line of the counter-evidence block.
+_SUBJECT_FIELD_RE = re.compile(r"-\s*([a-z0-9_]+):\s*(\S+)\s*")
 
 
 # ── pure decision table ──────────────────────────────────────────────
@@ -240,6 +414,593 @@ def _emit_event(
         return
 
 
+# ── review subject: collection, echo gate, counter-evidence ──────────
+
+
+class SubjectRefused(Exception):
+    """A review subject could not be established, or is empty.
+
+    ``exit_code`` is 1 when the subject was COMPUTED and is empty, 2 when it
+    could not be computed — the distinction the observed fail-opens erased.
+    """
+
+    def __init__(self, reason: str, detail: str, exit_code: int):
+        # Real checks, not bare ``assert``s: every consumer branches on this
+        # token and ``python -O`` strips assertions.
+        if reason not in SUBJECT_REASONS:
+            raise ValueError(
+                f"unknown refusal reason {reason!r} — the subject vocabulary is "
+                f"closed: {SUBJECT_REASONS}"
+            )
+        if (exit_code == 1) != reason.startswith("empty-diff-"):
+            raise ValueError(
+                f"exit_code 1 means COMPUTED AND EMPTY and nothing else: "
+                f"{reason!r} may not use it (and an empty-diff- reason may use "
+                "nothing else). The 1/2 split is AC-3's whole content."
+            )
+        super().__init__(f"reason={reason} {detail}")
+        self.reason = reason
+        self.detail = detail
+        self.exit_code = exit_code
+
+
+def _refuse(reason: str, detail: str, exit_code: int = 2) -> SubjectRefused:
+    return SubjectRefused(reason, detail, exit_code)
+
+
+def _gh_timeout() -> int:
+    """Seconds for the one ``gh`` consultation. Invalid values => default."""
+    raw = os.environ.get(GH_TIMEOUT_ENV, "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return _GH_TIMEOUT_DEFAULT
+    return value if value > 0 else _GH_TIMEOUT_DEFAULT
+
+
+def _git_argv(cwd: Path, *args: str) -> list[str]:
+    """The argv for a git command in ``cwd``, via ``-C`` rather than ``cwd=``:
+    self-describing, so ``collect_subject`` can publish the EXACT argv it
+    measured and the reviewer's command cannot drift from the gate's."""
+    return ["git", "-C", str(cwd), *args]
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run a LOCAL git command, capturing bytes (diffs are not text).
+
+    No timeout: every call is a local object-database read that terminates
+    immediately; the network consultation is ``gh``, which IS bounded. Without
+    the two guards below, both escape as a traceback at exit 1 — the code for
+    "computed and EMPTY" — with no reason token.
+    """
+    if shutil.which("git") is None:
+        raise _refuse(
+            "git-unavailable",
+            "`git` is not on PATH, so no diff can be collected. This is a "
+            "missing tool, NOT an empty diff.",
+        )
+    if not Path(cwd).is_dir():
+        raise _refuse(
+            "worktree-path-missing",
+            f"{cwd} does not exist, so the diff COULD NOT BE COMPUTED there — "
+            "this is not an empty diff. A `.worktrees/<slug>` path registered "
+            "but deleted is `prunable`: run `git worktree prune` and retry.",
+        )
+    argv = _git_argv(cwd, *args)
+    try:
+        return subprocess.run(argv, capture_output=True)
+    except OSError as exc:
+        raise _refuse(
+            "collection-error",
+            f"`{shlex.join(argv)}` could not be executed: "
+            f"{type(exc).__name__}: {exc}",
+        ) from None
+
+
+def _git_text(cwd: Path, *args: str) -> tuple[int, str]:
+    done = _git(cwd, *args)
+    return done.returncode, done.stdout.decode("utf-8", "replace").strip()
+
+
+def _pr_refs(pr: str, cwd: Path) -> dict[str, str]:
+    """Ask ``gh`` for the PR's head oid and the two ref names — the PR's OWN
+    record of what it is, not whatever this checkout has checked out."""
+    if shutil.which("gh") is None:
+        raise _refuse(
+            "gh-unavailable",
+            "`gh` is not on PATH, so the PR's head oid cannot be read. "
+            "This is a missing tool, NOT an empty diff — install gh / run "
+            "`gh auth login`.",
+        )
+    try:
+        done = subprocess.run(
+            ["gh", "pr", "view", pr, "--json", "baseRefName,headRefName,headRefOid"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=_gh_timeout(),
+        )
+    except subprocess.TimeoutExpired:
+        raise _refuse(
+            "gh-timeout",
+            f"`gh pr view {pr}` did not answer within {_gh_timeout()}s "
+            f"(raise {GH_TIMEOUT_ENV} if the remote is merely slow). A stall "
+            "is not an empty diff.",
+        ) from None
+    if done.returncode != 0:
+        raise _refuse(
+            "gh-failed",
+            f"`gh pr view {pr}` exited {done.returncode}: "
+            f"{done.stderr.strip()[:200]}",
+        )
+    try:
+        payload = json.loads(done.stdout)
+    except json.JSONDecodeError:
+        raise _refuse(
+            "gh-bad-output",
+            f"`gh pr view {pr}` did not return JSON: {done.stdout.strip()[:200]!r}",
+        ) from None
+    if not isinstance(payload, dict):
+        raise _refuse("gh-bad-output", "`gh pr view` returned a non-object")
+
+    refs = {key: str(payload.get(key, "")).strip() for key in
+            ("headRefOid", "headRefName", "baseRefName")}
+    if not _OID_RE.fullmatch(refs["headRefOid"]):
+        raise _refuse(
+            "gh-bad-output",
+            f"headRefOid is not a hex oid: {refs['headRefOid']!r} — refusing "
+            "to put it in a git argv",
+        )
+    for key in ("headRefName", "baseRefName"):
+        if not _REF_NAME_RE.fullmatch(refs[key]):
+            raise _refuse(
+                "gh-bad-output", f"{key} is not a plain ref name: {refs[key]!r}"
+            )
+    return refs
+
+
+def _resolve_worktree(branch: str, cwd: Path) -> tuple[Path, str]:
+    """Find the checkout that holds ``branch``; else the main work tree.
+
+    The half the measured failure got wrong: the collection ran where the CWD
+    happened to be instead of where the PR branch lives. The returned path is
+    where the diff is actually taken.
+    """
+    code, out = _git_text(cwd, "worktree", "list", "--porcelain")
+    if code != 0:
+        raise _refuse(
+            "not-a-git-repo",
+            f"`git worktree list` failed in {cwd} — no checkout to collect from",
+        )
+    main_path: Path | None = None
+    current: Path | None = None
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree "):])
+            if main_path is None:
+                main_path = current
+        elif line.startswith("branch ") and current is not None:
+            if line[len("branch "):] == f"refs/heads/{branch}":
+                return current.resolve(), "branch-worktree"
+    if main_path is None:
+        raise _refuse("not-a-git-repo", f"no git work tree found at {cwd}")
+    return main_path.resolve(), "main-checkout"
+
+
+def collect_subject(pr: str, cwd: Path) -> dict:
+    """Establish the reviewable subject, or raise :class:`SubjectRefused`.
+
+    Which ref each endpoint came from is part of the PAYLOAD, not folklore:
+    ``head`` from ``gh pr view --json headRefOid``, ``base`` from the cached
+    ``refs/remotes/origin/<baseRefName>`` (no fetch runs, never a bare
+    ``main`` — that resolves to the LOCAL ref, ISSUE-089's wrong subject).
+    """
+    if not _PR_RE.fullmatch(pr):
+        raise _refuse("gh-bad-output", f"--pr must be a PR number, got {pr!r}")
+
+    refs = _pr_refs(pr, cwd)
+    head_oid = refs["headRefOid"]
+    base_ref = f"refs/remotes/origin/{refs['baseRefName']}"
+
+    code, base_oid = _git_text(cwd, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
+    if code != 0:
+        raise _refuse(
+            "base-ref-unresolvable",
+            f"{base_ref} does not resolve in {cwd}. Refusing to fall back to "
+            f"the local `{refs['baseRefName']}` ref: a bare trunk name DWIMs "
+            "to the local branch and reviews the wrong subject (ISSUE-089). "
+            "Fetch the base branch and retry.",
+        )
+
+    # Resolve AND canonicalise in one step: `git merge-base` always answers
+    # with a full oid, so an abbreviated headRefOid compared verbatim could
+    # never match it and would misreport a no-op PR as unexplained.
+    code, head_oid = _git_text(cwd, "rev-parse", "--verify", f"{head_oid}^{{commit}}")
+    if code != 0:
+        raise _refuse(
+            "head-oid-unreachable",
+            f"the PR's head oid {refs['headRefOid']} is not in this checkout's "
+            f"object database ({cwd}), so the diff COULD NOT BE COMPUTED — this "
+            "is not an empty diff. Fetch the PR branch "
+            f"(`git fetch origin {refs['headRefName']}`) and retry.",
+        )
+
+    code, merge_base = _git_text(cwd, "merge-base", base_oid, head_oid)
+    if code != 0:
+        raise _refuse(
+            "merge-base-unresolvable",
+            f"no merge base between {base_ref} ({base_oid[:12]}) and "
+            f"{head_oid[:12]} — unrelated histories?",
+        )
+
+    worktree_path, worktree_source = _resolve_worktree(refs["headRefName"], cwd)
+    diff_range = f"{base_oid}...{head_oid}"
+    # ``--no-ext-diff`` does NOT disable textconv: with a local
+    # ``diff.<driver>.textconv`` the whole subject was measured collapsing to
+    # zero bytes, firing the empty-diff refusal on a reviewable PR.
+    diff_args = ("diff", "--no-ext-diff", "--no-textconv", diff_range)
+    done = _git(worktree_path, *diff_args)
+    if done.returncode != 0:
+        raise _refuse(
+            "git-diff-failed",
+            f"`git diff {diff_range}` exited {done.returncode} in "
+            f"{worktree_path}: {done.stderr.decode('utf-8', 'replace').strip()[:200]}",
+        )
+
+    raw = done.stdout
+    subject = {
+        "issue_id": None,  # filled by the caller that knows it
+        "pr_number": pr,
+        "range": diff_range,
+        "base_ref": base_ref,
+        "head_oid": head_oid,
+        "worktree_path": str(worktree_path),
+        "worktree_source": worktree_source,
+        "diff_command": shlex.join(_git_argv(worktree_path, *diff_args)),
+        "diff_bytes": len(raw),
+        "diff_headers": sum(
+            1 for line in raw.split(b"\n") if line.startswith(_DIFF_HEADER_PREFIX)
+        ),
+        "diff_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    if subject["diff_bytes"] == 0:
+        if merge_base == head_oid:
+            raise _refuse(
+                "empty-diff-head-is-merge-base",
+                f"the PR head {head_oid[:12]} IS the merge base with "
+                f"{base_ref}: nothing changed, so there is nothing to review. "
+                "This is a genuine no-op PR, not a failed collection.",
+                exit_code=1,
+            )
+        raise _refuse(
+            "empty-diff-unexplained",
+            f"the range {merge_base[:12]}...{head_oid[:12]} spans commits yet "
+            "produced 0 bytes (a change and its revert?). Computed and empty "
+            "— nothing is delegated, but this is NOT the no-op-PR case.",
+            exit_code=1,
+        )
+    return subject
+
+
+def _print_refusal(exc: SubjectRefused) -> int:
+    """Refusals go to stderr ONLY: stdout must never carry a usable payload."""
+    print(
+        f"ERROR: review subject refused — reason={exc.reason} — {exc.detail}",
+        file=sys.stderr,
+    )
+    return exc.exit_code
+
+
+def _contained(path: Path, root: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
+# ── the delegation receipt: what a PASSING echo gate left behind ─────
+
+
+def _open_read(path: Path) -> int:
+    """Open for reading without following a link and without blocking.
+
+    ``O_NOFOLLOW`` makes a planted symlink ``ELOOP``, ``O_NONBLOCK`` makes a
+    planted FIFO return instead of hanging the gate, and both halves of the
+    review record go through this one door.
+    """
+    return os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+    )
+
+
+def _receipt_path(root: Path) -> Path | None:
+    """The run file the echo gate appends its verification to, or ``None``.
+
+    ``None`` means "no run file can exist" (unset/invalid ``KIT_RUN_ID``, no
+    runs dir, or one escaping the root). The caller turns that into a NAMED
+    refusal, never a silent pass.
+    """
+    run_id = os.environ.get(RUN_ID_ENV, "").strip()
+    if not _RUN_ID_RE.fullmatch(run_id):
+        return None
+    runs_dir = root / ".claude" / "runs"
+    if not runs_dir.is_dir() or not _contained(runs_dir, root):
+        return None
+    return runs_dir / f"{run_id}.jsonl"
+
+
+def _read_receipts(root: Path) -> list[dict]:
+    """Every delegation event in this run's file, as untrusted input.
+
+    Hardened the way ISSUE-058/070 hardened the WRITE path, because this is
+    workspace-persisted state a gate branches on (review lesson 5). The
+    regular-file check runs AFTER the open rather than as a racy pre-check,
+    and ``O_NONBLOCK`` is what keeps it reachable — measured: with the check
+    disarmed and no ``O_NONBLOCK`` the harness blocked indefinitely. The read
+    is bounded to the file's tail; malformed lines are skipped.
+    """
+    path = _receipt_path(root)
+    if path is None:
+        raise _refuse(
+            "verification-unconfigured",
+            f"no delegation receipt can exist: {RUN_ID_ENV} is unset or invalid, "
+            f"or {root}/.claude/runs does not exist. The counter-evidence block "
+            "is built from the receipt a PASSING `delegate` echo gate writes, "
+            f"never recomputed here — so set {RUN_ID_ENV} and create the runs "
+            "directory (review step 3.1 does both) and re-run the delegation.",
+        )
+    try:
+        fd = _open_read(path)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise OSError(
+                    f"not a regular file (mode {info.st_mode:#o}) — a FIFO here "
+                    "would hang this gate and a symlink would redirect it"
+                )
+            partial = info.st_size > _MAX_RECEIPT_BYTES
+            if partial:
+                os.lseek(fd, info.st_size - _MAX_RECEIPT_BYTES, os.SEEK_SET)
+            raw = os.read(fd, _MAX_RECEIPT_BYTES)
+        finally:
+            os.close(fd)
+    except FileNotFoundError:
+        raise _refuse(
+            "verification-missing",
+            f"{path} does not exist, so no delegation was verified in this run. "
+            "Run the `delegate` echo gate first; a verdict with no verified "
+            "subject is exactly the record this gate exists to prevent.",
+        ) from None
+    except OSError as exc:
+        raise _refuse(
+            "verification-unreadable",
+            f"{path} could not be read: {type(exc).__name__}: {exc}",
+        ) from None
+
+    lines = raw.decode("utf-8", "replace").splitlines()
+    if partial and lines:
+        lines = lines[1:]  # the tail read starts mid-line
+    receipts: list[dict] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") not in DELEGATION_EVENTS:
+            continue
+        if not isinstance(event.get("payload"), dict):
+            continue
+        receipts.append(event)
+    return receipts
+
+
+def _verified_dimensions(receipts: list[dict], issue: str, subject: dict) -> list[str]:
+    """Dimensions whose receipt matches THIS issue, head oid, bytes and digest."""
+    found = []
+    for dimension, skill in DIMENSION_SKILLS.items():
+        event_type = f"review_delegated_to_{skill.replace('-', '_')}"
+        for event in receipts:
+            payload = event["payload"]
+            if (
+                event.get("event_type") == event_type
+                and event.get("issue_id") == issue
+                and payload.get("head_oid") == subject["head_oid"]
+                and payload.get("diff_sha256") == subject["diff_sha256"]
+                and payload.get("diff_bytes") == subject["diff_bytes"]
+            ):
+                found.append(dimension)
+                break
+    return found
+
+
+def _require_verification(root: Path, issue: str, subject: dict) -> list[str]:
+    dimensions = _verified_dimensions(_read_receipts(root), issue, subject)
+    if not dimensions:
+        raise _refuse(
+            "verification-missing",
+            f"this run recorded no verified delegation for {issue} at head "
+            f"{subject['head_oid'][:12]} / sha256 {subject['diff_sha256'][:12]}… "
+            "— the echo gate either never ran or REJECTED the echo. A record "
+            "that recomputed its own counter-evidence would render identically "
+            "in all three cases, which is why it is consumed, not recomputed.",
+        )
+    return dimensions
+
+
+# ── the counter-evidence block in the review notes ───────────────────
+
+
+def _subject_blocks(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` line spans of every counter-evidence block.
+
+    Line-anchored and fence-aware: the predecessor ``text.count(…)`` matched
+    ``###``, a suffixed heading, a fenced heading, and prose quoting it — the
+    last self-referentially, since a note about this gate quotes the heading.
+    Spans end at the next h1 OR h2, so a later ``# `` cannot be swallowed.
+    """
+    lines = text.splitlines()
+    in_fence = False
+    starts: list[int] = []
+    for index, line in enumerate(lines):
+        if _FENCE_RE.match(line.strip()):
+            in_fence = not in_fence
+            continue
+        if not in_fence and _SUBJECT_HEADING_RE.match(line):
+            starts.append(index)
+    spans = []
+    for start in starts:
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            if _BLOCK_END_RE.match(lines[index]):
+                end = index
+                break
+        spans.append((start, end))
+    return spans
+
+
+def _parse_recorded_subject(text: str) -> dict[str, list[str]]:
+    """The ``- key: value`` lines of the single counter-evidence block.
+
+    EVERY occurrence of a key is collected, not the first: a true line
+    followed by a false one must not read as agreement (ISSUE-042). Callers
+    resolve the 0-block and >1-block cases via :func:`_subject_blocks`,
+    because "absent" and "present but unreadable" are different refusals.
+    """
+    spans = _subject_blocks(text)
+    if len(spans) != 1:
+        return {}
+    start, end = spans[0]
+    found: dict[str, list[str]] = {}
+    for line in text.splitlines()[start + 1 : end]:
+        match = _SUBJECT_FIELD_RE.fullmatch(line)
+        if match:
+            found.setdefault(match.group(1), []).append(match.group(2))
+    return found
+
+
+def _agrees(recorded: dict[str, list[str]], key: str, expected: str) -> bool:
+    """True only when EVERY recorded occurrence of ``key`` equals ``expected``."""
+    values = recorded.get(key, [])
+    return bool(values) and all(value == expected for value in values)
+
+
+def _render_subject_lines(subject: dict, dimensions: list[str]) -> list[str]:
+    """The block, rendered from the subject a passing echo gate verified.
+
+    No ``worktree_path``: these notes are tracked and pushed to a public
+    remote, so an absolute path there publishes the OS account name of whoever
+    ran ``/review``. ``worktree_source`` carries the semantic content; the
+    path stays on stdout, which is not committed.
+    """
+    return [
+        SUBJECT_HEADING,
+        "_Counter-evidence for what this review actually read (ISSUE-096): the "
+        "subject whose digest a `review_context.py delegate` echo gate "
+        "verified at the consumer. Copied from that run's delegation receipt, "
+        "not recomputed here — a self-attesting block renders identically "
+        "whether the gate passed, was rejected, or never ran._",
+        "",
+        f"- diff_bytes: {subject['diff_bytes']}",
+        f"- diff_headers: {subject['diff_headers']}",
+        f"- diff_sha256: {subject['diff_sha256']}",
+        f"- head_oid: {subject['head_oid']}",
+        f"- base_ref: {subject['base_ref']}",
+        f"- range: {subject['range']}",
+        f"- worktree_source: {subject['worktree_source']}",
+        f"- verified_dimensions: {','.join(dimensions)}",
+    ]
+
+
+def _require_one_agreeing_block(notes: Path, text: str, subject: dict) -> None:
+    """Refuse unless ``text`` carries exactly one block that reads back.
+
+    Run on the CANDIDATE before the write and on the file after it. Validating
+    FIRST keeps a refusal byte-free: an unpaired fence hides the heading, so
+    the append branch ran, wrote, and only then failed — three retries left
+    three blocks (review lesson 12).
+    """
+    spans = _subject_blocks(text)
+    recorded = _parse_recorded_subject(text)
+    if (
+        len(spans) == 1
+        and _agrees(recorded, "diff_bytes", str(subject["diff_bytes"]))
+        and _agrees(recorded, "head_oid", subject["head_oid"])
+    ):
+        return
+    literal = sum(1 for line in text.splitlines() if _SUBJECT_HEADING_RE.match(line))
+    if literal != len(spans):
+        raise _refuse(
+            "subject-incomplete",
+            f"{notes} has {literal} literal {SUBJECT_HEADING!r} heading(s) but "
+            f"{len(spans)} readable block(s): an UNTERMINATED code fence hides "
+            "the heading from the detector (the synthesizer indents only the "
+            "FIRST line of a finding's `evidence`, so multi-line evidence puts "
+            "a ``` at column 0). Close the fence and re-run — NOTHING was "
+            "written, so retries do not accumulate blocks.",
+        )
+    raise _refuse(
+        "subject-incomplete",
+        f"the {SUBJECT_HEADING!r} block in {notes} does not read back both "
+        f"diff_bytes={subject['diff_bytes']} and head_oid={subject['head_oid']} "
+        f"({len(spans)} block(s) detected). Nothing was written.",
+    )
+
+
+def _read_notes(path: Path) -> str:
+    """Read the review notes without following a symlink at the final hop:
+    ``open("a")`` was measured appending the block THROUGH an in-project link
+    into an unrelated build file."""
+    try:
+        fd = _open_read(path)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError("not a regular file (symlink, directory or FIFO)")
+            chunks = []
+            while True:
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        finally:
+            os.close(fd)
+    except FileNotFoundError:
+        raise _refuse(
+            "review-notes-missing",
+            f"{path} does not exist, so the review record cannot carry the "
+            "byte count and head oid the review was taken at. Run the "
+            "synthesizer (step 3.14) first.",
+        ) from None
+    except OSError as exc:
+        raise _refuse(
+            "review-notes-not-a-file",
+            f"{path} could not be read: {type(exc).__name__}: {exc} — "
+            "refusing to read or write through it.",
+        ) from None
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
+def _write_notes(path: Path, text: str) -> None:
+    """Rewrite the review notes in place, ``O_NOFOLLOW``, never creating."""
+    try:
+        fd = os.open(
+            path, os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            os.write(fd, text.encode("utf-8"))
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise _refuse(
+            "review-notes-not-a-file",
+            f"{path} could not be written: {type(exc).__name__}: {exc}",
+        ) from None
+
+
 # ── CLI handlers ─────────────────────────────────────────────────────
 
 
@@ -269,6 +1030,170 @@ def cmd_decide(args: argparse.Namespace) -> int:
                 "dimensions": decisions,
             }
         )
+    )
+    return 0
+
+
+def cmd_collect(args: argparse.Namespace) -> int:
+    """Handler for `collect` — establish the subject, or refuse.
+
+    On refusal stdout stays EMPTY, so a shell capture cannot carry a
+    half-subject forward.
+    """
+    subject = collect_subject(args.pr, Path.cwd())
+    subject["issue_id"] = args.issue
+    print(json.dumps(subject))
+    return 0
+
+
+def cmd_delegate(args: argparse.Namespace) -> int:
+    """Handler for `delegate` — the ECHO GATE.
+
+    Re-establishes the subject (no handoff artifact to trust or poison) and
+    records the delegation only when the consumer's echoed byte count AND
+    sha256 both match. A reviewer that received nothing measures
+    ``0``/``sha256(b"")`` and cannot pass; one that auto-collected a DIFFERENT
+    non-empty subject cannot pass either, which a "greater than zero" check
+    would have allowed. ``--head-oid`` pins the head the reviewer was handed,
+    so a head that advances mid-review is ``head-moved`` rather than a slur on
+    an honest reviewer.
+
+    NO ``review_delegated_to_*`` event is emitted on any failing path, and a
+    pass whose receipt for THIS dimension could not be recorded is itself a
+    refusal: ``record-subject`` consumes that receipt, so a silently
+    unrecorded verification is a silent pass one step later.
+    """
+    subject = collect_subject(args.pr, Path.cwd())
+    root = Path(subject["worktree_path"])
+
+    pinned = args.head_oid.strip().lower()
+    if pinned != subject["head_oid"]:
+        raise _refuse(
+            "head-moved",
+            f"the subject was collected at head {pinned[:12]}… but the PR's "
+            f"head is now {subject['head_oid'][:12]}… — the branch advanced "
+            f"while the {args.dimension} reviewer was reading. Its verdict is "
+            "about the older head, not a different repository: re-run "
+            "`collect` and re-review at the new head.",
+        )
+
+    echoed_sha = args.echoed_sha256.strip().lower()
+    if args.echoed_bytes != subject["diff_bytes"] or echoed_sha != subject["diff_sha256"]:
+        raise _refuse(
+            "echo-mismatch",
+            f"the {args.dimension} reviewer echoed "
+            f"{args.echoed_bytes} bytes / sha256 {echoed_sha[:12]}… but the "
+            f"subject is {subject['diff_bytes']} bytes / sha256 "
+            f"{subject['diff_sha256'][:12]}… — it did not read the diff "
+            "that was collected for it, so its verdict is about something "
+            "else. Discard the verdict; do not record a delegation.",
+        )
+
+    event = f"review_delegated_to_{DIMENSION_SKILLS[args.dimension].replace('-', '_')}"
+    _emit_event(
+        root,
+        event,
+        {
+            "pr_number": args.pr,
+            "diff_bytes": subject["diff_bytes"],
+            "diff_sha256": subject["diff_sha256"],
+            "head_oid": subject["head_oid"],
+        },
+        issue_id=args.issue,
+    )
+    # Verify what landed, not what was intended: `_emit_event` is best-effort
+    # and silent by contract, and this receipt is load-bearing. Bound to THIS
+    # dimension: asking only "did any dimension verify?" is satisfied by
+    # another dimension's line and is vacuous for every dimension after the
+    # first (reproduced three times with the run file readable but
+    # un-appendable).
+    verified = _require_verification(root, args.issue, subject)
+    if args.dimension not in verified:
+        raise _refuse(
+            "verification-missing",
+            f"the {args.dimension} echo matched but its receipt did not land in "
+            f"{root}/.claude/runs (verified there: {', '.join(verified)}). "
+            "record-subject consumes that receipt, so an unrecorded "
+            "verification is a silent pass one step later.",
+        )
+    print(
+        f"echo verified: {args.dimension} reviewed {subject['diff_bytes']} bytes "
+        f"at head {subject['head_oid']} (range {subject['range']})"
+    )
+    return 0
+
+
+def cmd_record_subject(args: argparse.Namespace) -> int:
+    """Handler for `record-subject` — counter-evidence in the review record.
+
+    MUST run downstream of EVERY synthesizer call, which rewrite
+    ``docs/review_notes/<ISSUE>.md``. The block is rendered from the receipt a
+    PASSING ``delegate`` left behind, never recomputed here: a self-attesting
+    block is byte-identical whether the echo gate passed, was rejected, or
+    never ran. An existing block is REPLACED rather than refused, because the
+    review skill commits and pushes these notes — which advances the head, so
+    refusing a stale block would wedge every second review cycle.
+
+    The notes live in the checkout ``collect`` RESOLVED — the branch worktree,
+    or the main work tree ``_resolve_worktree`` falls back to (a fork PR, or a
+    re-review after ``wt_cleanup.sh``) — never whatever checkout the command
+    was invoked from, which is the CWD-dependence this issue removes. The
+    fallback is NAMED on stdout (``worktree_source=``): step 6 commits only
+    the branch worktree, so a block landing in the main checkout would be
+    missing from the PR with nothing saying where it went.
+    """
+    subject = collect_subject(args.pr, Path.cwd())
+    root = Path(subject["worktree_path"])
+    dimensions = _require_verification(root, args.issue, subject)
+
+    notes = root / "docs" / "review_notes" / f"{args.issue}.md"
+    if not _contained(notes, root):
+        raise _refuse(
+            "review-notes-outside-project",
+            f"{notes} resolves outside the branch worktree {root} — refusing "
+            "to read or write it",
+        )
+
+    text = _read_notes(notes)
+    spans = _subject_blocks(text)
+    if len(spans) > 1:
+        raise _refuse(
+            "subject-duplicate-block",
+            f"{notes} carries {len(spans)} {SUBJECT_HEADING!r} blocks — two "
+            "records cannot both be THE record. Delete the stale one and "
+            "re-run.",
+        )
+
+    block = _render_subject_lines(subject, dimensions)
+    lines = text.splitlines()
+    if spans:
+        start, end = spans[0]
+        if not _parse_recorded_subject(text):
+            raise _refuse(
+                "subject-unparseable",
+                f"{notes} has a {SUBJECT_HEADING!r} block with no readable "
+                "`- key: value` line. Present-but-unreadable is not absent: "
+                "treating it as absent would append a SECOND block and refuse "
+                "permanently from then on. Delete the block and re-run.",
+            )
+        lines[start:end] = block
+    else:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend(block)
+    updated = "\n".join(lines) + "\n"
+    # Validate the CANDIDATE first, so a refusal leaves the file byte-untouched.
+    _require_one_agreeing_block(notes, updated, subject)
+    if updated != text:
+        _write_notes(notes, updated)
+    # Then verify what landed rather than what was intended.
+    _require_one_agreeing_block(notes, _read_notes(notes), subject)
+
+    print(
+        f"counter-evidence recorded in {notes}: "
+        f"diff_bytes={subject['diff_bytes']} head_oid={subject['head_oid']} "
+        f"verified_dimensions={','.join(dimensions)} "
+        f"worktree_source={subject['worktree_source']}"
     )
     return 0
 
@@ -348,6 +1273,69 @@ def main(argv: list[str] | None = None) -> int:
         help="Issue id, format ISSUE-<number> (e.g. ISSUE-066)",
     )
 
+    co = subparsers.add_parser(
+        "collect",
+        help="Establish the reviewable subject for a PR, or refuse (ISSUE-096)",
+    )
+    co.add_argument(
+        "--pr",
+        required=True,
+        help="PR number; its head oid is read from `gh pr view --json headRefOid`",
+    )
+    co.add_argument(
+        "--issue", required=True, help="Issue id, format ISSUE-<number>"
+    )
+
+    dg = subparsers.add_parser(
+        "delegate",
+        help=(
+            "Echo gate: record review_delegated_to_code_review / "
+            "review_delegated_to_security_review ONLY when the runtime "
+            "reviewer echoes back the digest of the diff it was given"
+        ),
+    )
+    dg.add_argument("--dimension", required=True, choices=sorted(DIMENSION_SKILLS))
+    dg.add_argument("--pr", required=True, help="PR number (same as `collect`)")
+    dg.add_argument(
+        "--issue", required=True, help="Issue id, format ISSUE-<number>"
+    )
+    dg.add_argument(
+        "--head-oid",
+        required=True,
+        help=(
+            "The head_oid `collect` printed — the subject the reviewer was "
+            "handed. A PR head that advanced meanwhile is reported as "
+            "reason=head-moved instead of blaming the reviewer"
+        ),
+    )
+    dg.add_argument(
+        "--echoed-bytes",
+        required=True,
+        type=int,
+        help="Byte count the runtime reviewer reported measuring",
+    )
+    dg.add_argument(
+        "--echoed-sha256",
+        required=True,
+        help="sha256 the runtime reviewer reported measuring",
+    )
+
+    rs = subparsers.add_parser(
+        "record-subject",
+        help=(
+            "Write the counter-evidence a PASSING `delegate` verified into "
+            "<worktree>/docs/review_notes/<ISSUE>.md — run AFTER every "
+            "synthesizer call"
+        ),
+    )
+    rs.add_argument("--pr", required=True, help="PR number (same as `collect`)")
+    rs.add_argument(
+        "--issue", required=True, help="Issue id, format ISSUE-<number>"
+    )
+    # No `--notes`: the path is derived from the issue id and the branch
+    # worktree. An overridable path let `--notes decoy.md` satisfy the gate
+    # while the canonical file got nothing, and nothing ever passed the flag.
+
     em = subparsers.add_parser(
         "emit",
         help="Prose-side emit seam for allowlisted review delegation events",
@@ -403,7 +1391,32 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "decide":
         return cmd_decide(args)
-    return cmd_emit(args)
+    if args.command == "emit":
+        return cmd_emit(args)
+
+    # The three subject subcommands share ONE failure mapping. Without it an
+    # escaping exception exits 1 — this module's code for "computed and
+    # EMPTY" — with no reason token, i.e. a fail-open inside the guard
+    # (reproduced with a `prunable` .worktrees/<slug> registration).
+    handler = {
+        "collect": cmd_collect,
+        "delegate": cmd_delegate,
+        "record-subject": cmd_record_subject,
+    }[args.command]
+    try:
+        return handler(args)
+    except SubjectRefused as exc:
+        return _print_refusal(exc)
+    except Exception as exc:  # noqa: BLE001 — see above; mapped, never swallowed
+        return _print_refusal(
+            _refuse(
+                "collection-error",
+                f"`{args.command}` failed with an unmodelled "
+                f"{type(exc).__name__}: {exc}. The subject COULD NOT BE "
+                "COMPUTED — this is not an empty diff, and nothing was "
+                "delegated or recorded.",
+            )
+        )
 
 
 if __name__ == "__main__":
