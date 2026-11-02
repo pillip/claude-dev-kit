@@ -66,7 +66,7 @@
 - [ ] ISSUE-093: Harden the worktree fail-closed path's own failure modes — a defeated knob validator, an unnamed escape, an invisible hang, and two untested refusals _(track: platform, P2, 1d — ISSUE-083 / PR #139 review: five findings against the refusal machinery itself, the theme being a fail-closed guard whose failure modes are unguarded or misreported (a multi-line `KIT_WORKTREE_FETCH_TIMEOUT` passes `grep -q`, exits 125 and is reported as `reason=remote-unreachable` on a healthy remote — and the obvious `grep -Exq` fix was measured NOT to close it); depends on 083)_
 - [ ] ISSUE-094: Stop the hollow-test predicate from failing `tests/conftest.py` — editing it reddens a blocking implement gate _(track: platform, P2, 0.5d — ISSUE-083 implement discovered and review confirmed: `test_dir_pattern` classifies every `tests/*.py` as a test file and `_has_real_tests("tests/conftest.py", wt)` returns False, so the blocking `implement/tests-written` gate goes red on any branch that touches conftest.py — in direct conflict with the standing review lesson that tells implementers to put hermetic env guards there; ISSUE-083 had to route around it and the review accepted that only as narrower-not-tighter, conditional on this fix; depends on none)_
 - [ ] ISSUE-095: Close the telemetry emitter's remaining containment escape — swapping a directory component still redirects the append outside the root _(track: platform, P1, 1d — ISSUE-070 / PR #141 review residual GAP-070e (Medium), empirically reproduced by the reviewing agent 2026-10-25: `O_NOFOLLOW` binds only the FINAL component and the post-open `fstat` validates the node's TYPE not its LOCATION, so a `.claude` directory-symlink swap inside the check→open window made `emit_event` return **True** and write `<outside>/runs/toc.jsonl`; the last open leg of the containment invariant ISSUE-070 exists to make falsifiable, and ISSUE-075 is sequenced to adopt this module's contract; GAP-070f + GAP-070g folded in; depends on 070)_
-- [ ] ISSUE-096: Bind the delegated review to the PR's own diff — both runtime skills auto-collected an empty one on two consecutive PRs _(track: platform, P1, 1d — observed twice in one sprint (ISSUE-083 review / PR #139 and ISSUE-070 review / PR #141, 2026-10-25): `decide` returned `delegated` for both dimensions and the runtime skills then auto-collected their own diff against the MAIN checkout, so `security-review`'s prompt arrived with the literal `DIFF CONTENT: (Bash completed with no output)`; uncorrected, both passes would have returned a clean bill having reviewed nothing — a silent fail-open on a BLOCKING gate, on the primary path ISSUE-072 worked to make reachable; depends on none)_
+- [x] ISSUE-096: Bind the delegated review to the PR's own diff — both runtime skills auto-collected an empty one on two consecutive PRs _(track: platform, P1, 1d — observed twice in one sprint (ISSUE-083 review / PR #139 and ISSUE-070 review / PR #141, 2026-10-25): `decide` returned `delegated` for both dimensions and the runtime skills then auto-collected their own diff against the MAIN checkout, so `security-review`'s prompt arrived with the literal `DIFF CONTENT: (Bash completed with no output)`; uncorrected, both passes would have returned a clean bill having reviewed nothing — a silent fail-open on a BLOCKING gate, on the primary path ISSUE-072 worked to make reachable; depends on none)_
 - [ ] ISSUE-097: Harden trace_query.py's read path and bound its timestamp coercion — the telemetry READER kept the defences its writer gained _(track: platform, P1, 1d — ISSUE-071 review Mediums without a carrier until now: a planted FIFO at a read target hangs it, `_parse_ts`'s catch is too narrow, and the AC-4 root gap leaves worktree streams unread from main; the write side was hardened by ISSUE-070/058 and the read side was never revisited)_
 - [ ] ISSUE-098: Retire the stale silent-no-op docstrings in synthesize_gate_results.py _(track: platform, P2, 0.5d — ISSUE-071 review Medium; the module still documents the emit behaviour ISSUE-067 replaced, so the file argues against its own code)_
 - [ ] ISSUE-099: Make the containment-oracle test location-independent — it fails in every git worktree outside the main repo directory _(track: platform, P1, 0.5d — shipped to main by ISSUE-070 and reproduced on pure main at a scratch path by the 2026-10-25 ISSUE-081 re-review; worktrees are how every sprint phase runs, so a location-sensitive test in the suite the gates execute is a standing false signal)_
@@ -77,6 +77,9 @@
 - [ ] ISSUE-104: Make SPEC validation actually enforce — two measured fail-open routes in one control _(track: platform, P1, 0.5d — found during the ISSUE-088 review and re-measured by team-lead: CI runs validate_spec.py in directory mode without --strict so violations print and the job still exits 0, and validate() short-circuits on an empty chosen_option so a deferral-shaped SPEC passes with zero errors — the exact outcome ISSUE-088's AC-1 forbids)_
 - [ ] ISSUE-105: Resolve the Status=done contradiction between implement step 12 and the team-lead contract _(track: platform, P2, 0.5d — observed on ISSUE-088: skills/implement/SKILL.md step 12 sets Status=done at the end of IMPLEMENT while the team-lead contract forbids done before the PR is merged. The sub-task complied with the skill and left a false done on main with PR #145 open; team-lead reverted it under the lock)_
 - [ ] ISSUE-106: Measure whether the main-session delegated review auto-collects the PR's own diff — the path ISSUE-096 binds but never observed _(track: platform, P1, 0.5d — **Manual**: ISSUE-096 AC-6 split out as its sibling, per ISSUE-096's own team-lead note at filing, following the ISSUE-082/072 shape. Needs one live `/review` from a main-session context, which no agent can supply because every sprint-pipeline context IS a sub-task — which is why the measurement is still missing after four reproductions of the sub-task fail-open. Deliverable is one dated matrix row carrying the literal byte count the runtime skill echoed back plus `auto-collection empty` / `auto-collection correct`; depends on 096)_
+- [ ] ISSUE-107: Scope the review-subject checkpoint's trigger to the receipts that can satisfy it — a legacy delegation event wedges the gate _(track: platform, P1, 0.5d — ISSUE-096 review 3, 2026-11-03: `_review_subject_bound` fires on any `review_delegated_to_*` receipt for the issue, but `record-subject` is satisfied only by a receipt carrying matching `head_oid`/`diff_sha256`/`diff_bytes`; the pre-ISSUE-096 emit path writes one with none of them at exit 0, so the checkpoint demands `record-subject` and `record-subject` refuses `reason=verification-missing` at exit 2 — no way forward on a blocking gate. Fails CLOSED, so not a High, but it is the wedge class that cost ISSUE-081 four review cycles; review lesson 8; depends on 096)_
+- [ ] ISSUE-108: Guard step 3.1's `$WT/` emit anchor, and stop promising a remedy 10 of 25 refusals do not carry _(track: platform, P2, 0.5d — ISSUE-096 review 3, 2026-11-03: `cmd_emit` anchors on `Path.cwd()` while `delegate` anchors on the resolved worktree, so the degradation emit run from the main checkout exits 0 and splits the event from the receipts, invisible to the gate — and `STEP_31_REQUIREMENTS` mutation-tests step 3.1's obligations but carries no entry for the `$WT/` anchor; separately, step 3.1(a)'s "names `reason=` and its remedy" is false for 10 of the 25 reason tokens; depends on 096)_
+- [ ] ISSUE-109: Make the fence detector survive a nested fence — fix it in `sprint_queue`'s shared helper, not in the copy _(track: platform, P2, 0.5d — ISSUE-096 review 3, 2026-11-03: a 4-backtick fence wrapping a 3-backtick fence re-opens the plain toggle in `_FENCE_RE`/`_unfenced`, so the fence-awareness protecting `## Review Subject` detection is defeated by legitimate nested-fence content; deliberately not fixed inside ISSUE-096 because the correct fix is the shared helper both consumers inherit, which no ISSUE-096 AC covers; carried here because the finding lived only in `docs/sprint_state.md`, which is archived and reset at each sprint boundary (review lesson 15); depends on 096)_
 
 ### Doing
 
@@ -5907,7 +5910,7 @@ No swap of a **directory** component between the containment check and the open 
 - PRD-Ref: none (kit self-development; observed by the reviewing agent on PR #139 and PR #141, both 2026-10-25, recorded in `docs/sprint_state.md` — the row says "not filed this iteration … this row is the durable record until it has an id", which this issue discharges. Native-memory review lessons: "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence, not just an absence of warnings"; "a newly added defence must be tested in the DISARM direction and through its real consumer"; "a deferred finding is only real if it has a durable carrier")
 - Priority: P1
 - Estimate: 1d
-- Status: doing
+- Status: done
 - Owner:
 - Branch: issue/ISSUE-096-bind-review-diff
 - GH-Issue: 146
@@ -6570,5 +6573,224 @@ An issue's `Status` field means one thing, and no skill instructs an agent to wr
 
 #### Rollback
 `git revert`. The deliverables are one record plus one narrow shape guard, so a revert loses no behaviour — but **keep the measurement even on a revert**: it stays true independently of what the kit decides to do about it, and discarding it returns the main-session path to the unmeasured state this issue exists to end, which is the ISSUE-014 "verify in the feature matrix before relying" rule running backwards. If the row recorded `auto-collection empty`, do **not** revert it while leaving any document describing ISSUE-096's binding as belt-and-braces on the main-session path — that combination asserts, in the kit's own voice, the opposite of the only observation anyone has made.
+
+---
+
+### ISSUE-107: Scope the review-subject checkpoint's trigger to the receipts that can satisfy it — a legacy delegation event wedges the gate
+
+> **Measured through the public CLI only, during the ISSUE-096 review 3 (2026-11-03).** `scripts/verify_checkpoint.py::_review_subject_bound()` requires the `## Review Subject` block whenever the run file holds **any** event whose `event_type` is a `review_delegated_to_*` and whose `issue_id` matches. `scripts/review_context.py::_verified_dimensions()` — the predicate `record-subject` is satisfied by — additionally requires that receipt's payload to carry `head_oid`, `diff_sha256` and `diff_bytes` matching the freshly collected subject. **The trigger set is strictly larger than the satisfiable set.**
+>
+> The legacy pre-ISSUE-096 emit path writes a delegation event with none of the three: `python3 scripts/review_context.py emit --event review_delegated_to_code_review --pr 7 --issue ISSUE-096` exits **0** and lands `payload: {"pr_number": "7"}`. With that as the only receipt, the checkpoint returns False and instructs the operator to run `record-subject`; `record-subject` then refuses with `reason=verification-missing` at exit **2**. Review skill step 5 forbids hand-editing the notes, so **there is no way forward** — the review phase for that issue is **wedged**.
+>
+> **Why P1 and not High.** It fails **CLOSED**: no false clean bill is issued, which is the right direction for a gate to break. But a blocking-gate wedge is exactly the class that cost ISSUE-081 four review cycles, and the operator's only escape is to do the thing the skill forbids.
+>
+> **Root cause, named.** This is review lesson 8 — "tightening a shared contract for a new caller class must be scoped to that class, with legacy failure modes pinned." The new gate's **trigger** fires on the legacy caller class it was never meant to govern. Both of the new tests plant `payload: {"diff_bytes": 810}` and pin only the trigger, so the gap is untested in **exactly the arm that matters**.
+>
+> **This issue owns the interaction ISSUE-096 could not.** ISSUE-096's AC-7 forbade touching `tests/test_review_context.py`, which is precisely why the legacy emit path was deliberately left in place rather than re-anchored or removed. The deferral was correct; the carrier is here.
+>
+> **Secondary concern, folded in rather than left loose.** The delegation receipt lives inside the worktree being reviewed, under `.claude/runs/`, which is gitignored — so it is never committed and it vanishes with `wt_cleanup.sh`. After cleanup, a review that genuinely delegated is indistinguishable from one that never did, which is the "defeated output renders identically to healthy output" shape the kit keeps filing against itself.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; observed during the ISSUE-096 review 3, 2026-11-03, measured through the public CLI only. Native-memory review lessons: "tightening a shared contract for a new caller class must be scoped to that class, with legacy failure modes pinned"; "a newly added defence must be tested in the DISARM direction and through its real consumer"; "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence"; "a deferred finding is only real if it has a durable carrier")
+- Priority: P1
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: ISSUE-096
+
+#### Goal
+The set of receipts that FIRES the review-subject checkpoint equals the set that can SATISFY it, so no reachable receipt shape can leave the review phase with a blocking gate that refuses and a remedy that refuses back.
+
+#### Scope (In/Out)
+- In:
+  - Narrowing `_review_subject_bound()`'s trigger to receipts that carry the subject fields `_verified_dimensions()` requires, so the firing set is a subset of the satisfiable set.
+  - An **invariant test** asserting that property directly: every receipt shape that fires the gate is satisfiable, enumerated rather than asserted in general.
+  - Pinning the legacy emit path's failure mode explicitly — the shape that wedges today becomes a passing, named case, and the regression is captured.
+  - Deciding and pinning the post-`wt_cleanup.sh` outcome: the receipt is gitignored and worktree-local, so "receipt gone" must not read as "never delegated".
+  - The interaction ISSUE-096's AC-7 ring-fenced: this issue is allowed to touch the legacy emit path and `tests/test_review_context.py`, and says so.
+- Out:
+  - Re-anchoring `cmd_emit` off `Path.cwd()` and the step-3.1 `$WT/` anchor — **ISSUE-108** owns both.
+  - The nested-fence defect in the heading detector — **ISSUE-109** owns it.
+  - Any change to `collect` / `delegate` / the echo gate's own verification arithmetic, or to the 25-token reason vocabulary.
+  - Weakening the gate for the shape it was built for: a delegated review with a verified receipt and no `## Review Subject` block must still FAIL.
+  - Moving the receipt out of `.claude/runs/` or making it tracked — if the cleanup decision turns out to need that, it is a separate carrier.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The legacy receipt no longer fires a requirement it cannot satisfy.** Given a run whose only receipt is the one the legacy emit path writes (`python3 scripts/review_context.py emit --event review_delegated_to_code_review --pr 7 --issue ISSUE-NNN`, which exits 0 and lands `payload: {"pr_number": "7"}`), when `verify_checkpoint.py review review --issue ISSUE-NNN` runs against notes carrying the three required headers and no `## Review Subject` block, then it exits 0 and does not print the `record-subject` instruction.
+- [ ] **The gate still fires in the direction it was built for.** Given a run whose receipt carries `head_oid`, `diff_sha256` and `diff_bytes` matching the collected subject (the shape `delegate`'s echo gate writes), when the same checkpoint runs against notes with no `## Review Subject` block, then it FAILs and prints the `record-subject` remedy, with the exact rendered line pinned by test.
+- [ ] **Every receipt shape that fires the gate is satisfiable.** Given the enumerated set of receipt payload shapes that make `_review_subject_bound()` require the block, when each is passed to `_verified_dimensions()` together with the subject it was emitted for, then every one of them returns a non-empty dimension list; a shape that fires but cannot be satisfied fails this AC, and the test enumerates the shapes rather than asserting the property in prose.
+- [ ] **A vanished receipt cannot read as "never delegated".** Given a worktree whose `.claude/runs/` tree has been removed the way `wt_cleanup.sh` removes it, after a review that DID delegate, when the checkpoint runs, then the outcome is the one the PR body names (pass-with-disclosure or fail), and a test pins that exact rendered line so the post-cleanup run stays distinguishable from a review that never delegated.
+- [ ] **ISSUE-096's pinned test surface is accounted for, not quietly rewritten.** Given this change, when `tests/test_review_context.py` and ISSUE-096's subject-binding test module run, then both pass, and every test this PR modifies is named in the PR body as a change to a specific ISSUE-096 acceptance criterion — AC-7 forbade editing the first of them, which is the reason the legacy emit path survived to wedge the gate.
+
+#### Implementation Notes
+- The two predicates to reconcile: `scripts/verify_checkpoint.py::_review_subject_bound()` (trigger — currently `any(event.get("issue_id") == issue_id for event in receipts)` over `rc._read_receipts(wt)`, which filters only on `event_type in DELEGATION_EVENTS` and `isinstance(payload, dict)`) and `scripts/review_context.py::_verified_dimensions()` (satisfier — additionally compares `head_oid`, `diff_sha256`, `diff_bytes`). Locate them by name; line numbers move.
+- Prefer narrowing the trigger in **one** place that both sides read, rather than re-typing the field check in `verify_checkpoint.py`. The re-typed-oracle class has six recorded instances in this repo and ISSUE-084 carries the detectability question; reuse is already the convention.
+- `_review_subject_bound()`'s own docstring already discloses one blind spot (an unreadable runs directory means the requirement cannot fire). Keep that disclosure accurate after the change — if the trigger narrows, the disclosure's wording may stop matching the code, which is the ISSUE-098 shape.
+- The refusal path in `_read_receipts` already treats `verification-unconfigured` / `verification-missing` as "no receipt can exist" and returns True. That is the arm the cleanup AC interacts with; decide deliberately whether a *deleted* runs tree lands there or somewhere louder, and say which in the PR.
+- Do not take fixtures against the live repo. Use `git init --bare` plus a clone as `tests/test_worktree.py` does, and stub `gh`.
+- Mutation-test the narrowed trigger in **both** directions. A trigger that stops firing on everything would also pass AC-1, which is why AC-2 exists; record both KILL counts in the PR.
+
+#### Tests
+- [ ] Legacy-emit fixture (`payload: {"pr_number": "7"}` only): checkpoint exits 0, no `record-subject` instruction printed.
+- [ ] Verified-receipt fixture with no `## Review Subject` block: checkpoint FAILs, exact remedy line asserted.
+- [ ] Invariant test: enumerate every firing receipt shape, assert `_verified_dimensions()` returns non-empty for each with its own subject.
+- [ ] End-to-end wedge regression: legacy receipt then checkpoint then `record-subject`, asserting the pair no longer produces (FAIL instructing `record-subject`, exit 2 `reason=verification-missing`).
+- [ ] Post-`wt_cleanup.sh` fixture: the chosen outcome's exact rendered line pinned.
+- [ ] Disarm direction: restore the broad trigger so the invariant test fails (KILLED); narrow the trigger to fire on nothing so AC-2's test fails (KILLED). Both counts recorded.
+
+#### Rollback
+`git revert`. The revert direction restores a **wedged blocking gate**, not an unsafe one, so a revert is survivable — but it re-creates the state in which a review phase can have no legal next action, and the operator's only escape is the hand-edit review step 5 forbids. Prefer re-landing with a narrower trigger over reverting. If the fix touched both `scripts/verify_checkpoint.py` and `scripts/review_context.py`, revert them **together**: a narrowed satisfier with a broad trigger is the defect, and a narrowed trigger with the old satisfier silently stops requiring counter-evidence on receipts that CAN produce it — which is the fail-open direction ISSUE-096 exists to close.
+
+---
+
+### ISSUE-108: Guard step 3.1's `$WT/` emit anchor, and stop promising a remedy 10 of 25 refusals do not carry
+
+> **Two measured defects on the same surface** (`skills/review/SKILL.md` and its `.tmpl`), both found during the ISSUE-096 review 3, 2026-11-03. Filed together because they are one surface and one half-day, and separately from ISSUE-107 because neither is a wedge.
+>
+> **(a) The `$WT/` anchor is prose-only and unguarded.** The degradation `emit` must run from `$WT/` because `cmd_emit` anchors its append on `Path.cwd()` while `delegate` anchors on the resolved worktree. Run from `$WT/`, the event lands in the same run file as the receipts. Run from the main checkout, **the same command exits 0** and lands the event in the *main* checkout's run file — split from the receipts and invisible to the gate that reads them. The skill carries `STEP_31_REQUIREMENTS`, a mutation-tested occurrence whitelist over step 3.1's obligations — including the `KIT_RUN_ID=` literal, pinned precisely because an unset run id is a silent no-op at exit 0 — but it carries **no entry for the `$WT/` anchor**, which is the same class of silent-no-op-at-exit-0 hazard. `emit` is the only CWD-sensitive command in a step whose three siblings resolve the worktree themselves. **Prose is not an adequate carrier for a step in the issue whose whole premise is that instructions get skipped.**
+>
+> **The constraint that produced (a), stated so it is not re-litigated:** re-anchoring `cmd_emit` was deliberately declined inside ISSUE-096 because ISSUE-066's tests pin its `Path.cwd()` contract. So the fix must be **scoped to the new caller class** — a dedicated flag, or a worktree-resolving wrapper — and must **not** change `cmd_emit`'s default. That is review lesson 8 again, this time applied in the relaxing direction.
+>
+> **(b) The stderr-remedy claim is false for 10 of 25 reason tokens.** Step 3.1(a) was trimmed to claim that a refusal's stderr "names `reason=` *and its remedy*". Measured: **true** for `worktree-path-missing` (it does name `git worktree prune`), **false** for `git-unavailable`, `collection-error` (two sites), `gh-failed`, `gh-bad-output`, `not-a-git-repo`, `merge-base-unresolvable`, `git-diff-failed`, `verification-unreadable`, `review-notes-not-a-file` and `review-notes-outside-project` — ten of the twenty-five tokens in the reason vocabulary. A refusal that names a remedy the operator cannot find is the same dead end ISSUE-107 documents, arriving by a slower route.
+>
+> **Explicitly out, and this is a decision not an omission:** do **not** propose a documentation-lint test that checks prose against code. This repo decided against that class because it manufactures triage work and fails on changes that are not defects. Either the message carries its remedy, or the prose stops promising one.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; observed during the ISSUE-096 review 3, 2026-11-03, both defects measured. Native-memory review lessons: "tightening a shared contract for a new caller class must be scoped to that class, with legacy failure modes pinned"; "env-var knobs and timing constants must be documented and named in the failure message they remediate"; "an absence guard must be mutation-tested against the strings actually removed — an occurrence whitelist, never a phrasing blacklist"; "documents and records are not a lint surface — a test that checks derived prose against code is an issue generator")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: ISSUE-096
+
+#### Goal
+The degradation receipt lands in the same run file as the delegation receipts no matter where the command is run from, and no refusal's stderr is described as carrying a remedy it does not carry.
+
+#### Scope (In/Out)
+- In:
+  - A **new caller-class seam** for the step-3.1 degradation emit — a flag or a worktree-resolving wrapper — so the event's destination does not depend on CWD, with `cmd_emit`'s default behaviour unchanged.
+  - A mutation-tested occurrence-whitelist entry in `STEP_31_REQUIREMENTS` for whatever string carries the new anchor obligation, so dropping it reddens the guard.
+  - Per-token resolution of the ten false-remedy refusals: each either gains an executable remedy in its own message, or stops being covered by step 3.1(a)'s claim.
+  - Exact-string tests on any refusal message that gains a remedy — the check lives on the message, at its source.
+  - Regenerating `skills/review/SKILL.md` from `skills/review/SKILL.md.tmpl`.
+- Out:
+  - Changing `cmd_emit`'s `Path.cwd()` default, the `_emit_event` single-seam rule, or the three-value degraded-reason vocabulary.
+  - Adding a 26th reason token.
+  - **Any documentation lint** — no test added by this PR may read the skill prose and compare it against code. That class is declined, not deferred.
+  - ISSUE-107's trigger/satisfier mismatch and ISSUE-109's nested fence.
+  - ISSUE-075's migration of `_emit_event` onto `kit_telemetry.emit_event`.
+
+#### Acceptance Criteria (DoD)
+- [ ] **The degradation event lands with the receipts regardless of CWD.** Given the step-3.1 degradation emit driven with CWD at the MAIN checkout while the branch worktree is at `.worktrees/<slug>`, when the command step 3.1 names is run, then the `review_degraded_path_used` event appears in the worktree's `.claude/runs/<run-id>.jsonl` alongside the delegation receipts and does not appear in the main checkout's run file, with both files read and asserted.
+- [ ] **`cmd_emit`'s legacy contract is pinned, not changed.** Given `cmd_emit` invoked without the new flag or wrapper this PR adds, when it runs, then it still anchors its append on `Path.cwd()`, and the full pre-existing `tests/test_review_context.py` passes unmodified — the new behaviour is scoped to the new caller class and ISSUE-066's pinned failure mode is preserved.
+- [ ] **The anchor obligation is mechanically carried, not prose-only.** Given the string this PR adds to step 3.1 of `skills/review/SKILL.md.tmpl` deleted from that file, when the step-3.1 occurrence whitelist runs, then it fails naming the dropped obligation, and given the unmutated text, then it passes — mutation-tested in both directions against the string actually added, never a phrasing blacklist.
+- [ ] **Every named refusal either carries a remedy or is no longer promised one.** Given each of the ten reason tokens this issue names (`git-unavailable`, `collection-error` at both sites, `gh-failed`, `gh-bad-output`, `not-a-git-repo`, `merge-base-unresolvable`, `git-diff-failed`, `verification-unreadable`, `review-notes-not-a-file`, `review-notes-outside-project`), when its refusal is rendered, then either the stderr names an executable remedy or step 3.1 no longer claims that a refusal names one, and the PR body lists each token against the arm it took.
+- [ ] **The check lives on the message, never on the prose.** Given any refusal message this PR gives a remedy, when its unit test runs, then that test asserts the exact rendered stderr string including the remedy, and no test added by this PR reads `skills/review/SKILL.md` in order to compare it against code — the absence of a documentation lint is verifiable by inspecting the diff and is stated in the PR body.
+
+#### Implementation Notes
+- `skills/review/SKILL.md` is **generated**. Edit `skills/review/SKILL.md.tmpl` and regenerate with `python3 scripts/gen_skills.py`, or `tests/test_gen_skills.py` will fail on drift. Both files are checked by `STEP_31_REQUIREMENTS` via its `_skill_texts()` helper, and the mutation half runs against the `.tmpl`.
+- `STEP_31_REQUIREMENTS` lives in ISSUE-096's subject-binding test module and is a `(regex, why)` tuple, mutation-tested by deleting each pattern from the REAL text. Add one entry; keep it an occurrence whitelist so a rewording that preserves the obligation still passes. Locate it by name — line numbers move.
+- The step-3.1 extraction helper slices from the `3.1)` marker to the `3.2)` marker, so any new obligation must live **inside** that span to be pinned at all. A line added after step 3.2 is invisible to the guard, which would reproduce exactly the gap this issue closes.
+- The reason vocabulary is a single tuple of 25 tokens in `scripts/review_context.py`, constructed through `_refuse(reason, detail, exit_code=2)`. `collection-error` is raised at two distinct sites; both need the same resolution or the PR must say why they differ.
+- If the remedy arm is chosen for a token whose remedy is an env knob or a timing bound, name the knob **in the failure message itself** — that is the standing rule from the `KIT_CHECKPOINT_TEST_TIMEOUT` / `KIT_WORKTREE_FETCH_TIMEOUT` family, not a new convention.
+- Keep (a) and (b) as two commits. They share a surface and a reviewer, not a mechanism, and separating them keeps the prose change auditable against the behaviour change.
+- Sizing guard: if the remedy arm turns out to need new resolution logic for several tokens, take the "remove the claim" arm for those and record them — growing this into a refusal-message programme is how a 0.5d cleanup becomes undispatchable.
+
+#### Tests
+- [ ] CWD-at-main fixture: the degradation event is in the worktree's run file and absent from the main checkout's; both files asserted.
+- [ ] CWD-at-worktree fixture: unchanged behaviour, event lands with the receipts.
+- [ ] `cmd_emit` without the new seam: still anchors on `Path.cwd()`; pre-existing `tests/test_review_context.py` passes unmodified.
+- [ ] New `STEP_31_REQUIREMENTS` entry, arm direction: present in both `SKILL.md` and `SKILL.md.tmpl`.
+- [ ] New `STEP_31_REQUIREMENTS` entry, disarm direction: deleted from the real `.tmpl` text so the guard fails (KILLED, count recorded).
+- [ ] Exact-stderr test for each refusal message that gained a remedy.
+- [ ] Diff-level assertion in the PR body that no test added reads the skill prose to check it against code.
+
+#### Rollback
+`git revert`, per commit. Reverting (b) restores a false claim in prose and nothing else. Reverting (a) restores a CWD-sensitive emit that exits 0 while writing the degradation record to the wrong file — silent, so prefer re-landing over reverting. If the revert touches `skills/review/SKILL.md.tmpl`, regenerate with `scripts/gen_skills.py` in the same commit, and if the new `STEP_31_REQUIREMENTS` entry is removed, remove the string it pins in the same change — a whitelist entry for a string the skill no longer contains reddens the suite on main.
+
+---
+
+### ISSUE-109: Make the fence detector survive a nested fence — fix it in `sprint_queue`'s shared helper, not in the copy
+
+> **A 4-backtick fence wrapping a 3-backtick fence re-opens the parser.** The shared `_FENCE_RE` matches a leading run of three-or-more backticks or tildes and drives a plain boolean toggle: the opening 4-backtick line sets `in_fence = True`, the **inner** 3-backtick line flips it back to `False`, and the nested block's body is then read as live, unfenced content. So the fence-awareness that protects `## Review Subject` heading detection in review notes can be defeated by **legitimate nested-fence content** — and review notes about this very machinery are exactly where nested fences appear.
+>
+> **Deliberately not fixed inside ISSUE-096.** The correct fix is in `sprint_queue`'s shared fence helper (`_FENCE_RE` / `_unfenced`), which both consumers inherit — a shared-contract change with **no AC in ISSUE-096**. `scripts/review_context.py` currently pins its hand-rolled fence predicate **byte-equal** to `sprint_queue._FENCE_RE` and says so in its own comment, so the two must stay in lockstep through whatever change lands here.
+>
+> **Review lesson 4 is the AC-shaping rule, not a footnote:** a hand-rolled parser must match the oracle's edge cases **and** its intended boundary, and the guard must be mutation-tested in **both** directions. Widening the detector until it swallows the legitimate single-fence case would satisfy the nested-fence test and break the thing the oracle already got right.
+>
+> **This issue exists because the finding had no durable carrier.** It lived only in `docs/sprint_state.md`, which — although tracked — is archived and reset at each sprint boundary (see the `docs/sprint_state.archive-*` files). Review lesson 15: a deferred finding is only real if it has a durable carrier. This block is that carrier.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; observed during the ISSUE-096 review 3, 2026-11-03, deferred inside ISSUE-096 because the fix is in a shared helper no ISSUE-096 AC covers. Native-memory review lessons: "a hand-rolled parser that mirrors an oracle must match the oracle's edge cases — fence guard, duplicate-key collect-all — and its guard must be mutation-tested in both directions"; "a deferred finding is only real if it has a durable carrier"; "in a file a detector reads, never quote the detector's own trigger verbatim")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- GH-Issue:
+- Branch:
+- PR:
+- Depends-On: ISSUE-096
+
+#### Goal
+A fenced block stays fenced through a nested fence for both consumers of the kit's fence predicate, and the fix lives in the shared helper rather than being re-typed into the copy that mirrors it.
+
+#### Scope (In/Out)
+- In:
+  - Correct nested-fence handling in `scripts/sprint_queue.py`'s shared helper (`_FENCE_RE` plus `_unfenced`): a block opened with N delimiters of one character closes only on a line of at least N of the **same** character, so an inner shorter fence does not toggle it.
+  - Propagating that to `scripts/review_context.py`'s `_subject_blocks`, either by importing the shared predicate or by keeping the existing byte-equal pin true — with the PR body stating which and why.
+  - A nested-fence fixture on **both** consumers: `## Review Subject` heading detection in review notes, and `## Issue Progress` roster-row detection in `sprint_queue`.
+  - Both-directions mutation tests, including the boundary direction: the ordinary single 3-backtick fence must still be treated as illustration.
+- Out:
+  - Full CommonMark compliance (info strings, indented fences, lazy continuation, tildes interacting with backticks beyond same-character matching). Match the oracle's **intended boundary**, not the whole spec.
+  - Any change to what the two consumers do with an unfenced heading or row — only the fence classification changes.
+  - ISSUE-107's trigger/satisfier mismatch and ISSUE-108's `$WT/` anchor and refusal remedies.
+  - `parse_roster_watermark`'s whole-file duplicate-count window (**ISSUE-090**) and the fence-blind `## Meta` locator (**ISSUE-080**) — adjacent, separately carried, and not to be absorbed here.
+
+#### Acceptance Criteria (DoD)
+- [ ] **A nested fence no longer re-opens the parser.** Given a review-notes fixture in which a 4-backtick fence wraps a 3-backtick fence whose body contains a `## Review Subject` heading line, when `review_context._subject_blocks` runs, then it returns 0 blocks; today the same fixture returns 1, and both numbers are recorded in the PR body.
+- [ ] **Both consumers inherit the fix from one place.** Given a tracked doc in which a `## Issue Progress` example table is nested inside a 4-backtick fence, when `sprint_queue`'s Issue Progress scan runs, then no example row is returned as roster state, and the PR body states whether `review_context` now imports the shared predicate or still carries a byte-equal copy held in lockstep by test.
+- [ ] **The two predicates cannot drift.** Given the shared fence helper changed, when the existing lockstep pin between `review_context`'s fence predicate and `sprint_queue._FENCE_RE` runs, then it passes or has been replaced by a single imported definition, and in neither arm can the two diverge without a test failing.
+- [ ] **The guard is mutation-tested in both directions, and the intended boundary still holds.** Given the nested-fence handling reverted to the plain boolean toggle, when the suite runs, then at least one test fails (KILLED, count recorded); and given an ordinary single 3-backtick fence containing a `## Review Subject` heading line, when the detector runs, then that heading is still treated as illustration and 0 blocks are returned, so the widening did not un-fence the case the oracle already handled.
+- [ ] **No regression on either consumer.** Given this change, when the full pre-existing `tests/test_sprint_queue.py`, `tests/test_sprint_queue_watermark.py`, `tests/test_review_context.py` and ISSUE-096's subject-binding test module run, then all pass, and every test this PR modifies is named in the PR body with the acceptance criterion it belongs to.
+
+#### Implementation Notes
+- The shared helper is `scripts/sprint_queue.py`'s `_FENCE_RE` and `_unfenced()`, which returns a list parallel to `lines` with `None` at fenced positions. Its ISSUE-076 comment explains why it exists: a fenced `## Issue Progress` example in `agents/team-lead.md` was being dispatched as real work. The nested case is the same harm one level deeper.
+- The mirror is `scripts/review_context.py`'s own fence pattern plus the toggle inside `_subject_blocks`, with a module comment stating the byte-equality and the test that pins it. If you import instead of copying, delete the comment in the same change — a comment asserting a byte-equality that no longer exists is the ISSUE-098 shape.
+- Minimum correct semantics for the boundary this repo needs: record the opening run's **character** and **length**; close only on a line whose leading run is the same character and at least as long. That is a few lines, not a parser. Resist growing it — an unrequested full-CommonMark lift here is the ISSUE-079 failure.
+- `_subject_blocks` is reached from `verify_checkpoint._review_subject_bound` via the `review_context` import, so a change here moves a **blocking** gate's behaviour. Run the review checkpoint's own tests, not just the parser's.
+- The fixtures are self-referential by construction: a note documenting this fix will itself contain nested fences. Keep the fixture content in the test module rather than in a tracked doc the detector also reads, per the standing lesson about never quoting a detector's own trigger verbatim in a file it reads.
+- Record both the before (1 block) and after (0 blocks) counts in the PR body rather than asserting improvement in prose — the before number is the evidence the premise was real.
+
+#### Tests
+- [ ] Review notes, 4-backtick fence wrapping a 3-backtick fence containing a `## Review Subject` heading line: 0 blocks.
+- [ ] `sprint_queue`, `## Issue Progress` example table nested inside a 4-backtick fence: 0 roster rows returned.
+- [ ] Tilde variant: a 4-tilde fence wrapping a 3-tilde fence, and a mixed backtick/tilde pair, asserting the same-character rule.
+- [ ] Boundary direction: a single 3-backtick fence containing a `## Review Subject` heading line is still blanked (0 blocks); a genuine unfenced heading is still detected (1 block).
+- [ ] Lockstep pin between the two fence predicates passes, or the single-import arm is asserted.
+- [ ] Disarm direction: restore the plain toggle so at least one nested-fence test fails (KILLED, count recorded); widen the detector so nothing is treated as fenced and the boundary tests fail (KILLED, count recorded).
+
+#### Rollback
+`git revert`. The change is a narrowing of what counts as "fence closed", so reverting restores today's behaviour rather than breaking a consumer — but it restores a defeatable fence guard on a surface that feeds a **blocking** gate, so prefer tuning over reverting. If the fix landed as an import in `scripts/review_context.py`, revert both files **together**: a reverted `sprint_queue` helper with a surviving import leaves the review-notes detector silently back on the plain toggle while its module comment and its lockstep test both claim otherwise, which is worse than the defect.
 
 ---

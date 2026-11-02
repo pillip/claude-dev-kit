@@ -42,6 +42,62 @@ release tags are `claude-dev-kit--v<version>`.
   does-not-fire-on-honest-input direction.
 
 ### Added
+- **The delegated review is bound to the PR's own diff, verified by a
+  consumer-echoed digest** (ISSUE-096, PR #147) — `scripts/review_context.py`
+  gains `collect` / `delegate` / `record-subject`, and `/review` step 3.1 may
+  no longer let a runtime reviewer collect its own subject.
+
+  **Why it exists, measured rather than argued.** Six observed runs across
+  four sprints recorded a delegation for a diff the reviewer never read. Four
+  arrived empty — the literal `DIFF CONTENT: (Bash completed with no output)`
+  with a git status showing `main`. The fifth (2026-10-31) arrived as 48.5KB
+  of the **wrong** subject: the main checkout's dirty registry churn. That
+  last shape is why `diff_sha256` and not `diff_bytes` is the load-bearing
+  field — a `bytes > 0` check passes it, and only a digest comparison rejects
+  it. Uncorrected, each of the six would have returned a clean bill on
+  something other than the PR, on a **blocking** gate whose defeated output is
+  identical to its healthy output.
+
+  **The provenance distinction the design turns on:** a producer-printed
+  digest is an attestation, a consumer-echoed digest is a verification.
+  `delegate` accepts a verdict only when the reviewer echoes back the byte
+  count and sha256 it measured, and emits a receipt bound to that dimension.
+  `record-subject` then writes the counter-evidence block **copied from that
+  receipt, never recomputed** — a self-attesting block renders identically
+  whether the gate passed, was rejected, or never ran.
+
+  **"Computed and empty" is kept distinct from "could not compute."** Exit 1
+  is reachable only from the two genuinely-empty constructions, both carrying
+  reason tokens; every other failure exits 2 with a named reason
+  (`git-unavailable`, `worktree-path-missing` naming `git worktree prune`, and
+  a dispatcher mapping anything unmodelled to `collection-error`).
+
+  **Enforced at the point of use, not by prose.**
+  `verify_checkpoint.verify_review_review` now requires the `## Review
+  Subject` block whenever a delegation receipt exists for the issue — because
+  an instruction is exactly what was skipped six times.
+
+  Kept-Surface declaration: bucket C (verification core).
+  `KIT_REVIEW_GH_TIMEOUT` is kept deliberately — hard-coding a subprocess
+  timeout is a measured defect class in this repo (ISSUE-046 / ISSUE-047).
+
+  Reviewed three times, and the review history is the point: reviews 1 and 2
+  found **four** Highs, every one of them a fail-open introduced *inside the
+  guard being added*. All four are closed; the last was established by
+  mutation rather than by reading, with two independent mutants of the
+  per-dimension receipt binding killed by its disarm test. Review 3 found no
+  Critical and no High. Its two Mediums ship as **ISSUE-107** and
+  **ISSUE-108**, and the deliberately-deferred nested-fence defect ships as
+  **ISSUE-109** — filed as issues rather than left in a PR body, because a
+  deferred finding is only real if it has a durable carrier.
+
+  Known residual, disclosed because a disclosed residual that is not measured
+  becomes the defect: on the **degraded** review path the apparatus is inert,
+  so a degraded review's notes are shaped identically whether or not the
+  reviewer read the diff. ISSUE-096's own review 3 ran fully degraded (no
+  skill-invocation tool in the reviewing context), and the reviewer declined
+  to manufacture a receipt to produce the expected shape. The main-session
+  delegated path remains unmeasured and is carried by **ISSUE-106**.
 - **Review execution context is decided once, with degradations reason-tagged**
   (ISSUE-066, PR #122) — new `scripts/review_context.py` replaces `/review`
   step 3.1's per-dimension `has_skill.py` probe-and-maybe-retry with a single
