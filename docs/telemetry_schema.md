@@ -54,32 +54,26 @@
 > delegated events and the `inline-attempt-failed` degradation.
 >
 > ISSUE-096: the delegated events gained `diff_bytes` / `diff_sha256` /
-> `head_oid` — the subject the runtime reviewer actually read. They are
-> written only by the `delegate` subcommand, which emits **only** when the
-> runtime reviewer echoes that digest back, so a delegation recorded with
-> them is a delegation whose subject was verified at the consumer rather than
-> merely printed at the producer. Five observed runs would otherwise have
-> recorded a delegation for a diff the reviewer never read — four of zero
-> bytes, and one (2026-10-31) of 48.5KB of the **wrong** subject, which is
-> why `diff_sha256` and not `diff_bytes` is the load-bearing field.
+> `head_oid` — the subject the runtime reviewer actually read. Only the
+> `delegate` subcommand writes them, and only when that reviewer echoes the
+> digest back, so a delegation carrying them is one whose subject was
+> verified at the CONSUMER rather than printed at the producer.
+> `diff_sha256`, not `diff_bytes`, is the load-bearing field: one of the five
+> observed misreads was of the wrong subject and NOT empty.
 >
 > **These three events are also a RECEIPT, not only telemetry.** `delegate`
-> reads the written line back and refuses if it is not there, and
-> `record-subject` requires a line matching the issue, head oid, byte count
-> and digest before it will write the counter-evidence block into
-> `docs/review_notes/<ISSUE>.md` — a record that recomputed its own evidence
-> would render identically whether the echo gate passed, was rejected, or
-> never ran. Two consequences for this stream: (a) on that path the run id is
-> required rather than best-effort (`reason=verification-unconfigured`), and
-> (b) the file is read as untrusted input — regular-file only, `O_NOFOLLOW`,
-> non-blocking open, byte-bounded tail read, malformed lines skipped. The
-> events are written under the resolved **branch worktree's**
-> `.claude/runs/`, not the CWD's, so they are co-located with the notes they
-> attest to. The reason vocabulary below is UNCHANGED: an echo-gate rejection
-> degrades through the existing `inline-attempt-failed` token, and the
-> subject-refusal vocabulary (`SUBJECT_REASONS` in
-> `scripts/review_context.py`) is a separate, disjoint set that is never
-> written into an event.
+> reads its line back and refuses if it is not there, and `record-subject`
+> requires a line matching the issue, head oid, byte count and digest before
+> writing the counter-evidence block into `docs/review_notes/<ISSUE>.md`.
+> Three consequences for this stream: the run id is REQUIRED on that path
+> rather than best-effort (`reason=verification-unconfigured`); the file is
+> read as untrusted input (regular-file only, `O_NOFOLLOW`, non-blocking,
+> byte-bounded tail read, malformed lines skipped); and the events are
+> written under the resolved **branch worktree's** `.claude/runs/`, not the
+> CWD's, co-located with the notes they attest to. The reason vocabulary
+> below is UNCHANGED — an echo-gate rejection degrades through the existing
+> `inline-attempt-failed`, and `SUBJECT_REASONS` is a disjoint set that is
+> never written into an event.
 >
 > The shared emit SEAM is `scripts/kit_telemetry.py` (ISSUE-067) — that title
 > moved there when ISSUE-067 landed. `review_context.py` still carries its own

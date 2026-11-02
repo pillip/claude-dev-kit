@@ -83,7 +83,7 @@ Steps:
    ```
    The JSON output carries one decision per dimension (`code` → runtime `/code-review`, `security` → runtime `/security-review`). Follow it per dimension:
    - `"path": "degraded"` → invoke the `reviewer` agent (`--dimension code` / `--dimension security`) with NO inline runtime-skill attempt and NO retry — `decide` already recorded the decision with its reason (`capability-absent` or `context-unreachable`).
-   - `"path": "delegated"` → **bind the subject first, then invoke the runtime skill, then accept the verdict only through the echo gate.** A delegated reviewer that collects its own subject reviews the wrong thing: on five PRs across four sprints the harness either arrived with the literal `DIFF CONTENT: (Bash completed with no output)` and a git status showing `main`, or — on 2026-10-31 — **discarded the pinned subject arguments entirely** and auto-collected `DIFF CONTENT: <persisted-output> Output too large (48.5KB)`, 48.5KB of the main checkout's dirty registry churn. Uncorrected, each would have returned a clean bill on something other than the PR (ISSUE-096). Note which check catches the second shape: it is **not empty**, so a byte count greater than zero passes it — only the sha256 comparison rejects it.
+   - `"path": "delegated"` → **bind the subject first, then invoke the runtime skill, then accept the verdict only through the echo gate.** A delegated reviewer that collects its own subject reviews the wrong thing: that happened on five PRs across four sprints, and uncorrected each would have returned a clean bill on something other than the PR (ISSUE-096; the dated measurements are the review-target row of `docs/cc_feature_matrix.md`). Note which check catches the worst shape: the wrong subject was **not empty**, so a byte count greater than zero passes it — only the sha256 comparison rejects it.
 
      First make sure the run has an id, because the echo gate's verification is written to the run file and step 5.3 reads it back (the kit has no other producer for `KIT_RUN_ID`; use the same literal value in every command of this review):
      ```bash
@@ -94,10 +94,7 @@ Steps:
      ```bash
      SUBJ="$(python3 scripts/review_context.py collect --pr <pr_number> --issue $ARGUMENTS)"
      ```
-     Exit 0 prints one JSON object: `range` (`<base-oid>...<head-oid>`), `worktree_path`, `diff_command`, `diff_bytes`, `diff_headers`, `diff_sha256`, `head_oid`, `base_ref`. A **non-zero exit is a REFUSAL**: stdout is empty and stderr names `reason=`. Do NOT invoke the runtime skill on a refusal — report the reason and treat the dimension as unreviewed:
-     - `reason=empty-diff-head-is-merge-base` — genuine no-op PR, nothing to review.
-     - `reason=empty-diff-unexplained` — computed and empty, but the head moved (a change and its revert).
-     - anything else (`head-oid-unreachable`, `base-ref-unresolvable`, `worktree-path-missing`, `gh-*`, `collection-error`, …) — the subject **could not be computed**. That is NOT an empty diff; fix the named cause and re-run. (`worktree-path-missing` means a registered worktree directory is gone: `git worktree prune`.)
+     Exit 0 prints one JSON object: `range` (`<base-oid>...<head-oid>`), `worktree_path`, `diff_command`, `diff_bytes`, `diff_headers`, `diff_sha256`, `head_oid`, `base_ref`. A **non-zero exit is a REFUSAL**: stdout is empty and stderr names `reason=` *and its remedy*. Do NOT invoke the runtime skill on a refusal — report the reason and treat the dimension as unreviewed. Exit **1** with an `empty-diff-*` reason means the subject was computed and is genuinely empty (a no-op PR, or a change and its revert); **any other** reason, at exit 2, means the subject **could not be computed** — that is NOT an empty diff, so fix the named cause and re-run.
      The collection is re-run inside `delegate` and `record-subject` too — four git collections per review run, each re-establishing the subject rather than trusting an artifact that was measured not to survive the hand-off.
 
      **(b) Hand the subject over explicitly.** Put `range`, `worktree_path`, `diff_bytes` and `diff_sha256` verbatim into the runtime skill's prompt, tell it to run the payload's **`diff_command` exactly as printed** (it already carries `-C <worktree_path>`, `--no-ext-diff` and `--no-textconv`; a differently-flagged diff produces a different digest and an honest review would be rejected), and require it to **echo back the byte count and sha256 it measured** before stating its verdict. Do not let it auto-collect its own subject, and do not hand it a file path as the only carrier — a materialised diff file was measured "not present" from the code reviewer's own context on PR #145, and only the byte-count echo caught it. **Do not fabricate an echo**, and do not copy the digest from (a) on the reviewer's behalf: a pasted digest is the one remaining way past this gate, and using it means recording a verdict on a diff nobody read.
@@ -115,9 +112,9 @@ Steps:
      - `reason=head-moved` — the branch advanced while the reviewer was reading. The verdict is about the older head; re-run (a) and re-review rather than discarding the reviewer's work as dishonest.
      - `reason=verification-unconfigured` — the receipt had nowhere to go; create `$WT/.claude/runs` and set `KIT_RUN_ID` as above, then re-run.
 
-     On `echo-mismatch` (and for the security dimension per the measurement above), fall back to the degraded `reviewer` agent for that dimension and record the fallback with the existing token (this issue added no fourth reason):
+     On `echo-mismatch` (and for the security dimension per the measurement above), fall back to the degraded `reviewer` agent for that dimension and record the fallback with the existing token (this issue added no fourth reason). **Run it from `$WT/`, with the run id**: `emit` anchors its append on the CWD, so from `$WT/` the event lands in the SAME run file as the receipts, and without `KIT_RUN_ID` an unset run id is a silent no-op at exit 0 — which would drop the one event that records WHY this dimension degraded:
      ```bash
-     python3 scripts/review_context.py emit --event review_degraded_path_used --dimension <code|security> --reason inline-attempt-failed --issue $ARGUMENTS
+     KIT_RUN_ID=review-$ARGUMENTS python3 scripts/review_context.py emit --event review_degraded_path_used --dimension <code|security> --reason inline-attempt-failed --issue $ARGUMENTS
      ```
      The same `emit` call covers an inline invocation that fails outright despite the decision (probe-2 ambiguity).
 
@@ -238,6 +235,7 @@ _(Synthesis + merge-audit happen AFTER all kit-distinctive checks 3.5–3.13 com
    - `reason=verification-missing` / `reason=verification-unconfigured` — no passing delegation to attest to. Either no dimension delegated (then skip this step), or the echo gate was never run / was rejected / had no run id.
    - `reason=review-notes-missing` — run the synthesizer first.
    - `reason=subject-duplicate-block` / `reason=subject-unparseable` — the notes carry two blocks or an unreadable one; delete the stale block and re-run.
+   - `reason=subject-incomplete` — the block could not be read back. Usually an **unterminated code fence** earlier in the notes (a finding whose multi-line `evidence` puts a ``` at column 0) hiding the heading from the detector; the message names which cause it found. Nothing was written, so fix the cause and re-run — retries do not accumulate blocks.
 
    Fix the cause before shipping, so "reviewed nothing" can never render identically to "reviewed and found nothing". Skip only when no dimension delegated.
 

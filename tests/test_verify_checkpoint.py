@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -740,6 +742,112 @@ class TestVerifyReviewReview:
             "No Code Review was needed.\nNo Security Findings found.\n"
         )
 
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is False
+
+
+class TestVerifyReviewRequiresTheSubjectBinding:
+    """ISSUE-096: the ``## Review Subject`` block is required whenever this run
+    recorded a ``review_delegated_to_*`` receipt.
+
+    Without it the binding chain is prose-gated at the point of use: a review
+    that never invoked ``delegate`` passed this checkpoint byte-identically to
+    one that did — the same omission ISSUE-096 documents five times. Pinned in
+    BOTH directions (review lesson 16).
+    """
+
+    SECTIONS = (
+        "# Code Review\nFindings.\n\n# Security Findings\nNone.\n\n"
+        "# Over-Engineering\nLean already. Ship.\n"
+    )
+    BLOCK = f"\n## Review Subject\n\n- diff_bytes: 810\n- head_oid: {'a' * 40}\n"
+
+    @staticmethod
+    def _wt(tmp_path: Path, body: str) -> str:
+        """Notes in a worktree; returns the ``git worktree list`` stdout."""
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        (wt / "docs" / "review_notes").mkdir(parents=True)
+        (wt / "docs" / "review_notes" / "ISSUE-001.md").write_text(body)
+        return f"worktree {wt}\n"
+
+    @staticmethod
+    def _runs(tmp_path: Path) -> Path:
+        runs = tmp_path / "wt" / "issue" / "issue-001-slug" / ".claude" / "runs"
+        runs.mkdir(parents=True)
+        return runs
+
+    @classmethod
+    def _receipt(cls, tmp_path: Path, issue_id: str = "ISSUE-001") -> None:
+        (cls._runs(tmp_path) / "review-ISSUE-001.jsonl").write_text(
+            json.dumps(
+                {
+                    "event_type": "review_delegated_to_code_review",
+                    "skill_or_script": "review_context",
+                    "issue_id": issue_id,
+                    "payload": {"diff_bytes": 810},
+                }
+            )
+            + "\n"
+        )
+
+    def test_fail_when_a_receipt_exists_but_the_block_does_not(self, tmp_path):
+        wt_stdout = self._wt(tmp_path, self.SECTIONS)
+        self._receipt(tmp_path)
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is False
+
+    def test_pass_when_a_receipt_exists_and_so_does_the_block(self, tmp_path):
+        wt_stdout = self._wt(tmp_path, self.SECTIONS + self.BLOCK)
+        self._receipt(tmp_path)
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is True
+
+    @pytest.mark.parametrize(
+        "arrange,why",
+        [
+            (lambda cls, tp: cls._runs(tp),
+             "runs dir exists but no run file: a fully degraded review cannot "
+             "produce the block, so it is not demanded"),
+            (lambda cls, tp: None,
+             "no runs dir at all — the DISCLOSED blind spot, pinned so it is "
+             "not read as an accident"),
+            (lambda cls, tp: cls._receipt(tp, issue_id="ISSUE-777"),
+             "a receipt for another issue is not this issue's delegation"),
+        ],
+        ids=["no-run-file", "no-runs-dir", "other-issue"],
+    )
+    def test_pass_without_the_block_when_no_receipt_triggers_it(
+        self, tmp_path, arrange, why
+    ):
+        wt_stdout = self._wt(tmp_path, self.SECTIONS)
+        arrange(type(self), tmp_path)
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is True, why
+
+    def test_fail_loudly_when_the_receipt_cannot_be_read(self, tmp_path, capsys):
+        """Unreadable is never a silent pass: a planted FIFO or a symlink at
+        the run file would otherwise disarm the trigger (review lesson 5)."""
+        wt_stdout = self._wt(tmp_path, self.SECTIONS)
+        os.mkfifo(self._runs(tmp_path) / "review-ISSUE-001.jsonl")
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is False
+        assert "verification-unreadable" in capsys.readouterr().out
+
+    def test_fail_loudly_when_review_context_cannot_be_imported(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A gate that cannot load its own matcher has checked nothing."""
+        wt_stdout = self._wt(tmp_path, self.SECTIONS)
+        self._receipt(tmp_path)
+        monkeypatch.setitem(sys.modules, "review_context", None)
+        with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
+            assert vc.verify_review_review("ISSUE-001") is False
+        assert "review_context" in capsys.readouterr().out
+
+    def test_fail_when_the_notes_carry_two_blocks(self, tmp_path):
+        """Two records cannot both be THE record."""
+        wt_stdout = self._wt(tmp_path, self.SECTIONS + self.BLOCK + self.BLOCK)
+        self._receipt(tmp_path)
         with patch.object(vc, "_run", return_value=_mock_run(0, stdout=wt_stdout)):
             assert vc.verify_review_review("ISSUE-001") is False
 

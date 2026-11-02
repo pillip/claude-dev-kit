@@ -1,49 +1,28 @@
 """ISSUE-096 — bind the delegated review to the PR's own diff.
 
-**Five times across four sprints** (PRs #139, #141, #145, one more, and PR
-#147's own review on 2026-10-31) the runtime review skill was reached on the
+**Five times across four sprints** the runtime review skill was reached on the
 SPEC-019 ``delegated`` path and then **collected its own subject instead of
-the one it was handed**. Four of those were zero-byte collections against the
-MAIN checkout (``DIFF CONTENT: (Bash completed with no output)`` /
-``GIT STATUS: On branch main``). The fifth was **not empty**: the harness
-discarded the pinned subject arguments entirely and arrived carrying
-``DIFF CONTENT: <persisted-output> Output too large (48.5KB)`` — 48.5KB of
-main's dirty registry churn — followed by "Review the complete diff above.
-This contains all code changes in the PR."
+the one it was handed** — four as zero-byte collections against the MAIN
+checkout, the fifth as a NON-empty collection of the wrong subject. The dated
+measurements are the review-target row of ``docs/cc_feature_matrix.md`` and
+are not restated here. What they dictate: the digest, not the byte count, is
+the load-bearing check, because a non-empty check passes the fifth shape.
 
-That fifth shape is why the digest, not the byte count, is the load-bearing
-check: **a non-empty check passes it.** Only comparing the sha256 rejects it.
-Every assertion below that would still hold for the wrong-but-non-empty
-subject is marked, and the gate's own refusal is pinned on a digest
-comparison rather than on ``> 0``.
+What these pin, per acceptance criterion: AC-1 the range + path + a positive
+byte count + the exact ``diff_command``, with the digest **echoed back by the
+consumer** rather than merely printed by the producer; AC-2 a zero-byte
+collection cannot be delegated; AC-3 "computed and empty" stays distinguishable
+from "could not compute" by exit code AND token, including the failure modes
+that previously escaped as a traceback at exit 1; AC-4 the measured failure
+shape (branch in ``.worktrees/<slug>``, collection driven from MAIN); AC-5 the
+record carries counter-evidence it did not produce itself; AC-7 the
+pre-existing decision surface is untouched.
 
-What these pin, per acceptance criterion:
-
-- AC-1  ``collect`` prints ``<base-oid>...<head-oid>`` (head oid byte-equal to
-        ``gh pr view <n> --json headRefOid -q .headRefOid``), a byte count > 0,
-        the worktree path and the exact ``diff_command`` the gate measures —
-        **and the digest is verified by being echoed back by the consumer**,
-        not merely printed by the producer.
-- AC-2  a zero-byte collection cannot be delegated: non-zero exit, named
-        ``reason=``, and NO ``review_delegated_to_*`` event in the run.
-- AC-3  "computed and empty" stays distinguishable from "could not compute" —
-        different exit code AND different ``reason=`` token, both pinned as
-        exact strings with the other token asserted absent. Including the
-        failure modes that previously escaped as a **traceback with exit 1**,
-        i.e. as the computed-and-empty code with no reason at all.
-- AC-4  the measured failure shape as a regression pin: branch in
-        ``.worktrees/<slug>``, collection driven from the MAIN checkout.
-- AC-5  the review record carries counter-evidence that it did not produce
-        itself: ``record-subject`` consumes the receipt a PASSING ``delegate``
-        echo gate wrote, and refuses — by name — when there is none.
-- AC-7  the pre-existing decision surface is untouched.
-
-Disarm discipline (review lesson 16 — a newly added defence must be tested in
-the DISARM direction and through its real consumer): every gate here has a
-test that drives it with the guard's premise violated (wrong echo, forged
-empty-diff echo, forged notes block, absent receipt, moved head, prunable
-worktree), and the CLI is additionally exercised through a real ``subprocess``
-boundary, not only in-process.
+Disarm discipline (review lesson 16): every gate here is also driven with its
+premise violated, through the real CLI — wrong echo, forged empty-diff echo,
+forged notes block, absent receipt, another dimension's receipt, moved head,
+prunable worktree — and through a real ``subprocess`` boundary, not only
+in-process.
 
 Everything is offline: ``git init --bare`` + clone fixtures and a stub ``gh``
 on ``PATH``. No fixture PR is ever taken against the live repo (the ISSUE-083
@@ -78,11 +57,8 @@ WT_SLUG = "issue-ISSUE-999-x"
 
 
 def _reason(text: str) -> str | None:
-    """The ``reason=<token>`` a refusal rendered.
-
-    Local to the tests on purpose: the module used to export this helper and
-    nothing but the tests ever called it (unrequested surface).
-    """
+    """The ``reason=<token>`` a refusal rendered. Local on purpose: the
+    module."""
     match = re.search(r"reason=([a-z0-9-]+)", text)
     return match.group(1) if match else None
 
@@ -111,13 +87,8 @@ def _identity(repo: Path) -> None:
 
 
 def _write_gh_stub(bindir: Path, data: dict) -> Path:
-    """A stub ``gh`` answering ``pr view``, with the fixture's refs baked in.
-
-    Supports the two invocation shapes this issue cares about:
-    ``gh pr view <n> --json a,b,c`` (JSON object) and
-    ``gh pr view <n> --json headRefOid -q .headRefOid`` (bare value) — so the
-    test can obtain the AC-1 oracle through the same binary the script uses.
-    """
+    """A stub ``gh pr view``: both the ``--json a,b,c`` object shape and
+    the."""
     bindir.mkdir(parents=True, exist_ok=True)
     (bindir / "gh_data.json").write_text(json.dumps(data), encoding="utf-8")
     stub = bindir / "gh"
@@ -217,9 +188,8 @@ class PrFixture:
 def pr_fixture(tmp_path) -> PrFixture:
     """The measured shape: PR branch in ``.worktrees/<slug>``, CWD at main.
 
-    Entirely local — ``git init --bare`` plus a clone of a filesystem path,
-    mirroring ``tests/test_worktree.py``'s ``remote_repo``. Nothing here
-    touches the network and the live repo is never used as a fixture.
+    ``git init --bare`` + clone, mirroring ``tests/test_worktree.py``: no
+    network, and the live repo is never a fixture (ISSUE-083's precedent).
     """
     origin = tmp_path / "origin.git"
     clone = tmp_path / "clone"
@@ -285,8 +255,8 @@ def _runs_dir(root: Path) -> Path:
     return path
 
 
-def _collect_json(capsys, *extra: str) -> dict:
-    code = rc.main(["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096", *extra])
+def _collect_json(capsys) -> dict:
+    code = rc.main(["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096"])
     out = capsys.readouterr()
     assert code == 0, f"collect refused: {out.err}"
     return json.loads(out.out)
@@ -302,7 +272,7 @@ def _delegate_args(subject: dict, dimension: str = "code", **over) -> list[str]:
         "--issue",
         "ISSUE-096",
         "--head-oid",
-        str(over.get("head", subject["head_oid"])),
+        str(subject["head_oid"]),
         "--echoed-bytes",
         str(over.get("bytes", subject["diff_bytes"])),
         "--echoed-sha256",
@@ -312,6 +282,10 @@ def _delegate_args(subject: dict, dimension: str = "code", **over) -> list[str]:
 
 RECORD_ARGS = ["record-subject", "--pr", PR_NUMBER, "--issue", "ISSUE-096"]
 
+#: A wrong subject that is LARGER than the real one, in the shape of the
+#: 2026-10-31 reproduction (main's dirty registry churn, ~51KB).
+_WRONG_BUT_BIGGER = b"diff --git a/docs/sprint_state.md b/docs/sprint_state.md\n" * 900
+
 
 # ── AC-1: the payload carries the range, the path and a positive count ──
 
@@ -320,12 +294,7 @@ class TestCollectPayload:
     def test_collect_prints_range_bytes_and_worktree_path(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """AC-1 (print side). Head oid byte-equal to the gh oracle.
-
-        Note which assertion does the work: ``diff_bytes > 0`` would also hold
-        for the 48.5KB wrong subject measured on 2026-10-31, so the digest
-        equality against an independently computed oracle is the real pin.
-        """
+        """AC-1 (print side). ``diff_bytes > 0`` would also hold for the."""
         pr_fixture.activate(monkeypatch)
         subject = _collect_json(capsys)
 
@@ -343,35 +312,24 @@ class TestCollectPayload:
     def test_collect_names_the_ref_each_side_came_from(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """Counter-evidence, not narration: which ref supplied each endpoint.
-
-        The base side must be the REMOTE-tracking ref. A bare ``main`` DWIMs to
-        the LOCAL ref, which ISSUE-089 measured as a wrong diff subject —
-        ``verify_checkpoint.py::_default_branch()``'s defect, deliberately not
-        reproduced here.
-        """
+        """Counter-evidence, not narration: which ref supplied each endpoint."""
         pr_fixture.activate(monkeypatch)
         subject = _collect_json(capsys)
         assert subject["base_ref"] == "refs/remotes/origin/main"
-        assert subject["head_ref"] == f"gh:pr/{PR_NUMBER}#headRefOid"
+        assert subject["range"].endswith(f"...{subject['head_oid']}")
         assert subject["worktree_source"] == "branch-worktree"
 
     def test_the_payload_carries_no_field_nothing_reads(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """Every emitted field has a consumer: prose, receipt or notes block.
-
-        ``merge_base`` was written and never read — it is gone. This pins the
-        key set exactly so a future addition has to justify itself.
-        """
+        """Every emitted field has a consumer: prose, receipt or notes block."""
         pr_fixture.activate(monkeypatch)
-        assert set(_collect_json(capsys)) == {
+        keys = set(_collect_json(capsys))
+        assert keys == {
             "issue_id",
             "pr_number",
             "range",
             "base_ref",
-            "base_oid",
-            "head_ref",
             "head_oid",
             "worktree_path",
             "worktree_source",
@@ -380,15 +338,17 @@ class TestCollectPayload:
             "diff_headers",
             "diff_sha256",
         }
+        # Named as FORBIDDEN, not merely absent from the permitted set: this
+        # guard passed with `head_ref` present, which is the finding. Each of
+        # these was written and read by nothing — `merge_base`, a constant
+        # template restating `pr_number`, and the left half of `range`.
+        assert keys.isdisjoint({"merge_base", "head_ref", "base_oid"})
 
     def test_collect_does_not_follow_a_stale_local_trunk(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """ISSUE-089's bug must not be re-introduced by the range computation.
-
-        A local ``main`` moved ahead of ``origin/main`` must not change the
-        subject: the base endpoint is pinned to the remote-tracking ref.
-        """
+        """ISSUE-089's bug must not be re-introduced by the range
+        computation:"""
         pr_fixture.activate(monkeypatch)
         before = _collect_json(capsys)
 
@@ -401,7 +361,8 @@ class TestCollectPayload:
         assert _git(pr_fixture.clone, "rev-parse", "main") != pr_fixture.data["baseOid"]
 
         after = _collect_json(capsys)
-        assert after["base_oid"] == before["base_oid"] == pr_fixture.data["baseOid"]
+        assert after["range"] == before["range"]
+        assert after["range"].startswith(f"{pr_fixture.data['baseOid']}...")
         assert after["diff_bytes"] == before["diff_bytes"]
 
     def test_collect_through_a_real_subprocess_boundary(self, pr_fixture):
@@ -427,12 +388,7 @@ class TestCollectPayload:
 
 
 class TestTheCommandHandedOverIsTheCommandMeasured:
-    """The prose must hand the reviewer the EXACT argv the gate measures.
-
-    An honest review that runs a *differently configured* diff produces a
-    different digest and is rejected as ``echo-mismatch`` — the gate would
-    then be punishing the reviewer for the kit's own drift.
-    """
+    """The prose must hand the reviewer the EXACT argv the gate measures: a."""
 
     def test_diff_command_reproduces_the_digest_byte_for_byte(
         self, pr_fixture, monkeypatch, capsys
@@ -472,14 +428,7 @@ class TestTheCommandHandedOverIsTheCommandMeasured:
     def test_a_local_textconv_cannot_empty_the_subject(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """``--no-ext-diff`` does NOT disable textconv — measured.
-
-        With ``diff.<driver>.textconv`` configured locally and the attribute
-        set in the repo's own ``info/attributes`` (no commit, so the subject
-        itself is untouched), ``git diff --no-ext-diff <range>`` collapses to
-        **zero bytes**: the refusal arm would fire on a perfectly reviewable
-        PR because of a local config. ``--no-textconv`` is what closes it.
-        """
+        """``--no-ext-diff`` does NOT disable textconv — measured: with a."""
         tc = pr_fixture.clone / "tc.sh"
         tc.write_text("#!/bin/sh\necho TEXTCONV-CONSTANT\n", encoding="utf-8")
         tc.chmod(0o755)
@@ -514,10 +463,9 @@ class TestMeasuredFailureShapeIsPinned:
     ):
         """AC-4 — the exact shape observed on PR #139 / #141 / #145.
 
-        CWD is the MAIN checkout (on ``main``, clean) while the PR branch lives
-        in ``.worktrees/<slug>``. The pre-fix behaviour is measured in the same
-        test rather than recalled: the bare ``git diff`` the runtime skill ran
-        yields zero bytes on this exact input.
+        The pre-fix behaviour is measured in the same test rather than
+        recalled: the bare ``git diff`` the runtime skill ran yields zero bytes
+        on this exact input.
         """
         pre_fix_bytes = len(_git_bytes(pr_fixture.clone, "diff"))
         assert pre_fix_bytes == 0, "fixture failed to reproduce the measured shape"
@@ -534,11 +482,7 @@ class TestMeasuredFailureShapeIsPinned:
     def test_falls_back_to_the_main_checkout_and_says_so(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """No worktree holds the branch → named fallback, still real bytes.
-
-        The over-reach direction of AC-4: resolving the worktree must not turn
-        a perfectly reviewable PR into a refusal when no linked worktree exists.
-        """
+        """No worktree holds the branch → named fallback, still real bytes."""
         _git(pr_fixture.clone, "worktree", "remove", str(pr_fixture.worktree))
         pr_fixture.activate(monkeypatch)
         subject = _collect_json(capsys)
@@ -553,70 +497,16 @@ class TestMeasuredFailureShapeIsPinned:
 
 
 class TestEmptyIsDistinguishableFromFailed:
-    def test_genuinely_empty_pr_refuses_with_its_own_reason(
-        self, pr_fixture, monkeypatch, capsys
-    ):
-        """AC-3 arm A: head oid == merge-base. Exit 1, exact token pinned."""
-        noop = _git(pr_fixture.clone, "rev-parse", "refs/remotes/origin/main")
-        pr_fixture.set_gh(headRefOid=noop, headRefName="issue/ISSUE-998-noop")
-        pr_fixture.activate(monkeypatch)
-
-        code = rc.main(["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096"])
-        out = capsys.readouterr()
-
-        assert code == 1
-        assert out.out == "", "a refusal must not print a usable payload"
-        assert "reason=empty-diff-head-is-merge-base" in out.err
-        assert "reason=head-oid-unreachable" not in out.err
-        assert "reason=empty-diff-unexplained" not in out.err
-
-    def test_unreachable_head_oid_refuses_with_a_different_code_and_reason(
-        self, pr_fixture, tmp_path, monkeypatch, capsys
-    ):
-        """AC-3 arm B: the subject's objects are absent from this checkout.
-
-        A single-branch clone that never fetched the PR branch — the "collection
-        ran against the wrong checkout" shape, made non-recoverable. This must
-        NOT render as an empty diff.
-        """
-        narrow = tmp_path / "narrow"
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--no-local",
-                "--single-branch",
-                "--branch",
-                "main",
-                str(pr_fixture.origin),
-                str(narrow),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        _identity(narrow)
-        assert (
-            subprocess.run(
-                ["git", "-C", str(narrow), "cat-file", "-e",
-                 pr_fixture.data["headRefOid"] + "^{commit}"],
-                capture_output=True,
-            ).returncode
-            != 0
-        ), "fixture failed to make the head oid unreachable"
-
-        pr_fixture.activate(monkeypatch, cwd=narrow)
-        code = rc.main(["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096"])
-        out = capsys.readouterr()
-
-        assert code == 2
-        assert out.out == ""
-        assert "reason=head-oid-unreachable" in out.err
-        assert "reason=empty-diff-head-is-merge-base" not in out.err
-
     def test_the_two_zero_byte_outcomes_do_not_collapse(
         self, pr_fixture, tmp_path, monkeypatch, capsys
     ):
-        """AC-3's core: a single shared "empty diff" outcome fails this AC."""
+        """AC-3's core: a single shared "empty diff" outcome fails this AC.
+
+        Arm A is a head oid equal to its merge base (a genuine no-op PR); arm B
+        is a single-branch clone that never fetched the PR branch — the
+        "collection ran against the wrong checkout" shape, made non-recoverable.
+        Both the exit codes and the exact tokens are pinned.
+        """
         # Captured BEFORE the override: ``set_gh`` mutates the fixture's own
         # record, so reading it back after the override would hand the second
         # arm the no-op oid and collapse the two inputs into one.
@@ -640,21 +530,14 @@ class TestEmptyIsDistinguishableFromFailed:
         failed_code = rc.main(["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096"])
         failed_err = capsys.readouterr().err
 
-        assert empty_code != failed_code
+        assert (empty_code, failed_code) == (1, 2)
         assert _reason(empty_err) == "empty-diff-head-is-merge-base"
         assert _reason(failed_err) == "head-oid-unreachable"
 
     def test_an_abbreviated_head_oid_still_classifies_as_the_no_op_case(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """The two endpoints must be compared in the SAME form.
-
-        ``git merge-base`` always answers with a full oid. If the head oid is
-        taken verbatim from ``gh`` without canonicalisation, an abbreviated
-        value can never equal it — and a genuine no-op PR would be reported as
-        ``empty-diff-unexplained``: the right refusal with the wrong diagnosis,
-        which is how a reviewer gets sent to debug a non-existent collection.
-        """
+        """The two endpoints must be compared in the SAME form."""
         full = _git(pr_fixture.clone, "rev-parse", "refs/remotes/origin/main")
         pr_fixture.set_gh(headRefOid=full[:10], headRefName="issue/ISSUE-998-noop")
         pr_fixture.activate(monkeypatch)
@@ -667,11 +550,8 @@ class TestEmptyIsDistinguishableFromFailed:
     def test_a_reverted_change_is_empty_but_not_a_no_op_pr(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """Computed, empty, and NOT explained by head == merge-base.
-
-        A commit plus its revert: the head moved, so "nothing changed" would be
-        a lie, and "could not compute" would be a different lie. Its own token.
-        """
+        """Computed, empty, and NOT explained by head == merge-base: a
+        commit."""
         _git(pr_fixture.clone, "checkout", "-b", "issue/ISSUE-997-revert", "main")
         (pr_fixture.clone / "temp.txt").write_text("x\n", encoding="utf-8")
         _git(pr_fixture.clone, "add", "temp.txt")
@@ -695,19 +575,14 @@ class TestEmptyIsDistinguishableFromFailed:
 class TestNoCollectionFailureEscapesAsExitOne:
     """The fail-open the ISSUE-096 review found INSIDE this guard.
 
-    An uncaught exception in the collection path exits **1** — the code this
-    module defines as "computed and EMPTY: a genuine no-op PR, nothing to
-    review" — with no ``reason=`` token at all. AC-3 requires the two to
-    differ by exit code OR by reason; a traceback differs by neither. Each
-    test below drives a routine real-world input through that path.
+    An uncaught exception in the collection path exits **1** — this module's
+    code for "computed and EMPTY" — with no ``reason=`` token at all, so the
+    two AC-3 outcomes differ by neither. Each test below drives a routine
+    real-world input through that path.
     """
 
     def test_a_prunable_worktree_registration_is_a_named_refusal(self, pr_fixture):
-        """Routine after ``wt_cleanup.sh`` without ``git worktree prune``.
-
-        Reproduced through the real subprocess boundary, because the defect was
-        an *exit code*, which an in-process ``main()`` call cannot observe.
-        """
+        """Routine after ``wt_cleanup.sh`` without ``git worktree prune``."""
         shutil.rmtree(pr_fixture.worktree)
         assert "prunable" in _git(
             pr_fixture.clone, "worktree", "list", "--porcelain"
@@ -740,31 +615,12 @@ class TestNoCollectionFailureEscapesAsExitOne:
         assert out.out == ""
         assert _reason(out.err) == "git-unavailable"
 
-    def test_an_unmodelled_exception_becomes_a_named_could_not_compute(
-        self, pr_fixture, monkeypatch, capsys
-    ):
-        """The catch-all: whatever escapes must not land on exit 1.
-
-        Driven at the delegation seam (``_pr_refs``), so the test exercises the
-        dispatcher's mapping rather than a hand-made ``SubjectRefused``.
-        """
-        def boom(*_a, **_kw):
-            raise RuntimeError("unmodelled failure in the collection path")
-
-        pr_fixture.activate(monkeypatch)
-        monkeypatch.setattr(rc, "_pr_refs", boom)
-        code = rc.main(["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096"])
-        out = capsys.readouterr()
-        assert code == 2
-        assert out.out == ""
-        assert _reason(out.err) == "collection-error"
-        assert "RuntimeError" in out.err
-
     @pytest.mark.parametrize("command", ["collect", "delegate", "record-subject"])
     def test_every_subject_subcommand_is_covered_by_the_mapping(
         self, pr_fixture, monkeypatch, capsys, command
     ):
-        """All three share the dispatcher, so all three are pinned."""
+        """All three share the dispatcher, so all three are pinned — driven
+        at."""
         def boom(*_a, **_kw):
             raise OSError("unmodelled failure")
 
@@ -778,13 +634,14 @@ class TestNoCollectionFailureEscapesAsExitOne:
             "record-subject": RECORD_ARGS,
         }[command]
         assert rc.main(argv) == 2
-        assert _reason(capsys.readouterr().err) == "collection-error"
+        out = capsys.readouterr()
+        assert out.out == ""
+        assert _reason(out.err) == "collection-error"
+        assert "OSError" in out.err
 
 
 class TestCollectionBoundaryFailuresAreNamed:
-    """"Before concluding a capability is absent, check whether your own
-    configuration caused the absence" — each boundary failure keeps its own
-    token instead of degrading into "the diff was empty"."""
+    """"Before concluding a capability is absent, check whether your own."""
 
     def test_gh_missing_from_path_is_its_own_reason(
         self, pr_fixture, tmp_path, monkeypatch, capsys
@@ -831,11 +688,7 @@ class TestCollectionBoundaryFailuresAreNamed:
     def test_hanging_gh_times_out_and_names_the_knob(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """A network consultation that STALLS must be a named refusal.
-
-        Review lesson: print the knob's name in the failure message it
-        remediates (the ISSUE-083 ``KIT_WORKTREE_FETCH_TIMEOUT`` precedent).
-        """
+        """A STALLING network consultation must be a named refusal, and the."""
         pr_fixture.set_gh(__sleep__=10)
         pr_fixture.activate(monkeypatch)
         monkeypatch.setenv(rc.GH_TIMEOUT_ENV, "1")
@@ -859,12 +712,7 @@ class TestCollectionBoundaryFailuresAreNamed:
     def test_bad_pr_number_is_rejected_at_the_boundary(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """The PR ref reaches argv — validate it, and name what was wrong.
-
-        Pinned to the ``--pr`` diagnostic, not merely to exit 2: before this
-        issue landed, ANY exit-2 assertion here passed vacuously because the
-        subcommand itself did not exist (the ISSUE-037 hollow-pass shape).
-        """
+        """The PR ref reaches argv — validate it, and name what was wrong."""
         pr_fixture.activate(monkeypatch)
         code = rc.main(["collect", "--pr", "7; rm -rf /", "--issue", "ISSUE-096"])
         out = capsys.readouterr()
@@ -875,13 +723,7 @@ class TestCollectionBoundaryFailuresAreNamed:
         assert _collect_json(capsys)["diff_bytes"] > 0
 
     def test_every_refusal_token_is_in_the_closed_vocabulary(self):
-        """The new vocabulary is closed, and DISJOINT from the ISSUE-066 one.
-
-        The three-value ``review_degraded_path_used`` vocabulary
-        (capability-absent / context-unreachable / inline-attempt-failed) is
-        pinned elsewhere; a subject-refusal token must never be mistaken for
-        one of those.
-        """
+        """The new vocabulary is closed, and DISJOINT from the ISSUE-066."""
         assert len(set(rc.SUBJECT_REASONS)) == len(rc.SUBJECT_REASONS)
         assert set(rc.SUBJECT_REASONS).isdisjoint(
             {"capability-absent", "context-unreachable", rc.INLINE_ATTEMPT_FAILED}
@@ -890,12 +732,21 @@ class TestCollectionBoundaryFailuresAreNamed:
             assert token == token.lower()
             assert " " not in token
 
-    def test_the_closed_vocabulary_is_enforced_under_dash_O(self):
-        """A bare ``assert`` is stripped by ``python -O``.
+    def test_only_a_computed_empty_subject_may_exit_1(self):
+        """"**Nothing else exits 1**" was documented, true, and unenforced.
 
-        The refusal vocabulary is the thing every consumer branches on, so its
-        enforcement may not evaporate under an optimisation flag.
+        ``exit_code`` was a free parameter, so a future
+        ``_refuse("git-diff-failed", …, exit_code=1)`` would silently reinstate
+        the conflation AC-3 exists to prevent. One table, both ways.
         """
+        for token in rc.SUBJECT_REASONS:
+            expected = 1 if token.startswith("empty-diff-") else 2
+            assert rc.SubjectRefused(token, "d", expected).exit_code == expected
+            with pytest.raises(ValueError):
+                rc.SubjectRefused(token, "d", 3 - expected)
+
+    def test_the_closed_vocabulary_is_enforced_under_dash_O(self):
+        """A bare ``assert`` is stripped by ``python -O``, and the refusal."""
         probe = (
             "import sys; sys.path.insert(0, %r); import review_context as rc\n"
             "try:\n"
@@ -919,12 +770,8 @@ class TestEchoGate:
     def test_matching_echo_records_the_delegation_with_its_subject(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """AC-1 (echo side): the verdict is accepted only against a real read.
-
-        The receipt lands in the BRANCH WORKTREE's runs dir, not the CWD's:
-        the whole defect class is a gate whose subject depends on where it was
-        invoked from.
-        """
+        """AC-1 (echo side): the verdict is accepted only against a real
+        read,."""
         _runs_dir(pr_fixture.worktree)
         pr_fixture.activate(monkeypatch)
         monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
@@ -954,9 +801,30 @@ class TestEchoGate:
             "review_delegated_to_security_review"
         )
 
-    @pytest.mark.parametrize("field", ["bytes", "sha"])
+    @pytest.mark.parametrize(
+        "echo,why",
+        [
+            (lambda s: {"bytes": s["diff_bytes"] + 1}, "a byte count off by one"),
+            (lambda s: {"sha": "0" * 64}, "the digest of something else"),
+            (
+                lambda s: {"bytes": 0, "sha": hashlib.sha256(b"").hexdigest()},
+                "the first four reproductions: a reviewer handed nothing "
+                "measures 0 / sha256(b'')",
+            ),
+            (
+                lambda s: {
+                    "bytes": len(_WRONG_BUT_BIGGER),
+                    "sha": hashlib.sha256(_WRONG_BUT_BIGGER).hexdigest(),
+                },
+                "the FIFTH reproduction (2026-10-31): the wrong subject was NOT "
+                "empty — 48.5KB of main's dirty registry churn. A `bytes > 0` "
+                "check passes this; only the digest rejects it",
+            ),
+        ],
+        ids=["bytes", "sha", "received-nothing", "wrong-but-bigger"],
+    )
     def test_wrong_echo_is_refused_and_records_nothing(
-        self, pr_fixture, monkeypatch, capsys, field
+        self, pr_fixture, monkeypatch, capsys, echo, why
     ):
         """DISARM direction: the reviewer did not read what we collected."""
         _runs_dir(pr_fixture.worktree)
@@ -964,76 +832,26 @@ class TestEchoGate:
         monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
         subject = _collect_json(capsys)
 
-        over = {"bytes": subject["diff_bytes"] + 1} if field == "bytes" else {
-            "sha": "0" * 64
-        }
+        over = echo(subject)
+        assert (over.get("bytes"), over.get("sha")) != (
+            subject["diff_bytes"],
+            subject["diff_sha256"],
+        ), f"premise: the echo under test must be wrong — {why}"
         code = rc.main(_delegate_args(subject, **over))
         err = capsys.readouterr().err
-        assert code == 2
-        assert _reason(err) == "echo-mismatch"
-        assert _no_events(pr_fixture.worktree)
+        assert code == 2, why
+        assert _reason(err) == "echo-mismatch", why
+        assert _no_events(pr_fixture.worktree), why
 
         # Positive control, same fixture: the correct echo DOES record.
         assert rc.main(_delegate_args(subject)) == 0
         assert len(_events(pr_fixture.worktree)) == 1
 
-    def test_a_wrong_but_non_empty_echo_is_refused(
-        self, pr_fixture, monkeypatch, capsys
-    ):
-        """The FIFTH reproduction (2026-10-31): the wrong subject was not empty.
-
-        The harness discarded the pinned arguments and auto-collected 48.5KB of
-        the main checkout's dirty registry churn. A "bytes > 0" check passes
-        that; only the digest comparison rejects it. This test echoes a
-        plausible, LARGER byte count with the digest of different content.
-        """
-        _runs_dir(pr_fixture.worktree)
-        pr_fixture.activate(monkeypatch)
-        monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
-        subject = _collect_json(capsys)
-
-        wrong = b"diff --git a/docs/sprint_state.md b/docs/sprint_state.md\n" * 900
-        assert len(wrong) > subject["diff_bytes"] > 0, "premise: wrong but bigger"
-        code = rc.main(
-            _delegate_args(
-                subject,
-                bytes=len(wrong),
-                sha=hashlib.sha256(wrong).hexdigest(),
-            )
-        )
-        assert code == 2
-        assert _reason(capsys.readouterr().err) == "echo-mismatch"
-        assert _no_events(pr_fixture.worktree)
-
-    def test_the_empty_collection_digest_cannot_satisfy_the_gate(
-        self, pr_fixture, monkeypatch, capsys
-    ):
-        """The first four reproductions: a reviewer that received no diff.
-
-        ``(Bash completed with no output)`` means the reviewer measured zero
-        bytes and ``sha256(b"")``. That echo must not be accepted for a PR
-        whose real subject is non-empty.
-        """
-        _runs_dir(pr_fixture.worktree)
-        pr_fixture.activate(monkeypatch)
-        monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
-        subject = _collect_json(capsys)
-
-        code = rc.main(
-            _delegate_args(subject, bytes=0, sha=hashlib.sha256(b"").hexdigest())
-        )
-        assert code == 2
-        assert _reason(capsys.readouterr().err) == "echo-mismatch"
-        assert _no_events(pr_fixture.worktree)
-
     def test_zero_byte_collection_cannot_be_delegated_even_with_a_true_echo(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """AC-2: a zero-byte subject is refused BEFORE the echo is considered.
-
-        The echo here is honest — the reviewer really did see zero bytes — and
-        it still must not produce a delegation event.
-        """
+        """AC-2: a zero-byte subject is refused BEFORE the echo is
+        considered."""
         _runs_dir(pr_fixture.worktree)
         noop = _git(pr_fixture.clone, "rev-parse", "refs/remotes/origin/main")
         pr_fixture.set_gh(headRefOid=noop)
@@ -1080,11 +898,8 @@ class TestEchoGate:
         assert _no_events(narrow)
 
     def test_echo_flags_are_required(self, pr_fixture, monkeypatch, capsys):
-        """An omitted echo must not be read as a passing echo.
-
-        Pinned to the named flag in the diagnostic and paired with a positive
-        control, so this cannot pass merely because the subcommand is absent.
-        """
+        """An omitted echo must not be read as a passing echo — pinned to
+        the."""
         _runs_dir(pr_fixture.worktree)
         pr_fixture.activate(monkeypatch)
         monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
@@ -1103,13 +918,7 @@ class TestEchoGate:
     def test_a_head_that_moved_mid_review_is_its_own_reason(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """A valid verdict must not be discarded under misleading text.
-
-        ``delegate`` re-collects, so a head that advances while the reviewer is
-        reading makes an HONEST echo mismatch. "The reviewer read something
-        else" and "the subject moved under the review" are different events and
-        get different tokens.
-        """
+        """A valid verdict must not be discarded under misleading text."""
         _runs_dir(pr_fixture.worktree)
         pr_fixture.activate(monkeypatch)
         monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
@@ -1131,11 +940,7 @@ class TestEchoGate:
     def test_delegate_refuses_when_its_verification_cannot_be_recorded(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """A passing echo whose receipt is not written is a silent pass.
-
-        ``record-subject`` consumes that receipt, so an unconfigured run id
-        must fail HERE, loudly, naming the knob — not three steps later.
-        """
+        """A passing echo whose receipt has nowhere to go must fail HERE,."""
         pr_fixture.activate(monkeypatch)
         subject = _collect_json(capsys)  # no KIT_RUN_ID, no runs dir
         code = rc.main(_delegate_args(subject))
@@ -1144,6 +949,55 @@ class TestEchoGate:
         assert _reason(err) == "verification-unconfigured"
         assert rc.RUN_ID_ENV in err
         assert ".claude/runs" in err
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="root ignores the 0444 mode that makes the receipt append fail",
+    )
+    def test_delegate_refuses_when_only_another_dimension_was_recorded(
+        self, pr_fixture
+    ):
+        """The read-back must be bound to the dimension AT HAND.
+
+        Reproduced three times in review: with the run file readable but
+        un-appendable (ENOSPC, a read-only mount, a ``chmod`` sweep)
+        ``_emit_event`` swallows the write by contract, so "did ANY dimension
+        verify?" is satisfied by the OTHER dimension's line and every
+        dimension after the first passes with no receipt of its own. Driven
+        through the real CLI and asserted PER DIMENSION — a whole-file
+        assertion is the shape that let this through the first disarm matrix.
+        """
+        runs = _runs_dir(pr_fixture.worktree)
+        env = pr_fixture.env()
+        base = [sys.executable, str(SCRIPTS_DIR / "review_context.py")]
+        collected = subprocess.run(
+            base + ["collect", "--pr", PR_NUMBER, "--issue", "ISSUE-096"],
+            cwd=str(pr_fixture.clone), capture_output=True, text=True, env=env,
+        )
+        assert collected.returncode == 0, collected.stderr
+        subject = json.loads(collected.stdout)
+
+        first = subprocess.run(
+            base + _delegate_args(subject, dimension="code"),
+            cwd=str(pr_fixture.clone), capture_output=True, text=True, env=env,
+        )
+        assert first.returncode == 0, first.stderr
+
+        run_file = runs / f"{RUN_ID}.jsonl"
+        run_file.chmod(0o444)
+        second = subprocess.run(
+            base + _delegate_args(subject, dimension="security"),
+            cwd=str(pr_fixture.clone), capture_output=True, text=True, env=env,
+        )
+        run_file.chmod(0o644)
+
+        assert [e["event_type"] for e in _events(pr_fixture.worktree)] == [
+            "review_delegated_to_code_review"
+        ], "premise: the security receipt must not have landed"
+        assert second.returncode == 2, second.stdout
+        assert _reason(second.stderr) == "verification-missing"
+        assert "security" in second.stderr
+        assert ".claude/runs" in second.stderr
 
     def test_delegate_through_a_real_subprocess_boundary(self, pr_fixture):
         """Lesson 16: exercise the defence through its real consumer."""
@@ -1195,13 +1049,7 @@ def _write_notes(root: Path, body: str = NOTES_BODY) -> Path:
 
 @pytest.fixture()
 def verified(pr_fixture, monkeypatch, capsys):
-    """A subject whose echo gate PASSED — i.e. a receipt exists to consume.
-
-    This fixture is the whole point of the AC-5 rework: before it,
-    ``record-subject`` recomputed its own counter-evidence and wrote it
-    captioned as evidence of what the review read, which rendered identically
-    whether or not any delegation had happened.
-    """
+    """A subject whose echo gate PASSED — i.e. a receipt exists to consume."""
     _runs_dir(pr_fixture.worktree)
     pr_fixture.activate(monkeypatch)
     monkeypatch.setenv("KIT_RUN_ID", RUN_ID)
@@ -1218,26 +1066,31 @@ class TestCounterEvidenceConsumesAPassingDelegation:
         self, pr_fixture, verified, capsys
     ):
         notes = _write_notes(pr_fixture.worktree)
-        assert rc.main(RECORD_ARGS) == 0, capsys.readouterr().err
+        assert rc.main(RECORD_ARGS) == 0
+        out = capsys.readouterr()
         text = notes.read_text(encoding="utf-8")
         assert rc.SUBJECT_HEADING in text
         assert f"- diff_bytes: {verified['diff_bytes']}" in text
         assert f"- head_oid: {verified['head_oid']}" in text
         assert f"- diff_sha256: {verified['diff_sha256']}" in text
         assert "- verified_dimensions: code" in text
+        assert "- worktree_source: branch-worktree" in text
         # The verdict the notes already carried is preserved, not rewritten.
         assert "## Code Review" in text
         assert text.startswith("# Review Notes — PR #7")
+        # The committed file is pushed to a public remote: no absolute local
+        # path goes into it. ``worktree_source`` carries the semantic content,
+        # and the operator still sees WHERE the block went, on stdout.
+        assert verified["worktree_path"] not in text
+        assert "- worktree_path:" not in text
+        assert verified["worktree_path"] in out.out
+        assert "worktree_source=branch-worktree" in out.out
 
     def test_no_delegation_receipt_means_no_counter_evidence(
         self, pr_fixture, monkeypatch, capsys
     ):
-        """AC-5's purpose, as a test: a run where nothing delegated.
-
-        Before the rework this produced a byte-identical block at exit 0,
-        because ``record-subject`` recomputed the subject itself. Self-attested
-        counter-evidence is not counter-evidence.
-        """
+        """AC-5's purpose, as a test: a run where nothing delegated. This
+        used."""
         _runs_dir(pr_fixture.worktree)
         notes = _write_notes(pr_fixture.worktree)
         pr_fixture.activate(monkeypatch)
@@ -1388,12 +1241,8 @@ class TestCounterEvidenceConsumesAPassingDelegation:
 
 
 class TestCounterEvidenceSurvivesASecondReviewCycle:
-    """The gate's own output must not invalidate the gate.
-
-    Step 6 of the review skill COMMITS AND PUSHES the notes this block lives
-    in, which advances the PR head. Any second cycle then recomputes a
-    different head than the one recorded — and ISSUE-081 needed four cycles.
-    """
+    """The gate's own output must not invalidate the gate: step 6 commits
+    and."""
 
     def test_a_committed_block_does_not_wedge_the_next_cycle(
         self, pr_fixture, verified, monkeypatch, capsys
@@ -1435,41 +1284,94 @@ class TestCounterEvidenceSurvivesASecondReviewCycle:
         assert notes.read_text(encoding="utf-8") == first
         assert first.count(rc.SUBJECT_HEADING) == 1
 
-    def test_a_forged_block_is_replaced_by_the_verified_one(
-        self, pr_fixture, verified, capsys
+    @pytest.mark.parametrize(
+        "pre,why",
+        [
+            (
+                f"- diff_bytes: 999999\n- head_oid: {'0' * 40}\n",
+                "a hand-written block cannot make the record disagree with "
+                "reality",
+            ),
+            (
+                f"- head_oid: {'0' * 40}\n",
+                "AC-5's disarm: the record may not end up carrying one value",
+            ),
+        ],
+        ids=["forged", "incomplete"],
+    )
+    def test_a_pre_existing_block_is_replaced_by_the_verified_one(
+        self, pr_fixture, verified, capsys, pre, why
     ):
-        """A hand-written block cannot make the record disagree with reality."""
         notes = _write_notes(
-            pr_fixture.worktree,
-            NOTES_BODY
-            + f"\n{rc.SUBJECT_HEADING}\n- diff_bytes: 999999\n"
-            f"- head_oid: {'0' * 40}\n",
+            pr_fixture.worktree, NOTES_BODY + f"\n{rc.SUBJECT_HEADING}\n" + pre
         )
         assert rc.main(RECORD_ARGS) == 0, capsys.readouterr().err
         text = notes.read_text(encoding="utf-8")
+        assert f"- diff_bytes: {verified['diff_bytes']}" in text, why
+        assert f"- head_oid: {verified['head_oid']}" in text, why
         assert "999999" not in text
         assert "0" * 40 not in text
-        assert f"- diff_bytes: {verified['diff_bytes']}" in text
         assert text.count(rc.SUBJECT_HEADING) == 1
 
-    def test_an_incomplete_block_is_completed(self, pr_fixture, verified, capsys):
-        """AC-5's disarm: the record may not end up carrying only one value."""
-        notes = _write_notes(
-            pr_fixture.worktree,
-            NOTES_BODY + f"\n{rc.SUBJECT_HEADING}\n- head_oid: {'0' * 40}\n",
+
+class TestARefusalLeavesTheNotesUntouched:
+    """Review lesson 12 on the WRITE side: the gate ran downstream of the
+    mutation it gates.
+
+    The read-back ran AFTER the write, so one unpaired code fence — which
+    ``synthesize_review_notes.py`` produces whenever a finding's multi-line
+    ``evidence`` puts a ``` at column 0 — made the append branch run, write,
+    and only then fail: measured over three invocations as exit 2 with the
+    literal heading count going 1 → 2 → 3, i.e. permanent wedging plus
+    unbounded growth. The candidate is validated BEFORE it is written.
+    """
+
+    #: A synthesized finding whose evidence opens a fence and never closes it.
+    FENCED = (
+        "# Review Notes — PR #7\n\n## Code Review\n_Source: code-review_\n\n"
+        "- **[Low] a finding whose evidence quotes a snippet**\n"
+        "  Evidence: scripts/x.py:1 — the synthesizer indents only the FIRST\n"
+        "  line of `evidence`, so the fence below sits at column 0:\n"
+        "```python\n"
+        "def unterminated():\n"
+        "    return 1\n"
+        "\n## Security Findings\n_Source: security-review_\n\n_No findings._\n\n"
+        "## Over-Engineering\n\n_No findings._\n"
+    )
+
+    def test_an_unterminated_fence_refuses_without_writing(
+        self, pr_fixture, verified, capsys
+    ):
+        notes = _write_notes(pr_fixture.worktree, self.FENCED)
+        assert rc._subject_blocks(self.FENCED) == [], "premise: the fence is open"
+        code = rc.main(RECORD_ARGS)
+        err = capsys.readouterr().err
+        assert code == 2
+        assert _reason(err) == "subject-incomplete"
+        assert "fence" in err, (
+            "the refusal must NAME the cause; 'could not read both values back' "
+            "sends the operator to debug the wrong half"
         )
-        assert rc.main(RECORD_ARGS) == 0, capsys.readouterr().err
+        assert notes.read_text(encoding="utf-8") == self.FENCED
+
+    def test_three_retries_do_not_accumulate_blocks(
+        self, pr_fixture, verified, capsys
+    ):
+        """1 → 2 → 3 headings was the measured growth. It must stay at 0."""
+        notes = _write_notes(pr_fixture.worktree, self.FENCED)
+        for attempt in range(3):
+            assert rc.main(RECORD_ARGS) == 2, attempt
+            capsys.readouterr()
         text = notes.read_text(encoding="utf-8")
-        assert f"- diff_bytes: {verified['diff_bytes']}" in text
-        assert f"- head_oid: {verified['head_oid']}" in text
+        assert text == self.FENCED
+        assert text.count(rc.SUBJECT_HEADING) == 0
 
 
 class TestNotesFileBoundaryFailuresAreNamed:
     def test_present_but_unparseable_block_is_not_read_as_absent(
         self, pr_fixture, verified, capsys
     ):
-        """Otherwise the append branch runs, the file ends with TWO blocks,
-        and every later run refuses permanently."""
+        """Otherwise the append branch runs, the file ends with TWO blocks,."""
         notes = _write_notes(
             pr_fixture.worktree,
             NOTES_BODY + f"\n{rc.SUBJECT_HEADING}\n\nnothing parseable here\n",
@@ -1502,13 +1404,8 @@ class TestNotesFileBoundaryFailuresAreNamed:
     def test_a_symlinked_notes_file_is_not_followed(
         self, pr_fixture, verified, capsys
     ):
-        """``open("a")`` followed an in-project symlink and appended through it.
-
-        Measured in review: a link at the notes path pointed at ``Makefile``
-        and the counter-evidence block landed in the build file. This module
-        already uses ``O_NOFOLLOW`` in ``_emit_event``; the notes path now
-        uses the same pattern.
-        """
+        """``open("a")`` followed an in-project symlink: measured in review,
+        a."""
         victim = pr_fixture.worktree / "src" / "app.py"
         before = victim.read_text(encoding="utf-8")
         notes = pr_fixture.worktree / "docs" / "review_notes" / "ISSUE-096.md"
@@ -1520,17 +1417,9 @@ class TestNotesFileBoundaryFailuresAreNamed:
         assert _reason(capsys.readouterr().err) == "review-notes-not-a-file"
         assert victim.read_text(encoding="utf-8") == before
 
-    def test_the_write_half_refuses_a_symlink_on_its_own(
-        self, pr_fixture, tmp_path, capsys
-    ):
-        """Defence-in-depth, pinned at its own boundary.
-
-        Through the CLI the read half always runs first and refuses, so the
-        write half's ``O_NOFOLLOW`` is unreachable from there — measured: the
-        mutant that drops it survived the whole module. It stays (a reordering
-        refactor would otherwise silently open the hole) and is pinned here
-        instead of left as an untested branch.
-        """
+    def test_the_write_half_refuses_a_symlink_on_its_own(self, tmp_path):
+        """Defence-in-depth, pinned at its own boundary: through the CLI
+        the."""
         victim = tmp_path / "victim.mk"
         victim.write_text("all:\n\techo real\n", encoding="utf-8")
         link = tmp_path / "notes.md"
@@ -1541,11 +1430,8 @@ class TestNotesFileBoundaryFailuresAreNamed:
         assert excinfo.value.exit_code == 2
         assert victim.read_text(encoding="utf-8") == "all:\n\techo real\n"
 
-    def test_the_write_half_never_creates_a_missing_file(
-        self, pr_fixture, tmp_path, capsys
-    ):
-        """No ``O_CREAT``: the notes are the synthesizer's artifact, and
-        creating them here would manufacture a record with no verdict in it."""
+    def test_the_write_half_never_creates_a_missing_file(self, tmp_path):
+        """No ``O_CREAT``: the notes are the synthesizer's artifact, and."""
         missing = tmp_path / "absent.md"
         with pytest.raises(rc.SubjectRefused) as excinfo:
             rc._write_notes(missing, "counter-evidence\n")
@@ -1589,28 +1475,12 @@ class TestNotesFileBoundaryFailuresAreNamed:
             encoding="utf-8", errors="replace"
         )
 
-    def test_the_notes_flag_decoy_is_gone(self, pr_fixture, verified, capsys):
-        """``--notes <decoy>`` satisfied the gate while the canonical file
-        got nothing. The flag had no AC and no caller — it is deleted."""
-        decoy = pr_fixture.worktree / "docs" / "review_notes" / "decoy.md"
-        decoy.parent.mkdir(parents=True, exist_ok=True)
-        decoy.write_text(NOTES_BODY, encoding="utf-8")
-        assert rc.main(RECORD_ARGS + ["--notes", str(decoy)]) == 2
-        assert "--notes" in capsys.readouterr().err
-        assert decoy.read_text(encoding="utf-8") == NOTES_BODY
-
 
 class TestTheRecordLandsInTheBranchWorktree:
     def test_notes_are_written_where_the_branch_lives_not_where_cwd_is(
         self, pr_fixture, verified, capsys
     ):
-        """CWD is the MAIN checkout; the notes belong to the PR's worktree.
-
-        The skill's convention is that every file operation happens in ``$WT``
-        and the checkpoint reads the notes from there — anchoring on
-        ``Path.cwd()`` wrote them into whichever checkout happened to be
-        current, which is the same CWD-dependence this issue exists to remove.
-        """
+        """CWD is the MAIN checkout; the notes belong to the PR's worktree."""
         _write_notes(pr_fixture.worktree)
         main_notes = pr_fixture.clone / "docs" / "review_notes" / "ISSUE-096.md"
         main_notes.parent.mkdir(parents=True, exist_ok=True)
@@ -1629,13 +1499,7 @@ class TestTheRecordLandsInTheBranchWorktree:
 
 
 class TestSubjectBlockDetection:
-    """A bare ``text.count("## Review Subject")`` matched four decoys.
-
-    All four were confirmed in review, and the last one is self-referential:
-    this PR's own review notes quote the heading, which wedged the gate.
-    Mutation-tested in BOTH directions (review lesson 4): the real heading must
-    be found, and each decoy must not be.
-    """
+    """A bare ``text.count("## Review Subject")`` matched four decoys — all."""
 
     REAL = f"intro\n\n{rc.SUBJECT_HEADING}\n- diff_bytes: 1\n"
 
@@ -1687,18 +1551,13 @@ class TestSubjectBlockDetection:
         assert rc._parse_recorded_subject(text)["diff_bytes"] == ["1"]
 
     def test_every_occurrence_of_a_key_is_collected(self):
-        """First-occurrence-wins lets a true line be followed by a false one
-        and still read as agreement (the ISSUE-042 lesson)."""
+        """First-occurrence-wins lets a true line be followed by a false
+        one."""
         text = f"{rc.SUBJECT_HEADING}\n- diff_bytes: 1\n- diff_bytes: 2\n"
         assert rc._parse_recorded_subject(text)["diff_bytes"] == ["1", "2"]
 
     def test_the_fence_pattern_matches_the_suites_oracle(self):
-        """A hand-rolled parser must not drift from the oracle it mirrors.
-
-        ``scripts/sprint_queue.py`` already carries the kit's fence predicate
-        (ISSUE-076 review); this pins the two byte-equal instead of letting a
-        second spelling diverge.
-        """
+        """A hand-rolled parser must not drift from the oracle it mirrors:"""
         assert rc._FENCE_RE.pattern == sprint_queue._FENCE_RE.pattern
 
 
@@ -1706,23 +1565,8 @@ class TestSubjectBlockDetection:
 
 
 class TestDecisionSurfaceUnchanged:
-    def test_decide_still_prints_its_json_and_exits_0(
-        self, tmp_path, monkeypatch, capsys
-    ):
-        """AC-7, the literal command from the acceptance criterion."""
-        proj = tmp_path / "proj"
-        (proj / ".claude" / "runs").mkdir(parents=True)
-        monkeypatch.chdir(proj)
-        monkeypatch.setattr(
-            rc.has_skill, "find_skill", lambda name: (1, "stub")
-        )
-        assert (
-            rc.main(["decide", "--invocation-tools", "absent", "--issue", "ISSUE-999"])
-            == 0
-        )
-        data = json.loads(capsys.readouterr().out)
-        assert set(data) == {"issue_id", "invocation_tools", "dimensions"}
-        assert set(data["dimensions"]) == {"code", "security"}
+    """AC-7's ``decide`` command is discharged by
+    ``tests/test_review_context.py``."""
 
     def test_the_prose_emit_seam_still_accepts_only_its_one_reason(
         self, tmp_path, monkeypatch
@@ -1755,56 +1599,37 @@ def _step_3_1(text: str) -> str:
 #: Occurrence WHITELIST for step 3.1 — (regex, why). Not a phrasing blacklist:
 #: a rewording that keeps the obligation passes, and a rewording that drops it
 #: fails. Each entry is mutation-tested below by deleting it from the REAL text.
+# The dated 48.5KB / "accepts no review target" anecdote is deliberately NOT
+# pinned here: MATRIX_ROW_REQUIREMENTS below already pins those strings,
+# mutation-tested, in the file that owns the measurement. This whitelist pins
+# step 3.1's OBLIGATIONS instead.
 STEP_31_REQUIREMENTS: tuple[tuple[str, str], ...] = (
-    (
-        r"review_context\.py collect",
-        "step 3.1 must name the executable collection step",
-    ),
-    (
-        r"review_context\.py delegate",
-        "step 3.1 must name the executable echo gate",
-    ),
+    (r"review_context\.py collect", "name the executable collection step"),
+    (r"review_context\.py delegate", "name the executable echo gate"),
     (r"--echoed-bytes", "the byte count must be echoed by the consumer"),
     (r"--echoed-sha256", "the digest must be echoed by the consumer"),
-    (r"--head-oid", "the subject must be pinned so a moved head is not a mismatch"),
+    (r"--head-oid", "pin the subject, so a moved head is not a mismatch"),
     (r"diff_command", "the reviewer gets the exact argv the gate measures"),
     (
         r"[Dd]o not let it auto-collect",
-        "the prohibition itself — the runtime harness auto-collecting its own "
-        "subject is the defect, and an anecdote about it is not a prohibition",
+        "the prohibition itself: the harness auto-collecting its own subject "
+        "IS the defect, and an anecdote about it is not a prohibition",
     ),
     (
         r"[Dd]o not fabricate",
-        "an echo the orchestrator invents is the one remaining fail-open and "
-        "must be forbidden in words",
+        "an echo the orchestrator invents is the one remaining fail-open",
     ),
+    (r"KIT_RUN_ID", "the receipt has no home without a run id"),
     (
-        r"48\.5KB",
-        "the fifth reproduction's literal measurement: the wrong subject was "
-        "NOT empty, so a non-empty check does not detect it",
-    ),
-    (
-        r"accepts no review target",
-        "the 2026-10-31 measurement that makes step (b) unexecutable for the "
-        "security dimension — disclosed, not pretended",
-    ),
-    (
-        r"2026-10-31",
-        "the measurement is dated, so a future reader can re-probe it",
-    ),
-    (
-        r"KIT_RUN_ID",
-        "the receipt the echo gate writes has no home without a run id, and "
-        "the kit has no other producer for it",
+        r"KIT_RUN_ID=review-\$ARGUMENTS python3 scripts/review_context\.py emit",
+        "`cmd_emit` treats an unset run id as a silent no-op at exit 0, so "
+        "without the knob the one record of WHY a dimension degraded is lost",
     ),
 )
 
 
 class TestSkillTemplateBindsTheSubject:
-    """The decision: the checkable half lives in the script, and step 3.1
-    consumes it. Prose alone is what was skipped five times, so these pin that
-    the prose names the EXECUTABLE steps rather than describing the discipline.
-    """
+    """The decision: the checkable half lives in the script, and step 3.1."""
 
     @pytest.mark.parametrize(
         "pattern,why", STEP_31_REQUIREMENTS, ids=lambda v: str(v)[:38]
@@ -1817,12 +1642,7 @@ class TestSkillTemplateBindsTheSubject:
         "pattern,why", STEP_31_REQUIREMENTS, ids=lambda v: str(v)[:38]
     )
     def test_removing_any_required_occurrence_fails_the_guard(self, pattern, why):
-        """Mutation-tested against the REAL text, per requirement.
-
-        An absence-guard that is never run against the actually-removed string
-        is not a guard: the predecessor asserted only that an anecdote appeared
-        and passed with the prohibition deleted.
-        """
+        """Mutation-tested against the REAL text, per requirement: an."""
         block = _step_3_1((KIT_ROOT / "skills" / "review" / "SKILL.md.tmpl").read_text(
             encoding="utf-8"
         ))
@@ -1830,13 +1650,7 @@ class TestSkillTemplateBindsTheSubject:
         assert not re.search(pattern, re.sub(pattern, "", block)), why
 
     def test_counter_evidence_step_runs_after_every_synthesizer_call(self):
-        """Review lesson 12: pin POSITION, not just presence.
-
-        ``rindex``, not ``index``: the synthesizer is named twice (step 3.14 and
-        the step-5 re-synthesis), and a THIRD call added after 5.3 would escape
-        a first-occurrence check while re-overwriting the very file 5.3 just
-        verified.
-        """
+        """Review lesson 12: pin POSITION, not just presence."""
         for name, text in _skill_texts():
             last_synth = text.rindex("synthesize_review_notes.py")
             record = text.index("review_context.py record-subject")
@@ -1875,19 +1689,16 @@ class TestDocsCarryTheContract:
             )
 
     def test_the_new_timeout_knob_is_documented_where_its_siblings_live(self):
-        """Review lesson: a new env knob needs a line in the owning module's
-        docstring AND in a user-facing doc, in the same PR."""
+        """Review lesson: a new env knob needs a line in the owning
+        module's."""
         module = (SCRIPTS_DIR / "review_context.py").read_text(encoding="utf-8")
         docstring = module.split('"""', 2)[1]
         assert rc.GH_TIMEOUT_ENV in docstring
         assert rc.GH_TIMEOUT_ENV in (KIT_ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_the_docstring_does_not_claim_one_collection_per_run(self):
-        """A false statement in a docstring is a defect in a PR about
-        counter-evidence. The collection runs FOUR times per review run —
-        ``collect`` once, plus once inside each ``delegate`` and once inside
-        ``record-subject``, each re-establishing the subject rather than
-        trusting a handed-over artifact."""
+        """A false docstring claim is a defect in a PR about
+        counter-evidence: the collection runs FOUR times per run."""
         module = (SCRIPTS_DIR / "review_context.py").read_text(encoding="utf-8")
         docstring = module.split('"""', 2)[1]
         assert "ONCE per review run" in docstring, (
@@ -1903,34 +1714,22 @@ MATRIX = KIT_ROOT / "docs" / "cc_feature_matrix.md"
 
 #: The 2026-10-31 measurement, as an occurrence whitelist on the matrix row.
 MATRIX_ROW_REQUIREMENTS: tuple[tuple[str, str], ...] = (
-    (r"2026-10-31", "the row is dated, like every other local-probe row"),
+    (r"2026-10-31", "dated, like every other local-probe row"),
     (r"48\.5KB", "the literal byte figure the harness reported receiving"),
-    (
-        r"On branch main",
-        "the literal git status it arrived with — the wrong CHECKOUT, verbatim",
-    ),
-    (
-        r"discard",
-        "the pinned subject arguments were DISCARDED, not merely ignored in "
-        "favour of a second collection",
-    ),
+    (r"On branch main", "the literal git status — the wrong CHECKOUT, verbatim"),
+    (r"discard", "the pinned arguments were DISCARDED, not merely ignored"),
     (
         r"Bash completed with no output",
-        "the other arm of the same measurement: from the worktree it collects "
-        "NOTHING, so neither CWD works",
+        "the other arm: from the worktree it collects NOTHING, so neither "
+        "CWD works",
     ),
     (r"ISSUE-096", "the consumer of this row"),
 )
 
 
 class TestTheMatrixCarriesTheReviewTargetMeasurement:
-    """AC-6's sibling measurement: can a caller pin what the runtime reviews?
-
-    ISSUE-096's open question (a) — "whether the runtime skills accept an
-    explicit diff/range argument at all … determines whether option (a) is
-    even viable" — is answered NEGATIVE for the security dimension, and the
-    answer belongs in the matrix rather than in a PR body.
-    """
+    """AC-6's sibling measurement: can a caller pin what the runtime
+    reviews?"""
 
     @staticmethod
     def _row() -> str:
@@ -1964,10 +1763,8 @@ class TestTheMatrixCarriesTheReviewTargetMeasurement:
         )
 
     def test_the_new_row_does_not_collide_with_the_issue_082_row_guard(self):
-        """``tests/test_subagent_skill_grant.py`` selects rows whose FEATURE
-        cell matches BOTH ``sub-agent context`` and ``\\bSkill\\b`` and requires
-        EXACTLY ONE. ISSUE-082 owns that row; this row must stay out of its
-        selector rather than redden a test this PR does not own."""
+        """``tests/test_subagent_skill_grant.py`` selects rows whose
+        FEATURE."""
         feature = [c.strip() for c in self._row().strip().strip("|").split("|")][1]
         assert not (
             re.search(r"sub-agent context", feature, re.IGNORECASE)

@@ -81,111 +81,61 @@ outside it is refused with an announcement and nothing written.
 Subject binding (ISSUE-096) — what a ``delegated`` dimension may review
 -----------------------------------------------------------------------
 
-``decide`` only answers WHETHER to delegate. **Five times across four
-sprints** (PRs #139, #141, #145, one more, and PR #147's own review on
-2026-10-31) the runtime skill was then reached on the ``delegated`` path and
-**collected its own subject instead of the one it was handed**.
-
-Four of those were zero-byte collections against the MAIN checkout, arriving
-with the literal ``DIFF CONTENT: (Bash completed with no output)`` and
-``GIT STATUS: On branch main``. The fifth, measured during this module's own
-review, was **not empty**: the harness discarded the pinned subject arguments
-entirely — they appeared nowhere in the prompt it produced — and auto-collected
-``DIFF CONTENT: <persisted-output> Output too large (48.5KB)`` from the main
-checkout's dirty registry churn, then said "Review the complete diff above.
-This contains all code changes in the PR."
-
-That fifth shape is why the **digest**, not the byte count, is the load-bearing
-check: a "greater than zero" test passes it. Only comparing the sha256 rejects
-it. Uncorrected, every one of the five would have returned a clean bill having
-reviewed something other than the PR — a fail-open on a blocking gate whose
-defeated output is indistinguishable from its healthy one.
+``decide`` only answers WHETHER to delegate. **Five times across four sprints**
+the runtime skill was then reached on the ``delegated`` path and **collected
+its own subject instead of the one it was handed** — four as zero-byte
+collections against the MAIN checkout, the fifth as a NON-empty collection of
+the wrong subject. The dated measurements live in the review-target row of
+``docs/cc_feature_matrix.md`` (the kit's canonical measurement registry,
+self-contained by design) and are deliberately not restated here. What they
+dictate: the **digest**, not the byte count, is the load-bearing check,
+because a "greater than zero" test passes the fifth shape. The same row
+records that the runtime ``/security-review`` accepts no review target from
+either CWD, so for that dimension the hand-off cannot be executed on this
+runtime: its echo can never match and it degrades through
+``inline-attempt-failed``.
 
 Three subcommands close that, and the division of labour is the decision this
 issue made (`option (c)`: the script owns everything checkable, the step-3.1
-prose consumes it — prose alone is precisely what was skipped five times):
+prose consumes it — prose alone is precisely what was skipped five times).
+Each one's contract is on its own handler; in one line each:
 
-- ``collect`` establishes the subject and REFUSES rather than yielding an
-  empty one. The range is anchored on ``gh pr view --json headRefOid`` (head)
-  and on ``refs/remotes/origin/<baseRefName>`` (base) — never on a bare
-  ``main``, which DWIMs to the LOCAL ref; that is
-  ``verify_checkpoint.py::_default_branch()``'s defect (ISSUE-089 owns it and
-  it is deliberately not reproduced here). The base side is the **cached**
-  remote-tracking ref: no fetch runs, so a ref stale against the live remote
-  stays stale — named in the payload rather than hidden. The payload carries
-  ``diff_command``: the exact argv the gate measured, so the command handed to
-  the reviewer and the command the gate compares against cannot drift. Both
-  ``--no-ext-diff`` **and** ``--no-textconv`` are passed — the first does not
-  imply the second, and a local ``diff.<driver>.textconv`` was measured
-  collapsing the whole subject to zero bytes, which would have fired the
-  empty-diff refusal on a perfectly reviewable PR.
-- ``delegate`` is the ECHO GATE: it re-establishes the subject and records a
-  delegation only when the consumer echoes back the byte count and sha256 it
-  measured. A producer-printed digest is an *attestation* — it proves only
-  that the producer computed something; a consumer-echoed digest is a
-  *verification*. The 2026-10-31 amendment measured why this matters: a
-  materialised diff FILE was reported "not present" from the code reviewer's
-  own context, and only the required byte-count echo caught it. Because the
-  subject is re-established rather than handed over, a head that advances
-  mid-review would otherwise read as a lying reviewer; ``--head-oid`` pins the
-  head the reviewer was given, and a divergence is ``reason=head-moved``
-  rather than ``reason=echo-mismatch``.
-  **Disclosed residual (a claim, not a measurement):** the echo is checked for
-  equality, not for provenance — an orchestrator holding ``collect``'s output
-  could paste it without the reviewer having read anything (review lesson 6:
-  an attestation that can satisfy a gate is forgeable). What the gate does
-  remove is the SILENT arm: a reviewer handed nothing measures
-  ``0``/``sha256(b"")`` and cannot produce a match, so the fail-open becomes
-  an explicit fabrication instead of an invisible default. The pre-ISSUE-096
-  ``emit --event review_delegated_to_*`` call path is retained ungated for the
-  ISSUE-066 acceptance tests, so it remains a bypass for a caller that ignores
-  step 3.1.
-- ``record-subject`` puts the counter-evidence into
-  ``docs/review_notes/<ISSUE>.md``. It does **not** recompute its own: it
-  CONSUMES the delegation receipt a passing ``delegate`` wrote — a
-  ``review_delegated_to_*`` event matching this issue, head oid, byte count
-  and sha256. A record that recomputes its own evidence is self-attesting and
-  renders identically whether the echo gate passed, was rejected, or never
-  ran, which is the one thing AC-5 exists to prevent. No receipt is therefore
-  a NAMED refusal (``verification-unconfigured`` / ``verification-missing`` /
-  ``verification-unreadable``), never a silent pass. The run file is
-  workspace-persisted state consumed by a gate, i.e. untrusted input: it must
-  be a regular file, is opened ``O_NOFOLLOW``, is read with a byte bound, and
-  malformed lines are skipped rather than trusted or fatal.
-  **Disclosed residual (a claim, not a measurement):** an orchestrator that
-  writes the receipt line itself can still forge it, exactly as it could paste
-  an echo. The receipt removes the self-attestation, not the forgeability.
-  ``record-subject`` must be invoked DOWNSTREAM of every synthesizer call
-  (step 3.14 and the step-5 re-synthesis), which rewrite that file.
+- ``collect`` establishes the subject from the PR record and REFUSES rather
+  than yielding an empty one (:func:`collect_subject`).
+- ``delegate`` is the ECHO GATE: the delegation is recorded only when the
+  CONSUMER echoes back the digest (:func:`cmd_delegate`).
+- ``record-subject`` writes the counter-evidence it CONSUMES from that
+  receipt, never a digest it recomputed (:func:`cmd_record_subject`).
 
-The collection is deliberately re-run rather than passed around: it executes
-**four times per review run** — once as ``collect``, once inside each of the
-two ``delegate`` calls, and once inside ``record-subject``. Each re-establishes
-the subject from the PR record instead of trusting a handoff artifact, which is
-what the 2026-10-31 amendment's unreliable file-path hand-off argues for.
+The collection is deliberately re-run rather than passed around:
+**four times per review run** — ``collect``, each of the two ``delegate``
+calls, and ``record-subject`` — each re-establishing the subject from the PR
+record instead of trusting an artifact measured not to survive the hand-off.
 
 Refusal vocabulary (``SUBJECT_REASONS``) is closed and deliberately DISJOINT
 from the three-value ``review_degraded_path_used`` vocabulary below: this
-issue adds no fourth token there. An echo-gate rejection degrades through the
-existing ``inline-attempt-failed`` token. A refusal prints ``reason=<token>``
-on stderr and NOTHING on stdout, so ``SUBJ="$(… collect …)"`` cannot carry a
+issue adds no fourth token there, and an echo-gate rejection degrades through
+the existing ``inline-attempt-failed``. A refusal prints ``reason=<token>`` on
+stderr and NOTHING on stdout, so ``SUBJ="$(… collect …)"`` cannot carry a
 usable payload out of a failure (the ``wt_setup.sh``/ISSUE-083 precedent).
-**Every** failure in the collection path renders that way, including the
-unmodelled ones: an escaping exception would otherwise exit 1, which is this
-module's code for "computed and EMPTY", with no reason token at all — a
-fail-open inside the guard (reproduced with a ``prunable``
-``.worktrees/<slug>`` registration, routine after ``wt_cleanup.sh`` without
-``git worktree prune``).
+**Every** failure renders that way, the unmodelled ones included: an escaping
+exception would otherwise exit 1 — this module's code for "computed and EMPTY"
+— with no reason token at all, a fail-open inside the guard (reproduced with a
+``prunable`` ``.worktrees/<slug>`` registration, routine after
+``wt_cleanup.sh`` without ``git worktree prune``).
 
-Measured constraint, 2026-10-31 — the runtime ``/security-review`` accepts no
-review target at all. From the worktree it collects nothing (the historical
-``(Bash completed with no output)``); from the main checkout it collects the
-wrong subject (the 48.5KB above). Neither CWD works, so for the security
-dimension the hand-off step cannot be executed on this runtime and its echo
-can never match: that dimension refuses and degrades through
-``inline-attempt-failed``. This is a measurement (see the review-target row of
-``docs/cc_feature_matrix.md``), and it answers ISSUE-096's open question (a)
-negatively for that dimension. The code dimension is unmeasured in this shape.
+**Disclosed residuals, both claims and not measurements.** (1) The echo is
+checked for equality, not provenance: an orchestrator holding ``collect``'s
+output could paste it (review lesson 6 — an attestation that can satisfy a
+gate is forgeable). What the gate removes is the SILENT arm: a reviewer handed
+nothing measures ``0``/``sha256(b"")`` and cannot match, so the fail-open
+becomes an explicit fabrication rather than an invisible default. (2) The
+receipt is writable by anything executing inside the worktree during the
+review — the PR's own tests and hooks included, not merely the orchestrator —
+so it removes the self-attestation, not the forgeability. (3) The
+pre-ISSUE-096 ``emit --event review_delegated_to_*`` path stays ungated
+because the ISSUE-066 acceptance tests pin it, so it remains a bypass for a
+caller that ignores step 3.1.
 
 Env knobs (``KIT_RUN_ID`` is pre-documented in README and
 docs/telemetry_schema.md):
@@ -470,18 +420,23 @@ def _emit_event(
 class SubjectRefused(Exception):
     """A review subject could not be established, or is empty.
 
-    ``exit_code`` is 1 when the subject was COMPUTED and is empty and 2 when
-    it could not be computed at all — the distinction the four observed
-    fail-opens erased.
+    ``exit_code`` is 1 when the subject was COMPUTED and is empty, 2 when it
+    could not be computed — the distinction the observed fail-opens erased.
     """
 
     def __init__(self, reason: str, detail: str, exit_code: int):
-        # A real check, not a bare ``assert``: every consumer branches on this
+        # Real checks, not bare ``assert``s: every consumer branches on this
         # token and ``python -O`` strips assertions.
         if reason not in SUBJECT_REASONS:
             raise ValueError(
                 f"unknown refusal reason {reason!r} — the subject vocabulary is "
                 f"closed: {SUBJECT_REASONS}"
+            )
+        if (exit_code == 1) != reason.startswith("empty-diff-"):
+            raise ValueError(
+                f"exit_code 1 means COMPUTED AND EMPTY and nothing else: "
+                f"{reason!r} may not use it (and an empty-diff- reason may use "
+                "nothing else). The 1/2 split is AC-3's whole content."
             )
         super().__init__(f"reason={reason} {detail}")
         self.reason = reason
@@ -504,33 +459,19 @@ def _gh_timeout() -> int:
 
 
 def _git_argv(cwd: Path, *args: str) -> list[str]:
-    """The argv for a git command in ``cwd``, via ``-C`` rather than ``cwd=``.
-
-    ``-C`` keeps the command self-describing, which is what lets
-    ``collect_subject`` publish the EXACT argv it measured as
-    ``diff_command``: the command the prose hands the reviewer and the command
-    the echo gate compares against can then not drift (a ``git -C … diff``
-    without ``--no-ext-diff`` was measured rejecting an honest review).
-    """
+    """The argv for a git command in ``cwd``, via ``-C`` rather than ``cwd=``:
+    self-describing, so ``collect_subject`` can publish the EXACT argv it
+    measured and the reviewer's command cannot drift from the gate's."""
     return ["git", "-C", str(cwd), *args]
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run a LOCAL git command, capturing bytes (diffs are not text).
 
-    No timeout: every call here is a local object-database read that
-    terminates immediately. The network consultation is ``gh``, which IS
-    bounded (``KIT_REVIEW_GH_TIMEOUT``).
-
-    Two guards its ``gh`` sibling already had and this did not, both of which
-    otherwise escape as a traceback at exit 1 — the code for "computed and
-    EMPTY" — with no reason token:
-
-    - ``git`` absent from PATH (``_pr_refs`` checks for ``gh``; nothing
-      checked for ``git``);
-    - ``cwd`` not existing, which a ``prunable`` ``.worktrees/<slug>``
-      registration produces routinely (``wt_cleanup.sh`` without a
-      ``git worktree prune``).
+    No timeout: every call is a local object-database read that terminates
+    immediately; the network consultation is ``gh``, which IS bounded. Without
+    the two guards below, both escape as a traceback at exit 1 — the code for
+    "computed and EMPTY" — with no reason token.
     """
     if shutil.which("git") is None:
         raise _refuse(
@@ -562,12 +503,8 @@ def _git_text(cwd: Path, *args: str) -> tuple[int, str]:
 
 
 def _pr_refs(pr: str, cwd: Path) -> dict[str, str]:
-    """Ask ``gh`` for the PR's head oid and the two ref names.
-
-    The head oid comes from ``gh pr view --json headRefOid`` — the PR's own
-    record of what it is, not from whatever this checkout happens to have
-    checked out.
-    """
+    """Ask ``gh`` for the PR's head oid and the two ref names — the PR's OWN
+    record of what it is, not whatever this checkout has checked out."""
     if shutil.which("gh") is None:
         raise _refuse(
             "gh-unavailable",
@@ -625,10 +562,9 @@ def _pr_refs(pr: str, cwd: Path) -> dict[str, str]:
 def _resolve_worktree(branch: str, cwd: Path) -> tuple[Path, str]:
     """Find the checkout that holds ``branch``; else the main work tree.
 
-    This is the half the measured failure got wrong: the collection ran where
-    the CWD happened to be (the main checkout, on ``main``) instead of where
-    the PR branch lives (``.worktrees/<slug>``). The returned path is where
-    the diff is actually taken, so it is load-bearing rather than decorative.
+    The half the measured failure got wrong: the collection ran where the CWD
+    happened to be instead of where the PR branch lives. The returned path is
+    where the diff is actually taken.
     """
     code, out = _git_text(cwd, "worktree", "list", "--porcelain")
     if code != 0:
@@ -654,11 +590,10 @@ def _resolve_worktree(branch: str, cwd: Path) -> tuple[Path, str]:
 def collect_subject(pr: str, cwd: Path) -> dict:
     """Establish the reviewable subject, or raise :class:`SubjectRefused`.
 
-    Which ref each endpoint comes from is part of the payload, not folklore:
-    ``head`` is ``gh pr view --json headRefOid``, ``base`` is
-    ``refs/remotes/origin/<baseRefName>`` (the cached remote-tracking ref — no
-    fetch runs). A bare ``main`` is NOT used: it resolves to the local ref,
-    which ISSUE-089 measured as a wrong diff subject.
+    Which ref each endpoint came from is part of the PAYLOAD, not folklore:
+    ``head`` from ``gh pr view --json headRefOid``, ``base`` from the cached
+    ``refs/remotes/origin/<baseRefName>`` (no fetch runs, never a bare
+    ``main`` — that resolves to the LOCAL ref, ISSUE-089's wrong subject).
     """
     if not _PR_RE.fullmatch(pr):
         raise _refuse("gh-bad-output", f"--pr must be a PR number, got {pr!r}")
@@ -701,9 +636,8 @@ def collect_subject(pr: str, cwd: Path) -> dict:
     worktree_path, worktree_source = _resolve_worktree(refs["headRefName"], cwd)
     diff_range = f"{base_oid}...{head_oid}"
     # ``--no-ext-diff`` does NOT disable textconv: with a local
-    # ``diff.<driver>.textconv`` configured the whole subject was measured
-    # collapsing to zero bytes, which would fire the empty-diff refusal on a
-    # perfectly reviewable PR. Both flags, and the argv is published verbatim.
+    # ``diff.<driver>.textconv`` the whole subject was measured collapsing to
+    # zero bytes, firing the empty-diff refusal on a reviewable PR.
     diff_args = ("diff", "--no-ext-diff", "--no-textconv", diff_range)
     done = _git(worktree_path, *diff_args)
     if done.returncode != 0:
@@ -719,8 +653,6 @@ def collect_subject(pr: str, cwd: Path) -> dict:
         "pr_number": pr,
         "range": diff_range,
         "base_ref": base_ref,
-        "base_oid": base_oid,
-        "head_ref": f"gh:pr/{pr}#headRefOid",
         "head_oid": head_oid,
         "worktree_path": str(worktree_path),
         "worktree_source": worktree_source,
@@ -772,10 +704,9 @@ def _contained(path: Path, root: Path) -> bool:
 def _open_read(path: Path) -> int:
     """Open for reading without following a link and without blocking.
 
-    ``O_NOFOLLOW`` makes a planted symlink ``ELOOP`` instead of a redirect;
-    ``O_NONBLOCK`` makes a planted FIFO return instead of hanging the gate
-    (for a regular file it is a no-op). Both halves of the review record —
-    the delegation receipt and the review notes — go through this one door.
+    ``O_NOFOLLOW`` makes a planted symlink ``ELOOP``, ``O_NONBLOCK`` makes a
+    planted FIFO return instead of hanging the gate, and both halves of the
+    review record go through this one door.
     """
     return os.open(
         path,
@@ -786,10 +717,9 @@ def _open_read(path: Path) -> int:
 def _receipt_path(root: Path) -> Path | None:
     """The run file the echo gate appends its verification to, or ``None``.
 
-    ``None`` means "no run file can exist" — an unset/invalid ``KIT_RUN_ID``,
-    a missing runs dir, or a runs dir that escapes the root. The caller turns
-    that into a NAMED refusal; for the counter-evidence gate it may never be a
-    silent pass, because the receipt is the whole basis of the record.
+    ``None`` means "no run file can exist" (unset/invalid ``KIT_RUN_ID``, no
+    runs dir, or one escaping the root). The caller turns that into a NAMED
+    refusal, never a silent pass.
     """
     run_id = os.environ.get(RUN_ID_ENV, "").strip()
     if not _RUN_ID_RE.fullmatch(run_id):
@@ -804,14 +734,11 @@ def _read_receipts(root: Path) -> list[dict]:
     """Every delegation event in this run's file, as untrusted input.
 
     Hardened the way ISSUE-058/070 hardened the WRITE path, because this is
-    workspace-persisted state a gate branches on (review lesson 5). One guard,
-    applied AFTER the open rather than as a racy pre-check: the descriptor is
-    opened ``O_NOFOLLOW`` (a symlink is ``ELOOP``) and ``O_NONBLOCK`` (a
-    planted FIFO returns instead of hanging the gate — measured: with the
-    regular-file check disarmed and no ``O_NONBLOCK``, the test harness blocked
-    indefinitely), then ``fstat`` must report a regular file. The read is
-    byte-bounded to the file's tail, and a malformed line is skipped rather
-    than trusted or fatal.
+    workspace-persisted state a gate branches on (review lesson 5). The
+    regular-file check runs AFTER the open rather than as a racy pre-check,
+    and ``O_NONBLOCK`` is what keeps it reachable — measured: with the check
+    disarmed and no ``O_NONBLOCK`` the harness blocked indefinitely. The read
+    is bounded to the file's tail; malformed lines are skipped.
     """
     path = _receipt_path(root)
     if path is None:
@@ -911,12 +838,10 @@ def _require_verification(root: Path, issue: str, subject: dict) -> list[str]:
 def _subject_blocks(text: str) -> list[tuple[int, int]]:
     """``(start, end)`` line spans of every counter-evidence block.
 
-    Line-anchored and fence-aware. The predecessor was
-    ``text.count("## Review Subject")``, which matched ``###``, a suffixed
-    heading, the heading inside a fenced block, and prose quoting it — the
-    last being self-referential, since a review note about this gate quotes
-    the heading and would wedge it. Spans end at the next level-1 or level-2
-    heading, so a later ``# `` h1 cannot be swallowed.
+    Line-anchored and fence-aware: the predecessor ``text.count(…)`` matched
+    ``###``, a suffixed heading, a fenced heading, and prose quoting it — the
+    last self-referentially, since a note about this gate quotes the heading.
+    Spans end at the next h1 OR h2, so a later ``# `` cannot be swallowed.
     """
     lines = text.splitlines()
     in_fence = False
@@ -941,12 +866,10 @@ def _subject_blocks(text: str) -> list[tuple[int, int]]:
 def _parse_recorded_subject(text: str) -> dict[str, list[str]]:
     """The ``- key: value`` lines of the single counter-evidence block.
 
-    **Every** occurrence of a key is collected, not the first — a true line
-    followed by a false one must not read as agreement (the duplicate-key
-    collect-all lesson, ISSUE-042) — and a key that is absent is absent, never
-    a default that agrees. Callers resolve the 0-block and >1-block cases
-    themselves via :func:`_subject_blocks`, because "absent" and
-    "present but unreadable" are different refusals.
+    EVERY occurrence of a key is collected, not the first: a true line
+    followed by a false one must not read as agreement (ISSUE-042). Callers
+    resolve the 0-block and >1-block cases via :func:`_subject_blocks`,
+    because "absent" and "present but unreadable" are different refusals.
     """
     spans = _subject_blocks(text)
     if len(spans) != 1:
@@ -967,7 +890,13 @@ def _agrees(recorded: dict[str, list[str]], key: str, expected: str) -> bool:
 
 
 def _render_subject_lines(subject: dict, dimensions: list[str]) -> list[str]:
-    """The block, rendered from the subject a passing echo gate verified."""
+    """The block, rendered from the subject a passing echo gate verified.
+
+    No ``worktree_path``: these notes are tracked and pushed to a public
+    remote, so an absolute path there publishes the OS account name of whoever
+    ran ``/review``. ``worktree_source`` carries the semantic content; the
+    path stays on stdout, which is not committed.
+    """
     return [
         SUBJECT_HEADING,
         "_Counter-evidence for what this review actually read (ISSUE-096): the "
@@ -982,20 +911,50 @@ def _render_subject_lines(subject: dict, dimensions: list[str]) -> list[str]:
         f"- head_oid: {subject['head_oid']}",
         f"- base_ref: {subject['base_ref']}",
         f"- range: {subject['range']}",
-        f"- worktree_path: {subject['worktree_path']}",
         f"- worktree_source: {subject['worktree_source']}",
         f"- verified_dimensions: {','.join(dimensions)}",
     ]
 
 
-def _read_notes(path: Path) -> str:
-    """Read the review notes without following a symlink at the final hop.
+def _require_one_agreeing_block(notes: Path, text: str, subject: dict) -> None:
+    """Refuse unless ``text`` carries exactly one block that reads back.
 
-    ``open("a")`` followed an in-project link and appended the block THROUGH
-    it into an unrelated build file (measured in review). ``_emit_event`` in
-    this same module already opens ``O_NOFOLLOW``; this reuses the pattern,
-    via the same :func:`_open_read` door as the delegation receipt.
+    Run on the CANDIDATE before the write and on the file after it. Validating
+    FIRST keeps a refusal byte-free: an unpaired fence hides the heading, so
+    the append branch ran, wrote, and only then failed — three retries left
+    three blocks (review lesson 12).
     """
+    spans = _subject_blocks(text)
+    recorded = _parse_recorded_subject(text)
+    if (
+        len(spans) == 1
+        and _agrees(recorded, "diff_bytes", str(subject["diff_bytes"]))
+        and _agrees(recorded, "head_oid", subject["head_oid"])
+    ):
+        return
+    literal = sum(1 for line in text.splitlines() if _SUBJECT_HEADING_RE.match(line))
+    if literal != len(spans):
+        raise _refuse(
+            "subject-incomplete",
+            f"{notes} has {literal} literal {SUBJECT_HEADING!r} heading(s) but "
+            f"{len(spans)} readable block(s): an UNTERMINATED code fence hides "
+            "the heading from the detector (the synthesizer indents only the "
+            "FIRST line of a finding's `evidence`, so multi-line evidence puts "
+            "a ``` at column 0). Close the fence and re-run — NOTHING was "
+            "written, so retries do not accumulate blocks.",
+        )
+    raise _refuse(
+        "subject-incomplete",
+        f"the {SUBJECT_HEADING!r} block in {notes} does not read back both "
+        f"diff_bytes={subject['diff_bytes']} and head_oid={subject['head_oid']} "
+        f"({len(spans)} block(s) detected). Nothing was written.",
+    )
+
+
+def _read_notes(path: Path) -> str:
+    """Read the review notes without following a symlink at the final hop:
+    ``open("a")`` was measured appending the block THROUGH an in-project link
+    into an unrelated build file."""
     try:
         fd = _open_read(path)
         try:
@@ -1078,8 +1037,8 @@ def cmd_decide(args: argparse.Namespace) -> int:
 def cmd_collect(args: argparse.Namespace) -> int:
     """Handler for `collect` — establish the subject, or refuse.
 
-    On success the payload goes to stdout as one JSON object; on refusal
-    stdout stays EMPTY so a shell capture cannot carry a half-subject forward.
+    On refusal stdout stays EMPTY, so a shell capture cannot carry a
+    half-subject forward.
     """
     subject = collect_subject(args.pr, Path.cwd())
     subject["issue_id"] = args.issue
@@ -1093,16 +1052,16 @@ def cmd_delegate(args: argparse.Namespace) -> int:
     Re-establishes the subject (no handoff artifact to trust or poison) and
     records the delegation only when the consumer's echoed byte count AND
     sha256 both match. A reviewer that received nothing measures
-    ``0``/``sha256(b"")`` and cannot pass; a reviewer that auto-collected a
-    DIFFERENT non-empty subject — the 2026-10-31 shape — cannot pass either,
-    which a "greater than zero" check would have allowed.
+    ``0``/``sha256(b"")`` and cannot pass; one that auto-collected a DIFFERENT
+    non-empty subject cannot pass either, which a "greater than zero" check
+    would have allowed. ``--head-oid`` pins the head the reviewer was handed,
+    so a head that advances mid-review is ``head-moved`` rather than a slur on
+    an honest reviewer.
 
-    ``--head-oid`` pins the head the reviewer was handed, so a head that
-    advances mid-review is ``head-moved`` rather than a slur on an honest
-    reviewer. NO ``review_delegated_to_*`` event is emitted on any failing
-    path, and a pass whose receipt could not be recorded is itself a refusal:
-    ``record-subject`` consumes that receipt, so a silently unrecorded
-    verification is a silent pass one step later.
+    NO ``review_delegated_to_*`` event is emitted on any failing path, and a
+    pass whose receipt for THIS dimension could not be recorded is itself a
+    refusal: ``record-subject`` consumes that receipt, so a silently
+    unrecorded verification is a silent pass one step later.
     """
     subject = collect_subject(args.pr, Path.cwd())
     root = Path(subject["worktree_path"])
@@ -1143,8 +1102,20 @@ def cmd_delegate(args: argparse.Namespace) -> int:
         issue_id=args.issue,
     )
     # Verify what landed, not what was intended: `_emit_event` is best-effort
-    # and silent by contract, and this receipt is load-bearing.
-    _require_verification(root, args.issue, subject)
+    # and silent by contract, and this receipt is load-bearing. Bound to THIS
+    # dimension: asking only "did any dimension verify?" is satisfied by
+    # another dimension's line and is vacuous for every dimension after the
+    # first (reproduced three times with the run file readable but
+    # un-appendable).
+    verified = _require_verification(root, args.issue, subject)
+    if args.dimension not in verified:
+        raise _refuse(
+            "verification-missing",
+            f"the {args.dimension} echo matched but its receipt did not land in "
+            f"{root}/.claude/runs (verified there: {', '.join(verified)}). "
+            "record-subject consumes that receipt, so an unrecorded "
+            "verification is a silent pass one step later.",
+        )
     print(
         f"echo verified: {args.dimension} reviewed {subject['diff_bytes']} bytes "
         f"at head {subject['head_oid']} (range {subject['range']})"
@@ -1159,13 +1130,17 @@ def cmd_record_subject(args: argparse.Namespace) -> int:
     ``docs/review_notes/<ISSUE>.md``. The block is rendered from the receipt a
     PASSING ``delegate`` left behind, never recomputed here: a self-attesting
     block is byte-identical whether the echo gate passed, was rejected, or
-    never ran, so it cannot be the counter-evidence AC-5 asks for.
-
-    The notes live in the BRANCH WORKTREE, not in whatever checkout the
-    command happened to be invoked from — the same CWD-dependence this issue
-    exists to remove. An existing block is REPLACED rather than refused: the
-    review skill commits and pushes these notes, which advances the head, so
+    never ran. An existing block is REPLACED rather than refused, because the
+    review skill commits and pushes these notes — which advances the head, so
     refusing a stale block would wedge every second review cycle.
+
+    The notes live in the checkout ``collect`` RESOLVED — the branch worktree,
+    or the main work tree ``_resolve_worktree`` falls back to (a fork PR, or a
+    re-review after ``wt_cleanup.sh``) — never whatever checkout the command
+    was invoked from, which is the CWD-dependence this issue removes. The
+    fallback is NAMED on stdout (``worktree_source=``): step 6 commits only
+    the branch worktree, so a block landing in the main checkout would be
+    missing from the PR with nothing saying where it went.
     """
     subject = collect_subject(args.pr, Path.cwd())
     root = Path(subject["worktree_path"])
@@ -1207,23 +1182,18 @@ def cmd_record_subject(args: argparse.Namespace) -> int:
             lines.append("")
         lines.extend(block)
     updated = "\n".join(lines) + "\n"
+    # Validate the CANDIDATE first, so a refusal leaves the file byte-untouched.
+    _require_one_agreeing_block(notes, updated, subject)
     if updated != text:
         _write_notes(notes, updated)
+    # Then verify what landed rather than what was intended.
+    _require_one_agreeing_block(notes, _read_notes(notes), subject)
 
-    # Verify what landed rather than what was intended.
-    reread = _parse_recorded_subject(_read_notes(notes))
-    if not _agrees(reread, "diff_bytes", str(subject["diff_bytes"])) or not _agrees(
-        reread, "head_oid", subject["head_oid"]
-    ):
-        raise _refuse(
-            "subject-incomplete",
-            f"wrote the counter-evidence block to {notes} but could not read "
-            "both values back",
-        )
     print(
         f"counter-evidence recorded in {notes}: "
         f"diff_bytes={subject['diff_bytes']} head_oid={subject['head_oid']} "
-        f"verified_dimensions={','.join(dimensions)}"
+        f"verified_dimensions={','.join(dimensions)} "
+        f"worktree_source={subject['worktree_source']}"
     )
     return 0
 
