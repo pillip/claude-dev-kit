@@ -14,7 +14,7 @@
 ## Issue Progress
 | Issue | Status | Attempts | Last Error | Phase |
 |-------|--------|----------|------------|-------|
-| ISSUE-096 | doing | 2 | rework 2 IN FLIGHT: the one remaining High (per-dimension receipt binding) + 3 Medium + 4 Low + a scope trim that must shrink the diff. | implementing |
+| ISSUE-096 | doing | 2 | review 3 IN FLIGHT: re-verifying the per-dimension receipt binding, the 3 Mediums and the scope trim at `710092c`. | reviewing |
 | ISSUE-102 | backlog | 0 | - | backlog |
 | ISSUE-103 | backlog | 0 | - | backlog |
 
@@ -97,6 +97,62 @@ Three constraints the sub-task was given as hard limits rather than preferences:
 - **`KIT_REVIEW_GH_TIMEOUT` is kept, against the minimality finding.** Deleting the override to hard-code the 30s bound would reinstate the hard-coded-subprocess-timeout class this repo already learned (ISSUE-046/047), and review lesson 2 is fully satisfied for this knob. Kept surface, declared in the PR body.
 
 The nested-fence defect (a 4-backtick fence wrapping a 3-backtick fence re-opens the parser) is deliberately NOT fixed here: its fix belongs in `sprint_queue`'s shared helper so both consumers inherit it, which is a shared-contract change with no AC in this issue. It needs its own carrier.
+
+## Rework 2 — landed at `710092c`; review 3 dispatched (2026-11-02)
+
+Rework 2 pushed and verified by team-lead independently rather than on narration, because the developer sub-agent may still have been finalising its own report when this iteration began.
+
+- Branch tip moved `47ad48b` -> **`710092c`** ("fix(review): bind delegate's read-back to its own dimension; gate the binding at the point of use"). Worktree **clean, 0 dirty files**, so the tree under review is the committed one. PR #147 `OPEN` / not draft / `MERGEABLE`, `headRefOid` equal to the branch tip.
+- **The scope trim is real, verified mechanically rather than from the insertion delta.** At `47ad48b` the payload carried `"base_oid": base_oid` and `"head_ref": f"gh:pr/{pr}#headRefOid"` (`scripts/review_context.py:722-723`). At `710092c` both are gone from the payload; `base_oid` survives only as a local in `_resolve` feeding `merge-base` and `range`, which is the consumer it was supposed to have, and `head_ref` appears nowhere in `scripts/`. The key-set test's forbidden set grew to `{"merge_base", "head_ref", "base_oid"}` — which is exactly the fix review 2 asked for, since that test previously passed with an unread field still present.
+- **Diff sizes re-measured like-for-like.** Product diff (excluding the reviewer's own `docs/review_notes/ISSUE-096.md`): **167453 bytes / 9 headers / sha256 `4c73e35a0bbe40c7...`**, down from 169229 / 7 — a real shrink of 1776 bytes below the target. The header count rose 7 -> 9 because the checkpoint-assertion Medium added `scripts/verify_checkpoint.py` and `tests/test_verify_checkpoint.py` to the product surface, so the shrink absorbed two new files rather than being bought by deleting them.
+- **Gate subject for review 3, measured by team-lead and then confirmed by the gate's own `collect`:** full `base..head` = **200322 bytes / 10 headers / sha256 `e75fc65b5ab832df...`**, range `b4b7f13...710092c`. The full figure now exceeds the product figure because the notes artifact is committed as of `47ad48b`; at `7e3d5f9` the two coincided, which is why review 2 saw one number. Review 3's reviewer was given NO numbers and asked to measure its own — a pasted digest is the one remaining way past this gate.
+- **AC-4 dogfooded again on the live repository.** `collect --pr 147` driven with CWD at the **main checkout** resolved `worktree_source=branch-worktree` and 200322 bytes — the exact input that yielded zero bytes on four prior reproductions.
+
+Review 3 dispatched to one reviewer sub-task at `opus`, scoped to re-verification with five priorities: the per-dimension binding probed in the **disarm** direction through the real CLI (lesson 16, seventh observation); the exit-1-only-from-computed-empty invariant re-established across review 2's probe matrix; the three Mediums at their named failure signatures; the test trim checked for lost mutant killers (M19's FIFO hang pair and M22's write-half symlink defence); and the subject binding turned on this review itself. Two measurement demands were added that review 2 did not carry:
+
+- **The trimmed prose made a new claim that has to be measured.** Step 3.1(a) deleted the enumerated reason list and now asserts stderr "names `reason=` *and its remedy*". That relocates review 1's finding into stderr, so stderr has to deliver it — `worktree-path-missing` must still name `git worktree prune`.
+- **The new checkpoint assertion discloses its own blind spot, and a disclosed residual is a CLAIM.** `_review_subject_bound` triggers on the presence of a receipt, so a delegated review that skipped the binding entirely leaves no receipt and passes. The reviewer was asked to measure which inputs can suppress the trigger (noting the helper defaults `KIT_RUN_ID` to `review-<issue>`), and to report whether a stronger trigger exists in **existing** surface — `decide` already knows which dimensions it routed `delegated` — without implementing it. Whether that residual is a design limit or an unclosed gap is the question that decides the severity.
+
+The predecessor's escalation condition is carried forward unchanged and is binding: **if review 3 still shows a High, ISSUE-096 goes to `waiting` / `review-rework` and stops for a human. No third rework.**
+
+## Rework 2 — a SECOND team-lead instance is live on ISSUE-096 (concurrency hazard, measured)
+
+**Two team-lead instances were dispatched for this issue and both acted on it.** This instance dispatched the rework-2 `developer` sub-task that produced `710092c`; while that sub-task was finalising, a second instance measured the same tip, wrote the section above, and **dispatched its own review 3**. Established by measurement, not inference:
+
+- Every digest in the section above is exact — full `b4b7f13...710092c` = 200322 bytes / 10 headers / sha256 `e75fc65b5ab832df…`, product sha256 `4c73e35a0bbe40c7…` — so the writer measured this tree rather than narrating. It is a competent peer, not a stray write.
+- The progress row had been set by this instance to `implementing` / "rework 2 IN FLIGHT" and was found rewritten to `reviewing` / "review 3 IN FLIGHT … at `710092c`", referencing an oid that did not exist when this instance last wrote.
+- The review is **running**, not merely dispatched: `.worktrees/issue-ISSUE-096-bind-review-diff/.claude/runs/unattributed.jsonl` took fresh `gates_degraded_path_used` writes at 23:13, one minute before this check, and `docs/.review/*` plus the notes file still carry their 2026-10-31 review-2 mtimes — a reviewer is executing the suite in that worktree right now.
+
+**This instance therefore declined to dispatch a second review 3, and declined to ship.** Both would have damaged the artifact under review rather than merely duplicated effort:
+
+- Two reviewers in one worktree both re-synthesize `docs/review_notes/ISSUE-096.md` and both run `record-subject`. The second write lands a second `## Review Subject` block and the gate then refuses `subject-duplicate-block` — "two records cannot both be THE record". The duplicate-block wedge that review 1 found and rework 1 fixed would have been re-created by the pipeline itself, on the PR that exists to fix it.
+- Shipping would have run `wt_cleanup.sh` on a worktree a live reviewer is reading, and that is **ISSUE-091's exact mechanism**: the local delete fails while the worktree still holds the branch, the cascade aborts the remote delete, and the remote ref is orphaned. Merging a PR whose blocking review is still executing is the fail-open this sprint exists to remove, arrived at from the orchestration side.
+- Both instances pushing to `issue/ISSUE-096-bind-review-diff` invites a non-fast-forward race, and no-force-push leaves no clean recovery.
+
+**Ownership must be resolved before ISSUE-096 advances.** One instance should own the review-3 verdict and the ship decision; this one yields to the instance already holding the review, having completed and verified the rework. If that instance does not return a verdict, the recovery is to re-dispatch review 3 **once**, after confirming no reviewer is live in the worktree and that `docs/review_notes/ISSUE-096.md` carries exactly one subject block.
+
+### Rework 2 verification by this instance — complementary, and not reproducible after the fact
+
+Recorded because two of these checks had to be set up BEFORE the sub-task ran and cannot be re-created from the finished tree:
+
+- **AC-7 non-modification proved against a pre-recorded baseline.** The three protected files' git blob OIDs were captured from `origin/main` *before dispatch* and compared after: `tests/test_review_context.py` `30d7c4ad…`, `tests/test_review_delegation_guard.py` `745a76be…`, `tests/test_subagent_skill_grant.py` `15498a54…` — identical, and all three absent from the diff. A sha256 printed by the agent under review cannot satisfy this check; a pre-recorded OID can.
+- **The shrink target was pinned before the rework**, which is what makes "it shrank" checkable: 169229 product bytes / 7 headers at `47ad48b`, 167453 / 9 at `710092c` — 1776 bytes below the bound while absorbing two new files the checkpoint fix required.
+- **Module suites re-run by this instance**: 266 passed = 121 (`test_review_subject_binding.py`) + 145 (`test_verify_checkpoint.py`), matching the sub-task's claimed counts exactly; the new per-dimension disarm test was also run in isolation and passes.
+- **The High's fix is the per-dimension one**, read from the committed tree rather than the report: `verified = _require_verification(...)` then `if args.dimension not in verified: raise _refuse("verification-missing", …)`, the refusal naming which dimensions *were* verified. `head_ref` and `base_oid` are gone from the payload. The exit-code invariant is now a real check — `(exit_code == 1) != reason.startswith("empty-diff-")` raises `ValueError` — not a docstring claim.
+- `docs/review_notes/ISSUE-096.md` is **byte-unchanged** against `47ad48b`: the implementer did not touch the artifact its reviewer judges.
+- The red evidence is the part worth keeping: the new test, run against the unfixed code, produced a **fourth independent reproduction** of the High as its own failure message (`echo verified: security reviewed 810 bytes …`, `assert 0 == 2`) while the premise assertion above it confirmed the run file held only `review_delegated_to_code_review`. Eleven tests were red before the fixes.
+- Disarm matrix **22 -> 27 mutants, zero survivors**, re-measured on the final tree. M12 now has **two** independent killers — it had one, which is why the vacuous read-back survived rework 1.
+
+### Two items review 3 must weigh, whichever instance renders the verdict
+
+1. **~448 test-file lines changed beyond the named trims.** The sub-task disclosed this rather than letting it pass: the named trims (~195 lines) could not offset what six fixes add, so it also compressed restated narrative and normalised the test module's docstrings. It claims no test, assertion, validation, error path or security control was removed — a claim a shrink constraint actively incentivises, so it must be measured, not accepted. The shrink is only honest if nothing load-bearing paid for it.
+2. **The new checkpoint's FAIL direction was never probed on the real tree.** It required transiently removing the subject block from the committed notes, which was prohibited and which the permission system blocked; it is pinned by unit test only. A gate verified in the arm direction alone is precisely the defect this rework exists to remove, so that direction needs a fixture probe.
+
+### Decisions recorded instead of implemented — each needs a carrier
+
+- **The nested-fence defect is NOT fixed** (a 4-backtick fence wrapping a 3-backtick one lets the inner fence re-open the parser, exposing a heading inside an illustration). The fix belongs in `sprint_queue`'s shared fence helper so both consumers inherit it — a shared-contract change for a new caller class, with no AC in this issue. Every wedge case is fail-CLOSED today, so nothing false is ever recorded. **Needs its own issue.**
+- **The echo-gate receipt still lives inside the worktree under review**, so anything executing there during a review — including the PR's own tests and hooks — could append a well-formed receipt. Moving it out of tree or binding it with a per-run MAC is a design change with no AC. The docstring's disclosed residual WAS corrected to name the real writer set, which was the finding's own stated minimum. **Needs its own issue.**
+- `cmd_emit`'s `Path.cwd()` anchor was left alone and the degradation event fixed in the skill instead (its contract is pinned by ISSUE-066 tests AC-7 forbids touching); refusing the `main-checkout` write was declined because no token in the closed vocabulary fits a legitimate fallback, so the success line now prints where the block went; `KIT_REVIEW_GH_TIMEOUT` was kept and declared as bucket-C surface rather than deleted, because hard-coding that bound would reinstate a defect class this repo already learned (ISSUE-046/047).
 
 ## Discovered Issues
 - [iter 1] **ISSUE-106 filed** (`Manual: true`, P1, Depends-On ISSUE-096) — ISSUE-096's AC-6 split out as a sibling, exactly as ISSUE-096's own team-lead note at filing directs. AC-6 needs a live main-session, non-sub-task `/review` run; every sprint-pipeline context IS a sub-task, so the measurement is structurally unreachable from automation and cannot be dispatched by an iteration. Applied by team-lead under `registry_edit.sh` (planner drafted the content and has no `Bash` — see the ISSUE-074 counter-instance row below). Adds zero new `validate_issues.py` violations (15 pre-existing, 15 after; one AC was reworded from an em-dash to a comma before `when` to satisfy the GWT pattern).
