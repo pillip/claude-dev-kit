@@ -45,6 +45,24 @@ worktree still yields ``tests/test_branch_feature.py`` and still attributes.
 The refusal is fail-CLOSED and its message names both the scope and whatever the
 runner blamed, so the case is diagnosable from the gate's own output.
 
+**SPEC-103 bounds what a green verdict means (``docs/specs/SPEC-103.md``).**
+Attribution by stdout parsing is **declined**: five independent writers forge a
+``FAILED <in-scope path>`` line, three of them ordinary project configuration
+(``conftest``'s ``pytest_unconfigure``, an ``atexit`` handler, ``os.write(1)``
+from one), and they write AFTER pytest's own reporter has finished — so no parse
+position is a fixed point. What a green ``implement/red`` licenses is only:
+
+> a test-runner invocation whose arguments were the branch's own changed test
+> files exited non-zero, and the exit code was not one of the measured no-run
+> codes.
+
+Attribution survives as an additional **refusal filter** only. It is monotone —
+it can remove a PASS, never add one beyond the declared property — so forging it
+buys nothing. The gate's rendered output must therefore not claim a branch test
+failed; the classes added below pin that, and pin the four over-refusals
+SPEC-103 removes (forced colour, ``--no-summary``, a non-``main`` default
+branch, and a polyglot repo's Python-only delta).
+
 Coverage layers:
 
 * ``TestRedScopeRealConsumer`` / ``TestRedAttributionRequired`` /
@@ -163,22 +181,23 @@ def probe_repo(tmp_path_factory):
 
     worktrees: dict[str, Path] = {}
     # (name, issue number, fork point, tests/test_branch_feature.py source,
-    #  pyproject override or None)
+    #  pyproject override or None, extra files or None)
     configs = (
-        ("arm", "901", green_base, fails, None),
-        ("disarm", "902", red_base, passes, None),
-        ("both", "903", red_base, fails, None),
+        ("arm", "901", green_base, fails, None, None),
+        ("disarm", "902", red_base, passes, None, None),
+        ("both", "903", red_base, fails, None, None),
         # A project whose own addopts suppress pytest's short summary. Measured:
         # `addopts = "-rN"` prints no `FAILED <nodeid>` line at all, so per-file
         # attribution only survives because the verifier requests `-rfE` itself.
         ("quiet", "904", green_base, fails,
-         '[tool.pytest.ini_options]\naddopts = "-rN"\n'),
+         '[tool.pytest.ini_options]\naddopts = "-rN"\n', None),
         # F1-c: exit 1 from a COVERAGE threshold, with zero test failures. The
         # branch's own test passes and covers nothing, so the scoped run prints
         # `1 passed` and `FAIL Required test coverage of 50% not reached` and
         # exits 1. Measured pre-fix: certified as RED.
         ("cov", "905", green_base, passes,
-         '[tool.pytest.ini_options]\naddopts = "--cov=src --cov-fail-under=50"\n'),
+         '[tool.pytest.ini_options]\naddopts = "--cov=src --cov-fail-under=50"\n',
+         None),
         # F1-b: the project's own addopts inject an extra test PATH, so the
         # scoped run collects `extra_tests/` too. The branch's own test passes
         # and the pre-existing unrelated one there fails — AC-1's defect,
@@ -186,7 +205,7 @@ def probe_repo(tmp_path_factory):
         # Measured pre-fix: certified as RED with "per-file attribution
         # unavailable".
         ("addopts_path", "906", green_base, passes,
-         '[tool.pytest.ini_options]\naddopts = "extra_tests"\n'),
+         '[tool.pytest.ini_options]\naddopts = "extra_tests"\n', None),
         # Item 3: the exit-5 route that actually reproduces. The project's own
         # addopts DESELECT the branch's test, so the scoped run collects it and
         # evaluates nothing: `1 deselected`, exit 5.
@@ -194,15 +213,35 @@ def probe_repo(tmp_path_factory):
          "import pytest\n\n\n@pytest.mark.slow\n"
          "def test_branch_feature():\n    assert False  # implementation absent\n",
          "[tool.pytest.ini_options]\n"
-         "addopts = \"-m 'not slow'\"\nmarkers = [\"slow: marked slow\"]\n"),
+         "addopts = \"-m 'not slow'\"\nmarkers = [\"slow: marked slow\"]\n", None),
+        # H3: the project forces colour, so every summary line starts with an
+        # SGR escape and the ^-anchored parser matches nothing. Measured: a
+        # GENUINE RED was refused. `--color=no` on the command line overrides it.
+        ("colour", "908", green_base, fails,
+         '[tool.pytest.ini_options]\naddopts = "--color=yes"\n', None),
+        # Change 4: `addopts = "--no-summary"` removes the summary section AND
+        # the traceback, so no per-file oracle exists anywhere in the stream.
+        # Measured (8.3.4 and 9.0.3): stdout is `F ... [100%]` + `1 failed in
+        # 0.01s`, exit 1 — attribution is UNCOMPUTABLE, not computed-and-empty.
+        ("nosummary", "909", green_base, fails,
+         '[tool.pytest.ini_options]\naddopts = "--no-summary"\n', None),
+        # Change 6: a polyglot repo — `package.json` declares `scripts.test`
+        # AND the project is Python. The branch's delta is `.py` only, so the
+        # JS branch must not win; before this change there was no route to a
+        # RED pass at all for such a branch.
+        ("polyglot", "910", green_base, fails, None,
+         {"package.json": '{"name": "p", "version": "1.0.0", '
+                          '"scripts": {"test": "vitest run"}}'}),
     )
-    for name, num, base, test_src, pyproject in configs:
+    for name, num, base, test_src, pyproject, extra in configs:
         wt = root / f"issue-{num}-{name}"
         _git(repo, "worktree", "add", "-q", "-b", f"issue/ISSUE-{num}-{name}",
              str(wt), base)
         (wt / BRANCH_TEST).write_text(test_src)
         if pyproject:
             (wt / "pyproject.toml").write_text(pyproject)
+        for rel, content in (extra or {}).items():
+            (wt / rel).write_text(content)
         _git(wt, "add", "-A")
         _git(wt, "commit", "-q", "-m", "test: branch test")
         worktrees[name] = wt
@@ -210,15 +249,21 @@ def probe_repo(tmp_path_factory):
     return worktrees
 
 
-def _run_red_checkpoint(wt: Path, issue_id: str):
+def _run_red_checkpoint(wt: Path, issue_id: str, env_overlay: dict | None = None):
     """Invoke the real consumer from inside ``wt``.
 
     ``CLAUDE_PLUGIN_ROOT`` is cleared so ``checkpoint.sh`` resolves its kit root
     from its own location — i.e. the tree this test ships in, not an installed
-    plugin copy.
+    plugin copy. The colour vars are cleared unconditionally so a developer
+    shell that exports ``FORCE_COLOR`` cannot silently turn the control rows
+    into the forced-colour rows; ``env_overlay`` is how a test asks for them.
     """
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PLUGIN_ROOT"}
+    env = {
+        k: v for k, v in os.environ.items()
+        if k not in ("CLAUDE_PLUGIN_ROOT", "FORCE_COLOR", "PY_COLORS", "NO_COLOR")
+    }
     env["KIT_CHECKPOINT_TEST_TIMEOUT"] = "120"
+    env.update(env_overlay or {})
     return subprocess.run(
         [
             "bash", str(KIT_ROOT / "scripts" / "checkpoint.sh"),
@@ -248,7 +293,13 @@ class TestRedScopeRealConsumer:
         assert UNRELATED_TEST not in out, out
 
     def test_arm_branch_tests_fail_names_the_failing_branch_file(self, probe_repo):
-        """AC-2: branch tests genuinely fail → exit 0, naming the branch file."""
+        """AC-2: branch tests genuinely fail → exit 0, naming the branch file.
+
+        AC-2 asks the output to name which of the branch's own test files
+        failed. SPEC-103 bounds HOW that may be said: the runner's summary
+        blamed the path, and that is heuristic rather than established. The
+        path is still named; the claim is not made.
+        """
         r = _run_red_checkpoint(probe_repo["arm"], "ISSUE-901")
         out = r.stdout + r.stderr
 
@@ -257,7 +308,7 @@ class TestRedScopeRealConsumer:
         assert BRANCH_TEST in out, out
         # Fixture pin: a missing-pytest or empty-run child would exit non-zero
         # too, so assert the attribution actually came from a test failure.
-        assert "failing: " in out, out
+        assert "summary blamed" in out, out
 
     def test_arm_still_passes_when_an_unrelated_test_also_fails(self, probe_repo):
         """AC-3: branch tests fail AND an unrelated test fails → still exit 0.
@@ -283,7 +334,7 @@ class TestRedScopeRealConsumer:
         out = r.stdout + r.stderr
 
         assert r.returncode == 0, f"expected RED pass, got {r.returncode}:\n{out}"
-        assert f"failing: {BRANCH_TEST}" in out, out
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
 
 
 # ── Unit pins: the run must be argv-scoped ───────────────────────────
@@ -1133,3 +1184,572 @@ class TestRedHazardNote:
         assert "DESELECT the branch's test" in note, note
         assert "-m 'not slow'" in note, note
         assert "1 deselected" in note, note
+
+
+# ── SPEC-103: a green verdict must not overstate what it proves ──────
+
+
+class TestPassLineDoesNotOverstate:
+    """SPEC-103 — delete the claim, keep the fact.
+
+    The old PASS line read ``— failing: <path>``, which asserts an attribution
+    as established. Measured (SPEC-103's Context table, re-run in this
+    worktree on pytest 8.3.4 and 9.0.3): five independent writers forge a
+    column-0 ``FAILED <in-scope path>`` line, and three of them —
+    ``conftest``'s ``pytest_unconfigure``, an ``atexit`` handler, and
+    ``os.write(1)`` from one — write AFTER pytest's own reporter has finished,
+    so neither the first nor the last ``short test summary info`` header is a
+    fixed point. The property is DECLINED; the gate may report what the
+    summary SAID, flagged as heuristic, and nothing more.
+    """
+
+    def test_pass_line_reports_the_summary_not_ground_truth(self, probe_repo):
+        r = _run_red_checkpoint(probe_repo["arm"], "ISSUE-901")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"expected RED pass, got {r.returncode}:\n{out}"
+        # The deleted claim, named by the exact bytes that were removed, so a
+        # revert of this hunk cannot satisfy the test (mutation-tested absence).
+        assert "failing: " not in out, out
+        # What replaces it: the fact, the hedge, and the citation.
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
+        assert "heuristic" in out.lower(), out
+        assert "docs/specs/SPEC-103.md" in out, out
+
+    @pytest.mark.parametrize("result,label", [
+        (("127", "x: command not found"), "runner-not-executable"),
+        (("5", ""), "evaluated-nothing"),
+    ])
+    def test_refusals_say_scope_requested_not_scope_was(
+        self, tmp_path, capsys, result, label
+    ):
+        """The gate REQUESTS a scope and cannot ENFORCE one, so it may not
+        assert the scope was applied.
+
+        Measured route it cannot enforce (SPEC-103, inside the declared
+        boundary): a directory named ``-p no:cacheprovider`` — a path the kit's
+        own ``test_dir_pattern`` accepts — is consumed by pytest as a flag,
+        after which the whole suite runs while this line still reports the
+        scope that was asked for.
+        """
+        rc, stderr = result
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs, _mock_run(int(rc), stderr=stderr)
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False, label
+
+        out = capsys.readouterr().out
+        assert "Scope requested:" in out, out
+        assert "Scope was:" not in out, out
+
+    def test_computed_empty_refusal_names_no_cause_it_cannot_distinguish(
+        self, tmp_path, capsys
+    ):
+        """The two stated causes were wrong on the route that printed them.
+
+        The old text read "e.g. a coverage threshold in the project's addopts,
+        or pytest not being installed". It was printed on the forced-colour
+        route too, where neither is the cause (measured: ``FORCE_COLOR=1``
+        alone, exit 1, a genuine failure, zero attributions). A diagnosis the
+        gate cannot distinguish is worse than none, so both are deleted.
+        """
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs,
+                # Header PRESENT, nothing blamed: computed, and empty.
+                _mock_run(1, stdout="=== short test summary info ===\n"
+                                    "1 passed in 0.01s\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        out = capsys.readouterr().out
+        assert "inconclusive" in out, out
+        # Both removed causes, by the bytes that were removed.
+        assert "coverage threshold" not in out, out
+        assert "not being installed" not in out, out
+
+
+# ── H3: forced colour must not refuse a genuine RED ──────────────────
+
+
+class TestForcedColourStillPasses:
+    """H3 — an over-refusal that fails CLOSED is still an over-refusal.
+
+    ``_PYTEST_SUMMARY_RE`` is anchored at ``^`` on raw bytes, and pytest
+    forces SGR markup when ``addopts`` carry ``--color=yes`` **or** when the
+    inherited environment sets ``FORCE_COLOR`` / ``PY_COLORS`` — both of which
+    a number of CI runners and developer shells set by default. Measured in
+    this worktree, pytest 8.3.4 and 9.0.3, genuine failing branch test::
+
+        control (no colour forced)          exit=1 header=True  blamed=[branch]
+        FORCE_COLOR=1                       exit=1 header=True  blamed=[]
+        PY_COLORS=1                         exit=1 header=True  blamed=[]
+        FORCE_COLOR=1 + --color=no          exit=1 header=True  blamed=[branch]
+        PY_COLORS=1  + --color=no           exit=1 header=True  blamed=[branch]
+        addopts="--color=yes"               exit=1 header=True  blamed=[]
+        addopts="--color=yes" + --color=no  exit=1 header=True  blamed=[branch]
+
+    A command-line ``--color=no`` wins over all three vectors.
+    """
+
+    @pytest.mark.parametrize("var", ["FORCE_COLOR", "PY_COLORS"])
+    def test_colour_forced_by_the_environment_still_passes(self, probe_repo, var):
+        """The vector that needs no project cooperation at all."""
+        r = _run_red_checkpoint(probe_repo["arm"], "ISSUE-901", {var: "1"})
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"{var} refused a genuine RED:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
+
+    def test_colour_forced_by_the_project_addopts_still_passes(self, probe_repo):
+        r = _run_red_checkpoint(probe_repo["colour"], "ISSUE-908")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"addopts --color=yes refused a genuine RED:\n{out}"
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
+
+    def test_pytest_argv_carries_color_no(self, tmp_path):
+        """The structural pin: the override is requested, not hoped for."""
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs,
+                _mock_run(1, stdout=f"=== short test summary info ===\n"
+                                    f"FAILED {BRANCH_TEST}::test_branch_feature - x"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        assert "--color=no" in runs[0], runs[0]
+        # Position: it must precede the scope paths, which are splatted last.
+        assert runs[0].index("--color=no") < runs[0].index(BRANCH_TEST), runs[0]
+
+
+# ── Change 4: computed-and-empty vs could-not-compute ────────────────
+
+
+class TestSummarySectionSuppressed:
+    """`_summary_section_suppressed` — the discriminator, at the seam.
+
+    Measured, and this is the measurement that decides the shape: the
+    ``short test summary info`` header is **absent** both when ``--no-summary``
+    suppresses the section *and* when there is simply nothing to report. The
+    second case is F1's measured-good ``--cov-fail-under`` route (exit 1,
+    ``1 passed``, zero failures) which MUST keep being refused. So header
+    absence alone cannot mean "could not compute"; the counts line is consulted
+    too.
+    """
+
+    # Verbatim child stdout, pytest 8.3.4, `addopts = "--no-summary"` with a
+    # genuinely failing branch test.
+    NO_SUMMARY = (
+        "F                                                                "
+        "        [100%]\n1 failed, 2 warnings in 0.01s\n"
+    )
+    # Verbatim child stdout prefix, pytest 8.3.4, `--cov-fail-under=50` with a
+    # PASSING branch test: header absent, and nothing failed.
+    COV_EMPTY = (
+        ".\nERROR: Coverage failure: total of 0 is less than fail-under=50\n"
+        "                                                                 "
+        "        [100%]\n"
+        "FAIL Required test coverage of 50% not reached. Total coverage: 0.00%\n"
+        "1 passed in 0.01s\n"
+    )
+
+    def test_no_summary_output_is_uncomputable(self):
+        assert vc._summary_section_suppressed(self.NO_SUMMARY) is True
+
+    def test_coverage_only_failure_is_computed_and_empty(self):
+        """The paired absence: F1's half must not be swallowed by this."""
+        assert vc._summary_section_suppressed(self.COV_EMPTY) is False
+
+    def test_present_header_is_never_uncomputable(self):
+        out = (
+            "=== short test summary info ===\n"
+            f"FAILED {BRANCH_TEST}::test_branch_feature - assert False\n"
+            "1 failed in 0.01s\n"
+        )
+        assert vc._summary_section_suppressed(out) is False
+
+    def test_empty_output_is_computed_and_empty(self):
+        """pytest not installed: empty stdout, exit 1 — nothing ran, so this is
+        not "the oracle was suppressed"."""
+        assert vc._summary_section_suppressed("") is False
+
+    def test_collection_errors_count_as_reported_failures(self):
+        """`N errors` is the plural pytest emits; both forms must register."""
+        assert vc._summary_section_suppressed("2 errors in 0.03s\n") is True
+        assert vc._summary_section_suppressed("1 error in 0.03s\n") is True
+
+
+class TestNoSummaryProjectIsNotRefused:
+    """Change 4 at the real consumer, both directions of the discriminator.
+
+    ``-rfE`` on the command line overrides a project's ``-r`` setting but NOT
+    its ``--no-summary``; measured, such a project was refused on every genuine
+    RED. "Could not compute" falls back to the declared weaker property;
+    "computed and empty" still refuses.
+    """
+
+    def test_no_summary_genuine_red_passes_and_says_why_attribution_is_absent(
+        self, probe_repo
+    ):
+        r = _run_red_checkpoint(probe_repo["nosummary"], "ISSUE-909")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"--no-summary refused a genuine RED:\n{out}"
+        assert "PASS: RED phase" in out, out
+        # It must say attribution was unavailable, and name the knob.
+        assert "could not be computed" in out, out
+        assert "--no-summary" in out, out
+        assert "Scope requested:" in out, out
+        # And it must NOT claim a file was blamed, because none was.
+        assert "summary blamed" not in out, out
+
+    def test_the_two_header_absent_cases_are_told_apart(self, probe_repo):
+        """Both have no summary header; only one is "could not compute".
+
+        This is the conflation the change exists to remove, measured end to end
+        rather than at the seam.
+        """
+        suppressed = _run_red_checkpoint(probe_repo["nosummary"], "ISSUE-909")
+        empty = _run_red_checkpoint(probe_repo["cov"], "ISSUE-905")
+        s_out = suppressed.stdout + suppressed.stderr
+        e_out = empty.stdout + empty.stderr
+
+        assert suppressed.returncode == 0, s_out
+        assert "could not be computed" in s_out, s_out
+        assert empty.returncode != 0, e_out
+        # Route pin, not just polarity: this must be the computed-and-empty
+        # refusal, NOT the exit-4/5 "evaluated nothing" one, or the test would
+        # pass without exercising the discriminator at all.
+        assert "reported no test failure at all" in e_out, e_out
+        assert "could not be computed" not in e_out, e_out
+
+    def test_header_present_but_nothing_blamed_still_refuses(
+        self, tmp_path, capsys
+    ):
+        """F1's measured-good half, at the seam: do not infer the section's
+        availability from the blamed list being empty."""
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs,
+                _mock_run(1, stdout="=== short test summary info ===\n"
+                                    "1 failed in 0.01s\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        assert "inconclusive" in capsys.readouterr().out
+
+
+# ── H4: a non-main default branch must not block every RED ───────────
+
+
+@pytest.fixture(scope="module")
+def develop_default_repo(tmp_path_factory):
+    """The measured H4 shape: a repo whose default branch is ``develop``.
+
+    A bare origin with ``HEAD -> refs/heads/develop``, a fresh clone, an issue
+    worktree forked from ``origin/develop``, and the local ``develop`` branch
+    deleted — the ordinary state of a fresh clone that never checks the default
+    branch out. Measured in this worktree before the fix::
+
+        _default_branch() -> 'develop'
+          leg 1  merge-base HEAD develop            -> exit 128
+          leg 2  rev-parse --verify --quiet develop -> exit 1
+          => the delta reads as UNCOMPUTABLE and the repo can NEVER pass RED
+          fix: rev-parse --verify --quiet origin/develop -> exit 0
+          fix: merge-base HEAD origin/develop            -> exit 0
+          fix: delta against that merge-base             -> ['tests/test_new.py']
+    """
+    root = tmp_path_factory.mktemp("red-develop-probe")
+    origin = root / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "develop", str(origin)],
+                   check=True)
+
+    seed = root / "seed"
+    seed.mkdir()
+    _git(seed, "init", "-q", "-b", "develop")
+    _git(seed, "config", "user.email", "probe@example.com")
+    _git(seed, "config", "user.name", "Probe")
+    _git(seed, "config", "commit.gpgsign", "false")
+    (seed / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    (seed / "tests").mkdir()
+    (seed / "tests/test_base.py").write_text("def test_base():\n    assert True\n")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "base")
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "-u", "origin", "develop")
+
+    clone = root / "work"
+    subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
+    _git(clone, "config", "user.email", "probe@example.com")
+    _git(clone, "config", "user.name", "Probe")
+    _git(clone, "config", "commit.gpgsign", "false")
+
+    wt = root / "issue-920-develop"
+    _git(clone, "worktree", "add", "-q", "-b", "issue/ISSUE-920-develop",
+         str(wt), "origin/develop")
+    # The clone's own checkout must not hold a local `develop`, or the base
+    # would resolve and the measured shape would not be built.
+    _git(clone, "checkout", "-q", "--detach", "origin/develop")
+    _git(clone, "branch", "-q", "-D", "develop")
+
+    (wt / "tests/test_new.py").write_text(
+        "def test_new_feature():\n    assert False  # implementation absent\n"
+    )
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "test: branch test")
+
+    # Fixture pins: this really is the shape under test, not a repo in which
+    # `develop` happens to resolve.
+    assert subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", "develop"],
+        cwd=str(wt), capture_output=True,
+    ).returncode != 0, "fixture pin: local 'develop' must NOT resolve"
+    assert subprocess.run(
+        ["git", "merge-base", "HEAD", "develop"], cwd=str(wt), capture_output=True,
+    ).returncode != 0, "fixture pin: 'develop' must have no merge-base"
+    assert subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", "origin/develop"],
+        cwd=str(wt), capture_output=True,
+    ).returncode == 0, "fixture pin: 'origin/develop' must resolve"
+    return wt
+
+
+class TestNonMainDefaultBranch:
+    """H4 — the remote-tracking form is preferred before refusing.
+
+    Scoped to the red gate on purpose: ``_default_branch()`` has four other
+    callers and review lesson 8 requires a contract change to be scoped to the
+    new caller class with the legacy failure modes left pinned.
+    """
+
+    def test_develop_default_branch_passes_a_genuine_red(self, develop_default_repo):
+        r = _run_red_checkpoint(develop_default_repo, "ISSUE-920")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"a 'develop' default blocked a genuine RED:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert "tests/test_new.py" in out, out
+        # Paired absence: the uncomputable refusal must not be what passed.
+        assert "cannot compute" not in out, out
+
+    def test_genuinely_uncomputable_base_still_refuses(self, unresolvable_base_repo):
+        """The refusal must stay REACHABLE: no remote, no merge-base, no
+        resolvable base in either form."""
+        r = _run_red_checkpoint(unresolvable_base_repo, "ISSUE-911")
+        out = r.stdout + r.stderr
+
+        assert r.returncode != 0, out
+        assert "cannot compute" in out, out
+        # The message must name both forms it tried, or it misdiagnoses.
+        assert "origin/main" in out, out
+
+    def test_remote_form_is_resolved_before_the_delta_is_read(self, tmp_path, capsys):
+        """Ordering pin, not presence (review lesson 12).
+
+        The rescue must happen upstream of the delta read, exactly like F2's
+        hoist, or the delta is computed against a base the gate already knows
+        is wrong. Pinned by the ORDER of the recorded git argv: every probe of
+        ``origin/main`` precedes the first ``git diff --name-only``.
+        """
+        wt = _py_worktree(tmp_path)
+        calls: list = []
+
+        def run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt}\n")
+            # `main` resolves in neither leg; `origin/main` resolves in both.
+            if cmd[:2] == ["git", "merge-base"]:
+                return (_mock_run(0, stdout="deadbeef\n")
+                        if "origin/main" in cmd else _mock_run(128))
+            if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                return _mock_run(0) if "origin/main" in cmd else _mock_run(1)
+            if cmd[:2] == ["git", "diff"]:
+                return _mock_run(0, stdout=f"{BRANCH_TEST}\n")
+            if "pytest" in cmd:
+                return _mock_run(
+                    1,
+                    stdout="=== short test summary info ===\n"
+                           f"FAILED {BRANCH_TEST}::test_branch_feature - boom\n",
+                )
+            return _mock_run(0, stdout="")
+
+        with patch.object(vc, "_default_branch", lambda: "main"), \
+             patch.object(vc, "_run", side_effect=run):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        first_diff = next(
+            i for i, c in enumerate(calls) if c[:3] == ["git", "diff", "--name-only"]
+        )
+        origin_probes = [i for i, c in enumerate(calls) if "origin/main" in c]
+        assert origin_probes, calls
+        assert max(origin_probes) < first_diff, calls
+        # And the delta is then computed against the fork point that form gave,
+        # not against `main` and not against the branch tip.
+        assert "deadbeef" in calls[first_diff], calls[first_diff]
+
+    def test_default_branch_helper_is_left_alone(self):
+        """The constraint, behaviourally: `_default_branch` keeps its contract.
+
+        It has four other callers, so the H4 fix lives in the red verifier. If
+        a future change moves the remote-tracking preference into the shared
+        helper, this fails — which is the point.
+        """
+        with patch.object(vc, "_run", side_effect=lambda cmd, **kw: _mock_run(1)):
+            assert vc._default_branch() == "main"
+
+
+# ── Change 6: a polyglot repo's Python-only delta ────────────────────
+
+
+class TestPolyglotRepoRoutesByTheBranchDelta:
+    """`has_js` alone is true for any repo whose `package.json` declares
+    `scripts.test`, which is ordinary in a Python repo with a JS frontend.
+    Such a branch, with a `.py`-only test delta, had no route to a RED pass at
+    all; the GREEN gate disagrees (`verify_implement_test` runs both runners).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+    def _polyglot_worktree(self, tmp_path: Path) -> Path:
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt.mkdir(parents=True)
+        (wt / "pyproject.toml").write_text("[tool.pytest]\n")
+        (wt / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        (wt / "tests").mkdir()
+        return wt
+
+    def test_python_only_delta_routes_to_pytest(self, tmp_path):
+        wt = self._polyglot_worktree(tmp_path)
+        (wt / BRANCH_TEST).write_text(
+            "def test_branch_feature():\n    assert False\n"
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs,
+                _mock_run(1, stdout="=== short test summary info ===\n"
+                                    f"FAILED {BRANCH_TEST}::test_branch_feature - x"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        assert len(runs) == 1, runs
+        assert any("pytest" in c for c in runs[0]), runs[0]
+        assert runs[0][:2] != ["npm", "test"], runs[0]
+
+    def test_js_delta_in_the_same_repo_still_routes_to_npm(self, tmp_path):
+        """The mis-run protection the JS branch exists for must still hold."""
+        wt = self._polyglot_worktree(tmp_path)
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs,
+                _mock_run(1, stdout="Tests:  1 failed, 1 total\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        assert len(runs) == 1, runs
+        assert runs[0][:2] == ["npm", "test"], runs[0]
+        assert not any("pytest" in c for c in runs[0]), runs[0]
+
+    def test_mixed_delta_still_routes_to_npm(self, tmp_path):
+        """A delta with BOTH extensions keeps the pre-change runner choice:
+        `has_js` wins, so a real JS repo's `.ts` files are never fed to pytest.
+        """
+        wt = self._polyglot_worktree(tmp_path)
+        (wt / BRANCH_TEST).write_text(
+            "def test_branch_feature():\n    assert False\n"
+        )
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\ntests/feature.test.ts\n", runs,
+                _mock_run(1, stdout="Tests:  1 failed, 1 total\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        assert runs[0][:2] == ["npm", "test"], runs[0]
+        assert BRANCH_TEST not in runs[0], runs[0]
+
+    def test_polyglot_python_delta_passes_at_the_real_consumer(self, probe_repo):
+        """Review lesson 16: the de-refusal, through the real consumer."""
+        r = _run_red_checkpoint(probe_repo["polyglot"], "ISSUE-910")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"polyglot repo blocked a genuine RED:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert BRANCH_TEST in out, out
+        # Paired absence: the old refusal must not be what we are reading.
+        assert "npm test can execute" not in out, out
+
+    def test_the_surviving_refusal_names_the_runners_it_detected(
+        self, tmp_path, capsys
+    ):
+        """`has_python` is no longer discarded, so the one refusal that stays
+        reachable here can say which runners the project declares.
+
+        Reachable shape: a Python-only project whose changed test files are all
+        JS, so the pytest branch is taken and its scope is empty. Measured:
+        pytest handed a `.ts` path exits 4, which is non-zero and would be a
+        fake RED, so the runner is never handed files it cannot execute.
+        """
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt.mkdir(parents=True)
+        (wt / "pyproject.toml").write_text("[tool.pytest]\n")
+        (wt / "tests").mkdir()
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs, _mock_run(4)
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        out = capsys.readouterr().out
+        assert runs == [], runs
+        assert "Runners detected in this project: pytest" in out, out
