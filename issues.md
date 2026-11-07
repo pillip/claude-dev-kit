@@ -903,7 +903,7 @@ Phase 2's Reference Anchor section is reduced from "5 cues to adopt + 3–5 to a
 - [ ] Literal quote presence: empty + interview not skipped → fail with field named.
 - [ ] Literal quote presence: empty + interview skipped → pass with skip flag honored.
 - [ ] Verbatim render check: literal_quote absent from all prototype HTML → fail with screen names suggested.
-- [ ] ISSUE-010 specificity-check integration: literal_quote counted as 1 detail (not 0, not 2+) when present.
+- [ ] Specificity-check integration (ISSUE-010): literal_quote counted as 1 detail (not 0, not 2+) when present.
 
 #### Rollback
 Revert Phase 2 output spec, restore 5-cues template. Delete `literal_quote:` field validator and verbatim-render check. ISSUE-010's specificity check continues working without the literal-quote bonus (specificity still requires 3 domain-grounded details, just not bootstrapped by an explicit anchor).
@@ -4662,8 +4662,8 @@ The step-4f boundary gate can no longer be disarmed by a `Status:` value it does
 #### Tests
 - [ ] Nine-variant value/line-shape matrix on the harm-can-fire fixture -> none reports `not-running` with `valid: true`; each is refused or carries the new state plus a bounded stderr warning.
 - [ ] Bounded-echo case: a 10 000-char `Status:` value with non-printables -> stderr echo elided, stdout < 2 000 bytes.
-- [ ] ISSUE-078 AC-3 regression matrix (`planning` / `complete` / no `Status:` field / missing file) plus the terminal whitelist -> exit code and `valid` unchanged, full `roster_boundary` dict asserted by equality against explicit literals.
-- [ ] ISSUE-069 AC-6 byte-identity: `next-action` stdout + exit code equal to the pinned literal, `"roster_boundary"` absent from that output.
+- [ ] Regression matrix for ISSUE-078 AC-3 (`planning` / `complete` / no `Status:` field / missing file) plus the terminal whitelist -> exit code and `valid` unchanged, full `roster_boundary` dict asserted by equality against explicit literals.
+- [ ] Byte-identity for ISSUE-069 AC-6: `next-action` stdout + exit code equal to the pinned literal, `"roster_boundary"` absent from that output.
 - [ ] Structural-ambiguity matrix: zero `## Meta`, two `## Meta` (first `paused`, second `running`), each of the six ambiguous separators, and a `## ` sibling inside the window -> exit 3 with the cause named.
 - [ ] Reachability pin: separator check relocated behind the `hits`-non-empty branch -> all six separator cases fail.
 - [ ] Fence matrix, both directions: fenced boundary not honoured and both legs agree on the same bytes; a real boundary with a fence elsewhere still accepted; a fence-only boundary refused as outside `## Meta`.
@@ -5112,7 +5112,7 @@ Every blocking guard the kit already ships carries a disarm battery and a compos
 - [ ] Indirection-depth bound: a helper chain one level deeper than the pinned number is **not** credited, so the bound is load-bearing rather than incidental.
 - [ ] Docstring-and-comment-only mutation over the corpus: every gate verdict byte-identical.
 - [ ] Corpus no-regression replay of all 12 diffs against recorded expected verdicts, run once after the attribution repair alone and once after the widening.
-- [ ] ISSUE-081's AC-3 non-gate diff fixture: still 0 gates, so an ordinary PR pays nothing.
+- [ ] Non-gate diff fixture from ISSUE-081 AC-3: still 0 gates, so an ordinary PR pays nothing.
 - [ ] Consumer-level pin through `bash scripts/checkpoint.sh --skill review --phase gate-evidence` on the PR #127 fixture: exit 0.
 
 #### Rollback
