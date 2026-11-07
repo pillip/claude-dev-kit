@@ -93,6 +93,24 @@ GIT_QUERY_TIMEOUT = 10
 #: the emitted reasons. The /implement skill's step 0c reads it.
 INCOMPLETE_MARKER = "checkout enumeration INCOMPLETE"
 
+#: What a copy of ``INCOMPLETE_MARKER`` inside an UNTRUSTED value is replaced
+#: with. The ``Spec:`` value comes from a markdown registry (review lesson 5),
+#: and the marker above is a control signal step 0c substring-matches, so a
+#: value that embeds it would forge the signal. The value is redacted, never
+#: refused: refusing it would block an input the gate used to decide.
+MARKER_REDACTION = "[redacted: forged marker]"
+
+#: Standing disclosure appended to every ``proceed`` this gate issues for a
+#: ``Spec-Required`` issue (SPEC-102 D1). ``proceed`` means a regular file
+#: exists at the declared path inside some enumerated checkout — it does NOT
+#: mean the file is a valid SPEC. This gate never invokes ``validate_spec.py``.
+PRESENCE_ONLY_NOTICE = (
+    "bound: PRESENCE only — a regular file exists at the declared path in an "
+    "enumerated checkout. Contents were NOT validated (this gate never runs "
+    "validate_spec.py, so an empty file satisfies it) and provenance is NOT "
+    "established. See docs/specs/SPEC-102.md"
+)
+
 # Keyword signals that recommend (never auto-trigger) a spec.
 SIGNAL_KEYWORDS: list[tuple[str, str]] = [
     (r"\bAPI\b", "API surface"),
@@ -150,7 +168,17 @@ def scan_signals(issue_body: str) -> list[dict]:
 
 
 def _git(start: Path, *args: str) -> subprocess.CompletedProcess | None:
-    """Run a local git query in ``start``. ``None`` means it could not be made."""
+    """Run a local git query in ``start``. ``None`` means it could not be made.
+
+    ``OSError`` rather than ``FileNotFoundError``: a ``git`` that is MISSING is
+    only one of the ways the exec can fail, and the narrower class caught only
+    that one. A ``git`` that is present but unusable — mode-644, a directory of
+    that name, or a non-executable file format — raises ``PermissionError``
+    (EACCES) or a bare ``OSError`` (ENOEXEC) instead, and those escaped and
+    killed the gate with a traceback. ``OSError`` SUBSUMES both rather than
+    enumerating them, so this cannot be short by one the way the enumeration
+    it replaces was.
+    """
     try:
         return subprocess.run(
             ["git", "-C", str(start), *args],
@@ -158,7 +186,7 @@ def _git(start: Path, *args: str) -> subprocess.CompletedProcess | None:
             text=True,
             timeout=GIT_QUERY_TIMEOUT,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired):
         return None
 
 
@@ -181,7 +209,13 @@ def checkout_roots(start: Path) -> tuple[list[Path], str | None]:
     roots = [start]
     listed = _git(start, "worktree", "list", "--porcelain")
     if listed is None:
-        return roots, f"git could not be run (missing executable or >{GIT_QUERY_TIMEOUT}s)"
+        # "unusable" as well as "missing": the widened catch in ``_git`` now
+        # reaches a git that exists but cannot be executed, and this is the
+        # line that reports it.
+        return roots, (
+            f"git could not be run (missing or unusable executable, or "
+            f">{GIT_QUERY_TIMEOUT}s)"
+        )
     if listed.returncode != 0:
         inside = _git(start, "rev-parse", "--is-inside-work-tree")
         if inside is not None and inside.returncode != 0:
@@ -194,7 +228,23 @@ def checkout_roots(start: Path) -> tuple[list[Path], str | None]:
         if not line.startswith("worktree "):
             continue
         candidate = Path(line[len("worktree "):].strip())
-        if not candidate.is_dir():
+        try:
+            usable = candidate.is_dir()
+        except OSError:
+            # ``is_dir()`` RAISES on EACCES and ENAMETOOLONG — pathlib ignores
+            # only the not-found class — and git still PRINTS the record for a
+            # checkout whose parent was later made non-searchable. Unguarded,
+            # a path this gate had merely ENUMERATED killed the whole gate.
+            #
+            # The path is SKIPPED, exactly as a non-directory is. It
+            # deliberately does NOT mark the enumeration INCOMPLETE: that
+            # would turn a root nobody can read into a refusal of work that is
+            # otherwise fine. SPEC-102 D2 declares the resulting gap instead —
+            # an ``absent`` verdict is not a proof of absence even when the
+            # enumeration reports COMPLETE, and this skip is one of the two
+            # named reasons why.
+            continue
+        if not usable:
             continue
         resolved = candidate.resolve()
         if resolved in seen:
@@ -207,6 +257,31 @@ def checkout_roots(start: Path) -> tuple[list[Path], str | None]:
 def _declares_spec(value: str) -> bool:
     """True when a ``Spec:`` field names something rather than nothing."""
     return bool(value) and value.strip().lower() != "none"
+
+
+def _redact_marker(value: str) -> str:
+    """Neutralise ``INCOMPLETE_MARKER`` inside an UNTRUSTED value.
+
+    ``INCOMPLETE_MARKER`` is a control signal: step 0c substring-matches
+    ``reasons`` for it and, on a hit, reports an unresolved environment problem
+    and is instructed NOT to re-run ``/spec``. The ``Spec:`` value is untrusted
+    markdown-registry input (review lesson 5), so a value that embeds the
+    marker forges that signal into the ABSENT reason — misrouting a genuinely
+    missing SPEC and halting the pipeline while refusing its own remedy.
+
+    ``!r``-quoting does NOT close this, which is worth stating because it is
+    the fix a reader is most likely to re-derive. Measured: ``repr()`` escapes
+    quotes, backslashes and non-printables, not plain substrings, so a quoted
+    marker is still a marker to a substring grep.
+
+    The value is REDACTED, never refused. Refusing a value carrying the marker
+    would add a refusal — it would block an input the gate can decide perfectly
+    well — and this whole repair exists because over-refusals wedge the
+    pipeline. Applied at the single point where the reason-facing rendering is
+    derived (``spec_lookup``), never per call site: per-site application is the
+    mechanism by which this class recurred.
+    """
+    return value.replace(INCOMPLETE_MARKER, MARKER_REDACTION)
 
 
 def _contain(root: Path, spec_path: str) -> tuple[Path | None, bool]:
@@ -223,8 +298,18 @@ def _contain(root: Path, spec_path: str) -> tuple[Path | None, bool]:
     single-root version's bare ``.resolve().exists()``. The regular-file stat
     runs inside the same guard rather than at the call site: ``is_file()``
     raises on EACCES and ENAMETOOLONG (pathlib ignores only the not-found
-    class) where non-strict ``resolve()`` raises on neither, so outside the
-    guard a root this gate had merely ENUMERATED could kill the whole lookup.
+    class), so outside the guard a root this gate had merely ENUMERATED could
+    kill the whole lookup.
+
+    ``RuntimeError`` is in the tuple because non-strict ``resolve()`` is NOT
+    exception-free, which is what the previous wording got wrong. It does not
+    raise for EACCES or ENAMETOOLONG, so the stat was correctly identified as
+    the reachable half — but it raises ``RuntimeError`` on a symlink loop
+    (ELOOP), and ``RuntimeError`` is not an ``OSError``. Measured on this
+    repo's supported interpreters: 3.11.13 and 3.12.7 (both CI versions) raise
+    ``RuntimeError("Symlink loop from ...")``, 3.13.6 does not raise at all.
+    The docstring being accurate about two errnos and SILENT about the third
+    is precisely why the tuple looked complete and was not.
     """
     candidate = Path(spec_path)
     if candidate.is_absolute():
@@ -235,8 +320,9 @@ def _contain(root: Path, spec_path: str) -> tuple[Path | None, bool]:
         if root_resolved not in resolved.parents:
             return None, False
         return resolved, resolved.is_file()
-    except (OSError, ValueError):
-        # ValueError: an embedded NUL in the registry value.
+    except (OSError, ValueError, RuntimeError):
+        # ValueError:   an embedded NUL in the registry value.
+        # RuntimeError: a symlink loop, from non-strict resolve() on <= 3.12.
         return None, False
 
 
@@ -249,15 +335,27 @@ def _spec_field_from_other_checkout(
     signal detection stays bound to the registry copy the caller pointed at.
     The candidate registry is untrusted input: it must be a regular file, and
     an unreadable or undecodable one is skipped rather than raised.
+
+    The ``is_file()`` stat is INSIDE the guard, not one line above it. Outside
+    it, an unreadable sibling checkout DIRECTORY raised ``PermissionError``
+    uncaught and killed the gate on its primary ``auto_spec`` path, while an
+    unreadable sibling registry FILE was a deliberate silent skip — the two
+    differed only in which side of the ``try`` the stat landed on.
+
+    The guard must stay a regular-file check and must not be deleted in favour
+    of the handler alone: ``except OSError`` does not cover a non-regular file
+    that OPENS SUCCESSFULLY, so a FIFO at this path makes ``read_text()`` block
+    forever (measured at rc=124), and nothing here is bounded by
+    ``GIT_QUERY_TIMEOUT``.
     """
     read_resolved = read_from.resolve()
     for root in roots:
         if root.resolve() == read_resolved:
             continue
         candidate = root / registry_name
-        if not candidate.is_file():
-            continue
         try:
+            if not candidate.is_file():
+                continue
             other = parse_issue(candidate, issue_id)
         except (OSError, UnicodeDecodeError):
             continue
@@ -274,8 +372,16 @@ def spec_lookup(
 ) -> dict:
     """Resolve the issue's SPEC across every checkout of this repository.
 
-    Returns ``{declared, field_root, found_at, roots, incomplete, contained}``.
-    ``found_at`` is the checkout root whose tree holds the file, or ``None``.
+    Returns ``{declared, reason_value, field_root, found_at, roots, incomplete,
+    refused}``. ``found_at`` is the checkout root whose tree holds the file, or
+    ``None``.
+
+    ``declared`` is the raw value and is what PATH resolution uses.
+    ``reason_value`` is the same value rendered safe for the reason strings,
+    derived HERE exactly once so that every value-derived reason inherits the
+    neutralisation from one place. The two are kept apart deliberately:
+    redacting the value used for path resolution would change which file the
+    gate looks for, and neutralisation must not move a decision.
     """
     roots, incomplete = checkout_roots(issues_md_dir)
 
@@ -299,6 +405,12 @@ def spec_lookup(
 
     return {
         "declared": declared,
+        # THE single derivation. Every value-derived reason reads this key; no
+        # reason renderer interpolates ``declared`` directly. Because it is
+        # computed here, it is structurally UPSTREAM of the
+        # ``if lookup["incomplete"]:`` append that emits the genuine marker —
+        # an ordering the tests pin, not merely an arrangement (lesson 12).
+        "reason_value": _redact_marker(declared),
         "field_root": field_root,
         "found_at": found_at,
         "roots": roots,
@@ -308,6 +420,12 @@ def spec_lookup(
 
 
 def _spec_present_reason(spec_path: str, lookup: dict, issues_md_dir: Path) -> str:
+    """Render the ``proceed`` reason. ``spec_path`` is unused for the VALUE —
+    ``lookup['reason_value']`` is, so this renderer cannot be the one site that
+    forgets the neutralisation. In the legacy branch the two are the same
+    string by construction: ``legacy`` requires the field to have come from the
+    read registry, and ``_spec_field_from_other_checkout`` skips that root.
+    """
     read_root = issues_md_dir.resolve()
     legacy = (
         lookup["field_root"] is not None
@@ -315,10 +433,13 @@ def _spec_present_reason(spec_path: str, lookup: dict, issues_md_dir: Path) -> s
         and lookup["found_at"].resolve() == read_root
     )
     if legacy:
-        # Byte-for-byte the pre-ISSUE-102 string for the co-located caller class.
-        return f"Spec-Required=true and SPEC exists at {spec_path}"
+        # The pre-ISSUE-102 string for the co-located caller class, with the
+        # untrusted value quoted. Quoting is for LEGIBILITY only — it does not
+        # close the marker channel (see ``_redact_marker``) — and the prefix
+        # bytes are otherwise unchanged.
+        return f"Spec-Required=true and SPEC exists at {lookup['reason_value']!r}"
     return (
-        f"Spec-Required=true and SPEC exists at {lookup['declared']} "
+        f"Spec-Required=true and SPEC exists at {lookup['reason_value']!r} "
         f"(Spec: field read from {lookup['field_root']}; file found in "
         f"{lookup['found_at']}; {len(lookup['roots'])} checkout(s) consulted)"
     )
@@ -333,27 +454,34 @@ def _spec_missing_reasons(lookup: dict, sprint_mode: bool) -> list[str]:
     count = len(lookup["roots"])
     refused = lookup["refused"]
     roots = ", ".join(str(r) for r in lookup["roots"])
+    # Display reads ``reason_value``; the CONTROL test below reads ``declared``.
+    # Neutralisation renders a value safe to print and must never move a
+    # decision, so it is deliberately absent from the branch predicate.
+    value = lookup["reason_value"]
     if not _declares_spec(lookup["declared"]):
         # No checkout declares a SPEC: the pre-ISSUE-102 string, unchanged.
         reasons = [f"Spec-Required=true, SPEC missing, {tail}"]
     elif len(refused) == count:
         reasons = [
-            f"Spec-Required=true, Spec: value {lookup['declared']!r} REFUSED by "
+            f"Spec-Required=true, Spec: value {value!r} REFUSED by "
             f"containment in all {count} checkout(s) consulted ({roots}) — absolute "
             f"path, '..' escape, or symlink leaving the checkout, {tail}"
         ]
     else:
         reasons = [
-            f"Spec-Required=true, SPEC declared at {lookup['declared']} but absent "
+            f"Spec-Required=true, SPEC declared at {value!r} but absent "
             f"from all {count} checkout(s) consulted ({roots}), {tail}"
         ]
         if refused:
             # A refused traversal must never read as "simply absent".
             reasons.append(
-                f"Spec: value {lookup['declared']!r} was REFUSED by containment in "
+                f"Spec: value {value!r} was REFUSED by containment in "
                 f"{len(refused)} of {count} checkout(s) "
                 f"({', '.join(str(r) for r in refused)}) — it escaped that checkout"
             )
+    # The GENUINE marker is appended LAST, strictly after every value-derived
+    # reason above. The neutralisation therefore cannot strip it: it ran in
+    # ``spec_lookup``, before any of this. Moving it below this append would.
     if lookup["incomplete"]:
         reasons.append(
             f"{INCOMPLETE_MARKER} ({lookup['incomplete']}) — 'absent' above means "
@@ -400,6 +528,18 @@ def decide(
             reasons.append(
                 _spec_present_reason(issue["spec_path"], lookup, issues_md_dir)
             )
+            # The bound travels WITH the verdict (SPEC-102 D1). A gate that
+            # overstates itself manufactures false assurance, which is worse
+            # than one that admits a gap, and a disclosure only in the SPEC is
+            # not read by whoever acts on this `proceed`.
+            #
+            # Appended as its OWN element, never folded into the reason above,
+            # so every pre-existing reason string stays byte-identical and the
+            # co-located caller class keeps its pinned contract (lesson 8).
+            # Scoped to this branch alone: it is the only `proceed` that
+            # asserts a SPEC exists, so it is the only one with a claim to
+            # bound.
+            reasons.append(PRESENCE_ONLY_NOTICE)
             return _result("proceed", reasons, signals, issue, sprint_mode)
 
         reasons.extend(_spec_missing_reasons(lookup, sprint_mode))
