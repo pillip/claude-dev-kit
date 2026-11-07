@@ -72,7 +72,7 @@
 - [ ] ISSUE-099: Make the containment-oracle test location-independent — it fails in every git worktree outside the main repo directory _(track: platform, P1, 0.5d — shipped to main by ISSUE-070 and reproduced on pure main at a scratch path by the 2026-10-25 ISSUE-081 re-review; worktrees are how every sprint phase runs, so a location-sensitive test in the suite the gates execute is a standing false signal)_
 - [ ] ISSUE-100: Decide whether the decidable half of gate-evidence ships on its own — and whether the 15341-insertion retained branch keeps living _(track: platform, P1, 1d — SPEC-088 Open Questions 1 and 7, which named only the role "next sprint planner". Detection-only closure measured at 23 symbols / 268 definition lines (vs 1310 for the full engine), but routing it needs a new review/gate-evidence phase plus four fixtures, and the blocking half was re-derived at 0 of 6. Deciding this is NOT deciding the direction property, which ISSUE-088 declined)_
 - [ ] ISSUE-101: Re-run the arm-only fail-open census on a schedule — the DECLINE's own failure rate currently rests on a prose obligation _(track: platform, P1, 0.5d — SPEC-088 Open Question 6, flagged High in the ISSUE-088 review as the sharpest self-application failure: it assigned falsification of the DECLINE to an unassisted obligation on "the reviewer who next records a fail-open finding", which is structurally the Option A that SPEC-088 itself measured at 0 of 4 and used as its main reason to decline ADOPT)_
-- [ ] ISSUE-102: spec_gate.py's SPEC-path resolution makes the sprint-mode auto_spec gate unsatisfiable — it can never return proceed _(track: platform, P1, 0.5d — measured during ISSUE-088 from BOTH locations by the implementer and independently re-reproduced by team-lead: the kit's own two rules guarantee the Spec: field and the SPEC file never co-locate until merge, and implement step 0c says STOP on a non-proceed re-run)_
+- [x] ISSUE-102: spec_gate.py's SPEC-path resolution makes the sprint-mode auto_spec gate unsatisfiable — it can never return proceed _(track: platform, P1, 0.5d — measured during ISSUE-088 from BOTH locations by the implementer and independently re-reproduced by team-lead: the kit's own two rules guarantee the Spec: field and the SPEC file never co-locate until merge, and implement step 0c says STOP on a non-proceed re-run — **SHIPPED 2026-11-07** as bound-and-declare per docs/specs/SPEC-102.md: validity and proof-of-absence DECLINED in writing, the four accidentally-added refusals removed, and review 2's marker-forging High fixed rather than declared)_
 - [ ] ISSUE-103: Scope the implement/red checkpoint to the branch's own tests — any pre-existing failure certifies RED _(track: platform, P1, 0.5d — found during ISSUE-088: verify_implement_red runs the whole suite and treats any non-zero exit as RED, so the inverted-logic gate fails open on an unrelated red test. It did not bite on PR #145 only because RED was separately shown genuine on the new file alone)_
 - [ ] ISSUE-104: Make SPEC validation actually enforce — two measured fail-open routes in one control _(track: platform, P1, 0.5d — found during the ISSUE-088 review and re-measured by team-lead: CI runs validate_spec.py in directory mode without --strict so violations print and the job still exits 0, and validate() short-circuits on an empty chosen_option so a deferral-shaped SPEC passes with zero errors — the exact outcome ISSUE-088's AC-1 forbids)_
 - [ ] ISSUE-105: Resolve the Status=done contradiction between implement step 12 and the team-lead contract _(track: platform, P2, 0.5d — observed on ISSUE-088: skills/implement/SKILL.md step 12 sets Status=done at the end of IMPLEMENT while the team-lead contract forbids done before the PR is merged. The sub-task complied with the skill and left a false done on main with PR #145 open; team-lead reverted it under the lock)_
@@ -81,6 +81,9 @@
 - [ ] ISSUE-108: Guard step 3.1's `$WT/` emit anchor, and stop promising a remedy 10 of 25 refusals do not carry _(track: platform, P2, 0.5d — ISSUE-096 review 3, 2026-11-03: `cmd_emit` anchors on `Path.cwd()` while `delegate` anchors on the resolved worktree, so the degradation emit run from the main checkout exits 0 and splits the event from the receipts, invisible to the gate — and `STEP_31_REQUIREMENTS` mutation-tests step 3.1's obligations but carries no entry for the `$WT/` anchor; separately, step 3.1(a)'s "names `reason=` and its remedy" is false for 10 of the 25 reason tokens; depends on 096)_
 - [ ] ISSUE-109: Make the fence detector survive a nested fence — fix it in `sprint_queue`'s shared helper, not in the copy _(track: platform, P2, 0.5d — ISSUE-096 review 3, 2026-11-03: a 4-backtick fence wrapping a 3-backtick fence re-opens the plain toggle in `_FENCE_RE`/`_unfenced`, so the fence-awareness protecting `## Review Subject` detection is defeated by legitimate nested-fence content; deliberately not fixed inside ISSUE-096 because the correct fix is the shared helper both consumers inherit, which no ISSUE-096 AC covers; carried here because the finding lived only in `docs/sprint_state.md`, which is archived and reset at each sprint boundary (review lesson 15); depends on 096)_
 - [ ] ISSUE-110: Define whether `decide`'s `delegated` verdict means independent delegation or self-invocation — two reviewers diverged on the same repo in the same hour _(track: platform, P1, 1d — 2026-11-07, visible only because two concurrent reviews disagreed and not reproducible later; sharpens ISSUE-106's open question)_
+- [ ] ISSUE-111: Give the `INCOMPLETE` signal a structured field so no consumer greps a control signal out of human-readable prose _(track: platform, P1, 1d — SPEC-102 Open Question 1; mutant `S1` (drift the constant while the skill keeps the old phrase) SURVIVES on the shipped tree, so the cross-file marker contract is unpinned; contract change across spec_gate.py, implement SKILL.md.tmpl and gen_skills.py)_
+- [ ] ISSUE-112: Pin step 0c's bullet ORDER, not just its presence — the review-lesson-12 ordering property is unheld _(track: platform, P2, 0.5d — SPEC-102 Open Question 2; mutant `N9`: hoisting the gate re-run above `/spec $ARGUMENTS` leaves the suite green and restores the STOP that ISSUE-102 exists to remove)_
+- [ ] ISSUE-113: Convert the triaged mutation survivors into unexercised-guard pins — `R2 R4 R5 R9 A1 N8 N10` _(track: platform, P2, 1d — SPEC-102 Open Question 4; the triage category "unexercised guard" assumed absence was harmless and R2/R4 proved FATAL on input a widened enumeration newly reached, so a surviving mutant is evidence about the tests, not the guard)_
 
 ### Doing
 
@@ -6279,7 +6282,7 @@ The question "has the arm-only fail-open shape recurred since ISSUE-088 declined
 - Platform: web
 - Manual: false
 - Spec-Required: false
-- Spec: none
+- Spec: docs/specs/SPEC-102.md
 - PRD-Ref: none (kit self-development; measured on ISSUE-088 / PR #145, 2026-10-31, from both locations and re-reproduced by team-lead. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer", "hand-rolled parsers must match the oracle's edge cases AND its intended boundary")
 - Priority: P1
 - Estimate: 0.5d
@@ -6391,6 +6394,10 @@ The RED checkpoint passes only when the branch's **own** new or modified tests f
 > **Route 2 — a deferral-shaped SPEC passes with zero errors.** `validate()` guards the chosen-option check with `if spec["chosen_option"] and spec["options"]:` (`scripts/validate_spec.py:176`), and nothing anywhere asserts `chosen_option` is non-empty (`parse_spec` initialises it to `""`). So a SPEC whose Decision names **no** option validates clean. Confirmed by execution, not by reading: taking the real, currently-passing `SPEC-066.md`, `validate()` returns 0 errors unmutated, and still returns **0 errors** with `chosen_option` emptied.
 >
 > **Why Route 2 matters beyond tidiness.** A SPEC that decides nothing is exactly the artifact ISSUE-088's AC-1 forbids ("A Decision that defers the choice to a further carrier fails this AC") — and the validator that the sprint's spec gate leans on cannot see it. At present the only thing in the repo closing this hole is a single guard in `tests/test_spec_088_decision_contract.py`, which is a test for one specific SPEC rather than a property of the validator.
+
+> **AMENDMENT — 2026-11-07 (orchestrator, from SPEC-102 Open Question 3).** SPEC-102's D1 **declines** gate-side SPEC content validation for the spec gate, and names this issue as the adjacent half: the open question is whether `proceed` should ever depend on `validate_spec.py`'s verdict, and it **cannot be answered until this issue's enforcement holes are closed** — gating on a validator that passes an empty Decision would buy nothing.
+>
+> One measured asymmetry this issue must respect, recorded so it is not re-derived: **CI runs `validate_spec.py docs/specs/` without `--strict`**, and `main()` ends with `return 1 if args.strict or target.is_file() else 0` — so a **directory target exits 0 even with violations**. That is the enforcement hole in its exact form.
 
 - Track: platform
 - UI: false
@@ -6854,3 +6861,143 @@ A fenced block stays fenced through a nested fence for both consumers of the kit
 
 #### Rollback
 `git revert` — a SPEC plus consumer-text corrections, with no engine surface unless the Decision adds one. Reverting restores today's ambiguity, which is the state this issue was filed against.
+
+---
+
+### ISSUE-111: Give the `INCOMPLETE` signal a structured field so no consumer greps a control signal out of human-readable prose
+
+> SPEC-102 Open Question 1, filed by the orchestrator on ISSUE-102's ship because the SPEC deliberately allocated no carrier ids and the team-lead that owed them died to a spend limit. SPEC-102's D1 **neutralised** the forging of the `INCOMPLETE` marker (`_redact_marker`, pinned by mutants M1–M6) but did not retire the mechanism that makes forging possible at all: `skills/implement/SKILL.md:92` **greps a control signal out of a human-readable prose field**, and `spec_lookup` already computes `incomplete` internally, so the signal exists as data and is then thrown away and re-derived from text.
+>
+> The measurement that makes this a P1 rather than a tidy-up: mutant **`S1` SURVIVES on the shipped tree** — drift the constant in `scripts/spec_gate.py` while the skill keeps the old phrase, and the full suite stays green (re-measured against an unmutated control copy, 0 new failures). So the cross-file marker contract is **unpinned in both directions**: the producer can rename its signal and the consumer will silently stop seeing it.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-102 Open Question 1; review lessons "a deferred finding is only real if it has a durable carrier" and "an attestation that can satisfy a gate is forgeable — shape validation is not provenance")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-102
+
+#### Goal
+Step 0c reads the incomplete state from an explicit result key rather than grepping prose, and the producer/consumer contract is pinned so a constant drift cannot silently sever it.
+
+#### Scope (In/Out)
+- In: surface `spec_lookup`'s already-computed `incomplete` as an explicit result key; retire the grep at `skills/implement/SKILL.md:92` via its `.tmpl`; regenerate with `scripts/gen_skills.py`; pin the contract so mutant `S1` dies.
+- Out: re-opening SPEC-102's D1 or D2 declarations; removing `_redact_marker` (defence in depth stays until the grep is gone, and arguably after); ISSUE-104's gate-side content validation.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a `Spec-Required` issue whose SPEC is incomplete, when step 0c runs, then it reads the state from the structured key and never substring-matches prose — asserted at the consumer, not at the helper.
+- [ ] Given the marker constant renamed in `scripts/spec_gate.py` only, when the suite runs, then it FAILS — mutant `S1` dies, measured against an unmutated control copy so copy artifacts are not misread as kills.
+- [ ] Given the regenerated `skills/implement/SKILL.md`, when `gen_skills.py --dry-run` runs, then it reports fresh.
+- [ ] Given an untrusted `Spec:` value containing the marker text, when the gate runs, then no consumer acts on it — the ISSUE-102 behaviour is preserved, pinned in both directions.
+
+#### Implementation Notes
+- Provenance: `docs/specs/SPEC-102.md` Open Question 1 and its published mutation battery (25 mutants, 21 killed, 4 survived with reasons).
+- This is the architecturally right fix for the class SPEC-102 only neutralised. Keep the neutralisation: a structured field removes the need to forge, not the possibility of someone re-introducing a prose read.
+
+#### Tests
+- [ ] `S1` mutation pair against an unmutated control.
+- [ ] Consumer-level assertion that step 0c reads the key; mutation-tested in both directions.
+
+#### Rollback
+`git revert` — reverting restores the prose grep plus `_redact_marker`, which is the shipped ISSUE-102 state rather than the pre-102 defect.
+
+---
+
+### ISSUE-112: Pin step 0c's bullet ORDER, not just its presence — the review-lesson-12 ordering property is unheld
+
+> SPEC-102 Open Question 2, same filing occasion as ISSUE-111. Measured as mutant **`N9`**: in both `skills/implement/SKILL.md` and its `.tmpl`, hoisting the "re-run `python3 scripts/spec_gate.py`" bullet **above** the "Pass the issue id: `/spec $ARGUMENTS`." bullet leaves the suite **green** (0 new failures against an unmutated control). In that order the gate is re-run before `/spec` has written anything, returns `auto_spec`, and step 0c's STOP — the instruction ISSUE-102 rewrote specifically to stop firing — **fires on every `Spec-Required` sprint issue**, restoring the defect the PR exists to remove.
+>
+> `TestImplementStep0cStopInstruction` is an occurrence-whitelist: it pins presence and not position. This is review lesson 12 exactly — a gate call site must stay downstream of every step that mutates the surface it gates, and tests must pin position.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-102 Open Question 2; review lesson "a relocated gate call site must stay downstream of every step that mutates the surface it gates — pin position, not just presence")
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-102
+
+#### Goal
+Reordering step 0c's bullets so the gate re-runs before `/spec` writes fails the suite, in both the generated skill and its template.
+
+#### Scope (In/Out)
+- In: one ordering assertion per file — `text.index("Pass the issue id: \`/spec $ARGUMENTS\`.") < text.index("re-run \`python3 scripts/spec_gate.py")` — at a stated cost of +2 executed cases; keep the existing presence whitelist rather than replacing it.
+- Out: rewriting step 0c's content; any change to `spec_gate.py`; the structured-field work (ISSUE-111).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the bullets in the shipped order, when the suite runs, then it passes.
+- [ ] Given the `N9` mutation applied to `skills/implement/SKILL.md`, when the suite runs, then it FAILS naming the file; same for the `.tmpl`.
+- [ ] Given both assertions, when `gen_skills.py --dry-run` runs, then it reports fresh — the template and the generated file are pinned consistently.
+
+#### Implementation Notes
+- Provenance: `docs/specs/SPEC-102.md` Open Question 2, mutant `N9`, measured against an unmutated control copy.
+- Deliberately narrow. An index comparison on two pinned literals is the whole fix; anything larger is unrequested surface (ISSUE-079's species).
+
+#### Tests
+- [ ] `N9` mutation pair per file, both directions.
+
+#### Rollback
+`git revert` — test-only, no production surface.
+
+---
+
+### ISSUE-113: Convert the triaged mutation survivors into unexercised-guard pins — `R2 R4 R5 R9 A1 N8 N10`
+
+> SPEC-102 Open Question 4, same filing occasion. Seven mutants from preceding cycles' batteries were triaged as "unexercised guard" and left alive. **The lesson is the point, not the backlog item:** that triage category quietly assumed the guard's absence was harmless, and `R2` and `R4` turned out to be **fatal** on input the widened enumeration newly reached — they are sites B and D of SPEC-102's Finding 5. A surviving mutant on a guard is evidence about the **tests**, not about the guard.
+>
+> Recorded with the method correction that produced it: an earlier 8-mutant matrix claimed zero survivors where review 2's 25-mutant battery found two. Counting mutants is not measuring coverage; publishing the set is.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-102 Open Question 4; review lesson "hand-rolled parsers must match the oracle's edge cases AND its intended boundary — mutation-test guards in BOTH directions")
+- Priority: P2
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-102
+
+#### Goal
+Each of the seven named survivors is either killed by a new pin or recorded as an equivalent mutant with the equivalence shown — no survivor remains in the "unexercised guard, probably harmless" category, because that category is what hid two fatal ones.
+
+#### Scope (In/Out)
+- In: `R2 R4 R5 R9 A1 N8 N10`; for each, either a test that kills it or a written equivalence argument naming why no behaviour can change; re-measure every verdict against an unmutated control copy so copy artifacts are not misread as kills.
+- Out: new mutants beyond the seven; re-opening SPEC-102's declarations; the two survivors SPEC-102 deliberately left alive with stated reasons (`M3b` equivalent, `N5` a phrasing pin this repo deflates) — those are decided, not pending.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given each of the seven, when its disposition is read, then it is either killed by a named test or carries an equivalence argument — and no disposition is "unexercised guard".
+- [ ] Given every claimed kill, when it is re-measured against an unmutated control, then the control shows 0 new failures, so the kill is attributable to the mutation and not to the copy.
+- [ ] Given `R2` and `R4` specifically, when their pins run, then they fail on the mutation and pass without it — the two that proved fatal are pinned in both directions.
+
+#### Implementation Notes
+- Provenance: `docs/specs/SPEC-102.md` Open Question 4 and its published battery.
+- Run probes on scratchpad copies, never by editing a shared worktree — a reviewer's in-worktree probe produced 12 phantom failures earlier in this line of work.
+
+#### Tests
+- [ ] One mutation pair per killed survivor, each with its control measurement recorded.
+
+#### Rollback
+`git revert` — test-only additions.

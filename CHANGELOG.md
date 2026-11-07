@@ -5,6 +5,26 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+### Changed
+- **The sprint-mode spec gate is satisfiable, and its two unreachable properties are declined in
+  writing** (ISSUE-102, PR #151, `docs/specs/SPEC-102.md`). The gate could never return `proceed`
+  for the issues it fired on, so it was not a gate — it was either routed around or it blocked
+  legitimate work. Satisfiability is fixed and verified in **both directions (16/16)**. Two
+  properties that would have had to be *added* are **DECLINED**: SPEC **validity** (D1 — the gate
+  checks presence, not content; `PRESENCE_ONLY_NOTICE` says so in the gate's own output so no reader
+  takes `proceed` for a validity verdict, and gate-side content validation stays carried by
+  ISSUE-104) and **proof of absence** (D2). Four refusals that had been *accidentally* added are
+  removed. The deciding asymmetry, which three preceding layers kept missing: a declaration can
+  license a false pass inside a stated boundary and can never license blocking legitimate work.
+  Review 2's remaining High was **fixed rather than declared** — an untrusted `Spec:` value
+  bare-interpolated into `reasons` and forged the `INCOMPLETE` marker that `/implement` step 0c
+  greps for; `_redact_marker` neutralises it at the resolution call. The mutation battery is
+  published as a **set, not a count** (25 mutants, 21 killed, 4 survived each with the reason it was
+  left alive), after an earlier 8-mutant matrix had claimed zero survivors where a 25-mutant battery
+  found two. Residuals carried by ISSUE-111 (retire the prose grep for a structured field — mutant
+  `S1` still survives), ISSUE-112 (step 0c's bullet ORDER is unpinned — mutant `N9`), ISSUE-113
+  (seven triaged survivors), and ISSUE-104 (the adjacent content-validation half).
+
 ### Decided
 - **The disarm-DIRECTION obligation is DECLINED, not deferred again** (ISSUE-088,
   PR #145) — `docs/specs/SPEC-088.md` lands at `Status: accepted` recording

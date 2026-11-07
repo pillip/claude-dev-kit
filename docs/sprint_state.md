@@ -4,7 +4,7 @@
 - Started: 2026-11-01
 - Iteration: 1 / 20
 - Parallel: 3
-- Status: paused — both remaining target issues are at `waiting` / `review-rework` awaiting a human. Not blocked on infrastructure this time, and nothing is left mid-flight: both reworks are committed and pushed, both reviews completed with all 12 checkpoints green, and both escalations are the issues' own pre-registered conditions firing as written.
+- Status: running — the human decided **bound and declare** on both escalated issues (SPEC-088's precedent). Ship what is verified by measurement, declare what is not achievable in a SPEC, make each gate's own output text stop claiming more than it does, and carrier everything outside the declared boundary. Ship order **ISSUE-102 → ISSUE-103**, serial, each re-verifying against post-previous main.
 - Roster-Watermark: ISSUE-103
 - Scope: **the pipeline's own gates do not gate.** Three defects sharing one shape, all found by turning a control on itself, all in controls the kit runs on every issue rather than in a new feature. ISSUE-096 (the delegated review auto-collects an empty diff, so a blocking review pass can return a clean bill having reviewed nothing — reproduced FOUR times), ISSUE-103 (the `implement/red` checkpoint accepts any pre-existing failure as RED, so the TDD gate can be satisfied by an unrelated breakage), ISSUE-102 (`spec_gate.py` can never return `proceed` for the issues it fires on, so the gate is structurally unsatisfiable — reproduced from both call sites).
 - Ship order: **096 -> 103 -> 102**, and the reason is not arbitrary. If a delegated review collects an empty diff, every later review in this sprint would be reviewing nothing — so fixing 096 first makes 103's and 102's reviews real rather than ceremonial. Unlike the 081 -> 077 self-test, this one is not vacuous: 096's fix is verifiable by whether the subsequent reviews see their own diffs.
@@ -47,8 +47,8 @@ Then review 2 reopened **ISSUE-103's own defect one layer up**: the parser scans
 | Issue | Status | Attempts | Last Error | Phase |
 |-------|--------|----------|------------|-------|
 | ISSUE-096 | done | 2 | - | shipped |
-| ISSUE-102 | waiting | 2 | review 2 REWORK (2 High, both reproduced by team-lead); Reason=review-rework — escalated, no second rework | reviewed |
-| ISSUE-103 | waiting | 2 | review 2 REWORK (7 High, 4 new; H1/H3 reproduced by team-lead by execution, H2/H4 confirmed structurally); Reason=review-rework — escalated, no second rework | reviewed |
+| ISSUE-102 | doing | 2 | - | implementing — SPEC-102 + declaration pass IN FLIGHT at `5a285c7` (ships first) |
+| ISSUE-103 | doing | 2 | - | reviewed — holds at `d0fac1f` until ISSUE-102 lands, then SPEC-103 + declaration pass |
 
 ## Measured Baseline (team-lead, measured directly — not inherited)
 - `uv run pytest -q` on main at `778ccc7`: **2504 passed, 1 skipped in 28.81s**. The figure carried into this sprint's brief (2501) is wrong; this row is the measured one. Worktrees collect fewer tests because `tests/test_sprint_queue.py` parametrizes over untracked `docs/sprint_state.archive-*.md` files present only in the main checkout — decompose deltas with `--collect-only`, never by comparing totals.
@@ -1070,3 +1070,202 @@ Recorded because a log that only accumulates confirmations is not a measurement 
 ### What a human needs to decide
 
 Both issues are one scoped rework away from shippable, and both rework sets are written above with the fixes the reviewers verified by execution. The judgement call is not technical — it is whether to rework these two inside this sprint at all, given that ISSUE-103 has now produced a new defect of the same class at each of three successive layers, and that the sprint's own thesis ("the pipeline's own gates do not gate") has been confirmed more thoroughly by the attempt to fix it than it was by the original three findings.
+
+## Iteration 3 — the human decided BOUND AND DECLARE. Plan recorded BEFORE any dispatch (2026-11-07)
+
+### Sole ownership re-established by measurement, and the brief's tips are STALE
+
+Checked rather than assumed, because the ISSUE-096 iteration lost work to two concurrent team-leads:
+
+- `git worktree list` carries four entries: the main checkout at `e42519a`, the held pre-sprint `ISSUE-081` tree, and the two target worktrees. **Both target worktrees are clean (0 dirty files)** and **no file under either was written in the last 120 minutes**, so no reviewer or developer is live in them.
+- `docs/sprint_state.md` is tracked, clean against `HEAD`, and its last write is the orchestrator's own hold commit `e42519a` at 11:00:24 — the commit that produced this dispatch. No third-party writer.
+- **The dispatch brief's tips are one commit stale for BOTH issues, and this had to be measured rather than trusted.** The brief names ISSUE-103 at `1a68895` and ISSUE-102 at `b557abf`; the actual branch tips, local and remote alike, are **`d0fac1f`** and **`5a285c7`**. The extra commit on each branch is its own review-2 notes artifact (`docs(review): …`), which is the head that would actually merge. CI was therefore verified against **those** heads, not against the brief's: `test (3.11)` and `test (3.12)` both `completed/success` on `d0fac1f` **and** on `5a285c7`. This is the fourth time this session a supplied revision figure was wrong, and the first time the error was a revision rather than a test count.
+
+### Baseline MEASURED on main at `e42519a`, not inherited
+
+`uv run --extra dev pytest -q` = **2633 passed, 1 skipped in 69.76s**; `--collect-only` = **2634 collected**. Unchanged from the `ce44206` measurement, so main has not drifted across the hold. Per-file counts for later set-decomposition stay as recorded above. The brief quoted no figure this time, so there is nothing to correct.
+
+### What bound-and-declare means here, and the one rule that overrides it
+
+Both issues have a **measured-good core that ships** and a **remainder that is declared**. Four obligations per gate: ship what measurement verified; declare the unachievable property in a SPEC naming what a green verdict now licenses and what it does not; make the gate's own **output text** stop claiming more than it does; and carrier everything outside the declared boundary (review lesson 15 — a declared limitation with no carrier is a deferral in a decision's clothes).
+
+**The override, which decided three findings on its own:** a gate that **over-refuses** cannot stay blocking. Declaring a property out of scope licenses false *passes* inside the declared boundary; it never licenses blocking legitimate work. Every finding below was first triaged as *false pass* (→ declarable) or *false refusal* (→ must be fixed or demoted), and that single question, not severity, decided its disposition.
+
+**A self-imposed invariant on the code this pass may write, adopted to stop a fourth layer.** ISSUE-103 produced a new defect of the same class at three successive layers, including inside the resuming agent's own work, so every code change in this pass must be either (a) the **deletion of a claim** or (b) a **de-refusal** — a change that strictly reduces the set of inputs the gate blocks. Neither direction can manufacture a new over-refusal, which is the failure mode that recurred. No change in this pass adds a refusal. That is checkable per hunk and is the check the reviewer is asked to run first.
+
+### ISSUE-102 — ships its core; bounds presence-by-path; FIXES both Highs, because both are over-refusals
+
+**Ships (measured, not reported):** satisfiability. 16/16 cells in both directions, both mandated mutants dead, `+14/−9` non-comment lines. The gate can now return `proceed` for a specced issue and refuses an unspecced one, which was the entire point of the issue.
+
+**Declared in SPEC-102** — two properties the gate does not have and will not be given:
+- **SPEC validity.** `proceed` means *a regular file exists at the declared relative path inside the containment boundary of some enumerated checkout*. It does **not** mean the file is a valid SPEC: `validate_spec.py` is never invoked by this gate. An empty file satisfies it.
+- **Proof of absence.** `auto_spec` / `hold` means *not found in the checkouts that could be enumerated*. The existing `INCOMPLETE` marker already separates could-not-compute from computed-and-empty; the declaration adds that an `absent` verdict is not a proof of absence even when the enumeration is **COMPLETE**.
+
+**High 1 — the four I/O sites: FIXED, not bounded, and the reason is the override rather than a judgement about depth.** The four sites are `_git`'s except-tuple omitting `PermissionError`; `checkout_roots:197`'s `candidate.is_dir()` with no guard at all; `_contain:233`'s non-strict `resolve()` raising `RuntimeError` on ELOOP, which `(OSError, ValueError)` does not catch; and the `:258` sibling-registry stat sitting outside its `try`. Each raises an **uncaught exception → traceback at exit 1**, outside the module's own documented `{0, 2}` contract, and step 0c has no branch for a traceback — so when one fires it **wedges** `/implement` for a legitimate repository. That is an over-refusal, so the bounding is unavailable to it by the rule above. Three of the four are additionally strict regressions this PR introduces (base exits 0). All four fixes are de-refusals: a crash becomes the honest refusal the module already models, which routes into the existing `INCOMPLETE` reason. The carrier option is declined precisely because **a class scoped to a line is how this recurred** — review 1 scoped the class to one line and the three siblings are what review 2 returned.
+
+**High 2 — the forged `INCOMPLETE` marker: FIXED, and the fix the review prescribed DOES NOT WORK.** Measured before planning anything on top of it:
+
+```
+marker = 'checkout enumeration INCOMPLETE'
+repr('docs/' + marker + ' (forged) SPEC.md')
+  -> 'docs/checkout enumeration INCOMPLETE (forged) SPEC.md'
+marker still present inside the repr?  True
+```
+
+`repr()` escapes quotes, backslashes and non-printables; it does **not** neutralise a plain substring. So `!r`-quoting the two bare interpolations — the fix review 2 wrote into its rework set, and which this file carried forward as settled — leaves the forgery channel **fully open**, because step 0c greps `reasons` for the marker as a substring and a quoted marker is still a marker. This is the session's own rule turned on an inherited remedy: a prescribed fix is a CLAIM until it is executed. Recorded as a correction to this file.
+
+**Two further corrections to review 2's account of High 2, both measured:**
+- **"This is new in this PR — main emits a fixed string and never embeds the value" is false as stated.** `origin/main:scripts/spec_gate.py:123` already bare-interpolates `issue['spec_path']` into `"Spec-Required=true and SPEC exists at {…}"`. What is new is the line's **reachability**: on main the gate cannot return `proceed` for the issues it fires on, which is ISSUE-102's whole premise, so the interpolation existed and was dead. Right finding, wrong mechanism — the shape this session keeps re-encountering, recorded both ways so it is not inherited as fact.
+- **There are THREE bare interpolation sites, not two** (`:319` legacy present-reason, `:321` multi-checkout present-reason, `:347` absent-reason), against two already `!r`-quoted. Review 2 counted two, excluding the legacy string because it is byte-identical to main. The legacy string is injectable too.
+- **The demonstrable direction is the DANGEROUS one, not the fail-safe one review 2 settled for.** Review 2 recorded that only a false `INCOMPLETE` on a valid `proceed` was shown, and that "the dangerous dual (suppressing a genuine marker) was not demonstrated by either party" — so it rated the finding High on structure alone. But step 0c reads the marker **only on the non-`proceed` branch**: a forged marker on a `proceed` is inert, because step 0c never reads `reasons` there. The harmful direction needs no suppression at all — a registry `Spec:` value carrying the marker, with the SPEC genuinely **absent**, forges the marker into the *absent* reason, and step 0c then reports an "unresolved environment problem" and is instructed **not to re-run `/spec`**. A genuinely missing SPEC is misrouted and the pipeline halts **while refusing the remedy it demands.** That is ISSUE-107's shape exactly, and it is why bounding High 2 is not available either: it is an over-refusal, not merely an injection.
+- **Fix shape, therefore:** neutralise the untrusted value **once, at its single point of entry into reason construction**, so every present and future interpolation site inherits it — a class-level fix rather than a per-site one, since per-site is the recurrence mechanism. `!r`-quoting is kept on top for legibility, with its measured insufficiency recorded in the SPEC so no later reader re-derives it as the fix.
+
+**Output-text corrections for ISSUE-102.** The `proceed` verdict gains one standing reason line stating the bound (presence-only, contents not validated, cite SPEC-102). It is **additive**: every legacy reason string stays byte-identical, so the pre-ISSUE-102 co-located caller class keeps its pinned contract (review lesson 8) and `tests/test_spec_gate.py`'s legacy full-dict pins do not move.
+
+**Carriers for ISSUE-102 (outside the declared boundary):** give the `INCOMPLETE` signal a **structured field** so no consumer greps a control signal out of human-readable prose, and retire step 0c's grep — the architecturally right fix, a contract change across script + skill + `gen_skills.py`, with no AC in this issue; the lesson-12 ordering pin (mutant `N9`, measured UNHELD); gate-side SPEC **content** validation, which is ISSUE-104's adjacent half; and the remaining triaged survivors.
+
+### ISSUE-103 — ships its core; DECLINES stdout attribution; FIXES three over-refusals
+
+**Ships (measured, not reported):** F2's hoist (reverting it kills a test that also asserts `runs == []`, so it pins ordering and not output), F1's pytest half (reverting it kills a real-consumer test with real `pytest-cov`), and the resume's own JS fix — exit **127** collides with nothing, so "the runner never executed" was certifying RED.
+
+**Declared in SPEC-103 — the property is DECLINED outright:** the red gate **can scope to the branch's own tests but cannot reliably attribute which test failed by parsing stdout.** H1 is the basis: `_PYTEST_SUMMARY_RE` is applied to the whole of `result.stdout`, and a failing test's captured stdout is echoed at column 0, so an unrelated test that merely *prints* `FAILED <branch file>` forges attribution — ground truth passes, the gate reports `failing: tests/test_new.py`, exit 0. Review lesson 4 is the general statement and this is its sharpest instance: a hand-rolled parser whose oracle is a **human-readable stdout stream** cannot be made to match that oracle's edge cases, because the stream is writable by the subject under test. The reviewer's proposed remedy — slice the parse at the `short test summary info` header — is layer four: the header is itself a line a test can print.
+
+**What a green `implement/red` verdict licenses after this declaration, stated so the gate's text can be held to it:** *a test-runner invocation whose arguments were the branch's own changed test files exited non-zero, and the exit code was not one of the measured no-run codes.* It does **not** license "a test the branch added failed", and it does **not** license "only the branch's tests ran".
+
+**Which is why the `failing: <file>` string must go.** That string is precisely the overstatement: it reports an attribution as established when the declaration says attribution is not established. Deleting it is this pass's single most important change under obligation 3.
+
+**F1's measured-good half is PRESERVED, and the distinction is the one that makes the declaration coherent.** The "non-zero exit with nothing blamed → refuse" check stays, declared as a **heuristic refusal**: it is sound in the only direction it is used, because it can only ever *refuse*, never certify. A forged `FAILED` line can make it fail to refuse — that is the declared limitation — but it cannot make it certify anything the weaker property above does not already cover.
+
+**Three over-refusals FIXED rather than declared, per the override:**
+- **H3 — `FORCE_COLOR=1` / `PY_COLORS=1` alone refuses every genuine RED**, no project configuration needed, and the diagnostic it prints names two causes that are both wrong. The brief forbids declaring this one away. Fixed by passing `--color=no`, which the reviewer verified overrides both `addopts` and the environment. De-refusal.
+- **The `--no-summary` sibling**, which `-rfE` does not override: handled by distinguishing *the summary section is absent* (attribution **uncomputable** → fall back to the declared weaker property, saying so in the output) from *the summary is present and blamed nothing* (**computed and empty** → refuse, which is F1's measured-good half). That is the kit's own computed-versus-uncomputable rule applied where it belongs, and it is what keeps the `--cov-fail-under` refusal alive while un-blocking a project that legitimately sets `--no-summary`.
+- **H4 — a `develop`-default repository can no longer pass the gate at all**, because `_default_branch()` returns a bare `origin/HEAD` basename, `develop` does not resolve locally, both legs of `_delta_base_unresolvable` hold, and the F2 hoist makes the refusal fire unconditionally. Fixed by preferring the resolvable remote-tracking form before declaring the delta uncomputable, local to the red verifier so no shared contract moves (review lesson 8). De-refusal.
+- **The polyglot block — `_, has_js = _detect_test_runners(wt)` discards `has_python`**, so a Python repo whose `package.json` declares `scripts.test` can never pass RED for a `.py`-only branch. Fixed by taking the JS branch only when the branch's **own** JS test files are non-empty. De-refusal, and it stops the new code foreclosing the fix.
+
+**Inside the declared boundary, and therefore the declaration rather than defects:** H2 (the both-legged predicate lets a shallow clone's two-dot diff pollute the executed scope) and the argv injection through the scope splat (a directory named `-p no:cacheprovider` is consumed by pytest as a flag, after which the whole suite runs while the gate's own scope line reports a scope that was not applied). Both are instances of one fact — **the gate REQUESTS a scope and cannot ENFORCE one** — which the SPEC states and a single enumerated carrier carries. Enumerated, not described: a class described by its shape is how ISSUE-102's High 1 recurred.
+
+**Output-text corrections for ISSUE-103**, beyond deleting `failing:` — `Scope was:` becomes `Scope requested:`, because the gate cannot assert the scope was applied; the two wrong stated causes come out of the H3 diagnostic; and the hazard note's npm residual bound is restated to what was actually measured. That last one is this pipeline's own disclosure becoming the defect: the committed note claims the hole is "exactly 'nothing ran AND npm chose exit 1'", and a runner that rejects the injected `--passWithNoTests` runs nothing and exits non-zero outside that bound. A disclosed residual is a CLAIM.
+
+### The declination's premise MEASURED, not inherited — and it survived a serious attempt to refute it
+
+A disclosed residual is a CLAIM, and so is a disclosed **impossibility**. Declaring attribution unachievable while a cheap fix existed would be a manufactured limitation — the same defect as a gate overstating itself, pointed in the humble direction. So team-lead attacked the declination before writing it, on throwaway scratchpad repos (no worktree touched), against the reviewer's own proposed remedy: *slice the parse at the `short test summary info` header*. Both slice positions were tested, plus a genuine-RED control, on **pytest 9.0.3**.
+
+| shape | in-model writer | whole-stdout (today) | slice-**first** | slice-**last** |
+|---|---|---|---|---|
+| A | a failing test PRINTS a fake header + `FAILED <branch file>` | forged | **forged** | defeated |
+| B | `conftest`'s `pytest_sessionfinish` prints them | forged | **forged** | defeated |
+| C | `conftest` registers an **`atexit`** handler | forged | — | **FORGED** |
+| D | `conftest`'s **`pytest_unconfigure`** hook | forged | — | **FORGED** |
+| E | **`os.write(1, …)`** from an `atexit` handler, bypassing capture | forged | — | **FORGED** |
+| F | `--no-summary` + a test printing a fake header | nothing blamed | — | nothing blamed |
+| control | genuine RED, no forgery | `tests/test_new.py` | `tests/test_new.py` | `tests/test_new.py` |
+
+In every forged row the ground truth is that the branch's own test **passes** (`assert True`), and in C/D/E the real header and the forged header both appear — at lines 6 and 9, with the forged `FAILED` at line 10. **The forgery lands AFTER pytest's own summary section**, so "take the last occurrence" is not a fixed point: project configuration can always write later than the reporter. Shape A/B defeat slice-first; shapes C/D/E defeat slice-last. The control shows the slices do not break a real RED, which is what makes the probe valid rather than merely negative.
+
+**So the declination is justified by measurement and its basis is now stronger than the reviewer's finding.** The oracle is a human-readable stdout stream that the subject under test, and the project configuration that runs it, may append to after the oracle has finished speaking. That is review lesson 4 at its limit — a hand-rolled parser cannot match an oracle whose output its own input can extend — and it is why the correct disposition is to stop *claiming* attribution rather than to chase a parse position. Three of the five forgery writers (`atexit`, `pytest_unconfigure`, `os.write`) are the same trust class `addopts` already is: ordinary project configuration.
+
+**Two results from the same probe set that the fix plan depends on, also measured here:**
+- **`--color=no` is the right fix for H3 and it overrides all three vectors.** Control blames correctly; `FORCE_COLOR=1` and `PY_COLORS=1` each yield `blamed=[]` with the header still present (H3 reproduced independently, a third time); adding `--color=no` restores correct attribution under `FORCE_COLOR=1`, under `PY_COLORS=1`, **and** under a project `addopts = "--color=yes"`. The reviewer's claim reproduces.
+- **The `--no-summary` leg is cleanly distinguishable, which is what makes the honest fallback possible.** With `addopts = "--no-summary"` the `short test summary info` header is **absent** from stdout entirely while a genuine failure still exits 1. So *the summary is absent* (attribution **uncomputable**) is separable from *the summary is present and blamed nothing* (**computed and empty** → refuse, F1's measured-good half). `--color=no` does not and should not rescue this case; it is a different cause.
+
+### H4 CONFIRMED BY EXECUTION, and its fix verified in the same construction
+
+Review 2 confirmed H4 only **structurally**, by reading. Team-lead built the real thing — a bare origin whose `HEAD` is `refs/heads/develop`, a fresh clone, a feature branch checked out from `origin/develop` with the local `develop` ref deleted, which is the ordinary shape of a clone of a develop-default repository:
+
+```
+local branches: ['feature/x']          origin/HEAD -> refs/remotes/origin/develop
+_default_branch() would return: 'develop'
+  leg 1  merge-base HEAD develop            -> exit 128
+  leg 2  rev-parse --verify --quiet develop -> exit 1
+  _delta_base_unresolvable() => True   *** unconditional refusal: the repo can never pass RED ***
+
+  fix: rev-parse --verify --quiet origin/develop -> exit 0
+  fix: merge-base HEAD origin/develop            -> exit 0  db357ebad58f
+  fix: delta against that merge-base             -> ['tests/test_new.py']
+```
+
+So H4 is a genuine over-refusal rather than a structural inference, and preferring the resolvable remote-tracking form is a true de-refusal: the delta computes and scopes to exactly the branch's own test file. Fixed locally in the red verifier so `_default_branch()`'s shared contract — four other callers — does not move (review lesson 8).
+
+### The polyglot block CONFIRMED BY EXECUTION, against the committed blob
+
+Also confirmed only structurally by review 2. Team-lead loaded `scripts/verify_checkpoint.py` **as committed at `d0fac1f`** — extracted with `git show` into a scratchpad copy, deliberately not read from the worktree a sub-task is editing — called the real `_detect_test_runners`, and replayed the verifier's own runner selection on a Python repo that also declares `scripts.test`:
+
+```
+_detect_test_runners() -> has_python=True, has_js=True
+branch's own changed test files = ['tests/test_new.py']
+selected runner = 'npm test'; scoped = []
+  FAIL: RED phase — the branch changed 1 test file(s) but none that npm test can execute: tests/test_new.py
+  *** has_python is True and DISCARDED, so this branch has NO route to a RED pass ***
+
+  fix: runner = 'pytest'; scoped = ['tests/test_new.py']        -> de-refusal works
+  control (real JS branch ['tests/app.spec.ts']) -> npm test    -> mis-run protection HELD
+```
+
+So the over-refusal is real, the de-refusal repairs it, and the JS-mis-run protection the branch exists for survives the fix — which is the control that makes the change safe rather than merely smaller.
+
+**All four of ISSUE-103's dispositive findings are now measured by team-lead independently**: H1's forgery and the declination's premise (five shapes × two slice positions + a control), H3's colour over-refusal and `--color=no`'s three-vector fix, H4 on a real develop-default clone, and the polyglot block against the committed blob. Review 2 had confirmed H2 and H4 structurally and the polyglot item by reading; two of those are now execution-confirmed, and H2 stays inside the declared boundary where reading is sufficient.
+
+### Carrier drafts returned, and the planner's one honest gap is REAL — three mutants are unrecoverable
+
+The `planner` drafted all five carriers (**ISSUE-111 … ISSUE-115**) and **wrote nothing**: the **seventh** observation that it has no `Bash` tool in this environment, and the seventh time the contract held because the dispatch assumed the absence rather than discovering it. It also pre-checked the two things that constrain the output — `validate_issues.py`'s single-line `Given …, when …, then …` pattern, and the `4466d7c` hazard that no detail-block line may be scrapable as a Board checkbox.
+
+It flagged that it could not transcribe the mutation text for **`R5`, `R9` and `A1`**, and declined to infer it from their neighbours on the explicit ground that inference is how ISSUE-102's High 1 got scoped to one line. **That gap is real, and team-lead confirmed it is not recoverable:** the committed `docs/review_notes/ISSUE-102.md` is a 97-line condensed artifact that mentions `A1` once in passing and `R5`/`R9` not at all, and `docs/sprint_state.md` kept only the ids. The battery itself lived in a sub-agent's report message.
+
+**That is review lesson 15 applied to measurements rather than to findings, and it is a new instance:** a 25-mutant battery was the strongest evidence either review produced, and three ninths of it is now gone because the only durable artifacts kept the ids and not the mutations. The carrier therefore requires the implementer to re-derive those three by re-running the battery and to record the **mutant-id → symbol mapping in the test module**, so the enumeration survives the next sprint-state archival. Worth generalising: a measurement's durable carrier has to hold the method, not just the verdict.
+
+**Partial recovery, taken rather than guessed.** The notes do pin `A1`'s *shape*: a test whose **name and docstring claim a guard its body does not check**. That is recorded as a partial recovery and labelled as such, not promoted to a full transcription.
+
+### A text overstatement the plan had MISSED, recovered from the committed notes — and it belongs to obligation 3
+
+`scripts/spec_gate.py`'s module docstring claims that *"an absolute value, a `..` escape, a symlink leaving the checkout, and anything that is not a regular file are all REFUSED, and the refusal is named in reasons so it cannot be read as 'simply absent'"*. Review 2 measured that **false** for the non-regular-file arm by execution: a `Spec:` value naming a **directory** yields `auto_spec` with **no occurrence of `REFUSED` anywhere in `reasons`** — it renders the plain "absent from all N checkout(s) consulted" line, which is precisely the reading the sentence promises is impossible. The code cannot do otherwise: `_contain` returns `(resolved, False)` for a statted non-file, and the call site appends to `refused` only when `resolved is None`. The rework then documented the real behaviour correctly in `_contain`'s own docstring, so the module now **contradicts itself 150 lines apart**.
+
+This is squarely obligation 3 — *a gate that overstates itself manufactures false assurance* — and the original plan did not include it, so it is added: **correct the module docstring to match the code** (a deletion of a false claim, which satisfies the de-refusal invariant), and **declare in SPEC-102** that a non-regular file at the declared path renders as absent, which is consistent with D1 and D2 rather than an exception to them. Making a non-regular file actually *refuse* is deliberately **NOT** taken: it would add a refusal and break the invariant. `N10` carries the pin, and the notes record that the test which looks like the pin — `test_spec_path_naming_a_directory_is_refused` — asserts only `decision == 'auto_spec'`, so its name claims a guard its body never checks.
+
+`SendMessage` is disabled in sub-agent contexts, so this cannot be handed to the running ISSUE-102 pass. Team-lead applies it as its own commit after that pass completes, sequentially — never concurrently, since two writers on one branch is the wedge this sprint already paid for once.
+
+**Both halves re-measured by team-lead against the committed blob at `5a285c7`** — loaded with `git show` into a scratchpad copy rather than read from the worktree a sub-task is editing — because narration is not evidence and this one is about to drive a text edit:
+
+```
+A  Spec: names a DIRECTORY        -> "SPEC declared at docs/specs/SPEC-999.md but absent
+                                      from all 1 checkout(s) consulted"   REFUSED present: False
+C  Spec: names nothing (control)  -> byte-identical shape                 REFUSED present: False
+B  Spec: '../outside/…' (control) -> "… REFUSED by containment in all 1 …" REFUSED present: True
+```
+
+A renders **byte-identically to C**, so a statted non-regular file is indistinguishable from nothing being there — exactly the reading the docstring promises is impossible. The `..` control B *does* say `REFUSED`, which is what makes the probe valid rather than merely negative: the docstring is correct about one arm of its own list and false about another.
+
+### High 2's HARMFUL direction, which review 2 recorded as undemonstrated, is now DEMONSTRATED
+
+Same probe, and this is the measurement that settles whether High 2 could have been bounded:
+
+```
+D  Spec: value = 'docs/checkout enumeration INCOMPLETE (forged) SPEC.md', SPEC genuinely absent
+   reason: "Spec-Required=true, SPEC declared at docs/checkout enumeration INCOMPLETE (forged)
+            SPEC.md but absent from all 1 checkout(s) consulted (…), sprint mode → auto-run /spec"
+   marker present in reasons?        True
+   enumeration actually incomplete?  None     <- i.e. COMPLETE
+   step 0c reports an environment problem and does NOT re-run /spec:  True
+```
+
+Review 2 wrote that only the fail-safe direction had been shown and that *"the dangerous dual (suppressing a genuine marker) was not demonstrated by either party"* — and rated the finding High on structure alone. **The dangerous direction needs no suppression at all.** With the enumeration genuinely COMPLETE and the SPEC genuinely absent, the forged marker lands in the `reasons` list that step 0c greps, so step 0c reports an unresolved environment problem and is instructed **not** to re-run `/spec`. A missing SPEC is misrouted and the pipeline halts **while refusing the remedy it demands** — ISSUE-107's shape, reached from a registry value rather than from a trigger set.
+
+So High 2 is an **over-refusal**, not merely an injection into a marker, and the hard rule removes the bounding option entirely rather than leaving it a judgement call. Recorded as a correction to review 2's own severity rationale — which is the second time this iteration a *carried* finding's rationale turned out to be the stale part, after ISSUE-103's H1 provenance. That recurrence is itself the lesson: **a carried finding's rationale expires independently of the finding.**
+
+### Pre-registered, so the result cannot be rationalised afterwards
+
+- **Expected suite deltas.** Both changes are small and test-bearing, so collection must rise only in each PR's own test module; **zero** of the shared files may change by even one case. Decomposition is by `--collect-only` set-diff against a `git archive <merge-base>` copy, which is the method ISSUE-102's and ISSUE-103's reviewers used and which sidesteps the `test_sprint_queue.py` archive-parametrization gap instead of subtracting it.
+- **The de-refusal invariant is falsifiable and is the reviewer's first task**: if any hunk in either PR adds an input to the set the gate blocks, the invariant is broken and that hunk is wrong regardless of its merits.
+- **A count is not a set.** Function counts, grep-site counts and executed-case counts have each misled on this repo this session — 84 functions carrying 266 cases, grep sites falling 4→2 while executions stayed 4, one case falling 2→1 while executions rose 2→3. Only executed cases are quoted.
+- **Carrier ids.** `issues.md` allocates by next-free-number and the maximum real id is **ISSUE-110** (`ISSUE-200` and `ISSUE-999` occur only in measurement prose, verified), so carriers take **ISSUE-111 onward**, filed by team-lead in **ONE batched write** under `registry_edit.sh` after both ships. The `planner` agent has no `Bash` in this environment — seventh observation — so it drafts text and team-lead applies the write.
+- **The monotonicity argument that makes SPEC-103 coherent**, pre-registered here so it is not retro-fitted. Attribution survives in the fixed gate as a refusal *filter* only: it can remove PASSes, never add one beyond the declared property. In H1's construction the scoped run exits 1 and 1 is not a no-run code, so the declared property **already holds** and the PASS is inside the declared boundary — forging attribution restores a PASS the declaration already licenses and buys the attacker nothing. What is actually wrong in H1 is therefore the *claim* `failing: tests/test_new.py`, and deleting that string is the whole of H1's remedy once the property is declared. If this argument is wrong, the declaration is wrong, so the reviewer is asked to attack it directly.
+- **Both issues are `Spec-Required: false` and `Spec: none` today.** That was right when they were implementation tasks; they are decisions now, so each gets a SPEC and its `Spec:` field updated. `validate_spec.py` must pass on both. Note that each issue's own Scope already covers the surface this pass touches — ISSUE-102's Scope names "Reviewing `skills/implement/SKILL.md` step 0c's 'STOP and report'", ISSUE-103's names "Distinguishing … in the verifier's rendered output" — so review lesson 14 is materially weaker here than it was on the reworks, where both Highs lived in surface no AC named.
+
+### Dispatch — two declaration passes in parallel, one carrier draft, all at `opus`
+
+Both implements run concurrently in their own worktrees. The files are disjoint (`scripts/spec_gate.py` versus `scripts/verify_checkpoint.py`'s red verifier) and each prompt forbids touching the other's module. The inherited "concurrent suites damage the tree" constraint is **not** carried: it was measured overstated — every test `.worktrees/` path is throwaway, only CPU contention is real, and two reviews already ran in parallel without incident. **Ship stays serial, ISSUE-102 then ISSUE-103**, with 103 re-verified against post-102 main.
+
+Sole ownership is preserved by construction: one executor per issue phase, and the two executors own different issues. No second executor will be dispatched for either issue's phase.
+
+Each prompt carries, as hard limits rather than context: the de-refusal invariant with a per-hunk report obligation; test-first with pasted red evidence, since fix-and-test in one commit cannot establish test-first from history; disarm-direction tests through the real consumer; mutation probes on scratchpad copies only, reporting the mutant **set** and not just counts, because an 8-mutant matrix claimed zero survivors where a 25-mutant battery found two; set-diff decomposition against a `git archive` baseline copy rather than total comparison; no force-push; `Status: done` is team-lead's after MERGED (ISSUE-105, guarded a sixth time); no `--delete-branch`; and do not forge a receipt to produce an expected shape.
+
+The **carrier drafts** are dispatched now rather than after the ships, so the batched registry write is ready the moment both land. The `planner` agent has no `Bash` in this environment — the **seventh** observation, and the seventh time the contract held because the dispatch assumed the absence rather than discovering it — so it was told to write nothing and return text; team-lead applies the write under `registry_edit.sh`. Five carriers, **ISSUE-111 … ISSUE-115**, each required to **enumerate its sites rather than describe its shape**, because a class scoped to a line is how ISSUE-102's High 1 recurred.
