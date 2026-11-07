@@ -80,6 +80,7 @@
 - [ ] ISSUE-107: Scope the review-subject checkpoint's trigger to the receipts that can satisfy it — a legacy delegation event wedges the gate _(track: platform, P1, 0.5d — ISSUE-096 review 3, 2026-11-03: `_review_subject_bound` fires on any `review_delegated_to_*` receipt for the issue, but `record-subject` is satisfied only by a receipt carrying matching `head_oid`/`diff_sha256`/`diff_bytes`; the pre-ISSUE-096 emit path writes one with none of them at exit 0, so the checkpoint demands `record-subject` and `record-subject` refuses `reason=verification-missing` at exit 2 — no way forward on a blocking gate. Fails CLOSED, so not a High, but it is the wedge class that cost ISSUE-081 four review cycles; review lesson 8; depends on 096)_
 - [ ] ISSUE-108: Guard step 3.1's `$WT/` emit anchor, and stop promising a remedy 10 of 25 refusals do not carry _(track: platform, P2, 0.5d — ISSUE-096 review 3, 2026-11-03: `cmd_emit` anchors on `Path.cwd()` while `delegate` anchors on the resolved worktree, so the degradation emit run from the main checkout exits 0 and splits the event from the receipts, invisible to the gate — and `STEP_31_REQUIREMENTS` mutation-tests step 3.1's obligations but carries no entry for the `$WT/` anchor; separately, step 3.1(a)'s "names `reason=` and its remedy" is false for 10 of the 25 reason tokens; depends on 096)_
 - [ ] ISSUE-109: Make the fence detector survive a nested fence — fix it in `sprint_queue`'s shared helper, not in the copy _(track: platform, P2, 0.5d — ISSUE-096 review 3, 2026-11-03: a 4-backtick fence wrapping a 3-backtick fence re-opens the plain toggle in `_FENCE_RE`/`_unfenced`, so the fence-awareness protecting `## Review Subject` detection is defeated by legitimate nested-fence content; deliberately not fixed inside ISSUE-096 because the correct fix is the shared helper both consumers inherit, which no ISSUE-096 AC covers; carried here because the finding lived only in `docs/sprint_state.md`, which is archived and reset at each sprint boundary (review lesson 15); depends on 096)_
+- [ ] ISSUE-110: Define whether `decide`'s `delegated` verdict means independent delegation or self-invocation — two reviewers diverged on the same repo in the same hour _(track: platform, P1, 1d — 2026-11-07, visible only because two concurrent reviews disagreed and not reproducible later; sharpens ISSUE-106's open question)_
 
 ### Doing
 
@@ -6794,3 +6795,62 @@ A fenced block stays fenced through a nested fence for both consumers of the kit
 `git revert`. The change is a narrowing of what counts as "fence closed", so reverting restores today's behaviour rather than breaking a consumer — but it restores a defeatable fence guard on a surface that feeds a **blocking** gate, so prefer tuning over reverting. If the fix landed as an import in `scripts/review_context.py`, revert both files **together**: a reverted `sprint_queue` helper with a surviving import leaves the review-notes detector silently back on the plain toggle while its module comment and its lockstep test both claim otherwise, which is worse than the defect.
 
 ---
+
+---
+
+### ISSUE-110: Define whether `decide`'s `delegated` verdict means independent delegation or self-invocation — two reviewers diverged on the same repo in the same hour
+
+> Recorded by the orchestrator 2026-11-07 because it has no durable carrier and will not be reproducible later (review lesson 15). The ISSUE-103 and ISSUE-102 reviews ran concurrently, same repo, same hour, and **diverged on what `review_context.decide`'s `delegated` verdict actually asserts**. ISSUE-102's reviewer **refused a `Skill` that loads into its own context**, on the grounds that invoking the review skill inside the reviewing context is **self-attestation, not delegation**. ISSUE-103's reviewer treated the same capability as delegation. Both were acting in good faith on the same code.
+>
+> This is an epistemics defect, not a coding one, and it is the reason it matters: the kit's entire primary-path story (SPEC-019, ISSUE-072, ISSUE-096) rests on `delegated` meaning *an independent pass saw the subject*. If `delegated` can also be returned when the reviewing context invokes the skill on itself, then a `delegated` tag is **not evidence of independence** — which is review lesson 6's distinction (an attestation is not a verification) applied to the delegation verdict itself rather than to a digest.
+>
+> It was visible only because two reviews disagreed. A single review would have picked one reading and reported it as fact, and nothing in the artifact would have recorded the ambiguity. That makes it a transient observation with a short shelf life, which is exactly the class review lesson 15 says must get an id rather than a mention.
+>
+> Scope note: this **sharpens** ISSUE-106's open question (whether the main-session delegated review auto-collects correctly) rather than duplicating it. ISSUE-106 asks whether the subject is collected; this asks whether `delegated` means what the architecture claims it means.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; 2026-11-07 concurrent-review divergence; review lessons "a deferred finding is only real if it has a durable carrier", "an attestation that can satisfy a gate is forgeable — shape validation is not provenance", and "before concluding a runtime capability is absent, check whether your own configuration caused the absence")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+`decide`'s three-value reason vocabulary distinguishes an independent delegated pass from a self-invoked one, and every artifact that consumes a `delegated` verdict either gets that distinction or is documented as unable to rely on independence.
+
+#### Scope (In/Out)
+- In:
+  - **A SPEC deciding what `delegated` asserts.** Two readings are live and both are defensible on today's code; pick one and say what the other costs. If independence cannot be established from inside the reviewing context, the honest outcome is that `delegated` asserts *reachability* and not independence — and then every consumer claiming independence must be corrected, including SPEC-019's framing.
+  - Determine empirically whether a `Skill` invocation from the reviewing context is distinguishable from an independent pass **at the consumer**, not by reasoning about intent. If it is not distinguishable, say so; an undetectable distinction cannot be a contract.
+  - Correct or confirm the consumers: `scripts/review_context.py`'s reason vocabulary, the review skill's step 3.1 text, and the ISSUE-096 subject-binding record which treats a delegated verdict as meaningful.
+- Out:
+  - ISSUE-106's collection question (whether the subject is auto-collected correctly) — adjacent, separately carried.
+  - Re-opening SPEC-088's DECLINE or the ISSUE-081 line of work.
+  - Any change to `has_skill.py`'s probe exit-code semantics (ISSUE-082 owns the grant-materialisation question, and it is `Manual: true`).
+
+#### Acceptance Criteria (DoD)
+- [ ] Given the two readings, when the SPEC's Decision is read, then exactly one is adopted and the adopted one states what a `delegated` verdict does and does not license a downstream consumer to conclude.
+- [ ] Given a review running in a context that can invoke the review skill on itself, when `decide` runs, then its verdict is either distinguishable from an independent pass at the consumer, or the SPEC records that it is not and names every consumer corrected as a result.
+- [ ] Given the consumers enumerated in Scope In, when each is read after the change, then none claims independence that the adopted reading does not support.
+- [ ] Given the divergence that produced this issue, when the SPEC is read, then both reviewers' positions are recorded with the reasoning each gave — the disagreement is the evidence, and losing it would make the decision unfalsifiable later.
+
+#### Implementation Notes
+- Provenance: the concurrent ISSUE-102 and ISSUE-103 reviews of 2026-11-07, recorded in `docs/sprint_state.md`. ISSUE-102's reviewer's refusal is the sharper of the two positions and should be treated as the one to disprove rather than the one to accommodate.
+- Note the confound before measuring: reviews in this session have been returning `context-unreachable` plausibly because live agents are served from the installed plugin cache at 0.5.0 while this repo is at 0.7.0 (ISSUE-082). A measurement taken under that skew may not describe the post-update runtime, so record which plugin version the measurement ran against.
+- This is a decision issue. Do not build a mechanism to detect self-invocation unless the SPEC's Decision names one — ISSUE-079 exists because unrequested surface shipped and both of that review's engine defects lived in it.
+
+#### Tests
+- [ ] Whatever the Decision adopts, its consumer-visible claim is pinned by a test, in both directions where the distinction is detectable.
+- [ ] If the Decision is that the distinction is undetectable, a test pins the corrected consumer text so the stronger claim cannot creep back.
+
+#### Rollback
+`git revert` — a SPEC plus consumer-text corrections, with no engine surface unless the Decision adds one. Reverting restores today's ambiguity, which is the state this issue was filed against.
