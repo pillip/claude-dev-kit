@@ -619,28 +619,48 @@ def _check_ac_test_coverage(issue_id: str, wt_path: str, test_files: list[str]) 
 _PYTEST_SUMMARY_RE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
 
 
-def _failed_test_files(output: str, scope) -> list[str]:
-    """Which of ``scope``'s paths the test runner's summary blamed, in order.
+def _blamed_test_files(output: str) -> list[str]:
+    """Every test file the runner's summary blamed, in order, deduplicated.
 
     Oracle: pytest's "short test summary info" section (requested explicitly with
     ``-rfE`` so the format does not depend on the project's ``addopts``), whose
     lines are ``FAILED <nodeid> - <msg>`` for failures and ``ERROR <path>`` for
     collection errors. Both forms were measured against pytest 8.3.4 and 9.0.3,
-    not assumed.
+    not assumed. Scope is deliberately NOT applied here: the caller needs "did
+    the runner blame anything at all" as well as "did it blame the branch", and
+    both questions are answered off this one parse rather than a second oracle.
+    """
+    blamed: list[str] = []
+    for nodeid in _PYTEST_SUMMARY_RE.findall(output):
+        path = nodeid.split("::", 1)[0]
+        if path not in blamed:
+            blamed.append(path)
+    return blamed
+
+
+def _failed_test_files(output: str, scope) -> list[str]:
+    """Which of ``scope``'s paths the test runner's summary blamed, in order.
 
     Attribution is by changed test FILE and is deliberately conservative: a path
     is reported only when the summary names it AND it is a member of the scoped
     set. A nodeid relative to a different rootdir, or a JS runner with another
-    output format, therefore yields an empty list — which the caller renders as
-    an explicit "attribution unavailable" rather than as a guess.
+    output format, therefore yields an empty list.
     """
     want = set(scope)
-    found: list[str] = []
-    for nodeid in _PYTEST_SUMMARY_RE.findall(output):
-        path = nodeid.split("::", 1)[0]
-        if path in want and path not in found:
-            found.append(path)
-    return found
+    return [path for path in _blamed_test_files(output) if path in want]
+
+
+def _delta_base_unresolvable(wt_path: str, base: str) -> bool:
+    """True when the branch's own test-file delta cannot be computed at all.
+
+    Both legs must hold: ``git merge-base HEAD <base>`` finds no fork point AND
+    ``<base>`` itself does not resolve in the worktree. That is the state in
+    which ``_changed_files_vs_base`` has nothing to diff against, so whatever it
+    returns means UNKNOWN rather than empty.
+    """
+    return _merge_base(wt_path, base) is None and _run(
+        ["git", "rev-parse", "--verify", "--quiet", base], cwd=wt_path
+    ).returncode != 0
 
 
 def verify_implement_red(issue_id: str, **_) -> bool:
@@ -650,10 +670,11 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     If tests pass, it means they were written after implementation (not TDD).
 
     Because the logic is inverted, every way of producing a non-zero exit that is
-    NOT "the branch's own new tests failed" is a *fake* RED pass. Three such
+    NOT "the branch's own new tests failed" is a *fake* RED pass. Four such
     routes are closed here (see the hazard note at the test-run step below):
-    a JS repo mis-run through pytest, a run that evaluated nothing, and — the
-    ISSUE-103 route — an unrelated pre-existing failure elsewhere in the suite.
+    a JS repo mis-run through pytest, a run that evaluated nothing, a non-zero
+    exit no branch test is to blame for, and — the ISSUE-103 route — an
+    unrelated pre-existing failure elsewhere in the suite.
     """
     wt_path = _find_worktree_path(issue_id)
     if not wt_path:
@@ -662,10 +683,31 @@ def verify_implement_red(issue_id: str, **_) -> bool:
 
     wt = Path(wt_path)
 
-    # First, verify test files exist and have real assertions. Scope to the
+    base = _default_branch()
+
+    # A gate whose subject is COMPUTED must distinguish "computed and empty"
+    # from "could not compute". An unresolvable diff base means the branch's
+    # delta is UNKNOWN, not empty, and telling the implementer to write tests
+    # would send them after the wrong problem.
+    #
+    # Decided BEFORE the delta is read, and therefore upstream of every later
+    # step: `_changed_files_vs_base` includes UNTRACKED paths, so while this
+    # check sat inside the "delta is empty" branch a single stray
+    # `tests/test_stray.py` made the set non-empty, skipped the check, and let
+    # an unknown base be treated as a known delta — measured as certifying RED
+    # on the stray file alone. Restricting the delta to tracked paths is NOT the
+    # fix: during a genuine RED the new test file is routinely still untracked.
+    if _delta_base_unresolvable(wt_path, base):
+        print(
+            f"FAIL: RED phase — cannot compute the branch's test-file delta: "
+            f"no merge-base with '{base}' and '{base}' does not resolve in the "
+            f"worktree — inconclusive, and NOT the same as 'no tests were written'"
+        )
+        return False
+
+    # Now verify test files exist and have real assertions. Scope to the
     # branch's own delta (merge-base diff) and keep only files that exist in the
     # worktree, so a stale base can't inject a phantom test path (ISSUE-048).
-    base = _default_branch()
     all_files = _existing(wt_path, _changed_files_vs_base(wt_path, base))
 
     test_pattern = re.compile(
@@ -678,19 +720,7 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     all_test_files = sorted(set(test_files + test_dir_files))
 
     if not all_test_files:
-        # A gate whose subject is COMPUTED must distinguish "computed and empty"
-        # from "could not compute". An unresolvable diff base means the branch's
-        # delta is UNKNOWN, not empty, and telling the implementer to write tests
-        # would send them after the wrong problem.
-        if _merge_base(wt_path, base) is None and _run(
-            ["git", "rev-parse", "--verify", "--quiet", base], cwd=wt_path
-        ).returncode != 0:
-            print(
-                f"FAIL: RED phase — cannot compute the branch's test-file delta: "
-                f"no merge-base with '{base}' and '{base}' does not resolve in the "
-                f"worktree — inconclusive, and NOT the same as 'no tests were written'"
-            )
-            return False
+        # Computed, and genuinely empty — the uncomputable case was refused above.
         print("FAIL: no test files found — write tests before RED phase")
         return False
 
@@ -702,7 +732,7 @@ def verify_implement_red(issue_id: str, **_) -> bool:
 
     # Now run tests — they SHOULD FAIL (exit code != 0) — but the run is SCOPED
     # to `all_test_files`, the branch's own delta computed above. Hazard note,
-    # one route per paragraph; all three make a non-zero exit mean something
+    # one route per paragraph; all four make a non-zero exit mean something
     # other than "the branch's new tests failed":
     #
     #  - Whole-suite run (ISSUE-103): running every test in the worktree let ANY
@@ -713,15 +743,46 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     #  - JS mis-run: explicit runner detection so a JS/TS repo with a `tests/`
     #    dir isn't mis-run through pytest (which collects 0 tests → exit 5).
     #  - Evaluated nothing: pytest exit 5 (nothing collected) and exit 4 (usage
-    #    error) — both measured as reachable through the SCOPED path, e.g. a
-    #    branch whose only changed test file is `tests/conftest.py`, or a `.py`
-    #    path pytest refuses. Scoping makes these common where the whole-suite
-    #    run made them near-impossible, so they are refused as inconclusive
-    #    rather than counted as RED.
+    #    error), both measured as reachable through the SCOPED path. Exit 5 is
+    #    reached when the project's own `addopts` DESELECT the branch's test:
+    #    with `addopts = "-m 'not slow'"` and a `@pytest.mark.slow` test, the
+    #    scoped run reports `1 deselected` and exits 5, where the whole-suite
+    #    run's other cases hid it. Exit 4: a `.py` path pytest refuses. Scoping
+    #    makes these common where the whole-suite run made them near-impossible,
+    #    so they are refused as inconclusive rather than counted as RED.
+    #  - Nobody to blame: a non-zero exit with NO failure attributed to the
+    #    branch's own test files. Measured routes, all of which the scoped run
+    #    certified as RED before this check: a `--cov-fail-under` threshold in
+    #    the project's `addopts` (exit 1 alongside `1 passed`), `addopts` that
+    #    inject an extra test path so an unrelated file fails inside the scoped
+    #    run (the whole-suite defect, re-entering through the project's config),
+    #    and pytest not being installed at all (exit 1 having run nothing).
+    #    Both empty cases are refused; they are told apart in the message, not
+    #    in the verdict.
     #
-    # Residual, by design: the unit of attribution is the changed test FILE, so
-    # this proves "a failure originated in the branch's own test files", which is
-    # weaker than "the new test fails because the implementation is absent".
+    # Residuals, by design and measured rather than assumed:
+    #  - The unit of attribution is the changed test FILE, so this proves "a
+    #    failure originated in the branch's own test files", which is weaker
+    #    than "the new test fails because the implementation is absent".
+    #  - Requiring attribution is scoped to pytest, the runner whose output is
+    #    parsed (review lesson 8). `npm test` has no attribution parser — no
+    #    single output format to parse — so for JS a non-zero exit is still
+    #    taken as RED and the rendered line says attribution was unavailable.
+    #    npm's `no_run_codes` stays empty, and that is FORCED rather than
+    #    overlooked: measured, npm exits 1 for BOTH `Missing script: "test"`
+    #    (nothing ran) and a genuine test failure, so refusing exit 1 would
+    #    refuse every JS RED. The one unambiguous no-run code IS refused, for
+    #    both runners, by the exit-127 branch below. npm's residual hole is
+    #    therefore exactly "nothing ran AND npm chose exit 1", not every
+    #    no-run route.
+    #  - The price of requiring attribution for pytest: if a runner reports
+    #    nodeids under a prefix that does not match the paths passed in, a
+    #    genuine RED is refused as inconclusive. Measured on pytest 8.3.4 and
+    #    9.0.3 — with this call shape (cwd = worktree root, relative scope
+    #    paths) nodeids are relative to the INVOCATION dir, not to `rootdir`, so
+    #    hoisting `rootdir` above the worktree still attributes correctly. The
+    #    refusal names both the scope and whatever the runner blamed, so the
+    #    case is diagnosable from this output alone.
     _, has_js = _detect_test_runners(wt)
 
     timeout = _test_timeout()
@@ -734,11 +795,13 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         scoped = [f for f in all_test_files if f.endswith((".ts", ".tsx", ".js", ".jsx"))]
         cmd = ["npm", "test", "--", "--passWithNoTests", *scoped]
         no_run_codes: tuple[int, ...] = ()
+        attributes_failures = False
     else:
         runner = "pytest"
         scoped = [f for f in all_test_files if f.endswith(".py")]
         cmd = ["python3", "-m", "pytest", "-q", "--tb=short", "-rfE", *scoped]
         no_run_codes = (4, 5)
+        attributes_failures = True
 
     if not scoped:
         print(
@@ -752,6 +815,18 @@ def verify_implement_red(issue_id: str, **_) -> bool:
 
     if result.returncode == 124:
         print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
+        return False
+    if result.returncode == 127:
+        # `_run` synthesises 127 when the runner BINARY is absent, and npm
+        # itself returns 127 when the project's `test` script names a binary
+        # that is not installed. Measured: 127 is never a test failure for
+        # either runner, so it is refused for BOTH. This is the one no-run
+        # route npm CAN refuse — see the hazard note's npm residual.
+        print(
+            f"FAIL: RED phase — {runner} could not be executed (exit 127: command "
+            f"not found) — inconclusive, cannot verify genuine RED"
+        )
+        print(f"  Scope was: {', '.join(scoped)}")
         return False
     if result.returncode in no_run_codes:
         print(
@@ -768,17 +843,51 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         print("  An unrelated failure elsewhere in the suite no longer certifies RED (ISSUE-103).")
         return False
 
-    failed = _failed_test_files(result.stdout or "", scoped)
+    output = result.stdout or ""
+    failed = _failed_test_files(output, scoped)
     if failed:
-        where = f"failing: {', '.join(failed)}"
-    else:
-        where = (
-            f"scope was {', '.join(scoped)} "
-            f"(per-file attribution unavailable from {runner}'s output)"
+        print(
+            f"PASS: RED phase — the branch's own tests fail as expected "
+            f"(exit {result.returncode}) — failing: {', '.join(failed)}"
         )
+        return True
+
+    # Nothing in the branch's own delta was blamed. The exit code alone is not
+    # evidence a branch test failed, so refuse — but say WHICH empty case this
+    # is, because the two send the implementer to different places.
+    if attributes_failures:
+        blamed = _blamed_test_files(output)
+        if blamed:
+            print(
+                f"FAIL: RED phase — {runner} exited {result.returncode} but blamed no "
+                f"test file in the branch's own delta — inconclusive, cannot verify "
+                f"genuine RED"
+            )
+            print(f"  Scope was: {', '.join(scoped)}")
+            print(
+                f"  {runner} blamed: {', '.join(blamed)} — outside the branch's delta, "
+                f"so this exit does not show the branch's own tests failing (an "
+                f"extra test path in the project's addopts reaches this)."
+            )
+        else:
+            print(
+                f"FAIL: RED phase — {runner} exited {result.returncode} but reported no "
+                f"test failure at all — inconclusive, cannot verify genuine RED"
+            )
+            print(f"  Scope was: {', '.join(scoped)}")
+            print(
+                f"  A non-zero exit with nothing to blame comes from something other "
+                f"than the branch's tests (e.g. a coverage threshold in the project's "
+                f"addopts, or {runner} not being installed)."
+            )
+        return False
+
+    # Runners with no per-file parser keep the legacy "non-zero is RED"
+    # contract — see the hazard note's residual on this.
     print(
         f"PASS: RED phase — the branch's own tests fail as expected "
-        f"(exit {result.returncode}) — {where}"
+        f"(exit {result.returncode}) — scope was {', '.join(scoped)} "
+        f"(per-file attribution unavailable from {runner}'s output)"
     )
     return True
 

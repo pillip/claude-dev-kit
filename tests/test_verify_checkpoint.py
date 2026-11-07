@@ -959,6 +959,14 @@ class TestVerifyReviewUiReview:
 # ── Ship verifiers ───────────────────────────────────────────────────
 
 
+# A faithful pytest short-summary line for the test file the RED-gate fixtures
+# below write. The RED gate attributes a non-zero exit to the branch's own test
+# files by parsing that section (`-rfE`), so a fixture whose stdout is the bare
+# token "FAILED" models an exit code with nobody to blame — which ISSUE-103's F1
+# contract refuses as inconclusive. Measured form, pytest 8.3.4 and 9.0.3.
+_RED_FAILED_SUMMARY = "FAILED tests/test_feature.py::test_new_feature - assert False"
+
+
 class TestVerifyImplementRed:
     """Tests for TDD Red phase verifier — tests should exist but FAIL."""
 
@@ -983,7 +991,8 @@ class TestVerifyImplementRed:
             if cmd[:2] == ["git", "diff"] and "main" in cmd:
                 return _mock_run(0, stdout="tests/test_feature.py\n")
             if "pytest" in cmd:
-                return _mock_run(1, stdout="FAILED")  # Tests fail = good for RED
+                # Tests fail = good for RED
+                return _mock_run(1, stdout=_RED_FAILED_SUMMARY)
             return _mock_run(0, stdout="")
 
         with patch.object(vc, "_run", side_effect=side_effect):
@@ -1536,7 +1545,9 @@ class TestRedGateExitCodeMatrix:
         """Exit 1 (real test failures) → RED PASS (inverted-logic contract)."""
         wt_path = _make_red_worktree(tmp_path)
         timeouts: list = []
-        side_effect = _red_side_effect(wt_path, _mock_run(1, stdout="FAILED"), timeouts)
+        side_effect = _red_side_effect(
+            wt_path, _mock_run(1, stdout=_RED_FAILED_SUMMARY), timeouts
+        )
 
         with patch.object(vc, "_run", side_effect=side_effect):
             assert vc.verify_implement_red("ISSUE-001") is True
@@ -1591,7 +1602,9 @@ class TestKitCheckpointTestTimeoutEnvOverride:
         monkeypatch.setattr(vc, "_default_branch", lambda: "main")
         wt_path = _make_red_worktree(tmp_path)
         timeouts: list = []
-        side_effect = _red_side_effect(wt_path, _mock_run(1, stdout="FAILED"), timeouts)
+        side_effect = _red_side_effect(
+            wt_path, _mock_run(1, stdout=_RED_FAILED_SUMMARY), timeouts
+        )
 
         with patch.object(vc, "_run", side_effect=side_effect):
             vc.verify_implement_red("ISSUE-001")
@@ -1635,7 +1648,9 @@ class TestKitCheckpointTestTimeoutDefault:
         monkeypatch.setattr(vc, "_default_branch", lambda: "main")
         wt_path = _make_red_worktree(tmp_path)
         timeouts: list = []
-        side_effect = _red_side_effect(wt_path, _mock_run(1, stdout="FAILED"), timeouts)
+        side_effect = _red_side_effect(
+            wt_path, _mock_run(1, stdout=_RED_FAILED_SUMMARY), timeouts
+        )
 
         with patch.object(vc, "_run", side_effect=side_effect):
             vc.verify_implement_red("ISSUE-001")
