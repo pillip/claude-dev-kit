@@ -88,7 +88,8 @@ The script reads `issues.md`, detects sprint mode via `KIT_SPRINT_MODE=1`, scans
   - Pass the issue id: `/spec $ARGUMENTS`.
   - Wait for `/spec` to complete and produce `docs/specs/SPEC-<NNN>.md` with the `Spec:` field updated on the issue.
   - The SPEC commit message format is enforced by `/spec` (`docs(spec): SPEC-<NNN> — <decision summary>`).
-  - After `/spec` returns, re-run `python3 scripts/spec_gate.py $ARGUMENTS` to confirm the new decision is `proceed`. If it is still not `proceed`, STOP and report.
+  - After `/spec` returns, re-run `python3 scripts/spec_gate.py $ARGUMENTS` to confirm the new decision is `proceed`. The gate resolves both the `Spec:` field and the SPEC file across **every checkout of the repository**, so the configuration this kit's own rules force — `Spec:` field on main's `issues.md`, SPEC file on the branch — returns `proceed` and is never a halt (ISSUE-102; before that fix this re-run could never return `proceed`, so the instruction below halted every issue the gate fired on).
+  - **STOP and report ONLY when no checkout holds the SPEC** — i.e. `/spec` did not actually produce one. Read the `reasons`: if a line contains `checkout enumeration INCOMPLETE`, the gate could not determine which checkouts to consult, which is NOT the same as the SPEC being absent — report that as an unresolved environment problem (git unavailable or failing) rather than as a missing SPEC, and do not re-run `/spec` on the strength of it.
 
 - **`decision: "hold"`** (non-sprint, requires user input) — present a structured 3-way choice using the project's question mechanism (e.g., `AskUserQuestion`):
   - **Option 1 — Run `/spec` now**: invoke `/spec $ARGUMENTS`, then resume at step 0b (re-evaluate gate after SPEC lands).
