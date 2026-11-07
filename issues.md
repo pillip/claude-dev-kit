@@ -6282,11 +6282,11 @@ The question "has the arm-only fail-open shape recurred since ISSUE-088 declined
 - PRD-Ref: none (kit self-development; measured on ISSUE-088 / PR #145, 2026-10-31, from both locations and re-reproduced by team-lead. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer", "hand-rolled parsers must match the oracle's edge cases AND its intended boundary")
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
-- Owner:
-- GH-Issue:
-- Branch:
-- PR:
+- Status: doing
+- Owner: developer
+- GH-Issue: 148
+- Branch: issue/ISSUE-102-spec-gate-satisfiable
+- PR: https://github.com/pillip/claude-dev-kit/pull/151
 - Depends-On: none
 
 #### Goal
@@ -6340,11 +6340,11 @@ A sprint-mode `Spec-Required` issue that has actually produced its SPEC reaches 
 - PRD-Ref: none (kit self-development; found on ISSUE-088 / PR #145, 2026-10-31. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer", "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence")
 - Priority: P1
 - Estimate: 0.5d
-- Status: backlog
-- Owner:
-- GH-Issue:
-- Branch:
-- PR:
+- Status: doing
+- Owner: implementer
+- GH-Issue: 149
+- Branch: issue/ISSUE-103-red-scope
+- PR: https://github.com/pillip/claude-dev-kit/pull/150
 - Depends-On: none
 
 #### Goal
