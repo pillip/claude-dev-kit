@@ -6,6 +6,28 @@ release tags are `claude-dev-kit--v<version>`.
 ## Unreleased
 
 ### Changed
+- **The `implement/red` checkpoint is scoped to the branch's own tests, and stdout attribution is
+  declined in writing** (ISSUE-103, PR #150, `docs/specs/SPEC-103.md`). The gate accepted **any**
+  pre-existing failure as RED, so the TDD gate could be satisfied by an unrelated breakage. Scoping
+  is fixed; **attribution is DECLINED** after three successive layers of fixes each produced the
+  same class of defect. What a green verdict now licenses is stated explicitly and nothing more: a
+  test-runner invocation whose arguments were the branch's own changed test files exited non-zero,
+  and the exit code was not one of the measured no-run codes — it does **not** license "a test the
+  branch added failed" or "only the branch's tests ran". Retaining the parser stays coherent because
+  **attribution is monotone**: it is only ever an additional refusal filter, so it can remove PASSes
+  but never add one beyond the declared property, which is why forging it buys a forger nothing. The
+  `failing: <file>` claim — the actual defect, an attribution asserted as established — is corrected.
+  The four **over-refusals** the attribution attempt introduced are **removed, not declared away**,
+  since a declaration can license a false pass inside a stated boundary and can never license
+  blocking legitimate work; the colour over-refusal is fixed by requesting `--color=no` explicitly
+  rather than hoping the environment does not force SGR markup, because `FORCE_COLOR` is exported by
+  default in a number of CI runners. Residuals carried by ISSUE-114 (four scope-**enforcement**
+  routes, a different property from attribution), ISSUE-115 (mutant `M20`), ISSUE-116 (mutant
+  `M14`), and ISSUE-117 — which **corrects a figure this SPEC was dispatched with**: npm forwards
+  exit codes verbatim, so a failure-count runner at exactly 127 failures was being refused as "could
+  not be executed".
+
+### Changed
 - **The sprint-mode spec gate is satisfiable, and its two unreachable properties are declined in
   writing** (ISSUE-102, PR #151, `docs/specs/SPEC-102.md`). The gate could never return `proceed`
   for the issues it fired on, so it was not a gate — it was either routed around or it blocked

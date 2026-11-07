@@ -73,7 +73,7 @@
 - [ ] ISSUE-100: Decide whether the decidable half of gate-evidence ships on its own — and whether the 15341-insertion retained branch keeps living _(track: platform, P1, 1d — SPEC-088 Open Questions 1 and 7, which named only the role "next sprint planner". Detection-only closure measured at 23 symbols / 268 definition lines (vs 1310 for the full engine), but routing it needs a new review/gate-evidence phase plus four fixtures, and the blocking half was re-derived at 0 of 6. Deciding this is NOT deciding the direction property, which ISSUE-088 declined)_
 - [ ] ISSUE-101: Re-run the arm-only fail-open census on a schedule — the DECLINE's own failure rate currently rests on a prose obligation _(track: platform, P1, 0.5d — SPEC-088 Open Question 6, flagged High in the ISSUE-088 review as the sharpest self-application failure: it assigned falsification of the DECLINE to an unassisted obligation on "the reviewer who next records a fail-open finding", which is structurally the Option A that SPEC-088 itself measured at 0 of 4 and used as its main reason to decline ADOPT)_
 - [x] ISSUE-102: spec_gate.py's SPEC-path resolution makes the sprint-mode auto_spec gate unsatisfiable — it can never return proceed _(track: platform, P1, 0.5d — measured during ISSUE-088 from BOTH locations by the implementer and independently re-reproduced by team-lead: the kit's own two rules guarantee the Spec: field and the SPEC file never co-locate until merge, and implement step 0c says STOP on a non-proceed re-run — **SHIPPED 2026-11-07** as bound-and-declare per docs/specs/SPEC-102.md: validity and proof-of-absence DECLINED in writing, the four accidentally-added refusals removed, and review 2's marker-forging High fixed rather than declared)_
-- [ ] ISSUE-103: Scope the implement/red checkpoint to the branch's own tests — any pre-existing failure certifies RED _(track: platform, P1, 0.5d — found during ISSUE-088: verify_implement_red runs the whole suite and treats any non-zero exit as RED, so the inverted-logic gate fails open on an unrelated red test. It did not bite on PR #145 only because RED was separately shown genuine on the new file alone)_
+- [x] ISSUE-103: Scope the implement/red checkpoint to the branch's own tests — any pre-existing failure certifies RED _(track: platform, P1, 0.5d — found during ISSUE-088: verify_implement_red runs the whole suite and treats any non-zero exit as RED, so the inverted-logic gate fails open on an unrelated red test. It did not bite on PR #145 only because RED was separately shown genuine on the new file alone — **SHIPPED 2026-11-07** as bound-and-declare per docs/specs/SPEC-103.md: stdout attribution DECLINED with what a green verdict licenses stated explicitly, and the four over-refusals the attribution attempt introduced REMOVED rather than declared)_
 - [ ] ISSUE-104: Make SPEC validation actually enforce — two measured fail-open routes in one control _(track: platform, P1, 0.5d — found during the ISSUE-088 review and re-measured by team-lead: CI runs validate_spec.py in directory mode without --strict so violations print and the job still exits 0, and validate() short-circuits on an empty chosen_option so a deferral-shaped SPEC passes with zero errors — the exact outcome ISSUE-088's AC-1 forbids)_
 - [ ] ISSUE-105: Resolve the Status=done contradiction between implement step 12 and the team-lead contract _(track: platform, P2, 0.5d — observed on ISSUE-088: skills/implement/SKILL.md step 12 sets Status=done at the end of IMPLEMENT while the team-lead contract forbids done before the PR is merged. The sub-task complied with the skill and left a false done on main with PR #145 open; team-lead reverted it under the lock)_
 - [ ] ISSUE-106: Measure whether the main-session delegated review auto-collects the PR's own diff — the path ISSUE-096 binds but never observed _(track: platform, P1, 0.5d — **Manual**: ISSUE-096 AC-6 split out as its sibling, per ISSUE-096's own team-lead note at filing, following the ISSUE-082/072 shape. Needs one live `/review` from a main-session context, which no agent can supply because every sprint-pipeline context IS a sub-task — which is why the measurement is still missing after four reproductions of the sub-task fail-open. Deliverable is one dated matrix row carrying the literal byte count the runtime skill echoed back plus `auto-collection empty` / `auto-collection correct`; depends on 096)_
@@ -84,6 +84,10 @@
 - [ ] ISSUE-111: Give the `INCOMPLETE` signal a structured field so no consumer greps a control signal out of human-readable prose _(track: platform, P1, 1d — SPEC-102 Open Question 1; mutant `S1` (drift the constant while the skill keeps the old phrase) SURVIVES on the shipped tree, so the cross-file marker contract is unpinned; contract change across spec_gate.py, implement SKILL.md.tmpl and gen_skills.py)_
 - [ ] ISSUE-112: Pin step 0c's bullet ORDER, not just its presence — the review-lesson-12 ordering property is unheld _(track: platform, P2, 0.5d — SPEC-102 Open Question 2; mutant `N9`: hoisting the gate re-run above `/spec $ARGUMENTS` leaves the suite green and restores the STOP that ISSUE-102 exists to remove)_
 - [ ] ISSUE-113: Convert the triaged mutation survivors into unexercised-guard pins — `R2 R4 R5 R9 A1 N8 N10` _(track: platform, P2, 1d — SPEC-102 Open Question 4; the triage category "unexercised guard" assumed absence was harmless and R2/R4 proved FATAL on input a widened enumeration newly reached, so a surviving mutant is evidence about the tests, not the guard)_
+- [ ] ISSUE-114: Enumerate and close the RED gate's four scope-ENFORCEMENT routes — the gate requests a scope and cannot enforce one _(track: platform, P1, 1.5d — SPEC-103 Open Question 1; four measured routes make the executed set differ from the requested set, including a dash-leading filename consumed by pytest as a flag)_
+- [ ] ISSUE-115: Pin npm's legacy non-zero-is-RED contract behaviourally at exits 4 and 5 — mutant `M20` survives _(track: platform, P2, 0.5d — SPEC-103 Open Question 2; the mutation is an over-refusal against a shared contract review lesson 8 requires pinned, and the fix must be behavioural assertions rather than a comment-text guard)_
+- [ ] ISSUE-116: Resolve mutant `M14` — make the attribution-scope widening behavioural or record it as equivalent and close it _(track: platform, P2, 0.5d — SPEC-103 Open Question 3; the two sets differ only by non-`.py` paths, which pytest does not blame absent a custom collector)_
+- [ ] ISSUE-117: Distinguish the kit's SYNTHESISED 124/127 from a code the child chose — npm forwards exit codes verbatim _(track: platform, P1, 1d — SPEC-103 Open Question 4, which CONTRADICTS the figure SPEC-103 was dispatched with: a failure-count runner at exactly 127 failures is refused as "could not be executed" and at 124 as "timed out" with no timeout)_
 
 ### Doing
 
@@ -6340,7 +6344,7 @@ A sprint-mode `Spec-Required` issue that has actually produced its SPEC reaches 
 - Platform: web
 - Manual: false
 - Spec-Required: false
-- Spec: none
+- Spec: docs/specs/SPEC-103.md
 - PRD-Ref: none (kit self-development; found on ISSUE-088 / PR #145, 2026-10-31. Native-memory review lessons: "a newly added defence must be tested in the DISARM direction and through its real consumer", "a control whose legitimate quiet output is identical to its defeated output must emit counter-evidence")
 - Priority: P1
 - Estimate: 0.5d
@@ -7001,3 +7005,181 @@ Each of the seven named survivors is either killed by a new pin or recorded as a
 
 #### Rollback
 `git revert` — test-only additions.
+
+---
+
+### ISSUE-114: Enumerate and close the RED gate's four scope-ENFORCEMENT routes — the gate requests a scope and cannot enforce one
+
+> SPEC-103 Open Question 1, filed by the orchestrator on ISSUE-103's ship because the SPEC deliberately allocated no carrier ids and the team-lead that owed them died to a spend limit. SPEC-103 declines **attribution**; this is the adjacent and different property — **scope enforcement**. The gate passes the branch's changed test files as arguments and has no way to make the executed set equal the requested set. Four routes were measured:
+>
+> (a) `addopts` injecting an extra test path, so an unrelated file fails *inside* the scoped run. (b) `addopts` carrying a coverage threshold, so the exit code is not about any test at all. (c) **A dash-leading filename argv injection** — a directory named `-p no:cacheprovider` is consumed by pytest as a flag and the whole suite runs, exiting 1; the fix is a `--` separator before the splat on both argvs, measured correct and deliberately not taken in the declaration pass. (d) The shallow-clone two-dot diff (ISSUE-103's H2), wanting either a single-legged `_delta_base_unresolvable` for this caller or a three-dot diff.
+>
+> Route (d) carries a trap the carrier must respect: in the measured `fetch-depth: 1` construction **either fix turns a current PASS into a REFUSE**, so it needs its own disarm-direction measurement before it ships. An over-refusal cannot be declared away — that is the rule that governed SPEC-103's own four removals.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: true
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-103 Open Question 1; review lessons "relaxing or tightening a shared contract for a new caller class must be scoped to that class, with legacy failure modes pinned" and "a newly added defence must be tested in the DISARM direction and through its real consumer")
+- Priority: P1
+- Estimate: 1.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-103
+
+#### Goal
+Either the executed set provably equals the requested set, or scope enforcement is declined in writing the way attribution was — with the four routes enumerated so no future pass rediscovers them one at a time.
+
+#### Scope (In/Out)
+- In: the four measured routes (a)–(d); for each, a fix or an explicit declination with its reason; route (c)'s `--` separator on both argvs; route (d)'s disarm-direction measurement before any change ships.
+- Out: re-opening SPEC-103's attribution declination; ISSUE-117's synthesised-exit-code question; ISSUE-115's and ISSUE-116's mutants.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given each of routes (a)–(d), when the decision is read, then it is either closed with a test or declined with a stated reason — and no route is left unaddressed.
+- [ ] Given a directory named `-p no:cacheprovider` among the changed test paths, when the gate runs, then pytest does not consume it as a flag — asserted at the real consumer, both argvs.
+- [ ] Given the `fetch-depth: 1` construction, when route (d)'s fix is applied, then its disarm direction is measured and the PASS-to-REFUSE transition is stated rather than discovered later.
+- [ ] Given whatever is declined, when the gate's output text is read, then it does not claim the scope was enforced.
+
+#### Implementation Notes
+- Provenance: `docs/specs/SPEC-103.md` Open Question 1, all four routes measured during the declaration pass.
+- The governing asymmetry, inherited from SPEC-102 and SPEC-103: a declaration can license a false pass inside a stated boundary and can never license blocking legitimate work. Route (d) is exactly where that bites.
+
+#### Tests
+- [ ] One real-consumer assertion per closed route; one disarm-direction measurement for route (d).
+
+#### Rollback
+`git revert` — reverting restores a gate that requests a scope it cannot enforce, which is the shipped ISSUE-103 state.
+
+---
+
+### ISSUE-115: Pin npm's legacy non-zero-is-RED contract behaviourally at exits 4 and 5 — mutant `M20` survives
+
+> SPEC-103 Open Question 2. Changing npm's `no_run_codes` from `()` to `(4, 5)` **survives the suite** — one of only 2 survivors in the declaration pass's own 25-mutant battery. That mutation is an **over-refusal**: it would break npm's legacy "non-zero is RED" contract, which review lesson 8 requires to be pinned whenever a new caller class tightens a shared one.
+>
+> The SPEC is explicit about how the carrier must fix it, and the instruction is worth preserving: **behavioural assertions** — npm at exit 4 and at exit 5 still returns True with the attribution-unavailable line — and **the existing comment-text guard must not be kept alongside them**, because record-accuracy tests are issue generators. It was deliberately not pinned during the declaration pass, since pinning it there would have made this carrier a false record.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-103 Open Question 2; review lesson 8, and the record-only principle that document-accuracy tests manufacture issues)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-103
+
+#### Goal
+Mutant `M20` dies against a behavioural assertion, and no comment-text guard is added or retained to achieve it.
+
+#### Scope (In/Out)
+- In: behavioural assertions that npm at exit 4 and at exit 5 returns True with the attribution-unavailable line; removal of the existing comment-text guard if it would otherwise sit alongside them.
+- Out: changing npm's `no_run_codes`; ISSUE-117's synthesised-vs-chosen exit-code distinction, which may later change what the right answer is here — note the interaction in the PR body.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `no_run_codes` mutated to `(4, 5)`, when the suite runs, then it FAILS — measured against an unmutated control so copy artifacts are not misread as kills.
+- [ ] Given the shipped code, when the suite runs, then npm at exits 4 and 5 is asserted to return True with the attribution-unavailable line, by behaviour and not by comment text.
+- [ ] Given the change, when the diff is read, then no record-accuracy assertion on comment prose was added.
+
+#### Tests
+- [ ] `M20` mutation pair with its control measurement.
+
+#### Rollback
+`git revert` — test-only.
+
+---
+
+### ISSUE-116: Resolve mutant `M14` — make the attribution-scope widening behavioural or record it as equivalent and close it
+
+> SPEC-103 Open Question 3. Widening the attribution call from `scoped` to `all_test_files` is unpinned, and review 2 recorded honestly that it **could not turn the narrowing into a behavioural difference**: the two sets differ only by non-`.py` paths, and pytest does not blame those unless a custom collector is installed. Re-verified as surviving during the declaration pass.
+>
+> This issue exists to stop a survivor sitting in the ambiguous middle. Either name the construction that makes it behavioural — a project installing a collector for a non-`.py` extension — or **record it as an equivalent mutant and close it.** ISSUE-113 exists because the "unexercised guard, probably harmless" category hid two fatal mutants; an unresolved survivor is that category wearing a different name.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-103 Open Question 3; sibling of ISSUE-113 — a surviving mutant is evidence about the tests, not about the guard)
+- Priority: P2
+- Estimate: 0.5d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-103
+
+#### Goal
+`M14` has a verdict: killed by a test built on a stated construction, or closed as equivalent with the equivalence shown.
+
+#### Scope (In/Out)
+- In: either a fixture installing a collector for a non-`.py` extension and a test that kills `M14`, or a written equivalence argument naming why no behaviour can differ; the verdict recorded where a future battery will read it.
+- Out: other survivors (ISSUE-113, ISSUE-115); changing the attribution scope itself.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given `M14`, when its disposition is read, then it is either killed by a named test or carries an equivalence argument — and the disposition is not "unpinned".
+- [ ] Given a claimed kill, when re-measured against an unmutated control, then the control shows 0 new failures.
+
+#### Tests
+- [ ] `M14` mutation pair with control, or the equivalence argument in place of one.
+
+#### Rollback
+`git revert` — test-only, or documentation-only on the equivalence branch.
+
+---
+
+### ISSUE-117: Distinguish the kit's SYNTHESISED 124/127 from a code the child chose — npm forwards exit codes verbatim
+
+> SPEC-103 Open Question 4, and the one that **contradicts the figure SPEC-103 was dispatched with.** The declaration pass measured npm 11.5.2 / node v22.18.0 passing 1, 4, 5, 9, 42, 124 and 127 through **unchanged**. So a mocha/tap-convention runner reporting exactly **127 failures** is refused as "could not be executed", and one reporting **124** is refused as "timed out" with no timeout involved. Both are **over-refusals**, and an over-refusal cannot be declared away.
+>
+> The correction matters as much as the defect: the earlier measurement that justified the 127 branch said npm collapses script codes to 1. That was true of the construction it tested and false in general, and the declaration pass caught its own inherited figure. A disclosed residual is a claim; so is a disclosed impossibility.
+>
+> The fix the SPEC names: distinguish `_run`'s **synthesised** 124/127 — which the kit does know about, because it produced them — from a code the **child** chose. The carrier must also note that **three tests pin the current 127 behaviour as measured-good**, so the change needs its own disarm-direction run before it ships.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; SPEC-103 Open Question 4; review lessons "a disclosed residual is a CLAIM — measure it" and "a gate whose subject is COMPUTED must distinguish 'computed and empty' from 'could not compute'")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: ISSUE-103
+
+#### Goal
+A 124 or 127 the kit synthesised is treated as "could not compute", and the same number arriving from a child that chose it is treated as the runner's own verdict — so a failure-count runner is never refused for counting.
+
+#### Scope (In/Out)
+- In: the synthesised-versus-chosen distinction at `_run`'s boundary, where the kit already knows which it produced; the measurement table for npm 11.5.2 / node v22.18.0; a disarm-direction run for the three tests that currently pin the 127 behaviour.
+- Out: ISSUE-115's `M20` pins, which may need re-deciding after this lands — note the interaction; the attribution declination itself.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a child that exits 127 of its own accord, when the gate runs, then the exit is treated as the runner's verdict and not as "could not be executed" — asserted at the real consumer.
+- [ ] Given `_run` synthesising 124 or 127, when the gate runs, then it is still treated as could-not-compute, with its reason named.
+- [ ] Given the three tests that pin today's 127 behaviour, when the change lands, then each is updated deliberately with its disarm direction measured — none is deleted to make the suite pass.
+- [ ] Given the measurement table, when it is read, then it records the npm and node versions it was taken against, since the inherited figure it corrects was version-specific.
+
+#### Tests
+- [ ] Real-consumer assertions for chosen-127 and synthesised-127; same for 124.
+- [ ] Disarm-direction measurement for each of the three updated pins.
+
+#### Rollback
+`git revert` — reverting restores the over-refusal this issue was filed against, so prefer narrowing the fix over reverting it.
