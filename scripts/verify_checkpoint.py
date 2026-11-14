@@ -148,6 +148,31 @@ def _shell_said_command_not_found(stderr: str) -> bool:
     return False
 
 
+# The refusal above QUOTES its evidence, and that evidence is the child's own
+# stderr — untrusted input the gated party writes (review lesson 5). Echoed raw
+# it let the child choose the size and the control bytes of the gate's output:
+# measured on this branch, 2_000_057 B of stderr in -> 2_000_273 B of gate
+# stdout out, and a payload of `\x1b[2A\x1b[2K` + a forged `PASS: RED phase`
+# line reached stdout verbatim — two escape sequences that erase the real FAIL
+# lines above them and redraw the opposite verdict. `repr` escapes every
+# non-printable character and the newlines with it, so the quote can never
+# occupy a line of its own; the cap bounds what a log consumer must store.
+# Residual, stated: a consumer matching `PASS: RED phase` as a bare SUBSTRING
+# (rather than anchored at a line start) is still fooled, because the forged
+# text survives inside the quoted field. Truncation can also cut mid-escape,
+# which is cosmetic — the result is still printable ASCII.
+_ECHOED_STDERR_MAX = 200  # characters of the RENDERED quote, before the marker
+_TRUNCATED = "…(truncated)"
+
+
+def _quote_child_stderr(stderr: str) -> str:
+    """Render untrusted child stderr for echoing: escaped, one line, bounded."""
+    quoted = repr((stderr or "").strip())
+    if len(quoted) > _ECHOED_STDERR_MAX:
+        quoted = quoted[:_ECHOED_STDERR_MAX] + _TRUNCATED
+    return quoted
+
+
 _DEFAULT_TEST_TIMEOUT = 600  # seconds — default for test-phase subprocess runs
 
 
@@ -962,20 +987,66 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     #    "command not found" on stderr — npm's `test` script naming an absent
     #    binary. That conjunction is a strict SUBSET of the old code-only
     #    refusal, so the change can only remove blocks, never add one.
-    #  - The evidence refusal's own residuals, measured not assumed. Over-
-    #    refusal: a runner that exits exactly 127 AND prints a shell-shaped
-    #    "command not found" / "a: b: not found" on stderr is refused; it was
-    #    already refused before ISSUE-117, so this blocks nothing new. False
-    #    pass: a shell whose wording matches neither rule. All five shells
-    #    measured (sh, bash, zsh, dash, ksh) are covered, and dash is the one
-    #    that matters most because on Debian/Ubuntu `/bin/sh` IS dash — the
-    #    first version of this predicate read only "command not found" and was
-    #    therefore inert on Linux, measured on CI as certifying RED for a run
-    #    in which nothing executed. A defence absent on the dominant platform
-    #    is not a defence; that is why rule (b) exists.
-    #  - A CHOSEN 124 is deliberately NOT narrowed by any evidence: nothing in
-    #    the stream separates "124 failures" from a `timeout(1)`-wrapped script,
-    #    and only the over-refusal was in scope. A chosen 124 certifies RED.
+    #  - The evidence refusal's OVER-refusal, measured not assumed: a runner
+    #    that exits exactly 127 AND prints a shell-shaped "command not found" /
+    #    "a: b: not found" on stderr is refused. It was already refused before
+    #    ISSUE-117, so this blocks nothing new. Rule (b) is what makes the
+    #    defence exist on Linux at all — `/bin/sh` IS dash on Debian/Ubuntu;
+    #    the predicate's own note above carries that measurement.
+    #  - The FALSE PASSES, corrected by the ISSUE-117 review. This bullet used
+    #    to name one — "a shell whose wording matches neither rule" — and add
+    #    that all five measured shells are covered. That disclosure was wrong in
+    #    both halves, and a wrong disclosure is a defect, not a residual.
+    #    Measured: for SHELLS the set is empty on everything measurable here
+    #    (csh/tcsh word it outside both rules but exit 1, not 127, so they never
+    #    reach this branch). The reachable false passes are not shell wordings.
+    #    All three below were measured at the real consumer with real npm 9.8.1
+    #    / node v18.18.0 against base 76ff78b as a control, and each is a route
+    #    base REFUSED (it refused every 127) and this change no longer refuses:
+    #      (1) the child SUPPRESSES the evidence — `<absent-binary> 2>/dev/null`
+    #          as the project's `test` script. 4/4 shells (sh, bash, zsh, dash)
+    #          refused without the redirect, 4/4 certified RED with it. The
+    #          evidence is the CHILD's stream and the child is the gated party.
+    #      (2) `2>&1`: the diagnostic survives but lands on stdout, which the
+    #          npm branch never reads.
+    #      (3) the writer is NOT the shell — a `#!/usr/bin/env <interp>` shim
+    #          whose interpreter is absent. The shell resolves the command,
+    #          `execve` fails, and the exec layer writes `env: <interp>: No such
+    #          file or directory`. Exit is still 127 and nothing ran. This is
+    #          the ordinary nvm/volta/asdf shape; no adversary is required.
+    #    DECLARED, not closed — and PINNED, so the declaration stays a measured
+    #    claim rather than a belief: `TestThe127FalsePassBoundary` drives all
+    #    three through `checkpoint.sh`. The direction is fail-OPEN, inside
+    #    SPEC-103's declared boundary. The governing asymmetry is that an
+    #    over-refusal blocks legitimate work and a false pass inside a STATED
+    #    boundary does not.
+    #  - The narrowings NOT taken, recorded so they are not rediscovered as new.
+    #    (a) refuse a chosen 127 whose stdout AND stderr are both empty: closes
+    #    (1), but blocks a legitimate runner whose reporter writes only to a
+    #    file. (b) read the predicate over stdout as well: closes (2), by
+    #    widening an untrusted-input parser onto a second stream. (c) arm rule
+    #    (b) on a last field of "no such file or directory": closes (3), but its
+    #    ARM rows for GNU and busybox `env` could NOT be measured on the macOS
+    #    host this was reviewed on, and writing down an unmeasured row is the
+    #    exact defect ISSUE-117 exists to correct. Each ADDS refusals, so each
+    #    needs its own disarm-direction run before it may land.
+    #  - A CHOSEN 124 is deliberately NOT narrowed by any evidence. The reason
+    #    first written here — "nothing in the stream separates them" — was
+    #    measured FALSE and is corrected. The streams DO differ in the common
+    #    shapes: `timeout(1)` killing `sleep 5` leaves stdout empty, a runner
+    #    printing "  124 failing" does not. What is true is that the difference
+    #    does not SEPARATE the classes — measured, a chatty script killed by
+    #    `timeout(1)` has non-empty stdout and a silent runner that chose 124
+    #    has empty stdout, so both shapes occur on both sides — and that any
+    #    stdout-based narrowing would ADD refusals. A chosen 124 certifies RED,
+    #    pinned for BOTH runners at the unit seam and at the real consumer.
+    #  - CARRIED here so the deferral has a durable carrier rather than a PR
+    #    body (review lesson 15): `_run`'s four OTHER consumers still read the
+    #    integer as a verdict. `_run_python_tests_with_coverage` prints "FAIL:
+    #    pytest failed (exit 124)" when the kit's own bound expired, and the
+    #    post-merge smoke gate recommends `git revert -m 1` for the same cause.
+    #    Fail-CLOSED, so no false pass — but it blocks with a false REASON,
+    #    which is the expensive direction under this issue's own asymmetry.
     #  - The price of requiring attribution for pytest: if a runner reports
     #    nodeids under a prefix that does not match the paths passed in, a
     #    genuine RED is refused as inconclusive. Measured on pytest 8.3.4 and
@@ -1062,6 +1133,23 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         )
         print(f"  Scope requested: {', '.join(scoped)}")
         return False
+    if synthesised is not None:
+        # Fail-CLOSED catch-all. The two arms above are a whitelist of two tag
+        # values, and before this the default for an unrecognised tag was the
+        # default for `None` — "the child chose this code", i.e. certify. The
+        # tag's whole premise is that only the kit writes it, so a tag the kit
+        # wrote and this function does not recognise is by construction a run
+        # the kit could not complete. Unreachable on today's `_run` (two
+        # writers, both named above), therefore it adds exactly zero refusals;
+        # it exists so the next `except` arm added to `_run` cannot turn a
+        # no-run into a silent green.
+        print(
+            f"FAIL: RED phase — the kit could not run {runner} ({synthesised}; "
+            f"synthesised exit {result.returncode}) — inconclusive, cannot "
+            f"verify genuine RED"
+        )
+        print(f"  Scope requested: {', '.join(scoped)}")
+        return False
     if result.returncode == 127 and _shell_said_command_not_found(result.stderr):
         # The child chose 127, but the shell underneath it says the command
         # never existed: npm's `test` script naming a binary that is not
@@ -1076,7 +1164,7 @@ def verify_implement_red(issue_id: str, **_) -> bool:
             f"verify genuine RED"
         )
         print(f"  Scope requested: {', '.join(scoped)}")
-        print(f"  The shell said: {result.stderr.strip()}")
+        print(f"  The shell said: {_quote_child_stderr(result.stderr)}")
         return False
     if result.returncode in no_run_codes:
         print(
