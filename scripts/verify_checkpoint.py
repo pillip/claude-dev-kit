@@ -32,8 +32,36 @@ def _extract_field(text: str, field_name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+# ISSUE-117: `_run` is the only writer of an exit code the child never chose.
+# It SYNTHESISES 124 when the kit's own bound expired and 127 when the binary
+# was never there — and both numbers are also codes a child may legitimately
+# choose. Measured, npm 9.8.1/node v18.18.0 and npm 11.5.2/node v22.18.0 alike:
+# npm forwards its test script's exit code VERBATIM, so a tap/mocha-convention
+# runner reporting exactly 124 or 127 failures produces exactly these numbers.
+# Reading the integer therefore cannot tell "the kit gave up" from "the runner
+# counted"; reading this tag can, because only the kit writes it.
+_SYNTHESISED_ATTR = "kit_synthesised"
+_SYNTHESISED_TIMEOUT = "timeout"
+_SYNTHESISED_BINARY_ABSENT = "binary-absent"
+
+
+def _synthesised_reason(result: subprocess.CompletedProcess) -> str | None:
+    """Why `_run` SYNTHESISED this result, or None if the child chose its code.
+
+    Returns `_SYNTHESISED_TIMEOUT`, `_SYNTHESISED_BINARY_ABSENT`, or None.
+    Tolerates any `CompletedProcess` — results that came back from a real child
+    (and results built by tests) simply carry no tag.
+    """
+    return getattr(result, _SYNTHESISED_ATTR, None)
+
+
 def _run(cmd: list[str], timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
     """Run a command and return the result (no exception on failure).
+
+    The two synthesised outcomes are TAGGED (see `_synthesised_reason`) so a
+    caller can tell a code the kit invented from the same number chosen by the
+    child. Without the tag the only signal is the integer, and the integer is
+    ambiguous (ISSUE-117).
 
     Args:
         cmd: Command and arguments to run.
@@ -47,6 +75,7 @@ def _run(cmd: list[str], timeout: int = 30, **kwargs) -> subprocess.CompletedPro
         mock = subprocess.CompletedProcess(cmd, 124)
         mock.stdout = ""
         mock.stderr = f"{prog}: timed out after {timeout}s"
+        setattr(mock, _SYNTHESISED_ATTR, _SYNTHESISED_TIMEOUT)
         return mock
     except FileNotFoundError:
         # Command binary not found (e.g. gh or git not installed)
@@ -54,7 +83,41 @@ def _run(cmd: list[str], timeout: int = 30, **kwargs) -> subprocess.CompletedPro
         mock = subprocess.CompletedProcess(cmd, 127)
         mock.stdout = ""
         mock.stderr = f"{prog}: command not found"
+        setattr(mock, _SYNTHESISED_ATTR, _SYNTHESISED_BINARY_ABSENT)
         return mock
+
+
+# The one chosen-127 case that still means "nothing ran": a POSIX shell telling
+# us the command does not exist. npm runs its `test` script through `sh -c`, so
+# when the script names an absent binary the shell chooses 127, npm forwards it,
+# and from the kit's seam the code is child-chosen even though no test executed.
+#
+# Measured, by running `<shell> -c <absent-binary>` and, separately, npm with
+# `script-shell=<shell>` (both agree; npm forwarded 127 in every row):
+#   /bin/sh    sh: <bin>: command not found           <- matched
+#   /bin/bash  bash: <bin>: command not found         <- matched
+#   /bin/zsh   zsh:1: command not found: <bin>        <- matched
+#   /bin/dash  dash: 1: <bin>: not found              <- NOT matched
+#   /bin/ksh   ksh: <bin>: not found                  <- NOT matched
+#
+# The two misses are deliberate. Matching the bare substring "not found" would
+# also match an ordinary `Module not found` on a runner's stderr and refuse a
+# genuine RED, which is the over-refusal class ISSUE-117 exists to remove. The
+# miss direction here is fail-OPEN — such a run PASSES — which is a disclosed
+# false pass inside SPEC-103's boundary, never a block.
+_COMMAND_NOT_FOUND = "command not found"
+
+
+def _shell_said_command_not_found(stderr: str) -> bool:
+    """True when the child's stderr carries a shell's own "no such command".
+
+    Read ONLY alongside exit 127 (see `verify_implement_red`); on its own it is
+    not a refusal, because a runner that shells out to a missing helper and then
+    reports its failures normally prints this too — measured, exit 1 with
+    `./runner.sh: line 2: <bin>: command not found` on stderr — and that is a
+    genuine RED.
+    """
+    return _COMMAND_NOT_FOUND in (stderr or "")
 
 
 _DEFAULT_TEST_TIMEOUT = 600  # seconds — default for test-phase subprocess runs
@@ -716,8 +779,14 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     **What a green verdict licenses, and nothing more** (``docs/specs/SPEC-103.md``):
 
         a test-runner invocation whose arguments were the branch's own changed
-        test files exited non-zero, and the exit code was not one of the
-        measured no-run codes.
+        test files exited non-zero, the exit code was not one of the measured
+        no-run codes, and the kit did not itself synthesise that code.
+
+    The last clause is ISSUE-117's: `_run` invents 124 on its own timeout and
+    127 on a missing binary, and those are the only two exit codes in the
+    stream that no child chose. Reading the number alone conflated them with a
+    runner that reports exactly 124 or 127 failures — npm forwards exit codes
+    verbatim — so the gate reads the synthesis tag instead.
 
     It does NOT license "a test the branch added failed", and it does NOT
     license "only the branch's tests ran". Attribution by parsing the runner's
@@ -847,14 +916,35 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     #    RED. The bound this note USED to state — "exactly nothing ran AND npm
     #    chose exit 1, not every no-run route" — is FALSE and was corrected
     #    rather than left as a disclosed residual that is really a claim.
-    #    Measured, npm 11.5.2 / node v22.18.0: npm forwards its test script's
-    #    own exit code VERBATIM (probed 1, 4, 5, 9, 42, 124, 127 — every one
-    #    passed through unchanged), and a runner that REJECTS the injected
-    #    jest-specific `--passWithNoTests` runs nothing and exits 9. So npm's
-    #    true residual is "any non-zero exit other than 124 or 127 certifies
-    #    RED", which includes no-run routes outside exit 1. Carried, not closed
-    #    here. The same measurement means the 127 refusal below can refuse a
-    #    failure-count runner at exactly 127 failures — also carried.
+    #    Measured on npm 11.5.2 / node v22.18.0, and re-measured by ISSUE-117 on
+    #    npm 9.8.1 / node v18.18.0 with identical results: npm forwards its test
+    #    script's own exit code VERBATIM (probed 0, 1, 2, 4, 5, 9, 42, 124, 127
+    #    — every one passed through unchanged), and a runner that REJECTS the
+    #    injected jest-specific `--passWithNoTests` runs nothing and exits 9. So
+    #    npm's true residual is "any non-zero exit certifies RED unless the kit
+    #    synthesised the code or the shell said the command does not exist",
+    #    which includes no-run routes outside exit 1. Carried, not closed here.
+    #    Both versions are named because the figure this corrects — "npm
+    #    collapses script exit codes to 1" — was version-specific and wrong.
+    #  - ISSUE-117 closed the over-refusal that same measurement exposed: the
+    #    124 and 127 refusals below used to read the bare integer, so a runner
+    #    reporting exactly 124 or 127 FAILURES was refused for counting. They
+    #    now read `_synthesised_reason`, which only the kit writes. What stays
+    #    refused on a CHOSEN 127 is the conjunction with the shell's own
+    #    "command not found" on stderr — npm's `test` script naming an absent
+    #    binary. That conjunction is a strict SUBSET of the old code-only
+    #    refusal, so the change can only remove blocks, never add one.
+    #  - The evidence refusal's own two residuals, measured not assumed. Over-
+    #    refusal: a runner that exits exactly 127 AND prints "command not found"
+    #    on stderr is refused; it was already refused before ISSUE-117, so this
+    #    blocks nothing new. False pass: `dash` and `ksh` word the message
+    #    "not found" instead, so their absent-binary runs now certify RED —
+    #    fail-OPEN, inside SPEC-103's declared boundary. Matching bare "not
+    #    found" would catch them and also refuse an ordinary `Module not found`,
+    #    which is the over-refusal class this issue exists to remove.
+    #  - A CHOSEN 124 is deliberately NOT narrowed by any evidence: nothing in
+    #    the stream separates "124 failures" from a `timeout(1)`-wrapped script,
+    #    and only the over-refusal was in scope. A chosen 124 certifies RED.
     #  - The price of requiring attribution for pytest: if a runner reports
     #    nodeids under a prefix that does not match the paths passed in, a
     #    genuine RED is refused as inconclusive. Measured on pytest 8.3.4 and
@@ -920,20 +1010,42 @@ def verify_implement_red(issue_id: str, **_) -> bool:
 
     result = _run(cmd, cwd=wt_path, timeout=timeout)
 
-    if result.returncode == 124:
-        print(f"FAIL: RED phase — test run timed out after {timeout}s (exit 124) — inconclusive, cannot verify genuine RED")
-        return False
-    if result.returncode == 127:
-        # `_run` synthesises 127 when the runner BINARY is absent, and npm
-        # itself returns 127 when the project's `test` script names a binary
-        # that is not installed. Measured: 127 is never a test failure for
-        # either runner, so it is refused for BOTH. This is the one no-run
-        # route npm CAN refuse — see the hazard note's npm residual.
+    # ISSUE-117: branch on WHO chose the code, not on the number. The two
+    # synthesised outcomes are could-not-compute and name their own reason; a
+    # code the child chose is the runner's verdict, with exactly one exception
+    # (the shell's evidence, below).
+    synthesised = _synthesised_reason(result)
+    if synthesised == _SYNTHESISED_TIMEOUT:
         print(
-            f"FAIL: RED phase — {runner} could not be executed (exit 127: command "
-            f"not found) — inconclusive, cannot verify genuine RED"
+            f"FAIL: RED phase — test run timed out after {timeout}s — the kit's own "
+            f"bound stopped {runner}, which chose no exit code (synthesised exit "
+            f"{result.returncode}) — inconclusive, cannot verify genuine RED"
         )
         print(f"  Scope requested: {', '.join(scoped)}")
+        return False
+    if synthesised == _SYNTHESISED_BINARY_ABSENT:
+        print(
+            f"FAIL: RED phase — {runner} could not be executed: '{cmd[0]}' is not on "
+            f"PATH, so no child ran and no child chose an exit code (synthesised exit "
+            f"{result.returncode}) — inconclusive, cannot verify genuine RED"
+        )
+        print(f"  Scope requested: {', '.join(scoped)}")
+        return False
+    if result.returncode == 127 and _shell_said_command_not_found(result.stderr):
+        # The child chose 127, but the shell underneath it says the command
+        # never existed: npm's `test` script naming a binary that is not
+        # installed. Narrowed to this CONJUNCTION rather than the bare code,
+        # because npm forwards exit codes verbatim and a runner reporting
+        # exactly 127 failures is legitimate work the gate may not block.
+        # The conjunction is a strict SUBSET of the code-only refusal it
+        # replaces, so it can only remove refusals, never add one.
+        print(
+            f"FAIL: RED phase — {runner} could not be executed (exit 127, and the "
+            f"shell reported the command does not exist) — inconclusive, cannot "
+            f"verify genuine RED"
+        )
+        print(f"  Scope requested: {', '.join(scoped)}")
+        print(f"  The shell said: {result.stderr.strip()}")
         return False
     if result.returncode in no_run_codes:
         print(

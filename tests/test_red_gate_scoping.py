@@ -63,8 +63,24 @@ failed; the classes added below pin that, and pin the four over-refusals
 SPEC-103 removes (forced colour, ``--no-summary``, a non-``main`` default
 branch, and a polyglot repo's Python-only delta).
 
+**ISSUE-117 re-decides what a 124 or a 127 MEANS.** SPEC-103 refused both codes
+on the bare integer. Re-measured (the table in
+``TestSynthesisedVersusChosenExitCodes``), npm forwards its test script's exit
+code **verbatim** on npm 9.8.1/node v18.18.0 and npm 11.5.2/node v22.18.0
+alike, so a runner reporting exactly 124 or 127 failures was being refused for
+counting — an over-refusal, which no declaration may license. ``_run`` now tags
+the 124 it synthesises on timeout and the 127 it synthesises on a missing
+binary, the gate reads the tag rather than the number, and the one chosen-127
+case that still means "nothing ran" (npm's ``test`` script naming an absent
+binary) is refused on the shell's **evidence** instead. Every test that pinned
+the old integer-based behaviour was updated in place with its disarm direction
+measured — none was deleted.
+
 Coverage layers:
 
+* ``TestSynthesisedVersusChosenExitCodes`` — ISSUE-117's seam, in both
+  directions, at the unit seam and (for npm, with the real binary) at the real
+  consumer.
 * ``TestRedScopeRealConsumer`` / ``TestRedAttributionRequired`` /
   ``TestUncomputableDeltaPosition`` — drive the REAL consumer
   (``bash scripts/checkpoint.sh --skill implement --phase red``) as a subprocess
@@ -105,10 +121,50 @@ EXTRA_TEST = "extra_tests/test_extra.py"
 
 
 def _mock_run(returncode: int, stdout: str = "", stderr: str = ""):
-    """Mirror of tests/test_verify_checkpoint.py's _mock_run helper."""
+    """Mirror of tests/test_verify_checkpoint.py's _mock_run helper.
+
+    ISSUE-117 semantics: a bare ``CompletedProcess`` carries no synthesis tag,
+    so under the post-ISSUE-117 contract a result built here means **the child
+    chose this code**. Tests that want the kit's own synthesised 124/127 must
+    use :func:`_synthesised`, which returns an object ``vc._run`` really made.
+    """
     result = subprocess.CompletedProcess([], returncode)
     result.stdout = stdout
     result.stderr = stderr
+    return result
+
+
+# A binary that must not exist on any machine running this suite. Shared by the
+# `_run`-synthesises-127 fixture and the npm-script-names-an-absent-binary
+# construction, so the two routes are built from the same premise.
+ABSENT_BINARY = "definitely-not-a-real-binary-xyz"
+
+
+def _synthesised(kind: str):
+    """A result ``vc._run`` REALLY synthesised — the fixture pin for AC-2.
+
+    Deliberately not a hand-built ``CompletedProcess``: review lesson 3 asks
+    that a mock at a delegation seam be the shape it claims to be, and after
+    ISSUE-117 the *tag* is what tells the two routes apart, not the integer. A
+    test that hand-built ``CompletedProcess(…, 124)`` and called it "the kit's
+    timeout" would silently become a *chosen*-124 test.
+
+    The premise is asserted here, so a regression in ``_run``'s tagging fails
+    the fixture rather than quietly re-routing every test that uses it.
+    """
+    if kind == "timeout":
+        result = vc._run(["sleep", "10"], timeout=1)
+        expected_rc = 124
+    elif kind == "binary-absent":
+        result = vc._run([ABSENT_BINARY])
+        expected_rc = 127
+    else:  # pragma: no cover - guards a typo in a caller
+        raise AssertionError(f"unknown synthesis kind: {kind}")
+
+    assert result.returncode == expected_rc, result
+    assert vc._synthesised_reason(result) == kind, (
+        f"fixture pin failed: _run did not tag this result as {kind!r}"
+    )
     return result
 
 
@@ -461,8 +517,18 @@ class TestRedScopeLegacyRoutes:
             return vc.verify_implement_red("ISSUE-001")
 
     def test_timeout_124_still_fails_inconclusive(self, tmp_path, capsys):
+        """Updated by ISSUE-117 (AC-3), premise changed, verdict unchanged.
+
+        This used to feed ``_mock_run(124)`` — a bare ``CompletedProcess``,
+        which after ISSUE-117 means *the child chose 124* and now certifies RED.
+        Measured: left as it was, this test flips to a failure and the honest
+        repair is to supply the route it always meant, the kit's OWN timeout.
+        The disarm twin is
+        ``TestSynthesisedVersusChosenExitCodes::
+        test_child_chosen_code_is_the_runners_verdict_for_npm[124]``.
+        """
         wt = _py_worktree(tmp_path)
-        assert self._red(wt, f"{BRANCH_TEST}\n", _mock_run(124)) is False
+        assert self._red(wt, f"{BRANCH_TEST}\n", _synthesised("timeout")) is False
         out = capsys.readouterr().out.lower()
         assert "inconclusive" in out
         assert "timed out" in out
@@ -982,66 +1048,133 @@ class TestRedAttributionRequired:
         assert "no_run_codes" in note, note
 
 
+def _npm_probe_worktree(
+    tmp_path: Path, number: str, slug: str, test_script: str, npmrc: str | None = None
+) -> Path:
+    """A throwaway npm repo + registered worktree, for the REAL-consumer probes.
+
+    The worktree's delta is one ``.ts`` test file, which is what routes
+    ``verify_implement_red`` to the npm branch. ``test_script`` is the project's
+    ``scripts.test``; ``npmrc`` pins ``script-shell`` where the construction
+    depends on how a particular shell words "binary absent" (measured below —
+    four shells, four wordings).
+    """
+    repo = tmp_path / f"repo-{slug}"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "probe@example.com")
+    _git(repo, "config", "user.name", "Probe")
+    _git(repo, "config", "commit.gpgsign", "false")
+    (repo / "package.json").write_text(
+        '{"name": "p", "version": "1.0.0", "scripts": {"test": %s}}'
+        % _json_str(test_script)
+    )
+    if npmrc:
+        (repo / ".npmrc").write_text(npmrc)
+    (repo / "tests").mkdir()
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+
+    wt = tmp_path / f"issue-{number}-{slug}"
+    _git(repo, "worktree", "add", "-q", "-b", f"issue/ISSUE-{number}-{slug}",
+         str(wt), "HEAD")
+    # git does not track empty directories, so `tests/` is absent from the
+    # checkout even though it exists in the source repo.
+    (wt / "tests").mkdir(exist_ok=True)
+    (wt / "tests" / "feature.test.ts").write_text(
+        'it("branch feature", () => { expect(1).toBe(2); });\n'
+    )
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "test: branch test")
+    return wt
+
+
+def _json_str(value: str) -> str:
+    import json
+
+    return json.dumps(value)
+
+
+def _runner_script(wt: Path, body: str) -> str:
+    """Write an executable ``runner.sh`` into ``wt`` and return its npm script.
+
+    Measured, and the reason the runner is a shell script rather than
+    ``node -e``: the gate injects ``--passWithNoTests`` into the npm argv, and
+    ``node -e`` consumes it as a *node* option and exits **9** — the "rejects
+    the injected jest-specific flag" route the hazard note already names. A
+    shell script simply ignores the extra argv, so the construction measures
+    the exit code it means to.
+    """
+    runner = wt / "runner.sh"
+    runner.write_text("#!/usr/bin/env bash\n" + body)
+    runner.chmod(0o755)
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "chore: runner")
+    return "./runner.sh"
+
+
 class TestRunnerNotExecutableIsRefused:
-    """F1-d, the half that was closable: exit 127 must never certify RED.
+    """F1-d, the half that was closable — **re-decided by ISSUE-117**.
 
-    The rework scoped the attribution requirement to pytest and disclosed npm's
-    empty ``no_run_codes`` as a residual. Team-lead measured that disclosure
-    rather than accepting it ("a disclosed residual is a CLAIM") and it is only
-    *partly* forced:
+    ISSUE-103 refused the bare integer 127 for both runners. ISSUE-117 measured
+    that this is an **over-refusal**: npm forwards its test script's exit code
+    verbatim, so a mocha/tap-convention runner reporting exactly 127 failures
+    was refused as "could not be executed". The refusal is now narrowed to the
+    two things that really mean *nothing ran*:
 
-    ===========================================  ====  ===================
-    measured route                               exit  safely refusable?
-    ===========================================  ====  ===================
-    npm, no ``test`` script ("nothing ran")         1  NO — collides
-    npm, ``test`` script's binary absent          127  yes
-    runner binary absent (``_run`` synthesises)   127  yes
-    npm, a genuine JS test failure (GENUINE RED)    1  (must stay RED)
-    ===========================================  ====  ===================
+    1. ``_run`` **synthesised** the 127 (the runner binary is not on PATH) —
+       the kit knows this because it produced the code itself; and
+    2. the child chose 127 **and** the shell said ``command not found`` on
+       stderr — npm's ``test`` script naming an absent binary.
+
+    ================================================  ====  ================
+    measured route                                    exit  refused now?
+    ================================================  ====  ================
+    npm, no ``test`` script ("nothing ran")              1  NO — collides
+    npm, ``test`` script's binary absent               127  yes (evidence)
+    runner binary absent (``_run`` synthesises)        127  yes (tag)
+    npm, a genuine JS test failure (GENUINE RED)         1  no (stays RED)
+    npm, runner chose 127 cleanly (127 failures)       127  **no** (ISSUE-117)
+    npm, runner chose 124 cleanly (124 failures)       124  **no** (ISSUE-117)
+    ================================================  ====  ================
 
     npm uses exit 1 for BOTH ``Missing script: "test"`` and a real test
     failure, so refusing exit 1 would refuse every JS RED — that route is a
-    genuine design limit. Exit **127** collides with nothing, so leaving it
-    unrefused meant "the runner was never executed" certified the TDD RED
-    phase. It is now refused for BOTH runners.
+    genuine design limit, unchanged. The disarm direction for every row that
+    flipped lives in :class:`TestSynthesisedVersusChosenExitCodes`.
     """
 
     def test_npm_exit_127_real_consumer(self, tmp_path):
-        """The disarm direction at the REAL consumer, with REAL npm (lesson 16).
+        """The arm direction at the REAL consumer, with REAL npm (lesson 16).
 
-        The project's ``test`` script names a binary that does not exist, which
-        is a measured 127 from npm itself — not a synthesised one. Pre-fix this
-        certified RED having executed no test whatsoever.
+        The project's ``test`` script names a binary that does not exist. npm
+        **forwards** the shell's 127 (measured below), so from the kit's seam
+        this is a *child-chosen* code — yet nothing ran, which is why
+        ISSUE-117 keeps the refusal and bases it on the shell's **evidence**
+        rather than on the bare integer.
+
+        ``script-shell`` is pinned because the evidence is shell-worded, and
+        four shells word it four ways (measured here, npm 9.8.1/node v18.18.0
+        and npm 11.5.2/node v22.18.0, both identical)::
+
+            /bin/sh    exit 127  /bin/sh: <bin>: command not found
+            /bin/bash  exit 127  /bin/bash: <bin>: command not found
+            /bin/zsh   exit 127  zsh:1: command not found: <bin>
+            /bin/dash  exit 127  /bin/dash: 1: <bin>: not found
+            /bin/ksh   exit 127  /bin/ksh: <bin>: not found
+
+        Without the pin this probe would measure whatever ``/bin/sh`` happens
+        to be on the host. The two wordings the predicate does NOT match are
+        pinned, in their own direction, by
+        ``test_unmatched_shell_wording_falls_open_not_closed``.
         """
         if shutil.which("npm") is None:
             pytest.skip("npm is not installed; this probe needs the real runner")
 
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        _git(repo, "init", "-q", "-b", "main")
-        _git(repo, "config", "user.email", "probe@example.com")
-        _git(repo, "config", "user.name", "Probe")
-        _git(repo, "config", "commit.gpgsign", "false")
-        (repo / "package.json").write_text(
-            '{"name": "p", "version": "1.0.0", '
-            '"scripts": {"test": "definitely-not-a-real-binary-xyz"}}'
+        wt = _npm_probe_worktree(
+            tmp_path, "930", "npm127", ABSENT_BINARY,
+            npmrc="script-shell=/bin/sh\n",
         )
-        (repo / "tests").mkdir()
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-q", "-m", "base")
-
-        wt = tmp_path / "issue-930-npm127"
-        _git(repo, "worktree", "add", "-q", "-b", "issue/ISSUE-930-npm127",
-             str(wt), "HEAD")
-        # git does not track empty directories, so `tests/` is absent from the
-        # checkout even though it exists in the source repo.
-        (wt / "tests").mkdir(exist_ok=True)
-        (wt / "tests" / "feature.test.ts").write_text(
-            'it("branch feature", () => { expect(1).toBe(2); });\n'
-        )
-        _git(wt, "add", "-A")
-        _git(wt, "commit", "-q", "-m", "test: branch test")
-
         r = _run_red_checkpoint(wt, "ISSUE-930")
         out = r.stdout + r.stderr
 
@@ -1049,23 +1182,74 @@ class TestRunnerNotExecutableIsRefused:
         assert "FAIL: RED phase" in out, out
         assert "could not be executed" in out, out
         assert "inconclusive" in out, out
-        # Fixture pin: this really is the 127 route and not some other refusal.
+        # Fixture pin: this really is the 127 route and not some other refusal,
+        # and it really is the EVIDENCE route and not the synthesis route — the
+        # two are different code paths after ISSUE-117 and a test that could not
+        # tell them apart would pass on either.
+        #
+        # Measured while writing this: asserting `"command not found" in out`
+        # does NOT discriminate — the pre-ISSUE-117 message spelled the phrase
+        # itself, in `(exit 127: command not found)`, so the assertion passed on
+        # the old integer-based refusal too. The discriminator is the ABSENT
+        # BINARY's NAME: only an evidence-based refusal quotes what the shell
+        # actually said, and the child's stderr is captured by `_run` rather
+        # than inherited, so it cannot reach this stream any other way.
         assert "127" in out, out
+        assert "command not found" in out, out
+        assert ABSENT_BINARY in out, out
         assert "tests/feature.test.ts" in out, out
+
+    def test_npm_chosen_127_without_evidence_is_red_real_consumer(self, tmp_path):
+        """The DISARM twin of the test above (AC-1, AC-3) — REAL npm.
+
+        Same runner, same exit code, same real consumer; the only thing removed
+        is the shell's ``command not found``. A tap/mocha-convention runner
+        reporting exactly 127 failures exits 127 cleanly, and that must certify
+        RED. Pre-ISSUE-117 this was refused as "could not be executed" — the
+        over-refusal the issue was filed against.
+        """
+        if shutil.which("npm") is None:
+            pytest.skip("npm is not installed; this probe needs the real runner")
+
+        wt = _npm_probe_worktree(
+            tmp_path, "931", "npm127red", "PLACEHOLDER",
+            npmrc="script-shell=/bin/sh\n",
+        )
+        script = _runner_script(wt, 'echo "# fail 127"; exit 127\n')
+        (wt / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0", "scripts": {"test": "%s"}}' % script
+        )
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-q", "-m", "chore: point test at runner")
+
+        r = _run_red_checkpoint(wt, "ISSUE-931")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"a clean child-chosen 127 was refused:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert "could not be executed" not in out, out
+        # Fixture pin: the run really did exit 127 and really did reach the
+        # legacy npm pass, not some other PASS route.
+        assert "exit 127" in out, out
+        assert "unavailable" in out, out
 
     @pytest.mark.parametrize("runner_files,changed,label", [
         ({"pyproject.toml": "[tool.pytest]\n"}, BRANCH_TEST, "pytest"),
         ({"package.json": '{"scripts": {"test": "vitest run"}}'},
          "tests/feature.test.ts", "npm"),
     ])
-    def test_exit_127_is_refused_for_both_runners(
+    def test_synthesised_127_is_refused_for_both_runners(
         self, tmp_path, capsys, runner_files, changed, label
     ):
-        """127 is refused for pytest AND npm — the tightening is not runner-local.
+        """AC-2 — a 127 the KIT produced is refused for pytest AND npm.
 
-        Unit-level because making a real binary disappear is not constructible
-        at the real consumer for pytest; the npm half is additionally covered
-        through the real consumer above.
+        Unchanged in intent from the ISSUE-103 pin this replaces ("the
+        tightening is not runner-local"); changed in its premise. It used to
+        feed a hand-built ``CompletedProcess(…, 127)``, which after ISSUE-117
+        means *the child chose 127* and no longer exercises this branch at all.
+        The result now comes from :func:`_synthesised`, i.e. from a real
+        ``vc._run`` call against an absent binary, so the test pins the route
+        it names.
         """
         wt = tmp_path / "wt" / "issue" / "issue-001-slug"
         (wt / "tests").mkdir(parents=True)
@@ -1082,9 +1266,7 @@ class TestRunnerNotExecutableIsRefused:
         ), patch.object(
             vc, "_run",
             side_effect=_side_effect(
-                wt, f"{changed}\n", runs,
-                # Exactly what `_run` synthesises for a missing binary.
-                _mock_run(127, stdout="", stderr="x: command not found"),
+                wt, f"{changed}\n", runs, _synthesised("binary-absent"),
             ),
         ):
             assert vc.verify_implement_red("ISSUE-001") is False, label
@@ -1093,6 +1275,8 @@ class TestRunnerNotExecutableIsRefused:
         assert "could not be executed" in out, out
         assert "inconclusive" in out, out
         assert changed in out, out
+        # AC-2: the reason must be NAMED, not merely the number reported.
+        assert "not on PATH" in out, out
 
     def test_npm_exit_1_is_still_red_because_it_collides(self, tmp_path, capsys):
         """The negative control for the tightening: exit 1 must stay RED for npm.
@@ -1129,12 +1313,342 @@ class TestRunnerNotExecutableIsRefused:
         The note previously implied npm's whole no-run class was unrefusable.
         Measured, only the exit-1 half is. Asserting the mechanism keeps the
         note honest rather than merely mentioning npm.
+
+        **Updated by ISSUE-117 (AC-4).** The note now also carries the
+        measurement that *corrected* it, and a version-specific figure has to
+        say which version it was taken against — the figure this one replaces
+        was wrong precisely because it did not.
         """
         note = _hazard_note()
         assert "no_run_codes" in note, note
         assert "127" in note, note
         # The collision is the reason exit 1 is NOT refused; it must be stated.
         assert "exits 1 for BOTH" in note or "exit 1 would" in note, note
+        # AC-4: the table's provenance. Both npm/node pairs the forwarding was
+        # measured against, since one of them is the version the corrected
+        # figure came from and the other is the one it was re-measured on.
+        assert "npm 11.5.2" in note and "node v22.18.0" in note, note
+        assert "npm 9.8.1" in note and "node v18.18.0" in note, note
+
+
+class TestSynthesisedVersusChosenExitCodes:
+    """ISSUE-117 — a 124/127 the kit PRODUCED is not a 124/127 the child CHOSE.
+
+    **The correction this class exists for.** SPEC-103 was dispatched with the
+    figure "npm collapses its test script's exit code to 1". That was true of
+    the single construction it was taken from and false in general. Re-measured
+    here, with a ``test`` script that just exits with a requested code:
+
+    ====================  =====================  =====================
+    script exit           npm 9.8.1 / v18.18.0   npm 11.5.2 / v22.18.0
+    ====================  =====================  =====================
+    0                     0                      0
+    1                     1                      1
+    2                     2                      2
+    4                     4                      4
+    5                     5                      5
+    9                     9                      9
+    42                    42                     42
+    124                   124                    124
+    127                   127                    127
+    ====================  =====================  =====================
+
+    npm **forwards verbatim** on both. So the ISSUE-103 refusals — any 124 is
+    "timed out", any 127 is "could not be executed" — were **over-refusals**: a
+    mocha/tap-convention runner reporting exactly 124 or 127 failures was
+    blocked for counting. An over-refusal cannot be declared away, so it is
+    fixed here.
+
+    **The seam.** ``_run`` is the only writer of a 124 or a 127 the child never
+    chose: it synthesises 124 on ``TimeoutExpired`` and 127 on
+    ``FileNotFoundError``. It now tags those results, and the gate reads the
+    tag instead of the bare integer.
+
+    **The hard sub-case, decided.** An npm project whose ``test`` script names
+    an absent binary exits 127, and from the kit's seam that is CHILD-chosen —
+    yet genuinely nothing ran. The decision taken is **(i) narrow the refusal
+    to evidence**: refuse a chosen 127 only when the shell also said
+    ``command not found`` on stderr. Measured basis, and the honest cost of it:
+
+    * the conjunction is a **strict subset** of what ISSUE-103 already refused,
+      so this change can only *remove* blocks and can never add one — which is
+      what makes option (i) admissible under the governing rule at all;
+    * its residual over-refusal is a runner that exits exactly 127 *and* prints
+      ``command not found`` on stderr (measured constructible; pinned by
+      ``test_chosen_127_with_shell_evidence_is_refused``). That input was
+      already refused before this change, so nothing new is blocked;
+    * its residual **false pass** is a shell that words the message otherwise —
+      ``dash`` and ``ksh`` say ``not found`` — measured and pinned in its own
+      direction by ``test_unmatched_shell_wording_falls_open_not_closed``.
+      The miss direction is fail-OPEN, i.e. inside SPEC-103's declared
+      boundary, never a block.
+
+    Deliberately NOT narrowed to evidence: a chosen **124**. Nothing the kit can
+    read distinguishes "124 failures" from a ``timeout(1)``-wrapped script, and
+    only the over-refusal is in scope, so a chosen 124 certifies RED.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+    # ── the seam itself ──────────────────────────────────────────────
+
+    def test_run_tags_the_timeout_it_synthesises(self):
+        """AC-2 premise: ``_run``'s own 124 is distinguishable from a child's."""
+        result = vc._run(["sleep", "10"], timeout=1)
+        assert result.returncode == 124
+        assert vc._synthesised_reason(result) == "timeout"
+
+    def test_run_tags_the_absent_binary_it_synthesises(self):
+        """AC-2 premise: ``_run``'s own 127 is distinguishable from a child's."""
+        result = vc._run([ABSENT_BINARY])
+        assert result.returncode == 127
+        assert vc._synthesised_reason(result) == "binary-absent"
+
+    @pytest.mark.parametrize("code", [0, 1, 124, 127])
+    def test_a_code_the_child_chose_carries_no_tag(self, code):
+        """The crux. A REAL child exiting 124 or 127 must be indistinguishable
+        from one exiting 0 or 1 as far as the tag is concerned — otherwise the
+        gate would still be reading the integer, just one layer down.
+        """
+        result = vc._run(["python3", "-c", f"import sys; sys.exit({code})"])
+        assert result.returncode == code
+        assert vc._synthesised_reason(result) is None
+
+    def test_a_plain_completed_process_is_untagged(self):
+        """``_synthesised_reason`` must tolerate a result it did not build.
+
+        Every unit test in this file mocks the seam with a bare
+        ``CompletedProcess``; if the reader raised on a missing attribute
+        instead of returning ``None``, the whole suite would error rather than
+        exercise the chosen-code path.
+        """
+        assert vc._synthesised_reason(_mock_run(127)) is None
+
+    # ── AC-2: synthesised stays could-not-compute, with its reason ──
+
+    def test_synthesised_timeout_is_still_could_not_compute(
+        self, tmp_path, capsys
+    ):
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs, _synthesised("timeout")
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        out = capsys.readouterr().out
+        assert "inconclusive" in out.lower(), out
+        assert "timed out" in out.lower(), out
+        # AC-2: the reason is NAMED — whose bound stopped the run.
+        assert "the kit's own" in out, out
+        assert "Scope requested:" in out, out
+
+    def test_synthesised_binary_absent_is_still_could_not_compute(
+        self, tmp_path, capsys
+    ):
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs, _synthesised("binary-absent")
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        out = capsys.readouterr().out
+        assert "inconclusive" in out.lower(), out
+        assert "could not be executed" in out, out
+        # AC-2: the reason is NAMED — which binary, and why it could not run.
+        assert "not on PATH" in out, out
+        assert "Scope requested:" in out, out
+
+    # ── AC-1: a code the child chose is the runner's verdict ────────
+
+    @pytest.mark.parametrize("code", [124, 127])
+    def test_child_chosen_code_is_the_runners_verdict_for_npm(
+        self, tmp_path, capsys, code
+    ):
+        """The over-refusal, removed: a failure-count runner at 124 or 127.
+
+        Unit level; the real-consumer half is
+        ``TestRunnerNotExecutableIsRefused::
+        test_npm_chosen_127_without_evidence_is_red_real_consumer``.
+        """
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        (wt / "tests").mkdir(parents=True)
+        (wt / "package.json").write_text('{"scripts": {"test": "mocha"}}')
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs,
+                _mock_run(code, stdout=f"  {code} failing\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True, code
+
+        out = capsys.readouterr().out
+        assert "PASS: RED phase" in out, out
+        assert f"exit {code}" in out, out
+        assert "could not be executed" not in out, out
+        assert "timed out" not in out.lower(), out
+
+    def test_child_chosen_127_reaches_pytest_attribution_not_refusal(
+        self, tmp_path, capsys
+    ):
+        """For pytest the chosen code must fall through to ATTRIBUTION.
+
+        Measured: pytest's own exit codes are 0–5, but a project's
+        ``conftest`` can set ``session.exitstatus = 127``, and when it does the
+        summary section is still printed and still names the failing file. That
+        run is a genuine RED and must pass on the ordinary attribution route,
+        not be short-circuited by the integer.
+        """
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs,
+                _mock_run(127, stdout=f"FAILED {BRANCH_TEST}::test_branch_feature - x"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        out = capsys.readouterr().out
+        assert "PASS: RED phase" in out, out
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
+
+    # ── the hard sub-case: evidence, and what it does and does not catch ──
+
+    def test_chosen_127_with_shell_evidence_is_refused(self, tmp_path, capsys):
+        """Option (i): a chosen 127 *plus* the shell's own words → refuse.
+
+        This is npm's ``test`` script naming an absent binary. It is also the
+        stated residual over-refusal: a runner that chose 127 and happened to
+        print ``command not found`` on stderr is refused too. That input was
+        already refused before ISSUE-117, so the conjunction adds no new block.
+        """
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        (wt / "tests").mkdir(parents=True)
+        (wt / "package.json").write_text('{"scripts": {"test": "mocha"}}')
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs,
+                _mock_run(127, stderr=f"sh: {ABSENT_BINARY}: command not found\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        out = capsys.readouterr().out
+        assert "could not be executed" in out, out
+        assert "inconclusive" in out, out
+        # Fixture pin: the EVIDENCE route, which must name its evidence —
+        # otherwise this is indistinguishable from the synthesis route.
+        assert "command not found" in out, out
+        assert "not on PATH" not in out, out
+
+    @pytest.mark.parametrize("code", [1, 124])
+    def test_evidence_without_exit_127_does_not_refuse(
+        self, tmp_path, capsys, code
+    ):
+        """The evidence is only read at 127 — it is not a free-standing refusal.
+
+        Measured route this protects (npm 9.8.1 and 11.5.2 alike): a runner that
+        shells out to a missing helper, prints
+        ``./runner.sh: line 2: <bin>: command not found`` on stderr, and then
+        reports its test failures normally with exit 1. That is a genuine RED
+        and refusing it on the message alone would be a fresh over-refusal.
+        """
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        (wt / "tests").mkdir(parents=True)
+        (wt / "package.json").write_text('{"scripts": {"test": "mocha"}}')
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs,
+                _mock_run(
+                    code,
+                    stdout="  1 failing\n",
+                    stderr="./runner.sh: line 2: helper-xyz: command not found\n",
+                ),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True, code
+
+        out = capsys.readouterr().out
+        assert "PASS: RED phase" in out, out
+        assert "could not be executed" not in out, out
+
+    @pytest.mark.parametrize("stderr,matches,shell", [
+        (f"/bin/sh: {ABSENT_BINARY}: command not found\n", True, "sh"),
+        (f"/bin/bash: {ABSENT_BINARY}: command not found\n", True, "bash"),
+        (f"zsh:1: command not found: {ABSENT_BINARY}\n", True, "zsh"),
+        (f"/bin/dash: 1: {ABSENT_BINARY}: not found\n", False, "dash"),
+        (f"/bin/ksh: {ABSENT_BINARY}: not found\n", False, "ksh"),
+        ("", False, "no stderr at all"),
+        ("  127 failing\n", False, "a failure-count runner's own stderr"),
+    ])
+    def test_shell_wordings_measured_against_the_predicate(
+        self, stderr, matches, shell
+    ):
+        """The predicate, pinned against the wordings actually measured.
+
+        Taken by running ``<shell> -c <absent-binary>`` and, separately, npm
+        with ``script-shell=<shell>``; both agree, and npm forwarded 127 in
+        every row. The two ``False`` rows are the disclosed false passes: their
+        wording is not matched, so the gate lets the run through. That is the
+        fail-OPEN direction, which the governing rule permits; the alternative
+        (matching the bare substring ``not found``) would refuse an ordinary
+        ``Module not found`` on stderr and is the over-refusal this declines.
+        """
+        assert vc._shell_said_command_not_found(stderr) is matches, shell
+
+    def test_unmatched_shell_wording_falls_open_not_closed(self, tmp_path):
+        """The disclosed false pass, at the REAL consumer with REAL npm.
+
+        ``script-shell=/bin/dash`` makes the very same absent-binary project
+        word its message ``not found`` instead of ``command not found``. npm
+        still forwards 127, the predicate does not match, and the gate PASSES —
+        a run in which nothing executed certifies RED. Pinned deliberately so
+        the residual is a measured fact rather than a claim, and so that
+        narrowing it later is a visible change to this test.
+        """
+        if shutil.which("npm") is None:
+            pytest.skip("npm is not installed; this probe needs the real runner")
+        if not Path("/bin/dash").exists():
+            pytest.skip("/bin/dash is absent; the alternate wording is unmeasurable here")
+
+        wt = _npm_probe_worktree(
+            tmp_path, "932", "dashwording", ABSENT_BINARY,
+            npmrc="script-shell=/bin/dash\n",
+        )
+        r = _run_red_checkpoint(wt, "ISSUE-932")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, (
+            "the dash wording is now matched — if that was deliberate, this "
+            f"test records the old residual and must be re-decided:\n{out}"
+        )
+        assert "PASS: RED phase" in out, out
 
 
 def _hazard_note() -> str:
@@ -1217,7 +1731,11 @@ class TestPassLineDoesNotOverstate:
         assert "docs/specs/SPEC-103.md" in out, out
 
     @pytest.mark.parametrize("result,label", [
-        (("127", "x: command not found"), "runner-not-executable"),
+        # ISSUE-117 split the one-time "runner-not-executable" row into the two
+        # routes that now exist. `None` asks for a genuinely SYNTHESISED result;
+        # a tuple is a code the child chose.
+        (None, "runner-not-executable-synthesised"),
+        (("127", "sh: x: command not found"), "runner-not-executable-evidence"),
         (("5", ""), "evaluated-nothing"),
     ])
     def test_refusals_say_scope_requested_not_scope_was(
@@ -1231,17 +1749,26 @@ class TestPassLineDoesNotOverstate:
         own ``test_dir_pattern`` accepts — is consumed by pytest as a flag,
         after which the whole suite runs while this line still reports the
         scope that was asked for.
+
+        **Updated by ISSUE-117 (AC-3).** The old ``("127", "x: command not
+        found")`` row still refuses, but only by accident of its stderr: after
+        the change a bare 127 is a *chosen* code and the row exercises the new
+        evidence branch, not the not-executable branch it was named for. Both
+        branches are now covered, so a future narrowing of either is visible
+        here rather than silently reducing this to one route.
         """
-        rc, stderr = result
         wt = _py_worktree(tmp_path)
+        if result is None:
+            outcome = _synthesised("binary-absent")
+        else:
+            rc, stderr = result
+            outcome = _mock_run(int(rc), stderr=stderr)
         runs: list = []
         with patch.object(
             vc, "_default_branch", lambda: "main"
         ), patch.object(
             vc, "_run",
-            side_effect=_side_effect(
-                wt, f"{BRANCH_TEST}\n", runs, _mock_run(int(rc), stderr=stderr)
-            ),
+            side_effect=_side_effect(wt, f"{BRANCH_TEST}\n", runs, outcome),
         ):
             assert vc.verify_implement_red("ISSUE-001") is False, label
 
