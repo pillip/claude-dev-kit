@@ -71,10 +71,25 @@ class TestRun:
         result = vc._run(["nonexistent_binary_xyz_123"])
         assert result.returncode == 127
         assert "command not found" in result.stderr
+        # ISSUE-117: the code is SYNTHESISED, and callers must be able to tell.
+        # A child is free to choose 127 itself, and npm forwards it verbatim.
+        assert vc._synthesised_reason(result) == "binary-absent"
 
     def test_normal_command_works(self):
         result = vc._run(["python3", "--version"])
         assert result.returncode == 0
+        assert vc._synthesised_reason(result) is None
+
+    def test_a_child_that_chooses_127_is_not_tagged(self):
+        """ISSUE-117 — the disarm direction for the tag above.
+
+        Without this, ``_synthesised_reason`` could return ``"binary-absent"``
+        for every 127 and both the assertion above and the gate that reads it
+        would still pass.
+        """
+        result = vc._run(["python3", "-c", "import sys; sys.exit(127)"])
+        assert result.returncode == 127
+        assert vc._synthesised_reason(result) is None
 
 
 # ── _repo_root ────────────────────────────────────────────────────────
@@ -1228,6 +1243,15 @@ class TestRunTimeout:
         result = vc._run(["sleep", "10"], timeout=1)
         assert result.returncode == 124
         assert "timed out" in result.stderr
+        # ISSUE-117: SYNTHESISED, and tagged as such — 124 is also a code a
+        # child may choose, and npm forwards it verbatim.
+        assert vc._synthesised_reason(result) == "timeout"
+
+    def test_a_child_that_chooses_124_is_not_tagged(self):
+        """ISSUE-117 — the disarm direction for the tag above."""
+        result = vc._run(["python3", "-c", "import sys; sys.exit(124)"], timeout=30)
+        assert result.returncode == 124
+        assert vc._synthesised_reason(result) is None
 
     def test_default_timeout_is_30(self):
         """_run should accept timeout parameter with default of 30."""
@@ -1526,12 +1550,24 @@ class TestRedGateExitCodeMatrix:
 
     def test_red_gate_timeout_124_fails_inconclusive(self, tmp_path, capsys):
         """Exit 124 (timeout sentinel) is NOT evidence tests fail — RED must
-        FAIL and report the run as timed out / inconclusive."""
+        FAIL and report the run as timed out / inconclusive.
+
+        **Updated by ISSUE-117 (AC-3), premise changed, verdict unchanged.**
+        The sentinel is no longer the integer: it is the tag ``_run`` attaches
+        when IT gave up on the child. This used to pass a hand-built
+        ``CompletedProcess(…, 124)`` with a stderr that merely *looked* like
+        the sentinel, which after ISSUE-117 reads as a code the child chose
+        (npm forwards 124 verbatim) and certifies RED. Measured: left as it
+        was, this test flips to a failure. The disarm twin lives in
+        ``tests/test_red_gate_scoping.py::TestSynthesisedVersusChosenExitCodes``.
+        """
         wt_path = _make_red_worktree(tmp_path)
         timeouts: list = []
-        side_effect = _red_side_effect(
-            wt_path, _mock_run(124, stderr="python3: timed out after 60s"), timeouts
-        )
+        # A result `_run` REALLY synthesised, not one shaped to resemble it.
+        synthesised = vc._run(["sleep", "10"], timeout=1)
+        assert synthesised.returncode == 124
+        assert vc._synthesised_reason(synthesised) == "timeout"
+        side_effect = _red_side_effect(wt_path, synthesised, timeouts)
 
         with patch.object(vc, "_run", side_effect=side_effect):
             result = vc.verify_implement_red("ISSUE-001")
