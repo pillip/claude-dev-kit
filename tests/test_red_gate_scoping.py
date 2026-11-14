@@ -1153,28 +1153,27 @@ class TestRunnerNotExecutableIsRefused:
         ISSUE-117 keeps the refusal and bases it on the shell's **evidence**
         rather than on the bare integer.
 
-        ``script-shell`` is pinned because the evidence is shell-worded, and
-        four shells word it four ways (measured here, npm 9.8.1/node v18.18.0
-        and npm 11.5.2/node v22.18.0, both identical)::
+        **No ``script-shell`` pin, deliberately.** The first version of this
+        test pinned ``/bin/sh`` *for determinism* and asserted the literal
+        words ``command not found``. That was wrong twice over: ``/bin/sh`` is
+        bash-in-sh-mode on macOS and **dash** on Debian/Ubuntu, and dash words
+        it ``not found`` — so the pin made the probe host-DEPENDENT rather than
+        host-independent, and it passed locally while CI (ubuntu, python 3.11
+        and 3.12) reported, literally::
 
-            /bin/sh    exit 127  /bin/sh: <bin>: command not found
-            /bin/bash  exit 127  /bin/bash: <bin>: command not found
-            /bin/zsh   exit 127  zsh:1: command not found: <bin>
-            /bin/dash  exit 127  /bin/dash: 1: <bin>: not found
-            /bin/ksh   exit 127  /bin/ksh: <bin>: not found
+            AssertionError: exit 127 certified RED:
+              PASS: RED phase — the branch's own tests fail as expected (exit 127)
 
-        Without the pin this probe would measure whatever ``/bin/sh`` happens
-        to be on the host. The two wordings the predicate does NOT match are
-        pinned, in their own direction, by
-        ``test_unmatched_shell_wording_falls_open_not_closed``.
+        That was not a flaky test: it was the predicate genuinely doing nothing
+        on Linux. This probe now runs under whatever ``/bin/sh`` the host has
+        and asserts the VERDICT, not the wording; every shell is driven
+        explicitly by
+        ``test_absent_binary_is_refused_under_each_real_shell``.
         """
         if shutil.which("npm") is None:
             pytest.skip("npm is not installed; this probe needs the real runner")
 
-        wt = _npm_probe_worktree(
-            tmp_path, "930", "npm127", ABSENT_BINARY,
-            npmrc="script-shell=/bin/sh\n",
-        )
+        wt = _npm_probe_worktree(tmp_path, "930", "npm127", ABSENT_BINARY)
         r = _run_red_checkpoint(wt, "ISSUE-930")
         out = r.stdout + r.stderr
 
@@ -1190,12 +1189,13 @@ class TestRunnerNotExecutableIsRefused:
         # Measured while writing this: asserting `"command not found" in out`
         # does NOT discriminate — the pre-ISSUE-117 message spelled the phrase
         # itself, in `(exit 127: command not found)`, so the assertion passed on
-        # the old integer-based refusal too. The discriminator is the ABSENT
-        # BINARY's NAME: only an evidence-based refusal quotes what the shell
-        # actually said, and the child's stderr is captured by `_run` rather
-        # than inherited, so it cannot reach this stream any other way.
+        # the old integer-based refusal too. It is ALSO host-dependent, per the
+        # docstring. The discriminator is the ABSENT BINARY's NAME: only an
+        # evidence-based refusal quotes what the shell actually said, every
+        # measured shell names the binary, and the child's stderr is captured by
+        # `_run` rather than inherited, so it cannot reach this stream any other
+        # way.
         assert "127" in out, out
-        assert "command not found" in out, out
         assert ABSENT_BINARY in out, out
         assert "tests/feature.test.ts" in out, out
 
@@ -1211,10 +1211,7 @@ class TestRunnerNotExecutableIsRefused:
         if shutil.which("npm") is None:
             pytest.skip("npm is not installed; this probe needs the real runner")
 
-        wt = _npm_probe_worktree(
-            tmp_path, "931", "npm127red", "PLACEHOLDER",
-            npmrc="script-shell=/bin/sh\n",
-        )
+        wt = _npm_probe_worktree(tmp_path, "931", "npm127red", "PLACEHOLDER")
         script = _runner_script(wt, 'echo "# fail 127"; exit 127\n')
         (wt / "package.json").write_text(
             '{"name": "p", "version": "1.0.0", "scripts": {"test": "%s"}}' % script
@@ -1374,14 +1371,22 @@ class TestSynthesisedVersusChosenExitCodes:
       so this change can only *remove* blocks and can never add one — which is
       what makes option (i) admissible under the governing rule at all;
     * its residual over-refusal is a runner that exits exactly 127 *and* prints
-      ``command not found`` on stderr (measured constructible; pinned by
-      ``test_chosen_127_with_shell_evidence_is_refused``). That input was
+      a shell-shaped not-found line on stderr (measured constructible; pinned
+      by ``test_chosen_127_with_shell_evidence_is_refused``). That input was
       already refused before this change, so nothing new is blocked;
-    * its residual **false pass** is a shell that words the message otherwise —
-      ``dash`` and ``ksh`` say ``not found`` — measured and pinned in its own
-      direction by ``test_unmatched_shell_wording_falls_open_not_closed``.
-      The miss direction is fail-OPEN, i.e. inside SPEC-103's declared
-      boundary, never a block.
+    * the evidence must cover the shell npm actually uses. ``/bin/sh`` is
+      bash-in-sh-mode on macOS and **dash** on Debian/Ubuntu, and dash omits
+      the word "command". A first version of the predicate read only
+      ``command not found`` and was therefore **inert on Linux** — measured on
+      CI as certifying RED for a run in which nothing executed. All five
+      measured shells are now covered; see
+      ``test_shell_wordings_measured_against_the_predicate`` for the arm rows
+      and the disarm rows that stop the repair overshooting into a bare
+      ``not found`` substring match.
+    * the residual **false pass** that remains is a shell wording outside the
+      measured set; fail-OPEN, inside SPEC-103's declared boundary, never a
+      block. Pinned by
+      ``test_a_wording_outside_the_measured_set_still_falls_open``.
 
     Deliberately NOT narrowed to evidence: a chosen **124**. Nothing the kit can
     read distinguishes "124 failures" from a ``timeout(1)``-wrapped script, and
@@ -1598,57 +1603,107 @@ class TestSynthesisedVersusChosenExitCodes:
         assert "PASS: RED phase" in out, out
         assert "could not be executed" not in out, out
 
-    @pytest.mark.parametrize("stderr,matches,shell", [
+    @pytest.mark.parametrize("stderr,matches,label", [
+        # ARM — every shell measured. `sh`/`bash`/`zsh` say "command not
+        # found"; `dash`/`ksh` drop the word "command" and are matched by the
+        # structural rule instead.
         (f"/bin/sh: {ABSENT_BINARY}: command not found\n", True, "sh"),
         (f"/bin/bash: {ABSENT_BINARY}: command not found\n", True, "bash"),
         (f"zsh:1: command not found: {ABSENT_BINARY}\n", True, "zsh"),
-        (f"/bin/dash: 1: {ABSENT_BINARY}: not found\n", False, "dash"),
-        (f"/bin/ksh: {ABSENT_BINARY}: not found\n", False, "ksh"),
+        (f"/bin/dash: 1: {ABSENT_BINARY}: not found\n", True, "dash"),
+        (f"/bin/ksh: {ABSENT_BINARY}: not found\n", True, "ksh"),
+        # DISARM — output a legitimate runner at exit 127 might print. Every
+        # one of these contains "not found" or looks like it should; none has
+        # the shell's shape, and refusing any of them would be a fresh
+        # over-refusal of exactly the class this issue removes.
+        ("Module not found: Error: Can't resolve './x' in '/app/src'\n",
+         False, "webpack module-not-found"),
+        ("Module not found\n", False, "bare module-not-found"),
+        ("Error: Cannot find module 'foo'\n", False, "node cannot-find-module"),
+        ("Error: ENOENT: no such file or directory, open 'x.json'\n",
+         False, "ENOENT"),
+        ("error TS2307: Cannot find module './y'.\n", False, "tsc"),
+        ("Tests:  127 failed, 200 total\n", False, "a jest-shaped summary"),
         ("", False, "no stderr at all"),
         ("  127 failing\n", False, "a failure-count runner's own stderr"),
+        # Added after a mutation survivor: lowering the field threshold from 3
+        # to 2 changed nothing on the corpus above, because no row had exactly
+        # two fields. No measured shell emits two — every one carries at least
+        # `prog: cmd: not found` — so this row is what makes the threshold
+        # load-bearing, and what stops the structural rule degrading into the
+        # bare-substring match the DISARM rows above exist to prevent.
+        ("Error: not found\n", False, "two fields only — not the shell's shape"),
+        # Added after a second survivor: reading only the FIRST stderr line
+        # changed nothing, because in the absent-binary case the shell's
+        # diagnostic is the only line. A runner that writes to stderr BEFORE
+        # hitting the missing binary puts it later, and that run must still be
+        # recognised.
+        ("npm warn config production is deprecated\n"
+         "runner: loading plugins\n"
+         f"/bin/dash: 1: {ABSENT_BINARY}: not found\n",
+         True, "shell diagnostic after other stderr output"),
     ])
     def test_shell_wordings_measured_against_the_predicate(
-        self, stderr, matches, shell
+        self, stderr, matches, label
     ):
-        """The predicate, pinned against the wordings actually measured.
+        """The predicate, pinned against wordings actually measured.
 
-        Taken by running ``<shell> -c <absent-binary>`` and, separately, npm
-        with ``script-shell=<shell>``; both agree, and npm forwarded 127 in
-        every row. The two ``False`` rows are the disclosed false passes: their
-        wording is not matched, so the gate lets the run through. That is the
-        fail-OPEN direction, which the governing rule permits; the alternative
-        (matching the bare substring ``not found``) would refuse an ordinary
-        ``Module not found`` on stderr and is the over-refusal this declines.
+        The ARM rows were taken by running ``<shell> -c <absent-binary>`` and,
+        separately, npm with ``script-shell=<shell>``; both agree, and npm
+        forwarded 127 in every row.
+
+        **The dash row is the one that matters.** The first version of this
+        predicate read only ``"command not found" in stderr``, and on
+        Debian/Ubuntu ``/bin/sh`` IS dash — so on the platform most consumers
+        and CI run, it matched nothing and the absent-binary no-run route
+        certified RED. The DISARM rows are what stops the repair from
+        overshooting into a bare ``not found`` substring match.
         """
-        assert vc._shell_said_command_not_found(stderr) is matches, shell
+        assert vc._shell_said_command_not_found(stderr) is matches, label
 
-    def test_unmatched_shell_wording_falls_open_not_closed(self, tmp_path):
-        """The disclosed false pass, at the REAL consumer with REAL npm.
+    @pytest.mark.parametrize("shell", ["/bin/sh", "/bin/dash", "/bin/bash"])
+    def test_absent_binary_is_refused_under_each_real_shell(self, tmp_path, shell):
+        """The repair, at the REAL consumer, under each shell npm may use.
 
-        ``script-shell=/bin/dash`` makes the very same absent-binary project
-        word its message ``not found`` instead of ``command not found``. npm
-        still forwards 127, the predicate does not match, and the gate PASSES —
-        a run in which nothing executed certifies RED. Pinned deliberately so
-        the residual is a measured fact rather than a claim, and so that
-        narrowing it later is a visible change to this test.
+        ``/bin/sh`` is *not one shell*: it is bash-in-sh-mode on macOS and dash
+        on Debian/Ubuntu, and they word "binary absent" differently. Pinning
+        one of them is what made the first attempt pass locally and fail on CI,
+        so all three are driven here and the probe asserts the VERDICT rather
+        than the wording.
         """
         if shutil.which("npm") is None:
             pytest.skip("npm is not installed; this probe needs the real runner")
-        if not Path("/bin/dash").exists():
-            pytest.skip("/bin/dash is absent; the alternate wording is unmeasurable here")
+        if not Path(shell).exists():
+            pytest.skip(f"{shell} is absent on this host")
 
+        slug = shell.rsplit("/", 1)[-1]
         wt = _npm_probe_worktree(
-            tmp_path, "932", "dashwording", ABSENT_BINARY,
-            npmrc="script-shell=/bin/dash\n",
+            tmp_path, f"93{len(slug)}", f"absent{slug}", ABSENT_BINARY,
+            npmrc=f"script-shell={shell}\n",
         )
-        r = _run_red_checkpoint(wt, "ISSUE-932")
+        r = _run_red_checkpoint(wt, f"ISSUE-93{len(slug)}")
         out = r.stdout + r.stderr
 
-        assert r.returncode == 0, (
-            "the dash wording is now matched — if that was deliberate, this "
-            f"test records the old residual and must be re-decided:\n{out}"
+        assert r.returncode != 0, (
+            f"nothing ran under {shell}, yet exit 127 certified RED:\n{out}"
         )
-        assert "PASS: RED phase" in out, out
+        assert "could not be executed" in out, out
+        # Fixture pin: the EVIDENCE route, which quotes what the shell said.
+        assert ABSENT_BINARY in out, out
+
+    def test_a_wording_outside_the_measured_set_still_falls_open(self):
+        """The residual that remains, stated rather than implied.
+
+        Every shell measured is covered, so this can no longer be demonstrated
+        with a real one — it is pinned at the unit seam instead, with a wording
+        no measured shell emits. The direction is fail-OPEN (such a run
+        PASSES), which is inside SPEC-103's declared boundary and never a
+        block. If a shell is ever found that words it this way, this test is
+        the record of what the gate would do.
+        """
+        assert vc._shell_said_command_not_found(
+            "fish: Unknown command: definitely-not-a-real-binary-xyz\n"
+        ) is False
 
 
 def _hazard_note() -> str:

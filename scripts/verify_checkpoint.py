@@ -94,22 +94,43 @@ def _run(cmd: list[str], timeout: int = 30, **kwargs) -> subprocess.CompletedPro
 #
 # Measured, by running `<shell> -c <absent-binary>` and, separately, npm with
 # `script-shell=<shell>` (both agree; npm forwarded 127 in every row):
-#   /bin/sh    sh: <bin>: command not found           <- matched
-#   /bin/bash  bash: <bin>: command not found         <- matched
-#   /bin/zsh   zsh:1: command not found: <bin>        <- matched
-#   /bin/dash  dash: 1: <bin>: not found              <- NOT matched
-#   /bin/ksh   ksh: <bin>: not found                  <- NOT matched
+#   /bin/sh    sh: <bin>: command not found       <- rule (a)
+#   /bin/bash  bash: <bin>: command not found     <- rule (a)
+#   /bin/zsh   zsh:1: command not found: <bin>    <- rule (a)
+#   /bin/dash  dash: 1: <bin>: not found          <- rule (b)
+#   /bin/ksh   ksh: <bin>: not found              <- rule (b)
 #
-# The two misses are deliberate. Matching the bare substring "not found" would
-# also match an ordinary `Module not found` on a runner's stderr and refuse a
-# genuine RED, which is the over-refusal class ISSUE-117 exists to remove. The
-# miss direction here is fail-OPEN — such a run PASSES — which is a disclosed
-# false pass inside SPEC-103's boundary, never a block.
+# Rule (b) is NOT optional, and the first version of this predicate — rule (a)
+# alone — was wrong for exactly that reason: on Debian/Ubuntu `/bin/sh` IS
+# dash, so on the platform most consumers and CI run, the predicate matched
+# nothing and an npm project whose `test` script names an absent binary
+# certified RED having executed no test at all. Measured on GitHub Actions
+# ubuntu (PR #153, python 3.11 and 3.12), literal: `PASS: RED phase — the
+# branch's own tests fail as expected (exit 127)`. A defence that is absent on
+# the dominant platform is not a defence.
+#
+# Rule (b) is kept structural rather than widened to the bare substring
+# "not found", which would match an ordinary `Module not found: Error: ...`
+# on a runner's stderr. Measured negatives, none of which match:
+#   "Module not found: Error: Can't resolve './x' in '/app/src'"
+#   "Module not found" / "Error: Cannot find module 'foo'"
+#   "Error: ENOENT: no such file or directory, open 'x.json'"
+#   "error TS2307: Cannot find module './y'." / "Tests:  127 failed, 200 total"
+# Residual over-refusal, measured and narrow: prose that happens to have the
+# shell's `a: b: not found` shape, e.g. "Error: config.json: not found". Such a
+# run was ALREADY refused before ISSUE-117 (which refused every 127), so this
+# blocks nothing new.
 _COMMAND_NOT_FOUND = "command not found"
+_NOT_FOUND = "not found"
+_SHELL_DIAGNOSTIC_FIELDS = 3  # `prog: [line:] cmd: not found`
 
 
 def _shell_said_command_not_found(stderr: str) -> bool:
     """True when the child's stderr carries a shell's own "no such command".
+
+    Matches a LINE that either (a) contains "command not found" — sh, bash and
+    zsh — or (b) has the shell diagnostic's colon-delimited shape and ends in
+    the field "not found" — dash and ksh, which omit the word "command".
 
     Read ONLY alongside exit 127 (see `verify_implement_red`); on its own it is
     not a refusal, because a runner that shells out to a missing helper and then
@@ -117,7 +138,14 @@ def _shell_said_command_not_found(stderr: str) -> bool:
     `./runner.sh: line 2: <bin>: command not found` on stderr — and that is a
     genuine RED.
     """
-    return _COMMAND_NOT_FOUND in (stderr or "")
+    for line in (stderr or "").splitlines():
+        line = line.strip()
+        if _COMMAND_NOT_FOUND in line:
+            return True
+        fields = line.split(": ")
+        if len(fields) >= _SHELL_DIAGNOSTIC_FIELDS and fields[-1] == _NOT_FOUND:
+            return True
+    return False
 
 
 _DEFAULT_TEST_TIMEOUT = 600  # seconds — default for test-phase subprocess runs
@@ -934,14 +962,17 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     #    "command not found" on stderr — npm's `test` script naming an absent
     #    binary. That conjunction is a strict SUBSET of the old code-only
     #    refusal, so the change can only remove blocks, never add one.
-    #  - The evidence refusal's own two residuals, measured not assumed. Over-
-    #    refusal: a runner that exits exactly 127 AND prints "command not found"
-    #    on stderr is refused; it was already refused before ISSUE-117, so this
-    #    blocks nothing new. False pass: `dash` and `ksh` word the message
-    #    "not found" instead, so their absent-binary runs now certify RED —
-    #    fail-OPEN, inside SPEC-103's declared boundary. Matching bare "not
-    #    found" would catch them and also refuse an ordinary `Module not found`,
-    #    which is the over-refusal class this issue exists to remove.
+    #  - The evidence refusal's own residuals, measured not assumed. Over-
+    #    refusal: a runner that exits exactly 127 AND prints a shell-shaped
+    #    "command not found" / "a: b: not found" on stderr is refused; it was
+    #    already refused before ISSUE-117, so this blocks nothing new. False
+    #    pass: a shell whose wording matches neither rule. All five shells
+    #    measured (sh, bash, zsh, dash, ksh) are covered, and dash is the one
+    #    that matters most because on Debian/Ubuntu `/bin/sh` IS dash — the
+    #    first version of this predicate read only "command not found" and was
+    #    therefore inert on Linux, measured on CI as certifying RED for a run
+    #    in which nothing executed. A defence absent on the dominant platform
+    #    is not a defence; that is why rule (b) exists.
     #  - A CHOSEN 124 is deliberately NOT narrowed by any evidence: nothing in
     #    the stream separates "124 failures" from a `timeout(1)`-wrapped script,
     #    and only the over-refusal was in scope. A chosen 124 certifies RED.
