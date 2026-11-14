@@ -87,7 +87,8 @@
 - [ ] ISSUE-114: Enumerate and close the RED gate's four scope-ENFORCEMENT routes — the gate requests a scope and cannot enforce one _(track: platform, P1, 1.5d — SPEC-103 Open Question 1; four measured routes make the executed set differ from the requested set, including a dash-leading filename consumed by pytest as a flag)_
 - [ ] ISSUE-115: Pin npm's legacy non-zero-is-RED contract behaviourally at exits 4 and 5 — mutant `M20` survives _(track: platform, P2, 0.5d — SPEC-103 Open Question 2; the mutation is an over-refusal against a shared contract review lesson 8 requires pinned, and the fix must be behavioural assertions rather than a comment-text guard)_
 - [ ] ISSUE-116: Resolve mutant `M14` — make the attribution-scope widening behavioural or record it as equivalent and close it _(track: platform, P2, 0.5d — SPEC-103 Open Question 3; the two sets differ only by non-`.py` paths, which pytest does not blame absent a custom collector)_
-- [ ] ISSUE-117: Distinguish the kit's SYNTHESISED 124/127 from a code the child chose — npm forwards exit codes verbatim _(track: platform, P1, 1d — SPEC-103 Open Question 4, which CONTRADICTS the figure SPEC-103 was dispatched with: a failure-count runner at exactly 127 failures is refused as "could not be executed" and at 124 as "timed out" with no timeout)_
+- [x] ISSUE-117: Distinguish the kit's SYNTHESISED 124/127 from a code the child chose — npm forwards exit codes verbatim _(track: platform, P1, 1d — SPEC-103 Open Question 4, which CONTRADICTS the figure SPEC-103 was dispatched with: a failure-count runner at exactly 127 failures is refused as "could not be executed" and at 124 as "timed out" with no timeout — **SHIPPED 2026-11-15** (PR #153, squash 0d4fa69). The chosen-127 evidence residual is declared and MEASURED rather than left undisclosed; the synthesised-tag catch-all fails closed. Post-merge smoke showed 5 failures traced to the gate's own unpinned interpreter, not to this change — control reproduced them at pre-117 main; carried by ISSUE-118)_
+- [ ] ISSUE-118: Pin the blocking gates' interpreter — `verify_gates` runs bare `python3`, which on a dev machine drifted to an untested 3.14 and turns every ship red _(track: platform, P1, 1d — measured 2026-11-15 on ISSUE-117's post-merge smoke: 5 failures under the gate's `python3` 3.14.7 and 0 under the canonical `uv run --extra dev` 3.11.13, with the SAME 5 reproducing at pre-117 main, so the gate blocks legitimate work)_
 
 ### Doing
 
@@ -7157,11 +7158,11 @@ Mutant `M20` dies against a behavioural assertion, and no comment-text guard is 
 - PRD-Ref: none (kit self-development; SPEC-103 Open Question 4; review lessons "a disclosed residual is a CLAIM — measure it" and "a gate whose subject is COMPUTED must distinguish 'computed and empty' from 'could not compute'")
 - Priority: P1
 - Estimate: 1d
-- Status: backlog
+- Status: done
 - Owner:
-- Branch:
-- GH-Issue:
-- PR:
+- Branch: issue/ISSUE-117-synthesised-vs-chosen-exit-codes
+- GH-Issue: #152
+- PR: #153
 - Depends-On: ISSUE-103
 
 #### Goal
@@ -7183,3 +7184,74 @@ A 124 or 127 the kit synthesised is treated as "could not compute", and the same
 
 #### Rollback
 `git revert` — reverting restores the over-refusal this issue was filed against, so prefer narrowing the fix over reverting it.
+
+---
+
+### ISSUE-118: Pin the blocking gates' interpreter — `verify_gates` runs bare `python3`, which drifted to an untested 3.14 and turns every ship red
+
+> Measured by the orchestrator on 2026-11-15 while shipping ISSUE-117. The **blocking** post-merge smoke checkpoint FAILED on main with 5 failures; the canonical suite on the same tree passed with 0. The cause is not the merged change.
+>
+> `scripts/verify_gates.py::run_gate_unit` invokes `["python3", "-m", "pytest", "-q", "--tb=short"]` — **bare `python3`**, resolved from PATH. On this machine that is `/opt/homebrew/bin/python3` at **3.14.7**, while the canonical environment (`uv run --extra dev`) is **3.11.13**. The project declares `requires-python = ">=3.11"` and CI tests **3.11 and 3.12 only**, so the blocking gate is the single place the suite runs on a version nobody tests.
+>
+> **Measurements, all taken at the real consumer:**
+>
+> | invocation | result |
+> |---|---|
+> | `bash scripts/checkpoint.sh --skill ship --phase smoke` | **5 failed**, 2814 passed, 2 skipped |
+> | `uv run --extra dev pytest -q` (canonical) | **0 failed**, 2820 passed, 1 skipped |
+> | `python3 -m pytest` (the gate's own invocation) | **5 failed** — reproduces the gate exactly |
+> | same file only, gate invocation | 5 failed, 77 passed |
+> | same file only, canonical | **83 passed** |
+> | **control: pre-117 main `76ff78b`, gate invocation** | **5 failed** — the failures predate ISSUE-117 |
+>
+> pytest is 9.0.3 in both, and the uid is 501 in both, so neither the test runner nor privilege explains it. The five are ISSUE-102's I/O-robustness tests (`TestUnstattableRootIsRefusedNotFatal`, `TestListedRootThatCannotBeStattedIsSkipped`, `TestUnreadableSiblingCheckoutIsSkippedNotFatal`), which exercise permission and `stat` edge cases whose exception behaviour differs on 3.14.
+>
+> **Why this is P1 rather than a dev-machine annoyance.** The gate is blocking, so this is an **over-refusal**: it blocks legitimate work, and the rule this sprint inherited from SPEC-102 and SPEC-103 is that a declaration can license a false pass inside a stated boundary and can **never** license blocking legitimate work. Worse, the trigger is **outside the repository**: ISSUE-102's and ISSUE-103's smoke checkpoints both PASSED at ship time a week earlier, so a background interpreter upgrade — a `brew upgrade` nobody ran deliberately — is sufficient to turn every subsequent ship red. A gate whose verdict depends on unpinned ambient state is not measuring the repository.
+>
+> This is the canonical-environment review lesson applied to the gate itself: numbers copied into docs must be generated from the canonical environment, and so must **verdicts**.
+
+- Track: platform
+- UI: false
+- Platform: web
+- Manual: false
+- Spec-Required: false
+- Spec: none
+- PRD-Ref: none (kit self-development; measured on ISSUE-117's ship; review lessons "numbers copied into docs must be generated from the canonical (dev-extras) environment" and "a declaration can never license blocking legitimate work")
+- Priority: P1
+- Estimate: 1d
+- Status: backlog
+- Owner:
+- Branch:
+- GH-Issue:
+- PR:
+- Depends-On: none
+
+#### Goal
+A blocking gate's verdict depends only on the repository and its locked environment, never on which interpreter happens to be first on PATH.
+
+#### Scope (In/Out)
+- In:
+  - Make `run_gate_unit` (and any sibling gate that shells a runner) use the project's canonical environment rather than bare `python3` — `uv run --locked --extra dev` where available, with an explicit, named fallback when `uv` is absent rather than a silent drop to PATH.
+  - Report the interpreter and its version in the gate's own output, so a future divergence is visible in the verdict rather than discovered by bisection.
+  - Decide what the gate does when the canonical environment cannot be constructed: refuse with a named reason (`environment-unavailable`) rather than silently testing something else. A gate that cannot establish its subject must say "could not compute", not substitute a different subject.
+  - Audit the other gates in `verify_gates.py` for the same bare-runner shape and fix or record each.
+- Out:
+  - Making ISSUE-102's five tests pass on 3.14 — that is the sibling question and belongs with whoever decides the supported range; this issue is about the gate's environment, not the tests' portability.
+  - Widening `requires-python` or the CI matrix.
+
+#### Acceptance Criteria (DoD)
+- [ ] Given a machine whose PATH `python3` differs from the locked interpreter, when the blocking smoke gate runs, then it uses the locked one and its verdict matches the canonical suite — asserted by running both and comparing, not by reading the command string.
+- [ ] Given the gate's output, when it is read, then it names the interpreter and version it used.
+- [ ] Given a tree where the canonical environment cannot be built, when the gate runs, then it refuses with a named reason and does not fall back to an arbitrary PATH interpreter — mutation-tested in both directions.
+- [ ] Given the other gates in `verify_gates.py`, when the audit completes, then each bare-runner invocation is either fixed or recorded with its reason, listed in the PR body.
+
+#### Implementation Notes
+- Provenance and full measurement table in the quote above; the decisive control is that the same 5 failures reproduce at pre-117 main under the gate's invocation, so this is not attributable to any recent change.
+- The failing tests are ISSUE-102's; do not "fix" them here to make the gate green. Fixing the subject to satisfy a mis-aimed instrument is the inverse of the defect.
+- `_test_timeout()` already exists as an env-configurable knob on this path; any new knob follows the same rule — documented in the module docstring and a user-facing doc, with its name printed in the failure message it remediates.
+
+#### Tests
+- [ ] Interpreter-selection assertion at the real consumer, plus the both-directions refusal pin for the unbuildable-environment case.
+
+#### Rollback
+`git revert` — reverting restores a blocking gate that tests whichever interpreter PATH offers, which is the state this issue was filed against.

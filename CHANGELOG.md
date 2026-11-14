@@ -5,6 +5,23 @@ release tags are `claude-dev-kit--v<version>`.
 
 ## Unreleased
 
+### Fixed
+- **A chosen exit code is no longer confused with one the kit synthesised** (ISSUE-117, PR #153).
+  npm forwards child exit codes verbatim, so a mocha/tap-convention runner reporting exactly **127
+  failures** was refused as "could not be executed" and one reporting **124** as "timed out" with no
+  timeout involved — both **over-refusals**, which a declaration can never license. The refusal is
+  now narrowed to the conjunction of exit 127 **and** a shell-shaped "command not found", a strict
+  subset of the code-only refusal it replaces, so it can only remove refusals and never add one. The
+  synthesised-tag path fails **closed**, so a future `except` arm added to `_run` cannot turn a
+  no-run into a silent green. This corrects a figure the preceding SPEC was dispatched with: the
+  earlier "npm collapses script codes to 1" was true of its test construction and false in general.
+  The residual the fix leaves — stderr is written by the gated party, so suppressing it with
+  `2>/dev/null` yields a pass — is **declared at the predicate and measured** by
+  `TestThe127FalsePassBoundary`, whose `test_both_streams_empty_at_127_still_certifies_red` is named
+  for what it asserts rather than for what one might wish it asserted. Child stderr is escaped,
+  one-lined and bounded before echoing, after raw echoing was measured turning 2_000_057 B of stderr
+  into 2_000_273 B of gate output.
+
 ### Changed
 - **The `implement/red` checkpoint is scoped to the branch's own tests, and stdout attribution is
   declined in writing** (ISSUE-103, PR #150, `docs/specs/SPEC-103.md`). The gate accepted **any**
