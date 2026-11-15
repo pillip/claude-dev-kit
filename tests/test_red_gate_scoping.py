@@ -1036,21 +1036,57 @@ class TestRedAttributionRequired:
         assert "unavailable" in out, out
         assert "tests/feature.test.ts" in out, out
 
-    def test_hazard_note_states_the_npm_residual(self):
-        """F1-d's residual must be written down, not just accepted in code.
+    @pytest.mark.parametrize("code", [4, 5])
+    def test_npm_keeps_its_contract_at_the_pytest_no_run_codes(
+        self, tmp_path, capsys, code
+    ):
+        """ISSUE-115: npm's `no_run_codes` must stay EMPTY, pinned behaviourally.
 
-        "A disclosed residual is a CLAIM" — the note previously claimed the
-        "evaluated nothing" route was closed for every runner while npm's
-        `no_run_codes` was empty and npm had no attribution requirement.
+        Mutant ``M20`` sets npm's tuple to ``(4, 5)`` — pytest's values, where 4
+        is a usage error and 5 is "no tests collected", so both genuinely mean
+        no test ran. For npm they mean nothing of the kind: **ISSUE-117 measured
+        that npm forwards child exit codes verbatim**, so a mocha/tap-convention
+        runner reporting 4 or 5 *failures* would be refused as "did not run".
+        That is an over-refusal, and a declaration can never license blocking
+        legitimate work.
+
+        This pins the contract **behaviourally** — npm at each code still
+        certifies RED and still says attribution is unavailable. The
+        comment-text guard that used to sit here was removed rather than kept
+        alongside: a test asserting on prose about `no_run_codes` is a
+        record-accuracy test, and those manufacture issues instead of catching
+        them. SPEC-103 required exactly this substitution.
+
+        Note what is NOT claimed: 4 and 5 are not special for npm. They are
+        tested because they are the codes the mutant borrows from pytest, and
+        the point is that npm treats them like any other non-zero code.
         """
-        note = _hazard_note()
-        assert "npm" in note, note
-        # The specific mechanism, not just the word "npm": `no_run_codes` is
-        # empty for npm, so npm's no-run exits are refused by nothing. Asserting
-        # the token keeps this reading the residual paragraph rather than any
-        # comment in the function that happens to mention npm (the superset
-        # weakness M10 was strengthened for, one level smaller).
-        assert "no_run_codes" in note, note
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt.mkdir(parents=True)
+        (wt / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        (wt / "tests").mkdir()
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs,
+                _mock_run(code, stdout=f"Tests:  {code} failed, {code} total\n"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True, (
+                f"npm at exit {code} must certify RED — it is a failure count, "
+                "not a no-run signal"
+            )
+
+        out = capsys.readouterr().out
+        assert "PASS: RED phase" in out, out
+        assert "unavailable" in out, out
+        assert "tests/feature.test.ts" in out, out
 
 
 def _npm_probe_worktree(
