@@ -127,6 +127,19 @@ def scoped_arg(path: str) -> str:
     stops testing anything the moment the argv's spelling changes.
     """
     return f"./{path}"
+
+
+def npm_argv(*scoped: str) -> list[str]:
+    """The npm argv the gate builds for a scoped RED run.
+
+    Exists so the real-vitest probe
+    (:class:`TestSecondSeparatorDeletesScopeOnRealVitest`) runs the shape the
+    gate actually sends instead of a copy that can drift away from it. The
+    structural pin still asserts the argv as a LITERAL as well — if only this
+    helper were asserted against, both sides would move together and the pin
+    would certify whatever the gate happened to build.
+    """
+    return ["npm", "test", "--", "--passWithNoTests", *scoped]
 # A failing test outside `tests/`, so a project whose addopts inject this path
 # adds a failure the branch never touched. Kept DISJOINT from the scoped argv on
 # purpose: measured, pytest 8.3.4 deduplicates an addopts path that CONTAINS the
@@ -3154,13 +3167,23 @@ class TestScopeSeparatorArgvShape:
     def _patch_default_branch(self, monkeypatch):
         monkeypatch.setattr(vc, "_default_branch", lambda: "main")
 
-    def test_npm_argv_separates_the_scope_splat(self, tmp_path):
-        """npm's argv already carries one ``--``; the fix adds a SECOND one.
+    def test_npm_argv_carries_exactly_one_separator(self, tmp_path):
+        """npm's argv carries exactly ONE ``--`` — the second one is removed.
 
-        The exact shape is asserted, because the first separator belongs to
-        ``npm`` (it is what forwards anything at all to the test script) and
-        the second belongs to the test script's own parser. Collapsing them
-        would silently un-forward ``--passWithNoTests``.
+        The second separator shipped and was withdrawn: measured on real
+        vitest 3.2.7 and 1.6.1 it **deletes** the scope rather than protecting
+        it, so the whole suite runs and a branch whose own new test PASSES is
+        certified as a genuine RED. This leg has ``no_run_codes = ()`` and
+        ``attributes_failures = False``, so nothing downstream catches the
+        widened set and the printed line asserts a scope that was discarded —
+        a false pass OUTSIDE SPEC-103's declared property, which is "a run
+        whose arguments were the branch's own changed test files".
+
+        The exact shape is asserted rather than a bare ``count("--") == 1``,
+        because the one separator that remains belongs to ``npm`` — it is what
+        forwards anything at all to the test script — and dropping *it* would
+        silently un-forward ``--passWithNoTests``. The two failure modes are
+        opposite, so the pin has to distinguish them.
         """
         wt = tmp_path / "wt" / "issue" / "issue-001-slug"
         wt.mkdir(parents=True)
@@ -3179,9 +3202,17 @@ class TestScopeSeparatorArgvShape:
             assert vc.verify_implement_red("ISSUE-001") is True
 
         assert runs[0] == [
-            "npm", "test", "--", "--passWithNoTests", "--",
+            "npm", "test", "--", "--passWithNoTests",
             "tests/feature.test.ts",
         ], runs[0]
+        # Both directions, because they fail oppositely: a re-added second
+        # separator deletes the scope, and a removed first one un-forwards
+        # `--passWithNoTests`.
+        assert runs[0].count("--") == 1, runs[0]
+        assert runs[0].index("--") < runs[0].index("--passWithNoTests"), runs[0]
+        # Ties the literal above to the shape the real-vitest probe measures,
+        # so that probe can never certify an argv the gate stopped sending.
+        assert runs[0] == npm_argv("tests/feature.test.ts"), runs[0]
 
 
 class TestSeparatorIsANoOpOnOrdinaryInput:
@@ -3300,14 +3331,25 @@ class TestSeparatorIsANoOpOnOrdinaryInput:
             "--passWithNoTests", "--", ordinary
         ) == [ordinary]
 
-    def test_npm_forwards_the_second_separator_in_position(self, tmp_path):
+    def test_npm_forwards_exactly_the_separator_the_gate_sends(self, tmp_path):
         """C2's first table, at the REAL consumer with real npm.
 
-        That npm forwards a *second* ``--`` is measured, not assumed: the
-        project's ``test`` script dumps its own ``"$@"`` and the dump is read
-        back. The argv is asserted exactly, so a separator that arrives
-        anywhere other than immediately before the scope — or that npm eats —
-        fails here.
+        What npm does with separators is measured, not assumed: the project's
+        ``test`` script dumps its own ``"$@"`` and the dump is read back.
+
+        The claim this now pins is narrower than the one it replaced, and the
+        narrowing is the point. npm *does* forward a second ``--`` — that part
+        of C2 was true. What C2 never measured is what a real JS runner does
+        with it, and on vitest 3.2.7 and 1.6.1 it **deletes** the scope: the
+        whole suite runs, and a branch whose own new test passes is certified
+        as a genuine RED. So the gate sends **one** separator, npm's own, and
+        this pin asserts the dump matches that exactly — a reintroduced second
+        separator fails here at the real consumer rather than in a user's CI.
+
+        The replaced version asserted the dump contained ``--`` before the
+        scope. That assertion was true of npm and silent about the thing that
+        mattered, which is why "npm forwards it" was never evidence that
+        sending it was safe.
         """
         if shutil.which("npm") is None:
             pytest.skip("npm is not installed; this probe needs the real runner")
@@ -3329,9 +3371,117 @@ class TestSeparatorIsANoOpOnOrdinaryInput:
         # Fixture pin: the child really ran (exit 1 → npm's legacy RED pass).
         assert r.returncode == 0, f"the npm probe did not reach the runner:\n{out}"
         assert dump.exists(), out
-        assert dump.read_text().split("\n")[:3] == [
-            "--passWithNoTests", "--", "tests/feature.test.ts",
+        forwarded = [line for line in dump.read_text().split("\n") if line]
+        assert forwarded == [
+            "--passWithNoTests", "tests/feature.test.ts",
         ], dump.read_text()
+        # Stated separately from the equality above so that a reintroduced
+        # second separator names itself in the failure message rather than
+        # showing up as an opaque list mismatch.
+        assert "--" not in forwarded, dump.read_text()
+
+
+_VITEST_FILES = re.compile(r"Test Files\s+(\d+) passed")
+
+
+def _vitest_project(tmp_path: Path) -> Path:
+    """A real vitest project with TWO passing test files.
+
+    Both files pass on purpose. Scope deletion is invisible when the
+    out-of-scope file fails — the runner then exits non-zero for a reason the
+    gate can legitimately see. It shows up only in *how many files ran*, so
+    this probe reads vitest's own ``Test Files N passed`` line.
+
+    Skips rather than fails when vitest cannot be installed: the install is the
+    one part of this probe that needs a registry or a warm npm cache. The
+    skip cannot hide a regression, because every assertion below is anchored to
+    an unscoped control run measured in the same project — if vitest did not
+    really run, the control does not report two files and the test fails.
+    """
+    if shutil.which("npm") is None:
+        pytest.skip("npm is not installed; this probe needs the real runner")
+
+    project = tmp_path / "vitest-project"
+    (project / "tests").mkdir(parents=True)
+    (project / "package.json").write_text(
+        '{"name": "p", "version": "1.0.0", "scripts": {"test": "vitest run"}}'
+    )
+    for name in ("a", "b"):
+        (project / "tests" / f"{name}.test.ts").write_text(
+            'import { test, expect } from "vitest";\n'
+            f'test("{name}", () => {{ expect(1).toBe(1); }});\n'
+        )
+    install = subprocess.run(
+        ["npm", "install", "--prefer-offline", "--no-audit", "--no-fund",
+         "--silent", "vitest@3"],
+        cwd=project, capture_output=True, text=True, timeout=300,
+    )
+    if install.returncode != 0:
+        pytest.skip(
+            "vitest could not be installed (no registry and no warm cache):\n"
+            + (install.stderr or install.stdout)[-400:]
+        )
+    return project
+
+
+def _vitest_files_ran(project: Path, argv: list[str]) -> int:
+    """Run ``argv`` in ``project`` and return how many test FILES vitest ran."""
+    r = subprocess.run(
+        argv, cwd=project, capture_output=True, text=True, timeout=300,
+    )
+    out = r.stdout + r.stderr
+    m = _VITEST_FILES.search(out)
+    assert m, f"vitest printed no Test Files summary:\n{out}"
+    return int(m.group(1))
+
+
+class TestSecondSeparatorDeletesScopeOnRealVitest:
+    """Why the second ``--`` was withdrawn — measured at the real consumer.
+
+    The withdrawn reasoning was that a second separator is inert on ordinary
+    input and protective on dash-leading input, and it was argued through
+    ``util.parseArgs``. That was the wrong oracle: nothing in the gate ever
+    hands its argv to ``parseArgs``. It hands it to a JS test runner, and on
+    the runner the second separator is not inert — vitest treats everything
+    after it as *not* a file filter, so the scope is **deleted** and the whole
+    suite runs.
+
+    That turns the npm leg into a certified FALSE RED: the leg has
+    ``no_run_codes = ()`` and ``attributes_failures = False``, so a non-zero
+    exit from an unrelated file certifies the TDD RED phase while the branch's
+    own new test passes. The printed line then names a scope that was
+    discarded — a false pass outside SPEC-103's declared property.
+
+    The three measurements are asserted against each other rather than against
+    hard-coded counts alone, so the probe states a *relation* ("scoped runs
+    fewer files than unscoped") that stays meaningful if the fixture grows.
+    """
+
+    def test_one_separator_honours_the_scope_and_two_delete_it(self, tmp_path):
+        project = _vitest_project(tmp_path)
+        scoped_file = "tests/a.test.ts"
+
+        unscoped = _vitest_files_ran(project, ["npm", "test"])
+        gate = _vitest_files_ran(project, npm_argv(scoped_file))
+        disarmed = _vitest_files_ran(
+            project,
+            ["npm", "test", "--", "--passWithNoTests", "--", scoped_file],
+        )
+
+        # Fixture pin: vitest really ran, and the project really has two files.
+        # Without this, a one-file fixture would make every count below equal
+        # and the assertions would hold vacuously.
+        assert unscoped == 2, unscoped
+
+        # The shape the gate sends scopes correctly.
+        assert gate == 1, f"the gate's own argv ran {gate} files, not 1"
+
+        # The withdrawn shape does not scope at all — it is byte-equivalent in
+        # effect to running no scope, which is the defect.
+        assert disarmed == unscoped, (
+            f"second separator ran {disarmed} files, unscoped ran {unscoped}"
+        )
+        assert gate < disarmed, (gate, disarmed)
 
 
 class TestScopeEnforcementFrameForAddopts:

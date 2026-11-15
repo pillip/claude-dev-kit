@@ -80,6 +80,39 @@ on ordinary input.
 
 ### C2 — npm forwards the second `--`, and a conforming parser honours it
 
+> **AMENDMENT — 2026-11-15. This section's conclusion is WRONG and the second `--` has been
+> withdrawn from the npm argv.** The section is left standing rather than rewritten, because the
+> shape of the error is the lesson: every measurement below is accurate, and the conclusion drawn
+> from them is false. The oracle was `util.parseArgs`, which **no JS test runner is** — nothing in
+> the gate ever hands its argv to `parseArgs`. Measured at the real consumer (vitest 3.2.7,
+> node v18.18.0, npm 9.8.1), a fixture of two passing test files:
+>
+> | argv | test files executed |
+> |---|---|
+> | `npm test` (no scope — control) | **2** |
+> | `npm test -- --passWithNoTests tests/a.test.ts` (one separator) | **1** — scope honoured |
+> | `npm test -- --passWithNoTests -- tests/a.test.ts` (this section's fix) | **2** — scope **deleted** |
+>
+> The second separator does not protect the scope; it discards it, and the effect is identical to
+> sending no scope at all. Because the npm leg has `no_run_codes = ()` and
+> `attributes_failures = False`, nothing downstream notices the widened set: an unrelated failing
+> file certifies the TDD RED phase while the branch's own new test passes, and the gate prints a
+> scope it did not apply. That is a **certified false RED outside SPEC-103's declared property**,
+> which is "a run whose arguments were the branch's own changed test files" — strictly worse than
+> the shrink direction this section set out to close, and worse than `main`, which refuses the
+> identical construction.
+>
+> The last item in Open Questions — "the npm separator is unmeasured against real JS runners" —
+> is therefore **resolved, against this section**. It was filed as a residual to measure later; the
+> measurement arrived during review and disqualified the decision it was a residual of. The
+> repair, and the half of route (c) that is consequently disclosed rather than fixed, are in
+> *Route (c) — the npm half* below.
+>
+> What generalises: "the separator is forwarded" and "the separator is honoured" are different
+> claims about different programs, and only the first was measured at the real consumer. A
+> stand-in oracle chosen for conformance tells you what a conforming parser would do, not what the
+> installed one does — and the gate's correctness depends on the installed one.
+
 The npm argv already contains one `--` (`npm test -- --passWithNoTests`), so the fix makes it
 `npm test -- --passWithNoTests -- *scoped`. That npm forwards a *second* separator was **measured,
 not assumed** — a `test` script that prints its own `"$@"`, npm 9.8.1 / node v18.18.0:
@@ -325,10 +358,33 @@ fails on either route, the gate passes while the executed set is still wider tha
 set — which is inside SPEC-103's declared boundary, since the declared property ("a run whose
 arguments were the branch's own changed test files exited non-zero") genuinely holds.
 
-### Route (c) — the dash-leading filename argv injection: **FIXED, both argvs**
+### Route (c) — the dash-leading filename argv injection: **FIXED on pytest, DISCLOSED on npm**
 
-> **AMENDMENT — 2026-11-15.** The pytest leg does **not** take a `--` separator. The decision below
-> is superseded for pytest only; the npm leg is unchanged and ships as written.
+> **AMENDMENT — 2026-11-15, part 2 of 2: the npm half.** The second `--` is **withdrawn**. Route
+> (c)'s JS half ships **disclosed, not fixed** — which is exactly `main`'s behaviour.
+>
+> C2's amendment carries the measurement: on vitest 3.2.7 the second separator deletes the scope,
+> so the whole suite runs and an unrelated failure certifies RED while the branch's own new test
+> passes. The withdrawn fix was therefore not a partial fix with a residual — it **introduced a
+> defect strictly worse than the one it closed**, and on the leg that cannot detect it
+> (`no_run_codes = ()`, `attributes_failures = False`).
+>
+> Two repairs were admissible and the alternative is recorded because it is not obviously wrong:
+> make the separator **conditional** on `any(p.startswith("-") for p in scoped)`, keeping it only
+> where route (c) actually applies. It is **rejected**: it reintroduces scope deletion in precisely
+> the dash-leading case route (c) is about, so it converts a visible shrink into an invisible
+> widening exactly when the route fires. Trading a fail-closed over-refusal for a fail-open false
+> pass is the wrong direction whatever the frequency, because **a declaration can license a false
+> pass inside a stated boundary, and it can never license blocking legitimate work** — and here the
+> conditional form takes the licensable side away.
+>
+> So the npm leg keeps **one** separator, npm's own, which is what forwards `--passWithNoTests` at
+> all. A dash-leading JS test filename remains able to shrink the requested set on the npm leg;
+> that is a fail-CLOSED over-refusal, visible in the gate's output, identical to `main`, and it is
+> what the first Open Question below now carries.
+>
+> **AMENDMENT — 2026-11-15, part 1 of 2: the pytest half.** The pytest leg does **not** take a `--`
+> separator either. The decision below is superseded for pytest.
 >
 > `--` was first carried rather than taken, because driving it at the real consumer measured it
 > turning a PASS on legitimate work into a REFUSE. Then re-measuring found the refusal narrower than
@@ -337,7 +393,7 @@ arguments were the branch's own changed test files exited non-zero") genuinely h
 >
 > ```
 > python3 -m pytest -q --tb=short -rfE --color=no ./tests/a.py ./tests/b.py
-> npm test -- --passWithNoTests -- tests/a.test.ts          # unchanged
+> npm test -- --passWithNoTests tests/a.test.ts             # see part 2 above
 > ```
 >
 > **Why `--` is wrong for pytest, both measurements.** It adds a refusal: real consumer, a project
@@ -378,15 +434,24 @@ arguments were the branch's own changed test files exited non-zero") genuinely h
 
 Measured as forwarded-and-honoured on npm (C2). The npm leg's double `--` is not an assumption:
 npm 9.8.1 delivers `ARG2=[--]` with the scoped paths behind it, and `util.parseArgs` goes from
-dropping the dash path entirely to keeping it.
+dropping the dash path entirely to keeping it. **[Superseded — see C2's amendment: forwarded is
+measured and true, honoured is measured and false. The clause this paragraph leans on, "and
+`util.parseArgs` goes from dropping the dash path entirely to keeping it", is a fact about
+`parseArgs` and not about any installed runner.]**
 
 The fix's direction is a **de-refusal**. c3 and its npm equivalent are over-refusals today — the
 requested set is shrunk, the surviving subset goes green, and the gate blocks legitimate work with a
 false reason. The disarm rows (ordinary paths, a nodeid, both runners) are byte-identical with and
-without **what ships on each leg** — the `./` prefix on pytest, the second `--` on npm — so nothing
-the gate passes today starts failing. That is *not* true of a `--` on the pytest argv, which is
-precisely why the amendment above rejects it there: on pytest 8.3.4 the disarm row goes
-PASS → REFUSE.
+without **what ships on pytest** — the `./` prefix — so nothing the gate passes today starts
+failing. That is *not* true of a `--` on the pytest argv, which is precisely why part 1 of the
+amendment rejects it there: on pytest 8.3.4 the disarm row goes PASS → REFUSE.
+
+The npm half of this paragraph no longer applies, and the correction is worth stating plainly
+rather than quietly dropping: a byte-identical **disarm** row never licensed the fix. The second
+`--` was disarm-clean on ordinary input — that measurement held up — and it was still wrong,
+because the row that mattered was the *armed* one at the real consumer, which was never run. "It
+changes nothing on ordinary input" bounds a fix's blast radius; it says nothing about whether the
+fix works.
 
 ### Route (d) — the shallow-clone two-dot diff: **BOTH CANDIDATE FIXES DECLINED**
 
@@ -436,8 +501,11 @@ driving the gate's exact argv (`npm run <s> -- --passWithNoTests -- tests/featur
 | `node report.js && true` | **`ARGC=0`** |
 | `node report.js \| cat` | **scope never reached the runner** |
 
-So four ordinary script shapes delete the scope — and the second `--` this Decision adds goes with
-it, since it is appended into the same string. Because the npm branch has `no_run_codes = ()` and
+So four ordinary script shapes delete the scope. (This table was measured against the argv with the
+second `--`, which is now withdrawn; the rows are unaffected — the shapes discard the *whole*
+appended tail, so dropping one token from that tail changes nothing here. The withdrawal does
+remove the sentence this paragraph originally ended with, "and the second `--` this Decision adds
+goes with it".) Because the npm branch has `no_run_codes = ()` and
 `attributes_failures = False`, the resulting **unscoped whole-suite run certifies RED off any
 standing failure**.
 
@@ -485,6 +553,18 @@ same defect: this issue's class recurred three times, each time as a newly intro
   exact defect ISSUE-117 exists to correct. A runner that treats a bare `--` as a test-path pattern
   would see one extra positional. That direction is unmeasured and is stated here rather than
   claimed either way.
+
+  **AMENDED 2026-11-15.** This bullet named the right gap and then accepted it as a trade-off, which
+  is the error. vitest **was** installable on this host — `npm install --prefer-offline vitest@3`
+  resolves from the warm cache in about two seconds — so the row was not unmeasurable, only
+  unmeasured. Measured, it does not cost "one extra positional": vitest treats everything after a
+  bare `--` as not-a-file-filter, so the scope is **deleted** and the leg certifies a false RED.
+  The separator is withdrawn (C2 amendment), so this is no longer a trade-off the Decision accepts.
+
+  What generalises past this SPEC: an unmeasured row whose *outcome can invert the decision* is not
+  a trade-off to accept in writing — it is a blocking measurement. "Stated rather than claimed
+  either way" is the correct treatment for a residual that bounds the fix; it is the wrong treatment
+  for a premise the fix rests on, and this bullet applied it to the latter.
 - **One extra `git merge-base` subprocess per red-gate run.** Accepted over threading the fact out
   of `_changed_files_vs_base`, which has other callers — review lesson 8 scopes a contract change to
   the caller class that wants it.
@@ -503,8 +583,10 @@ same defect: this issue's class recurred three times, each time as a newly intro
 No data migrates and nothing is deployed, enabled or disabled. The steps, all inside this PR:
 
 1. Write this SPEC at `docs/specs/SPEC-114.md`, `Status: accepted`.
-2. `scripts/verify_checkpoint.py`, inside `verify_implement_red` only: add `--` before `*scoped` on
-   the pytest argv and a second `--` before `*scoped` on the npm argv; derive the
+2. `scripts/verify_checkpoint.py`, inside `verify_implement_red` only: prefix every scoped path with
+   `./` on the pytest argv and leave the npm argv's single separator alone — the two amendments
+   under *Route (c)* replace this step's original text, which was "add `--` before `*scoped` on the
+   pytest argv and a second `--` before `*scoped` on the npm argv"; derive the
    merge-base-anchored flag once from the post-rescue base and print the unverified-scope disclosure
    once, upstream of the first verdict that rests on the delta; extend the hazard note's
    scope-enforcement bullet to name all four routes and their dispositions.
@@ -521,9 +603,13 @@ No data migrates and nothing is deployed, enabled or disabled. The steps, all in
 
 `git revert` the PR. The revert direction is **not** uniformly safe, and that must be stated plainly:
 
-- Reverting the two `--` separators restores two measured **over-refusals** — c3 on pytest and its
-  `util.parseArgs` equivalent on npm, where the requested set is silently shrunk and the gate blocks
-  a branch whose dash-named test would have failed. That is the dangerous direction.
+- Reverting the pytest leg's `./` prefix restores a measured **over-refusal** — c3, where the
+  requested set is silently shrunk and the gate blocks a branch whose dash-named test would have
+  failed. That is the dangerous direction.
+- There is nothing to revert on the npm leg: its separator is unchanged from `main`. The sentence
+  this bullet replaced claimed the revert restored "two measured over-refusals … c3 on pytest and
+  its `util.parseArgs` equivalent on npm"; the npm half was never shipped, so a revert cannot
+  restore it.
 - Reverting the disclosure restores a gate that prints a scope it could not compute. That is a
   record regression, not a safety one.
 - No hunk in this PR turns a FAIL into a PASS outside SPEC-103's declared property, so a revert
@@ -560,11 +646,32 @@ precisely what its carrier must contain.
       needs its own disarm-direction run, and must note that the direction is fail-closed and
       already inside SPEC-103's declared boundary — owner: team-lead, by: batched carrier filing
       after this ships.
-- [ ] **The npm separator is unmeasured against real JS runners.** jest (yargs), vitest (cac) and
-      mocha were not installed on the deciding host. The carrier must measure, per runner, whether a
-      bare `--` in the forwarded argv is honoured as a separator or taken as a test-path pattern,
-      and must record the rows it could not measure as unmeasured rather than inferring them —
-      owner: team-lead, by: batched carrier filing after this ships.
+- [x] **The npm separator is unmeasured against real JS runners.** ~~jest (yargs), vitest (cac) and
+      mocha were not installed on the deciding host.~~ **RESOLVED 2026-11-15, against the decision
+      it was a residual of.** vitest 3.2.7 and 1.6.1 were installed and measured: a bare `--` in
+      the forwarded argv is **not** honoured as a separator — everything behind it stops being a
+      file filter, so the scope is deleted and the whole suite runs. The second `--` is withdrawn
+      (C2 amendment; route (c) amendment part 2). The rows that remain genuinely unmeasured are
+      **jest (yargs) and mocha**, and they are now carried by the next item rather than this one,
+      because what they bear on changed: with no separator sent, the open question is no longer
+      "is `--` honoured" but "does a dash-leading filename shrink the set on this runner".
+
+      The residual was filed to be measured *after* shipping. It was measured *during* review and it
+      overturned the decision — so the honest reading is that this item was mis-scoped, not merely
+      deferred: a residual whose outcome can falsify the decision is not a residual, it is an
+      unmeasured premise. That is the generalisable half, and it is a candidate review lesson.
+
+- [ ] **Route (c)'s npm half is DISCLOSED, not fixed.** A dash-leading JS test filename can shrink
+      the requested set on the npm leg; the surviving subset goes green and the gate refuses with a
+      false reason. This is fail-CLOSED, visible in the gate's output, and identical to `main` — it
+      is an over-refusal, so it may **not** be declared away. The carrier must (i) hold the
+      per-runner matrix, measuring **jest and mocha** as well as vitest, for both directions —
+      does a dash-leading path shrink the set, and does any available construct protect it without
+      deleting the scope; (ii) record the conditional-separator form as **rejected with its reason**
+      so it is not re-proposed as novel; and (iii) treat any candidate fix as needing its own
+      armed-direction run at the real consumer, not a disarm row and not a stand-in parser — that
+      substitution is what produced this amendment. Owner: team-lead, by: batched carrier filing
+      after this ships.
 - [ ] **The scope-enforcement closure for (a) and (b) is monotone only.** If the branch's own test
       also fails, the gate passes with an executed set wider than the requested set. The carrier
       must state the construction (project `addopts` inject an extra path AND the branch's test

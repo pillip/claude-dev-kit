@@ -1158,15 +1158,45 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         # ordinary input the two forms parse identically, so this adds no
         # refusal. jest/vitest/mocha were NOT measured; see docs/specs/SPEC-114.md.
         #
-        # Why this leg ships while the pytest one does not: the hazard that
-        # stopped the pytest separator is a no-run EXIT CODE, and this branch
-        # has no `no_run_codes` and requires no attribution — every non-zero
-        # exit certifies RED — so a runner that dislikes the separator still
-        # passes. The only PASS→REFUSE here would need the separator to make a
-        # failing run exit ZERO, which requires it to REMOVE scope rather than
-        # add an argument. That direction is reasoned, not measured, because no
-        # real JS runner is installed on the deciding host.
-        cmd = ["npm", "test", "--", "--passWithNoTests", "--", *scoped]
+        # The second separator was SHIPPED here and is now REMOVED. Route (c)'s
+        # JS half is DISCLOSED as open instead — repair (b) of the two the
+        # ISSUE-114 review named.
+        #
+        # The reasoning it replaces is preserved because its shape is the
+        # lesson: it argued that the only PASS→REFUSE would need the separator
+        # to make a failing run exit ZERO, i.e. to REMOVE scope rather than add
+        # an argument, and then concluded "that direction is reasoned, not
+        # measured, because no real JS runner is installed on the deciding
+        # host." node v18.18.0 and npm 9.8.1 WERE installed. One `npm install`
+        # measured it, and it is exactly what happens:
+        #
+        #   vitest 3.2.7 and 1.6.1, branch's own new test PASSES, `main`
+        #   carrying one standing unrelated failure:
+        #     main             FAIL: RED phase — tests passed but should fail
+        #                      exit 1  (correct)
+        #     with second `--` PASS: RED phase — the branch's own tests fail as
+        #                      expected (exit 1)  <- FALSE RED
+        #   `Test Files 1 failed | 1 passed (2)` versus the base's
+        #   `1 passed (1)`: the separator DELETES the scope and the whole suite
+        #   runs. jest 29.7.0 is unaffected, which is why a jest-only probe
+        #   would have confirmed the disclosure instead of refuting it.
+        #
+        # This leg has `no_run_codes = ()` and `attributes_failures = False`, so
+        # nothing downstream catches a widened set — the printed line then
+        # asserts a scope that was discarded. That is a false pass OUTSIDE
+        # SPEC-103's declared property, which is "a run whose arguments were the
+        # branch's own changed test files", so it is not covered by any existing
+        # declaration and may not ship.
+        #
+        # Repair (a) — making the separator conditional on a dash-leading path —
+        # was rejected: it is inert on ordinary deltas, but it reintroduces the
+        # scope deletion in precisely the case route (c) is about, so it narrows
+        # the blast radius without closing anything.
+        #
+        # So the JS leg requests a scope it cannot enforce, the same way the
+        # pytest leg does for whitespace paths, and the gate says so rather than
+        # claiming otherwise.
+        cmd = ["npm", "test", "--", "--passWithNoTests", *scoped]
         no_run_codes: tuple[int, ...] = ()
         attributes_failures = False
     else:
