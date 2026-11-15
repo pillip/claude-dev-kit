@@ -343,13 +343,20 @@ arguments were the branch's own changed test files exited non-zero") genuinely h
 > **Why `--` is wrong for pytest, both measurements.** It adds a refusal: real consumer, a project
 > whose `addopts` contribute a positional test path plus a branch whose test genuinely fails, on
 > pytest 8.3.4 / Python 3.11.13 — plain `exit 1` PASS, `--` **`exit 4`** which the gate refuses as a
-> no-run code, `./` `exit 1` PASS. And it buys less than recorded, on an axis that is
-> interpreter- rather than pytest-dependent — same pytest 9.0.3, the flag-shaped-directory rows,
-> four CPythons: 3.11.13 **no**, 3.12.3 **no**, 3.13.6 yes, 3.14.7 yes. A direct
-> `argparse.parse_args` probe honours `--` on all four, so the divergence lives in pytest's own
-> `_parse_optional` override. This project declares `requires-python = ">=3.11"` and CI tests 3.11
-> and 3.12, so `--` would have closed the route on versions this project does not gate on and left
-> it open on the ones it does.
+> no-run code, `./` `exit 1` PASS. The same refusal reproduces on 3.12.7 / pytest 8.3.4, so this
+> cost tracks the **pytest version**.
+>
+> And it buys less than recorded, on an axis that depends on the interpreter **and** the pytest
+> version — neither alone. Collected node-id SETS, the flag-shaped-directory rows, six
+> (interpreter, pytest) pairs: 3.11.13/8.3.4 yes, 3.12.7/8.3.4 yes, 3.11.13/9.0.3 **no**,
+> 3.12.3/9.0.3 **no**, 3.13.6/9.0.3 yes, 3.14.7/9.0.3 yes — and `./` yields the scoped set in all
+> six. Holding the interpreter fixed at 3.11.13 and moving only pytest flips the answer, which
+> falsifies the "interpreter rather than pytest" reading an earlier draft of this amendment carried:
+> 9.0.3 is where `--` regressed for <=3.12. A direct `argparse.parse_args` probe honours `--` on all
+> six, so the divergence lives in pytest's own `_parse_optional` override. This project declares
+> `requires-python = ">=3.11"` and CI tests 3.11 and 3.12, so on the pair it actually runs — 9.0.3
+> on 3.11 or 3.12 — `--` is INERT and closes nothing, while still adding the 8.3.4 refusal wherever
+> that pytest is used. There is no cell in which it helps without cost.
 >
 > **A correction to this SPEC's own method, recorded because it is the more useful half.** An earlier
 > pass of the four-interpreter measurement ran under bare `python3`, which on the dev host is 3.14.7,
@@ -376,7 +383,10 @@ dropping the dash path entirely to keeping it.
 The fix's direction is a **de-refusal**. c3 and its npm equivalent are over-refusals today — the
 requested set is shrunk, the surviving subset goes green, and the gate blocks legitimate work with a
 false reason. The disarm rows (ordinary paths, a nodeid, both runners) are byte-identical with and
-without the separator, so nothing the gate passes today starts failing.
+without **what ships on each leg** — the `./` prefix on pytest, the second `--` on npm — so nothing
+the gate passes today starts failing. That is *not* true of a `--` on the pytest argv, which is
+precisely why the amendment above rejects it there: on pytest 8.3.4 the disarm row goes
+PASS → REFUSE.
 
 ### Route (d) — the shallow-clone two-dot diff: **BOTH CANDIDATE FIXES DECLINED**
 
@@ -407,6 +417,38 @@ Three properties of that disclosure, each pinned:
    caveat computed against the *un-rescued* base would wrongly fire.
 3. **It is a disclosure, not a verdict.** The shallow construction still PASSES. The only change is
    that the PASS no longer presents an unverifiable scope as a computed one.
+
+### Route (e) — the project's own `test` script discards the scope: **CARRIED** (found in review)
+
+Not one of SPEC-103's four. Found by this issue's own review phase, recorded here because an
+inventory presented as complete is worse than one with a declared edge — and because this SPEC's own
+route (d) reasoning cites SPEC-102 Finding 3 about inventories short by one.
+
+npm appends the forwarded argv to the **end of the `scripts.test` STRING** and hands the result to a
+shell. The gated party owns that string. Measured at the real consumer, npm 9.8.1 / node v18.18.0,
+driving the gate's exact argv (`npm run <s> -- --passWithNoTests -- tests/feature.test.ts`):
+
+| `scripts.test` | what the runner received |
+|---|---|
+| `node report.js` | `ARGC=3 ["--passWithNoTests","--","tests/feature.test.ts"]` |
+| `node report.js #` | **`ARGC=0`** |
+| `node report.js; true` | **`ARGC=0`** |
+| `node report.js && true` | **`ARGC=0`** |
+| `node report.js \| cat` | **scope never reached the runner** |
+
+So four ordinary script shapes delete the scope — and the second `--` this Decision adds goes with
+it, since it is appended into the same string. Because the npm branch has `no_run_codes = ()` and
+`attributes_failures = False`, the resulting **unscoped whole-suite run certifies RED off any
+standing failure**.
+
+**Carried, not closed, and the reason is the governing asymmetry rather than effort.** The route
+pre-dates this pass and sits inside SPEC-103's declared "requested, not enforced" boundary. Closing
+it means either resolving the runner and invoking it directly, or refusing a `scripts.test` that
+contains a trailing `#`, `;`, `|`, `&&` or `||` — and that **adds a refusal**, against projects
+whose test script is an ordinary pipeline. Under the rule inherited from SPEC-102 and SPEC-103 that
+is inadmissible here. What ships is the disclosure: the hazard note in
+`scripts/verify_checkpoint.py` names route (e) and states that the inventory is four routes rather
+than every route.
 
 ### What this Decision does NOT do
 

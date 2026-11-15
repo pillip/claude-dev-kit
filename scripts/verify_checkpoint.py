@@ -1089,25 +1089,44 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     #    hoisting `rootdir` above the worktree still attributes correctly. The
     #    refusal names both the scope and whatever the runner blamed, so the
     #    case is diagnosable from this output alone.
-    #  - The scope is REQUESTED, not ENFORCED, and ISSUE-114 settled all four
-    #    measured routes by which the executed set differs from the requested
-    #    one rather than leaving them to be rediscovered one at a time:
+    #  - The scope is REQUESTED, not ENFORCED. ISSUE-114 settled the four
+    #    routes SPEC-103 Open Question 1 enumerated, rather than leaving them
+    #    to be rediscovered one at a time. That is FOUR ROUTES, not "every
+    #    route": route (e) below was found by this issue's own review and is
+    #    carried, so read this list as an inventory with a known edge rather
+    #    than a closed set — an inventory short by one is how this class
+    #    recurred at three successive layers (SPEC-102 Finding 3), and the
+    #    same failure applies to the inventory itself.
     #    (a) the project's `addopts` inject an extra test PATH and (b) they
     #    carry a coverage threshold — both ALREADY CLOSED, measured at the real
     #    consumer, by the two arms of the attribution filter below; the closure
     #    is MONOTONE, so if the branch's own test also fails the gate passes
     #    with an executed set still wider than the requested one, which is
     #    inside SPEC-103's declared boundary. (c) a dash-leading filename
-    #    consumed as a flag — FIXED on the npm argv by the second `--` above,
-    #    and CARRIED on the pytest argv, where the same separator was measured
-    #    to turn a PASS on legitimate work into a REFUSE on pytest 8.3.4 (the
-    #    table sits with the pytest argv above). (d) a shallow clone's two-dot
+    #    consumed as a flag — FIXED on BOTH argvs: the npm leg by the second
+    #    `--` above, the pytest leg by `./`-prefixing every scoped path (the
+    #    tables sit with the pytest argv above). The `--` separator was
+    #    REJECTED for pytest, measured, because it adds a refusal there; the
+    #    prefix adds none. (d) a shallow clone's two-dot
     #    diff — DECLINED, because both candidate fixes were measured to refuse
     #    legitimate work, and disclosed instead by the UNVERIFIED-scope line
-    #    above. Full reasoning in docs/specs/SPEC-114.md, except route (c)'s
-    #    pytest half, which that SPEC decides the other way on a one-host
-    #    measurement and which this file records as carried.
-    #  - The residual `--` does NOT close, measured: pytest's
+    #    above. Full reasoning in docs/specs/SPEC-114.md, whose route (c)
+    #    Decision carries a dated amendment recording the pytest leg's change
+    #    of fix.
+    #    (e) the project's own `test` SCRIPT discards the scope — CARRIED,
+    #    measured at the real consumer with npm 9.8.1: npm appends the
+    #    forwarded argv to the END of the script STRING before handing it to a
+    #    shell, and the gated party owns that string. `"test": "jest #"`,
+    #    `"jest; true"`, `"jest && true"` and `"jest | cat"` all deliver
+    #    ARGC=0 — the scope, and the `--` above with it, is deleted before the
+    #    runner sees it. Because this branch has no `no_run_codes` and requires
+    #    no attribution, the resulting UNSCOPED whole-suite run then certifies
+    #    RED off any standing failure. It is inside SPEC-103's declared
+    #    "requested, not enforced" boundary and PRE-DATES this pass, which is
+    #    why it is disclosed rather than closed here: closing it means refusing
+    #    projects whose `test` script is a pipeline, and that ADDS a refusal.
+    #    Carried by its own issue; see docs/specs/SPEC-114.md.
+    #  - The residual a separator would NOT close, measured: pytest's
     #    `consider_preparse` scans the raw args list with no `--` awareness, so
     #    a scoped path shaped `-p no:<essential-plugin>/…` still raises a
     #    UsageError at exit 4, which is refused as a no-run code. Fail-closed,
@@ -1163,56 +1182,46 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         #   FORCE_COLOR=1 / PY_COLORS=1         exit=1 blamed=[]
         #   addopts="--color=yes"               exit=1 blamed=[]
         #   each of the three + `--color=no`    exit=1 blamed=[branch]
-        # ISSUE-114 route (c): there is deliberately NO `--` here, and the
-        # omission is the decision rather than an oversight. SPEC-114 licensed
-        # the separator on both argvs on the strength of a one-host measurement;
-        # driving it at the real consumer against an unmutated control found it
-        # ADDS a refusal on pytest 8.3.4, which this pass may not do.
-        #
-        # The construction: a project whose own `addopts` contribute a
-        # POSITIONAL test path — `addopts = "extra_tests"`, i.e. route (a)'s own
-        # shape and an ordinary idiom — plus a branch whose test genuinely
-        # fails, so the gate is looking at legitimate work. Real consumer, child
-        # `python3` pinned per column:
-        #   child                     without `--`          with `--`
-        #   3.12.7 / pytest 8.3.4     exit 0  PASS           exit 1  REFUSE
-        #   3.11.13 / pytest 9.0.3    exit 0  PASS           exit 0  PASS
-        #   3.14.7 / pytest 9.0.3     exit 0  PASS           exit 0  PASS
-        # On 8.3.4 the prepended positional plus the separator cannot match
-        # argparse's positional pattern, so pytest exits 4 with a usage error
-        # and the gate refuses it as a no-run code — a PASS→REFUSE on
-        # legitimate work, which is exactly the transition route (d)'s two
-        # candidate fixes were declined for. The same rule declines this one.
-        #
-        # What the separator WOULD buy is also narrower than SPEC-114 recorded,
-        # and it is interpreter-dependent rather than pytest-dependent. Same
-        # pytest 9.0.3 throughout, the dash-path rows, four CPythons:
-        #   3.11.13  no    3.12.3  no    3.13.6  yes    3.14.7  yes
-        # A direct `argparse.parse_args` / `parse_known_args` probe honours `--`
-        # on all four, so the divergence lives in pytest's own `_parse_optional`
-        # override. So the separator would close route (c) on 3.13+ only, while
-        # adding the 8.3.4 refusal everywhere — carried, not taken. The npm leg
-        # has no equivalent hazard and its separator DOES ship: see below.
         # Route (c), pytest leg: every scoped path is `./`-PREFIXED so a
         # flag-shaped filename cannot be consumed as an option. A directory
         # named `-p no:cacheprovider` is otherwise parsed as a plugin flag and
-        # the whole suite runs; `--help` and `--co` are worse, both exiting 0
-        # with no test executed at all. The prefix makes the argument
-        # unambiguously a path without changing what pytest reports.
+        # the whole suite runs — that is the SILENT shape, and the dangerous
+        # one. Re-measured on the canonical 3.11.13 / pytest 9.0.3: directories
+        # named `--help` and `--co` do NOT exit 0 as an earlier draft of this
+        # note claimed; both exit 4 (`error: unrecognized arguments`), which
+        # this branch already refuses as a no-run code, so they were always
+        # fail-closed. Prefixed, all three exit 1 and attribute correctly. The
+        # prefix makes the argument unambiguously a path without changing what
+        # pytest reports.
         #
-        # `--` is NOT the fix here, and the measurement is interpreter- rather
-        # than pytest-dependent. Same pytest 9.0.3, flag-shaped-directory rows,
-        # four CPythons — does `--` close route (c)?
-        #   3.11.13  no    3.12.3  no    3.13.6  yes    3.14.7  yes
-        # A direct `argparse.parse_args` probe honours `--` on all four, so the
-        # divergence is in pytest's own `_parse_optional` override. This project
-        # declares `requires-python = ">=3.11"` and CI tests 3.11 and 3.12, so
-        # `--` would close the route on versions this project does not gate on
-        # and leave it open on the ones it does. Measured on 3.11.13: `bare` and
-        # `--` are byte-identical (`2 passed`, `2 collected`, help shown — all
-        # exit 0), while `./` yields `1 passed` on every shape and on every
-        # interpreter. The npm leg's `--` DOES ship (line above) because npm
-        # forwards it to the script's own argv handling, a different mechanism.
+        # `--` is NOT the fix here, and it fails on BOTH axes. Whether pytest
+        # honours it for a dash-leading path depends on the interpreter AND on
+        # the pytest version — neither alone. Collected node-id SETS, the
+        # flag-shaped-directory rows, six (interpreter, pytest) pairs:
+        #   3.11.13/8.3.4 yes   3.12.7/8.3.4 yes
+        #   3.11.13/9.0.3  NO   3.12.3/9.0.3  NO
+        #   3.13.6/9.0.3  yes   3.14.7/9.0.3 yes
+        # `./` yields the scoped set in all six. A direct `argparse.parse_args`
+        # probe honours `--` everywhere, so the divergence is in pytest's own
+        # `_parse_optional` override; 9.0.3 is where it regressed for <=3.12.
+        # This project declares `requires-python = ">=3.11"` and CI tests 3.11
+        # and 3.12, so on the pair this project actually runs — 9.0.3 on 3.11
+        # or 3.12 — `--` is INERT and closes nothing.
+        #
+        # And where it is honoured it ADDS A REFUSAL, which this pass may not
+        # do. Real consumer, a project whose `addopts` contribute a POSITIONAL
+        # test path (route (a)'s own shape, an ordinary idiom) plus a branch
+        # whose test genuinely fails, i.e. legitimate work the gate passes
+        # today: on pytest 8.3.4 — both 3.11.13 and 3.12.7 — the prepended
+        # positional plus the separator cannot match argparse's positional
+        # pattern, pytest exits 4 (`error: unrecognized arguments: --`) and the
+        # gate refuses it as a no-run code. `./` is PASS on all six pairs, i.e.
+        # it adds no refusal anywhere. That is the asymmetry the whole batch
+        # ships under: a false pass inside a stated boundary is licensable,
+        # blocking legitimate work never is.
+        #
+        # The npm leg's `--` DOES ship (line above) because npm forwards it to
+        # the script's own argv handling, a different mechanism.
         #
         # Attribution is unaffected: pytest reports `FAILED tests/x.py::t` for
         # both `tests/x.py` and `./tests/x.py`, measured, so the `FAILED <file>`

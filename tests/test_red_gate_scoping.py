@@ -2733,18 +2733,21 @@ class TestPolyglotRepoRoutesByTheBranchDelta:
 #   (d) a shallow clone has no merge base, so the delta is a two-dot diff
 #
 # (a) and (b) are already closed by ISSUE-103's attribution filter and owe only
-# a pin in the ENFORCEMENT frame. (c) is FIXED on the npm argv with a second
-# `--` and CARRIED on the pytest argv: driving the same separator at the real
-# consumer against an unmutated control measured it turning a PASS on
-# legitimate work into a REFUSE on pytest 8.3.4, which is the one thing this
-# pass may not do. (d)'s two candidate fixes are DECLINED for the same measured
-# reason, and what ships instead is a disclosure.
+# a pin in the ENFORCEMENT frame. (c) is FIXED on BOTH argvs — the npm leg with
+# a second `--`, the pytest leg with a `./` prefix on every scoped path. The
+# `--` separator was REJECTED for pytest: driving it at the real consumer
+# against an unmutated control measured it turning a PASS on legitimate work
+# into a REFUSE on pytest 8.3.4, which is the one thing this pass may not do,
+# and measured it INERT on the pair this project actually runs. (d)'s two
+# candidate fixes are DECLINED for the same measured reason, and what ships
+# instead is a disclosure.
 #
 # Every production hunk is a de-refusal or a disclosure; none adds a refusal.
-# That invariant is what decides route (c)'s pytest half against
-# `docs/specs/SPEC-114.md`, whose Decision licensed it on a one-host
-# measurement; the carried measurement lives beside the pytest argv in
-# `scripts/verify_checkpoint.py` and is pinned below.
+# That invariant is what decided route (c)'s pytest half against
+# `docs/specs/SPEC-114.md`, whose Decision licensed `--` on a one-host
+# measurement and now carries a dated amendment recording the change of fix;
+# the deciding measurements live beside the pytest argv in
+# `scripts/verify_checkpoint.py` and are pinned below.
 
 
 # A directory whose name is a dash-leading pytest option, holding a test file.
@@ -2752,6 +2755,20 @@ class TestPolyglotRepoRoutesByTheBranchDelta:
 # segment is `test_dashfile.py`), so it is a path the gate really will splat.
 DASH_DIR = "-p no:cacheprovider"
 DASH_FILE = f"{DASH_DIR}/test_dashfile.py"
+
+# The PARTIAL-revert construction. Two facts make it the only shape in which a
+# prefix applied to *some* scoped paths is observable, and both are measured:
+#
+#   1. The dash path must not sort FIRST. `git diff --name-only` emits a sorted
+#      delta and `-` is 0x2D, so an ordinary `tests/…` path always sorts after a
+#      dash path and a "prefix only the first element" revert would still cover
+#      it. `+` is 0x2B, so `+alpha/…` sorts BEFORE the dash path and leaves it
+#      bare. Any name opening with 0x21–0x2C (`!"#$%&'()*+,`) does the same.
+#   2. The dash path must contain no SPACE, or attribution truncates the
+#      `FAILED <nodeid>` line at the first whitespace and the gate refuses for
+#      that reason instead — which would mask the defect under a second one.
+PARTIAL_ORDINARY = "+alpha/test_alpha.py"
+PARTIAL_DASH = "-pno:cacheprovider/test_dashfile.py"
 
 
 @pytest.fixture(scope="module")
@@ -2762,21 +2779,27 @@ def dash_path_repo(tmp_path_factory):
     the branch never touched — so an argv that loses its positionals and
     collects the whole rootdir is visible in the gate's own output.
 
-    Three worktrees, describing the route as the SHIPPED gate behaves, since
-    the pytest separator is carried rather than taken:
+    Three worktrees. Each description is what the route DID before the ``./``
+    prefix closed it — i.e. what the tests below assert is now unreachable —
+    because a construction is only worth keeping if the defect it reproduces
+    is written down next to it:
 
     * ``overcollect`` — the branch's only changed test file IS the dash path.
-      argparse consumes ``-p`` and takes ``no:cacheprovider/test_dashfile.py``
-      as its value, zero positionals survive, pytest collects from rootdir,
-      and the gate reports ``pytest blamed: -p, tests/test_unrelated.py``. The
-      ``no:`` prefix is what makes it SILENT: ``consider_pluginarg`` blocks a
-      plugin named ``cacheprovider/test_dashfile.py``, which nobody
-      registered, so no usage error is raised.
+      argparse consumed ``-p`` and took ``no:cacheprovider/test_dashfile.py``
+      as its value, zero positionals survived, pytest collected from rootdir,
+      and the gate reported ``pytest blamed: -p, tests/test_unrelated.py``.
+      The ``no:`` prefix is what made it SILENT: ``consider_pluginarg`` blocks
+      a plugin named ``cacheprovider/test_dashfile.py``, which nobody
+      registered, so no usage error was raised. Prefixed, the rootdir is never
+      collected and ``tests/test_unrelated.py`` is never reached.
     * ``shrink`` — an ordinary PASSING test file *and* the failing dash path.
-      Only the passing file runs, the run goes green, and the gate refuses
-      with ``tests passed but should fail`` — a false reason for a branch
-      whose dash-named test would have failed. This is the expensive direction
-      under the governing asymmetry, and it is the route's live cost.
+      Only the passing file ran, the run went green, and the gate refused with
+      ``tests passed but should fail`` — a false reason for a branch whose
+      dash-named test would have failed. This was the expensive direction
+      under the governing asymmetry. Prefixed, the dash path runs and that
+      false reason is unreachable; the gate still refuses, because the path
+      contains a SPACE and attribution truncates at whitespace, but it now
+      refuses truthfully.
     * ``ordinary`` — one ordinary FAILING test file and no dash path at all:
       the disarm row, which must behave exactly as it did before.
     """
@@ -2836,6 +2859,58 @@ def dash_path_repo(tmp_path_factory):
     return worktrees
 
 
+@pytest.fixture(scope="module")
+def partial_prefix_repo(tmp_path_factory):
+    """A delta whose dash path is NOT the first element.
+
+    ``main`` holds a failing ``tests/test_unrelated.py`` so over-collection is
+    visible; the branch adds a PASSING ordinary test that sorts ahead of a
+    FAILING dash-leading one. Under the shipped gate both are prefixed, the
+    dash test runs and fails, and the gate certifies RED naming it. Under any
+    revert that prefixes only part of the splat, the dash path is consumed as
+    ``-p`` again, only the passing file runs, and the gate returns to the false
+    reason "tests passed but should fail" — measured, not predicted.
+    """
+    root = tmp_path_factory.mktemp("red-partial-prefix")
+    repo = root / "repo"
+    repo.mkdir()
+
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "probe@example.com")
+    _git(repo, "config", "user.name", "Probe")
+    _git(repo, "config", "commit.gpgsign", "false")
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    (repo / "tests").mkdir()
+    (repo / UNRELATED_TEST).write_text(
+        "def test_unrelated():\n    assert False  # pre-existing, unrelated\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base: unrelated test red")
+
+    wt = root / "issue-947-partialprefix"
+    _git(repo, "worktree", "add", "-q", "-b", "issue/ISSUE-947-partialprefix",
+         str(wt), "HEAD")
+    for path, src in (
+        (PARTIAL_ORDINARY, "def test_alpha():\n    assert True  # vacuously green\n"),
+        (PARTIAL_DASH, "def test_dash():\n    assert False  # implementation absent\n"),
+    ):
+        (wt / path).parent.mkdir(parents=True, exist_ok=True)
+        (wt / path).write_text(src)
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "test: branch tests")
+
+    # Fixture pin: the ORDER is the whole construction. If git ever stops
+    # emitting the delta sorted, or these two names stop sorting this way, the
+    # test below silently stops testing a partial revert — so it must fail
+    # here instead.
+    delta = _git(wt, "diff", "--name-only",
+                 _git(wt, "merge-base", "HEAD", "main")).splitlines()
+    assert delta == [PARTIAL_ORDINARY, PARTIAL_DASH], (
+        f"fixture pin: the dash path must not be first; got {delta}"
+    )
+    return wt
+
+
 class TestDashLeadingPathRouteIsClosedOnPytest:
     """Route (c) on the pytest argv — CLOSED by a ``./`` prefix, not by ``--``.
 
@@ -2854,34 +2929,40 @@ class TestDashLeadingPathRouteIsClosedOnPytest:
     ``addopts`` contribute a POSITIONAL test path (route (a)'s own shape, and an
     ordinary idiom) plus a branch whose test genuinely fails:
 
-    ========================  ==============  ==============  ==============
-    child                     plain           with ``--``     with ``./``
-    ========================  ==============  ==============  ==============
-    3.11.13 / pytest 8.3.4    exit 1  PASS    exit 4  REFUSE  exit 1  PASS
-    3.12.7  / pytest 8.3.4    exit 0  PASS    exit 1  REFUSE  --
-    3.11.13 / pytest 9.0.3    exit 0  PASS    exit 0  PASS    --
-    3.14.7  / pytest 9.0.3    exit 0  PASS    exit 0  PASS    --
-    ========================  ==============  ==============  ==============
+    The column is the GATE's verdict, not pytest's exit code, so the rows are
+    comparable; where the gate REFUSES, pytest exited 4 underneath it.
+
+    ========================  ========  ===========  ==========
+    child                     plain     with ``--``  with ``./``
+    ========================  ========  ===========  ==========
+    3.11.13 / pytest 8.3.4    PASS      **REFUSE**   PASS
+    3.12.7  / pytest 8.3.4    PASS      **REFUSE**   PASS
+    3.11.13 / pytest 9.0.3    PASS      PASS         PASS
+    3.12.3  / pytest 9.0.3    PASS      PASS         PASS
+    3.13.6  / pytest 9.0.3    PASS      PASS         PASS
+    3.14.7  / pytest 9.0.3    PASS      PASS         PASS
+    ========================  ========  ===========  ==========
 
     On 8.3.4 the prepended positional plus the separator cannot match
-    argparse's positional pattern, pytest exits 4 with a usage error, and the
-    gate refuses it as a no-run code. ``./`` is byte-identical to plain on that
-    same row — which is the measurement that makes it admissible where ``--``
-    was not.
+    argparse's positional pattern, pytest exits 4 with a usage error
+    (``error: unrecognized arguments: --``), and the gate refuses it as a
+    no-run code. ``./`` is PASS on every row — it adds no refusal anywhere,
+    which is the measurement that makes it admissible where ``--`` was not.
 
-    Second, what ``--`` would buy is narrower than the SPEC recorded, and
-    depends on the INTERPRETER rather than on pytest — same pytest 9.0.3, the
-    dash-path rows, four CPythons: 3.11.13 no, 3.12.3 no, 3.13.6 yes, 3.14.7
-    yes (the reversed-order re-run reproduced it row for row, so it is not a
-    ``.pytest_cache`` artifact of the probe's ordering). A direct
-    ``argparse.parse_args``/``parse_known_args`` probe honours ``--`` on all
-    four, so the divergence is in pytest's own ``_parse_optional`` override.
-    This project declares ``requires-python = ">=3.11"`` and CI tests 3.11 and
-    3.12, so ``--`` would close the route on versions this project does not
-    gate on and leave it open on the ones it does. Measured on 3.11.13, the
-    flag-shaped-directory rows: ``bare`` and ``--`` are byte-identical
-    (``2 passed``, ``2 collected``, help shown — all **exit 0**), while ``./``
-    yields ``1 passed`` on every shape and every interpreter.
+    Second, what ``--`` would buy is narrower than the SPEC recorded, and it
+    depends on the interpreter AND the pytest version — **neither alone**.
+    Collected node-id SETS for the flag-shaped-directory rows, six pairs:
+    3.11.13/8.3.4 yes, 3.12.7/8.3.4 yes, 3.11.13/9.0.3 **no**, 3.12.3/9.0.3
+    **no**, 3.13.6/9.0.3 yes, 3.14.7/9.0.3 yes; ``./`` yields the scoped set
+    in all six. Holding the interpreter fixed at 3.11.13 and moving only
+    pytest flips the answer, so an earlier "interpreter rather than pytest"
+    reading of this axis was too strong — 9.0.3 is where ``--`` regressed for
+    <=3.12. A direct ``argparse.parse_args``/``parse_known_args`` probe
+    honours ``--`` on all of them, so the divergence is in pytest's own
+    ``_parse_optional`` override. This project declares
+    ``requires-python = ">=3.11"`` and CI tests 3.11 and 3.12, so on the pair
+    it actually runs — 9.0.3 on 3.11 or 3.12 — ``--`` is INERT and closes
+    nothing, while still adding the 8.3.4 refusal wherever that pytest is used.
 
     A method note worth keeping, because it is the mistake this class exists to
     not repeat: an earlier pass of this measurement ran under bare ``python3``,
@@ -2890,37 +2971,15 @@ class TestDashLeadingPathRouteIsClosedOnPytest:
     not. That is the same defect ISSUE-118 carries about the blocking gate's own
     interpreter, arriving in a measurement rather than in a verdict.
 
-    What the separator costs, real consumer, a project whose ``addopts``
-    contribute a POSITIONAL test path (route (a)'s own shape, and an ordinary
-    idiom) plus a branch whose test genuinely fails — i.e. legitimate work:
-
-    ========================  ==============  ==============
-    child                     without ``--``  with ``--``
-    ========================  ==============  ==============
-    3.12.7 / pytest 8.3.4     exit 0  PASS    exit 1  REFUSE
-    3.11.13 / pytest 9.0.3    exit 0  PASS    exit 0  PASS
-    3.14.7 / pytest 9.0.3     exit 0  PASS    exit 0  PASS
-    ========================  ==============  ==============
-
-    On 8.3.4 the prepended positional plus the separator cannot match
-    argparse's positional pattern, pytest exits 4 with a usage error, and the
-    gate refuses it as a no-run code. That is the same PASS→REFUSE transition
-    route (d)'s candidates were declined for.
-
-    What the separator would buy is narrower than recorded too, and depends on
-    the INTERPRETER rather than on pytest — same pytest 9.0.3, the dash-path
-    rows, four CPythons: 3.11.13 no, 3.12.3 no, 3.13.6 yes, 3.14.7 yes (the
-    reversed-order re-run reproduced it row for row, so it is not a
-    ``.pytest_cache`` artifact of the probe's ordering). A direct
-    ``argparse.parse_args``/``parse_known_args`` probe honours ``--`` on all
-    four, so the divergence is in pytest's own ``_parse_optional`` override.
-
-    So the two directions below are pinned as **open**, in the same style as
-    :class:`TestThe127FalsePassBoundary` pins its declared false passes: a
-    disclosed residual is a CLAIM, and an unpinned one decays into a belief.
-    Both rows were measured identical on all four interpreters, so neither is
-    interpreter-conditional. Adding the separator flips both on 3.13+, which
-    is what makes them the mutation guard for the omission.
+    So both of route (c)'s directions below are pinned as **CLOSED**, with the
+    residual that remains stated next to them: the dash path in these
+    constructions contains a SPACE, so ``FAILED <nodeid>`` truncates at the
+    first whitespace and the gate blames ``-p``. That is not a new defect and
+    not specific to this route — a path containing whitespace is unattributable
+    on ``main`` too, through the same untouched ``(\\S+)`` parse — so it sits
+    inside SPEC-103's already-declined attribution property. It fails CLOSED,
+    with a truthful reason. Removing the lie from a refusal is the gain here;
+    the refusal itself was never the defect.
     """
 
     def test_the_over_collect_direction_is_closed(self, dash_path_repo):
@@ -2982,9 +3041,9 @@ class TestDashLeadingPathRouteIsClosedOnPytest:
         """The structural pin for the fix (review lesson 12: pin POSITION).
 
         Three things are asserted together because each fails differently:
-        the prefixed path is present, the **bare** path is absent (so a partial
-        revert that prefixes only some paths cannot pass), and the splat still
-        follows ``--color=no`` directly. The last one is the position pin — a
+        the prefixed path is present, the **bare** path is absent, and the
+        splat still follows ``--color=no`` directly. The last one is the
+        position pin — a
         prefix applied in the wrong place, or a separator slipped in anywhere
         in the pytest argv, fails here rather than in a consumer's CI, which is
         where the measured 8.3.4 ``exit 4`` refusal would otherwise surface.
@@ -3013,6 +3072,37 @@ class TestDashLeadingPathRouteIsClosedOnPytest:
         assert "--" not in cmd, cmd
         # Position: the splat still follows `--color=no` directly.
         assert cmd[cmd.index(prefixed) - 1] == "--color=no", cmd
+
+    def test_a_partial_prefix_revert_cannot_pass(self, partial_prefix_repo):
+        """EVERY scoped path, not just the first — at the real consumer.
+
+        The structural pin above cannot carry this claim and must not be read
+        as doing so: its worktree has exactly ONE changed test file, and with
+        a single-element splat "prefix the first" and "prefix all" are the
+        same argv, so ``BRANCH_TEST not in cmd`` is satisfied either way. A
+        count of one is not a set — this is the hollow-pass direction
+        ``scoped_arg``'s own docstring warns about, arriving in the guard
+        rather than in the assertions it was written to protect.
+
+        Measured against an unmutated control: mutating the splat to
+        ``*(f"./{p}" if i == 0 else p for i, p in enumerate(scoped))`` leaves
+        the whole module green (136 passed) while the real consumer on this
+        construction goes from ``PASS: RED phase`` to ``FAIL: RED phase —
+        tests passed but should fail`` — i.e. route (c)'s silent-shrink
+        direction, byte-identical to the pre-fix defect, fully reopened. The
+        gap is order-dependent, which is why the fixture pins the order.
+        """
+        r = _run_red_checkpoint(partial_prefix_repo, "ISSUE-947")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"a partial-prefix revert went unnoticed:\n{out}"
+        assert "PASS: RED phase" in out, out
+        # The dash path ran AND was attributed — it is the only failing test.
+        assert f"summary blamed: {PARTIAL_DASH}" in out, out
+        # The false reason the shrink direction produces must stay unreachable.
+        assert "tests passed but should fail" not in out, out
+        # And the rootdir's standing failure was still never reached.
+        assert UNRELATED_TEST not in out, out
 
     def test_positional_addopts_with_a_failing_branch_test_still_certifies_red(
         self, probe_repo
@@ -3054,9 +3144,10 @@ class TestScopeSeparatorArgvShape:
 
     Position is the whole content of the fix — a ``--`` anywhere after the
     first scope path separates nothing — so this asserts the exact argv rather
-    than mere membership (review lesson 12). The pytest argv's own structural
-    pin is the OMISSION, and it lives with the measurement that decided it:
-    ``TestDashLeadingPathRouteIsCarriedOnPytest``.
+    than mere membership (review lesson 12). This class covers the **npm** argv
+    only. The pytest argv takes a ``./`` prefix instead of a separator, and its
+    structural pin lives with the measurements that decided it:
+    :class:`TestDashLeadingPathRouteIsClosedOnPytest`.
     """
 
     @pytest.fixture(autouse=True)
