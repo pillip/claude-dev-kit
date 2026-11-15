@@ -97,6 +97,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -113,6 +114,32 @@ KIT_ROOT = Path(__file__).resolve().parents[1]
 
 BRANCH_TEST = "tests/test_branch_feature.py"
 UNRELATED_TEST = "tests/test_unrelated.py"
+
+
+def scoped_arg(path: str) -> str:
+    """How a scoped path appears in the pytest argv: ``./``-prefixed.
+
+    ISSUE-114 route (c) prefixes every scoped path so a flag-shaped filename
+    cannot be consumed as an option. The prefix lives here rather than inline
+    at each assertion so that a change to it fails one place loudly instead of
+    turning a dozen membership assertions **vacuously true** — the hollow-pass
+    direction, which is how a negative pin like ``BRANCH_TEST not in argv``
+    stops testing anything the moment the argv's spelling changes.
+    """
+    return f"./{path}"
+
+
+def npm_argv(*scoped: str) -> list[str]:
+    """The npm argv the gate builds for a scoped RED run.
+
+    Exists so the real-vitest probe
+    (:class:`TestSecondSeparatorDeletesScopeOnRealVitest`) runs the shape the
+    gate actually sends instead of a copy that can drift away from it. The
+    structural pin still asserts the argv as a LITERAL as well — if only this
+    helper were asserted against, both sides would move together and the pin
+    would certify whatever the gate happened to build.
+    """
+    return ["npm", "test", "--", "--passWithNoTests", *scoped]
 # A failing test outside `tests/`, so a project whose addopts inject this path
 # adds a failure the branch never touched. Kept DISJOINT from the scoped argv on
 # purpose: measured, pytest 8.3.4 deduplicates an addopts path that CONTAINS the
@@ -266,6 +293,13 @@ def probe_repo(tmp_path_factory):
         # Measured pre-fix: certified as RED with "per-file attribution
         # unavailable".
         ("addopts_path", "906", green_base, passes,
+         '[tool.pytest.ini_options]\naddopts = "extra_tests"\n', None),
+        # ISSUE-114: the SAME positional-addopts project, with the branch's own
+        # test genuinely FAILING — so the gate PASSES and the row is legitimate
+        # work rather than a refusal. That is what makes it the disarm row for
+        # route (c)'s pytest separator, which was measured to turn this exact
+        # PASS into `exit 4: nothing collected / usage error` on pytest 8.3.4.
+        ("addopts_path_red", "946", green_base, fails,
          '[tool.pytest.ini_options]\naddopts = "extra_tests"\n', None),
         # Item 3: the exit-5 route that actually reproduces. The project's own
         # addopts DESELECT the branch's test, so the scoped run collects it and
@@ -452,8 +486,11 @@ class TestRedScopeArgv:
             assert vc.verify_implement_red("ISSUE-001") is True
 
         assert len(runs) == 1, runs
-        assert BRANCH_TEST in runs[0], runs[0]
+        assert scoped_arg(BRANCH_TEST) in runs[0], runs[0]
+        # Both spellings, so this stays a real exclusion rather than becoming
+        # vacuously true the moment the argv's prefix changes.
         assert UNRELATED_TEST not in runs[0], runs[0]
+        assert scoped_arg(UNRELATED_TEST) not in runs[0], runs[0]
 
     def test_js_runner_is_scoped_and_pytest_never_runs(self, tmp_path):
         """Legacy JS-mis-run pin: a JS repo goes to npm, never to pytest."""
@@ -2280,7 +2317,9 @@ class TestForcedColourStillPasses:
 
         assert "--color=no" in runs[0], runs[0]
         # Position: it must precede the scope paths, which are splatted last.
-        assert runs[0].index("--color=no") < runs[0].index(BRANCH_TEST), runs[0]
+        assert (
+            runs[0].index("--color=no") < runs[0].index(scoped_arg(BRANCH_TEST))
+        ), runs[0]
 
 
 # ── Change 4: computed-and-empty vs could-not-compute ────────────────
@@ -2693,3 +2732,1065 @@ class TestPolyglotRepoRoutesByTheBranchDelta:
         out = capsys.readouterr().out
         assert runs == [], runs
         assert "Runners detected in this project: pytest" in out, out
+
+
+# ── ISSUE-114 / SPEC-114: scope ENFORCEMENT, the four measured routes ─
+#
+# SPEC-103 declines ATTRIBUTION; this section is the adjacent and different
+# property — whether the set the runner executed equals the set the gate asked
+# for. SPEC-103 Open Question 1 enumerated four routes that make them differ:
+#
+#   (a) the project's `addopts` inject an extra test PATH
+#   (b) the project's `addopts` carry a coverage threshold
+#   (c) a DASH-LEADING filename is consumed by pytest as a flag
+#   (d) a shallow clone has no merge base, so the delta is a two-dot diff
+#
+# (a) and (b) are already closed by ISSUE-103's attribution filter and owe only
+# a pin in the ENFORCEMENT frame. (c) is FIXED on BOTH argvs — the npm leg with
+# a second `--`, the pytest leg with a `./` prefix on every scoped path. The
+# `--` separator was REJECTED for pytest: driving it at the real consumer
+# against an unmutated control measured it turning a PASS on legitimate work
+# into a REFUSE on pytest 8.3.4, which is the one thing this pass may not do,
+# and measured it INERT on the pair this project actually runs. (d)'s two
+# candidate fixes are DECLINED for the same measured reason, and what ships
+# instead is a disclosure.
+#
+# Every production hunk is a de-refusal or a disclosure; none adds a refusal.
+# That invariant is what decided route (c)'s pytest half against
+# `docs/specs/SPEC-114.md`, whose Decision licensed `--` on a one-host
+# measurement and now carries a dated amendment recording the change of fix;
+# the deciding measurements live beside the pytest argv in
+# `scripts/verify_checkpoint.py` and are pinned below.
+
+
+# A directory whose name is a dash-leading pytest option, holding a test file.
+# The resulting path is accepted by the verifier's own `test_pattern` (its last
+# segment is `test_dashfile.py`), so it is a path the gate really will splat.
+DASH_DIR = "-p no:cacheprovider"
+DASH_FILE = f"{DASH_DIR}/test_dashfile.py"
+
+# The PARTIAL-revert construction. Two facts make it the only shape in which a
+# prefix applied to *some* scoped paths is observable, and both are measured:
+#
+#   1. The dash path must not sort FIRST. `git diff --name-only` emits a sorted
+#      delta and `-` is 0x2D, so an ordinary `tests/…` path always sorts after a
+#      dash path and a "prefix only the first element" revert would still cover
+#      it. `+` is 0x2B, so `+alpha/…` sorts BEFORE the dash path and leaves it
+#      bare. Any name opening with 0x21–0x2C (`!"#$%&'()*+,`) does the same.
+#   2. The dash path must contain no SPACE, or attribution truncates the
+#      `FAILED <nodeid>` line at the first whitespace and the gate refuses for
+#      that reason instead — which would mask the defect under a second one.
+PARTIAL_ORDINARY = "+alpha/test_alpha.py"
+PARTIAL_DASH = "-pno:cacheprovider/test_dashfile.py"
+
+
+@pytest.fixture(scope="module")
+def dash_path_repo(tmp_path_factory):
+    """Route (c)'s construction, in both of its measured directions.
+
+    ``main`` holds a FAILING ``tests/test_unrelated.py`` — a standing failure
+    the branch never touched — so an argv that loses its positionals and
+    collects the whole rootdir is visible in the gate's own output.
+
+    Three worktrees. Each description is what the route DID before the ``./``
+    prefix closed it — i.e. what the tests below assert is now unreachable —
+    because a construction is only worth keeping if the defect it reproduces
+    is written down next to it:
+
+    * ``overcollect`` — the branch's only changed test file IS the dash path.
+      argparse consumed ``-p`` and took ``no:cacheprovider/test_dashfile.py``
+      as its value, zero positionals survived, pytest collected from rootdir,
+      and the gate reported ``pytest blamed: -p, tests/test_unrelated.py``.
+      The ``no:`` prefix is what made it SILENT: ``consider_pluginarg`` blocks
+      a plugin named ``cacheprovider/test_dashfile.py``, which nobody
+      registered, so no usage error was raised. Prefixed, the rootdir is never
+      collected and ``tests/test_unrelated.py`` is never reached.
+    * ``shrink`` — an ordinary PASSING test file *and* the failing dash path.
+      Only the passing file ran, the run went green, and the gate refused with
+      ``tests passed but should fail`` — a false reason for a branch whose
+      dash-named test would have failed. This was the expensive direction
+      under the governing asymmetry. Prefixed, the dash path runs and that
+      false reason is unreachable; the gate still refuses, because the path
+      contains a SPACE and attribution truncates at whitespace, but it now
+      refuses truthfully.
+    * ``ordinary`` — one ordinary FAILING test file and no dash path at all:
+      the disarm row, which must behave exactly as it did before.
+    """
+    root = tmp_path_factory.mktemp("red-dashpath-probe")
+    repo = root / "repo"
+    repo.mkdir()
+
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "probe@example.com")
+    _git(repo, "config", "user.name", "Probe")
+    _git(repo, "config", "commit.gpgsign", "false")
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    (repo / "tests").mkdir()
+    (repo / UNRELATED_TEST).write_text(
+        "def test_unrelated():\n    assert False  # pre-existing, unrelated\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base: unrelated test red")
+
+    fails = "def test_dash():\n    assert False  # implementation absent\n"
+    worktrees: dict[str, Path] = {}
+    # (name, issue number, ordinary test source or None, dash path present)
+    configs = (
+        ("overcollect", "940", None, True),
+        ("shrink", "941",
+         "def test_branch_feature():\n    assert True  # vacuously green\n", True),
+        ("ordinary", "942",
+         "def test_branch_feature():\n    assert False  # implementation absent\n",
+         False),
+    )
+    for name, num, ordinary_src, dash in configs:
+        wt = root / f"issue-{num}-{name}"
+        _git(repo, "worktree", "add", "-q", "-b", f"issue/ISSUE-{num}-{name}",
+             str(wt), "HEAD")
+        if ordinary_src is not None:
+            (wt / BRANCH_TEST).write_text(ordinary_src)
+        if dash:
+            (wt / DASH_DIR).mkdir()
+            (wt / DASH_FILE).write_text(fails)
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-q", "-m", "test: branch tests")
+
+        if dash:
+            # Fixture pin, C1 fact 1: git emits the dash path VERBATIM.
+            # `core.quotePath` is unset by default and a space is not an escaped
+            # character, so the path survives into the delta rather than
+            # arriving C-quoted and harmless. If this ever changes the whole
+            # construction is vacuous, and that must fail here rather than
+            # silently turn the tests below green.
+            delta = _git(wt, "diff", "--name-only",
+                         _git(wt, "merge-base", "HEAD", "main")).splitlines()
+            assert DASH_FILE in delta, (
+                f"fixture pin: git must report the dash path unquoted; got {delta}"
+            )
+        worktrees[name] = wt
+
+    return worktrees
+
+
+@pytest.fixture(scope="module")
+def partial_prefix_repo(tmp_path_factory):
+    """A delta whose dash path is NOT the first element.
+
+    ``main`` holds a failing ``tests/test_unrelated.py`` so over-collection is
+    visible; the branch adds a PASSING ordinary test that sorts ahead of a
+    FAILING dash-leading one. Under the shipped gate both are prefixed, the
+    dash test runs and fails, and the gate certifies RED naming it. Under any
+    revert that prefixes only part of the splat, the dash path is consumed as
+    ``-p`` again, only the passing file runs, and the gate returns to the false
+    reason "tests passed but should fail" — measured, not predicted.
+    """
+    root = tmp_path_factory.mktemp("red-partial-prefix")
+    repo = root / "repo"
+    repo.mkdir()
+
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "probe@example.com")
+    _git(repo, "config", "user.name", "Probe")
+    _git(repo, "config", "commit.gpgsign", "false")
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    (repo / "tests").mkdir()
+    (repo / UNRELATED_TEST).write_text(
+        "def test_unrelated():\n    assert False  # pre-existing, unrelated\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base: unrelated test red")
+
+    wt = root / "issue-947-partialprefix"
+    _git(repo, "worktree", "add", "-q", "-b", "issue/ISSUE-947-partialprefix",
+         str(wt), "HEAD")
+    for path, src in (
+        (PARTIAL_ORDINARY, "def test_alpha():\n    assert True  # vacuously green\n"),
+        (PARTIAL_DASH, "def test_dash():\n    assert False  # implementation absent\n"),
+    ):
+        (wt / path).parent.mkdir(parents=True, exist_ok=True)
+        (wt / path).write_text(src)
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "test: branch tests")
+
+    # Fixture pin: the ORDER is the whole construction. If git ever stops
+    # emitting the delta sorted, or these two names stop sorting this way, the
+    # test below silently stops testing a partial revert — so it must fail
+    # here instead.
+    delta = _git(wt, "diff", "--name-only",
+                 _git(wt, "merge-base", "HEAD", "main")).splitlines()
+    assert delta == [PARTIAL_ORDINARY, PARTIAL_DASH], (
+        f"fixture pin: the dash path must not be first; got {delta}"
+    )
+    return wt
+
+
+class TestDashLeadingPathRouteIsClosedOnPytest:
+    """Route (c) on the pytest argv — CLOSED by a ``./`` prefix, not by ``--``.
+
+    Each scoped path is passed as ``./<path>``, which makes a flag-shaped
+    filename unambiguously a path. The route is closed on **every** supported
+    interpreter and the fix adds **no refusal**, which is what the governing
+    asymmetry requires: a declaration can license a false pass inside a stated
+    boundary and can never license blocking legitimate work.
+
+    **Why not ``--``, which SPEC-114's Decision originally licensed.** Two
+    independent measurements disqualified it, and both are preserved here
+    because they are the reason this class ships a different fix rather than
+    the one the SPEC named.
+
+    First, it adds a refusal on legitimate work. Real consumer, a project whose
+    ``addopts`` contribute a POSITIONAL test path (route (a)'s own shape, and an
+    ordinary idiom) plus a branch whose test genuinely fails:
+
+    The column is the GATE's verdict, not pytest's exit code, so the rows are
+    comparable; where the gate REFUSES, pytest exited 4 underneath it.
+
+    ========================  ========  ===========  ==========
+    child                     plain     with ``--``  with ``./``
+    ========================  ========  ===========  ==========
+    3.11.13 / pytest 8.3.4    PASS      **REFUSE**   PASS
+    3.12.7  / pytest 8.3.4    PASS      **REFUSE**   PASS
+    3.11.13 / pytest 9.0.3    PASS      PASS         PASS
+    3.12.3  / pytest 9.0.3    PASS      PASS         PASS
+    3.13.6  / pytest 9.0.3    PASS      PASS         PASS
+    3.14.7  / pytest 9.0.3    PASS      PASS         PASS
+    ========================  ========  ===========  ==========
+
+    On 8.3.4 the prepended positional plus the separator cannot match
+    argparse's positional pattern, pytest exits 4 with a usage error
+    (``error: unrecognized arguments: --``), and the gate refuses it as a
+    no-run code. ``./`` is PASS on every row — it adds no refusal anywhere,
+    which is the measurement that makes it admissible where ``--`` was not.
+
+    Second, what ``--`` would buy is narrower than the SPEC recorded, and it
+    depends on the interpreter AND the pytest version — **neither alone**.
+    Collected node-id SETS for the flag-shaped-directory rows, six pairs:
+    3.11.13/8.3.4 yes, 3.12.7/8.3.4 yes, 3.11.13/9.0.3 **no**, 3.12.3/9.0.3
+    **no**, 3.13.6/9.0.3 yes, 3.14.7/9.0.3 yes; ``./`` yields the scoped set
+    in all six. Holding the interpreter fixed at 3.11.13 and moving only
+    pytest flips the answer, so an earlier "interpreter rather than pytest"
+    reading of this axis was too strong — 9.0.3 is where ``--`` regressed for
+    <=3.12. A direct ``argparse.parse_args``/``parse_known_args`` probe
+    honours ``--`` on all of them, so the divergence is in pytest's own
+    ``_parse_optional`` override. This project declares
+    ``requires-python = ">=3.11"`` and CI tests 3.11 and 3.12, so on the pair
+    it actually runs — 9.0.3 on 3.11 or 3.12 — ``--`` is INERT and closes
+    nothing, while still adding the 8.3.4 refusal wherever that pytest is used.
+
+    A method note worth keeping, because it is the mistake this class exists to
+    not repeat: an earlier pass of this measurement ran under bare ``python3``,
+    which on the dev host is 3.14.7, and concluded ``--`` worked. It does — on
+    3.14. Re-measured under the canonical ``uv run --extra dev`` 3.11.13 it does
+    not. That is the same defect ISSUE-118 carries about the blocking gate's own
+    interpreter, arriving in a measurement rather than in a verdict.
+
+    So both of route (c)'s directions below are pinned as **CLOSED**, with the
+    residual that remains stated next to them: the dash path in these
+    constructions contains a SPACE, so ``FAILED <nodeid>`` truncates at the
+    first whitespace and the gate blames ``-p``. That is not a new defect and
+    not specific to this route — a path containing whitespace is unattributable
+    on ``main`` too, through the same untouched ``(\\S+)`` parse — so it sits
+    inside SPEC-103's already-declined attribution property. It fails CLOSED,
+    with a truthful reason. Removing the lie from a refusal is the gain here;
+    the refusal itself was never the defect.
+    """
+
+    def test_the_over_collect_direction_is_closed(self, dash_path_repo):
+        """c1 CLOSED: the dash path is a path, so the rootdir is not collected.
+
+        ``tests/test_unrelated.py`` is in no branch's delta and exists only in
+        the rootdir, so the gate naming it was the proof that the dash path had
+        been consumed as a flag and the whole suite ran — ISSUE-103's defect
+        re-entering through a *filename*. Its **absence** is now the proof that
+        the prefix holds, which is why the assertion is negative and checks
+        both spellings: a bare ``UNRELATED_TEST not in out`` would also pass if
+        the gate stopped printing scopes at all.
+
+        What remains is narrower and declared: the dash path contains a SPACE,
+        so pytest's ``FAILED <nodeid>`` line cannot be parsed back to it and the
+        gate blames ``-p``. That is **inside SPEC-103's already-declined
+        attribution property**, not a new defect, and it fail-CLOSES — the
+        refusal is truthful ("blamed no test file in the branch's own delta")
+        rather than the false reason this route used to produce.
+        """
+        r = _run_red_checkpoint(dash_path_repo["overcollect"], "ISSUE-940")
+        out = r.stdout + r.stderr
+
+        assert DASH_FILE in out, out
+        assert f"Scope requested: {DASH_FILE}" in out, out
+        # Over-collection is gone: the rootdir's standing failure is not reached.
+        assert UNRELATED_TEST not in out, out
+        assert scoped_arg(UNRELATED_TEST) not in out, out
+        # Fail-closed, and for the declared reason rather than a fabricated one.
+        assert r.returncode != 0, out
+        assert "blamed no test file in the branch's own delta" in out, out
+
+    def test_the_silent_shrink_direction_is_closed(self, dash_path_repo):
+        """c3 CLOSED: the requested set is no longer shrunk to its green half.
+
+        This was the expensive direction and the one the issue text did not
+        name: the dash path never ran, the surviving subset went green, and the
+        gate blocked a branch that DID write a failing test with the **false
+        reason** "tests passed but should fail".
+
+        The prefix makes the dash path run, so the suite exits non-zero and
+        that false reason is now unreachable. The gate still refuses — the
+        space in the path keeps attribution from naming it — but it refuses
+        **truthfully**. Removing a lie from a refusal is the whole gain here;
+        the refusal itself was never the defect.
+        """
+        r = _run_red_checkpoint(dash_path_repo["shrink"], "ISSUE-941")
+        out = r.stdout + r.stderr
+
+        assert r.returncode != 0, out
+        # The false reason is gone, in both of the phrasings it could take.
+        assert "tests passed but should fail" not in out, out
+        assert "The branch's own tests all passed" not in out, out
+        # And the truthful one is present, with both scoped paths named.
+        assert "blamed no test file in the branch's own delta" in out, out
+        assert DASH_FILE in out and BRANCH_TEST in out, out
+
+    def test_the_pytest_argv_prefixes_every_scoped_path(self, tmp_path):
+        """The structural pin for the fix (review lesson 12: pin POSITION).
+
+        Three things are asserted together because each fails differently:
+        the prefixed path is present, the **bare** path is absent, and the
+        splat still follows ``--color=no`` directly. The last one is the
+        position pin — a
+        prefix applied in the wrong place, or a separator slipped in anywhere
+        in the pytest argv, fails here rather than in a consumer's CI, which is
+        where the measured 8.3.4 ``exit 4`` refusal would otherwise surface.
+        """
+        wt = _py_worktree(tmp_path)
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, f"{BRANCH_TEST}\n", runs,
+                _mock_run(1, stdout="=== short test summary info ===\n"
+                                    f"FAILED {BRANCH_TEST}::test_branch_feature - x"),
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        cmd = runs[0]
+        prefixed = scoped_arg(BRANCH_TEST)
+        assert prefixed in cmd, cmd
+        # A partial revert that leaves any path bare fails here.
+        assert BRANCH_TEST not in cmd, cmd
+        # No separator anywhere: `--` is the REJECTED fix (exit 4 on 8.3.4 when
+        # the project's addopts contribute a positional — measured).
+        assert "--" not in cmd, cmd
+        # Position: the splat still follows `--color=no` directly.
+        assert cmd[cmd.index(prefixed) - 1] == "--color=no", cmd
+
+    def test_a_partial_prefix_revert_cannot_pass(self, partial_prefix_repo):
+        """EVERY scoped path, not just the first — at the real consumer.
+
+        The structural pin above cannot carry this claim and must not be read
+        as doing so: its worktree has exactly ONE changed test file, and with
+        a single-element splat "prefix the first" and "prefix all" are the
+        same argv, so ``BRANCH_TEST not in cmd`` is satisfied either way. A
+        count of one is not a set — this is the hollow-pass direction
+        ``scoped_arg``'s own docstring warns about, arriving in the guard
+        rather than in the assertions it was written to protect.
+
+        Measured against an unmutated control: mutating the splat to
+        ``*(f"./{p}" if i == 0 else p for i, p in enumerate(scoped))`` leaves
+        the whole module green (136 passed) while the real consumer on this
+        construction goes from ``PASS: RED phase`` to ``FAIL: RED phase —
+        tests passed but should fail`` — i.e. route (c)'s silent-shrink
+        direction, byte-identical to the pre-fix defect, fully reopened. The
+        gap is order-dependent, which is why the fixture pins the order.
+        """
+        r = _run_red_checkpoint(partial_prefix_repo, "ISSUE-947")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"a partial-prefix revert went unnoticed:\n{out}"
+        assert "PASS: RED phase" in out, out
+        # The dash path ran AND was attributed — it is the only failing test.
+        assert f"summary blamed: {PARTIAL_DASH}" in out, out
+        # The false reason the shrink direction produces must stay unreachable.
+        assert "tests passed but should fail" not in out, out
+        # And the rootdir's standing failure was still never reached.
+        assert UNRELATED_TEST not in out, out
+
+    def test_positional_addopts_with_a_failing_branch_test_still_certifies_red(
+        self, probe_repo
+    ):
+        """The de-refusal the omission preserves, at the real consumer.
+
+        A project whose ``addopts`` name a test path AND a branch whose own
+        test genuinely fails: the shipped gate certifies RED, and it must keep
+        doing so. This is the row the pytest separator was measured to turn
+        into ``exit 4: nothing collected / usage error`` on pytest 8.3.4, so it
+        is the behavioural kill for that mutant — on an 8.3.4 child. On a 9.0.3
+        child the mutant survives here, which is why the structural pin above
+        exists alongside it.
+        """
+        r = _run_red_checkpoint(probe_repo["addopts_path_red"], "ISSUE-946")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"a positional addopts path refused a RED:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
+        # Paired absence: not the no-run refusal the separator would produce.
+        assert "nothing collected" not in out, out
+
+    def test_ordinary_delta_is_unchanged_at_the_real_consumer(self, dash_path_repo):
+        """The disarm row (review lesson 16): nothing in this pass refuses it.
+
+        An ordinary failing test file, no dash path anywhere.
+        """
+        r = _run_red_checkpoint(dash_path_repo["ordinary"], "ISSUE-942")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"an ordinary delta was refused:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert f"summary blamed: {BRANCH_TEST}" in out, out
+
+
+class TestScopeSeparatorArgvShape:
+    """The structural pins: one ``--`` per argv, immediately before the splat.
+
+    Position is the whole content of the fix — a ``--`` anywhere after the
+    first scope path separates nothing — so this asserts the exact argv rather
+    than mere membership (review lesson 12). This class covers the **npm** argv
+    only. The pytest argv takes a ``./`` prefix instead of a separator, and its
+    structural pin lives with the measurements that decided it:
+    :class:`TestDashLeadingPathRouteIsClosedOnPytest`.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_default_branch(self, monkeypatch):
+        monkeypatch.setattr(vc, "_default_branch", lambda: "main")
+
+    def test_npm_argv_carries_exactly_one_separator(self, tmp_path):
+        """npm's argv carries exactly ONE ``--`` — the second one is removed.
+
+        The second separator shipped and was withdrawn: measured on real
+        vitest 3.2.7 and 1.6.1 it **deletes** the scope rather than protecting
+        it, so the whole suite runs and a branch whose own new test PASSES is
+        certified as a genuine RED. This leg has ``no_run_codes = ()`` and
+        ``attributes_failures = False``, so nothing downstream catches the
+        widened set and the printed line asserts a scope that was discarded —
+        a false pass OUTSIDE SPEC-103's declared property, which is "a run
+        whose arguments were the branch's own changed test files".
+
+        The exact shape is asserted rather than a bare ``count("--") == 1``,
+        because the one separator that remains belongs to ``npm`` — it is what
+        forwards anything at all to the test script — and dropping *it* would
+        silently un-forward ``--passWithNoTests``. The two failure modes are
+        opposite, so the pin has to distinguish them.
+        """
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        wt.mkdir(parents=True)
+        (wt / "package.json").write_text('{"scripts": {"test": "vitest run"}}')
+        (wt / "tests").mkdir()
+        (wt / "tests/feature.test.ts").write_text(
+            'it("x", () => { expect(1).toBe(2); });\n'
+        )
+        runs: list = []
+        with patch.object(
+            vc, "_run",
+            side_effect=_side_effect(
+                wt, "tests/feature.test.ts\n", runs, _mock_run(1, stdout="1 failed")
+            ),
+        ):
+            assert vc.verify_implement_red("ISSUE-001") is True
+
+        assert runs[0] == [
+            "npm", "test", "--", "--passWithNoTests",
+            "tests/feature.test.ts",
+        ], runs[0]
+        # Both directions, because they fail oppositely: a re-added second
+        # separator deletes the scope, and a removed first one un-forwards
+        # `--passWithNoTests`.
+        assert runs[0].count("--") == 1, runs[0]
+        assert runs[0].index("--") < runs[0].index("--passWithNoTests"), runs[0]
+        # Ties the literal above to the shape the real-vitest probe measures,
+        # so that probe can never certify an argv the gate stopped sending.
+        assert runs[0] == npm_argv("tests/feature.test.ts"), runs[0]
+
+
+class TestSeparatorIsANoOpOnOrdinaryInput:
+    """The separator's DISARM table, driven through the real runners.
+
+    Carried here as the durable record the route-(c) carrier will need
+    (review lesson 15): on ordinary input the separator is harmless on every
+    interpreter measured, so what decided the pytest half against it is
+    specifically the positional-``addopts`` row and nothing about ordinary
+    paths. Measured against the argv the gate really builds — captured from
+    the verifier rather than re-typed — so a future flag change cannot leave
+    this measuring a stale command line.
+    """
+
+    @staticmethod
+    def _captured_pytest_argv(
+        tmp_path: Path, targets: list[str]
+    ) -> tuple[Path, list[str], list[str]]:
+        """``(worktree, disarmed, armed)`` for the gate's real pytest argv.
+
+        ``disarmed`` is what the gate ships; ``armed`` inserts the separator
+        immediately before the scope splat, which is the one position the fix
+        would ever have used.
+        """
+        wt = _py_worktree(tmp_path)
+        (wt / BRANCH_TEST).write_text(
+            "def test_branch_feature():\n    assert True  # ordinary, green\n"
+        )
+        (wt / UNRELATED_TEST).unlink()
+        runs: list = []
+        with patch.object(
+            vc, "_default_branch", lambda: "main"
+        ), patch.object(
+            vc, "_run",
+            side_effect=_side_effect(wt, f"{BRANCH_TEST}\n", runs, _mock_run(0)),
+        ):
+            vc.verify_implement_red("ISSUE-001")
+
+        cmd = list(runs[0])
+        # The gate now splats `./`-prefixed paths (ISSUE-114 route (c)), so the
+        # split is found at the prefixed spelling. `targets` stay as the caller
+        # wrote them: this class measures the SEPARATOR in isolation, and
+        # prefixing them too would conflate the rejected fix with the shipped
+        # one — the comparison would then have no disarmed baseline.
+        split = cmd.index(scoped_arg(BRANCH_TEST))
+        disarmed = cmd[:split] + list(targets)
+        armed = cmd[:split] + ["--"] + list(targets)
+        return wt, disarmed, armed
+
+    @staticmethod
+    def _normalise(stdout: str) -> str:
+        """pytest's stdout minus its wall-clock duration, which never matches."""
+        return re.sub(r"\bin \d+\.\d+s\b", "in <t>s", stdout)
+
+    @pytest.mark.parametrize("targets,label", [
+        ([BRANCH_TEST], "ordinary-path"),
+        ([f"{BRANCH_TEST}::test_branch_feature"], "nodeid"),
+    ])
+    def test_pytest_is_byte_identical_with_and_without_the_separator(
+        self, tmp_path, targets, label
+    ):
+        wt, disarmed, armed = self._captured_pytest_argv(tmp_path, targets)
+        assert "--" not in disarmed, disarmed
+        assert armed.count("--") == 1, armed
+
+        runs = [
+            subprocess.run(argv, cwd=str(wt), capture_output=True, text=True,
+                            timeout=300)
+            for argv in (armed, disarmed)
+        ]
+        assert runs[0].returncode == runs[1].returncode == 0, (label, runs[0].stdout)
+        assert "1 passed" in runs[0].stdout, runs[0].stdout
+        assert self._normalise(runs[0].stdout) == self._normalise(runs[1].stdout), (
+            label, runs[0].stdout, runs[1].stdout
+        )
+
+    def test_a_conforming_js_parser_keeps_the_dash_path_only_behind_it(
+        self, tmp_path
+    ):
+        """C2's second table: the separator is FORWARDED *and* it is USEFUL.
+
+        Node's own ``util.parseArgs`` stands in for a conforming
+        POSIX-convention runner parser. Measured: without the separator the
+        dash path is not merely mis-ordered, it is **gone** — shredded into
+        single-character boolean flags — which is route (c)'s shrink direction
+        on the JS leg. With it, the path survives. On ordinary input the two
+        forms are identical, so the separator adds nothing to refuse.
+        """
+        if shutil.which("node") is None:
+            pytest.skip("node is not installed; this probe needs a real parser")
+
+        script = tmp_path / "parse.js"
+        script.write_text(
+            "const { parseArgs } = require('node:util');\n"
+            "const r = parseArgs({args: process.argv.slice(2), "
+            "strict: false, allowPositionals: true});\n"
+            "console.log(JSON.stringify(r.positionals));\n"
+        )
+
+        def positionals(*args: str) -> list[str]:
+            r = subprocess.run(
+                ["node", str(script), *args], capture_output=True, text=True,
+                timeout=120,
+            )
+            assert r.returncode == 0, r.stderr
+            return json.loads(r.stdout)
+
+        ordinary = "tests/feature.test.ts"
+        # The shrink direction, and its closure.
+        assert positionals("--passWithNoTests", ordinary, DASH_FILE) == [ordinary]
+        assert positionals("--passWithNoTests", "--", ordinary, DASH_FILE) == [
+            ordinary, DASH_FILE,
+        ]
+        # The disarm direction: identical parses on ordinary input.
+        assert positionals("--passWithNoTests", ordinary) == positionals(
+            "--passWithNoTests", "--", ordinary
+        ) == [ordinary]
+
+    def test_npm_forwards_exactly_the_separator_the_gate_sends(self, tmp_path):
+        """C2's first table, at the REAL consumer with real npm.
+
+        What npm does with separators is measured, not assumed: the project's
+        ``test`` script dumps its own ``"$@"`` and the dump is read back.
+
+        The claim this now pins is narrower than the one it replaced, and the
+        narrowing is the point. npm *does* forward a second ``--`` — that part
+        of C2 was true. What C2 never measured is what a real JS runner does
+        with it, and on vitest 3.2.7 and 1.6.1 it **deletes** the scope: the
+        whole suite runs, and a branch whose own new test passes is certified
+        as a genuine RED. So the gate sends **one** separator, npm's own, and
+        this pin asserts the dump matches that exactly — a reintroduced second
+        separator fails here at the real consumer rather than in a user's CI.
+
+        The replaced version asserted the dump contained ``--`` before the
+        scope. That assertion was true of npm and silent about the thing that
+        mattered, which is why "npm forwards it" was never evidence that
+        sending it was safe.
+        """
+        if shutil.which("npm") is None:
+            pytest.skip("npm is not installed; this probe needs the real runner")
+
+        dump = tmp_path / "argv.txt"
+        wt = _npm_probe_worktree(tmp_path, "943", "npmargv", "PLACEHOLDER")
+        script = _runner_script(
+            wt, f'printf "%s\\n" "$@" > {dump}\nexit 1\n'
+        )
+        (wt / "package.json").write_text(
+            '{"name": "p", "version": "1.0.0", "scripts": {"test": "%s"}}' % script
+        )
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-q", "-m", "chore: point test at runner")
+
+        r = _run_red_checkpoint(wt, "ISSUE-943")
+        out = r.stdout + r.stderr
+
+        # Fixture pin: the child really ran (exit 1 → npm's legacy RED pass).
+        assert r.returncode == 0, f"the npm probe did not reach the runner:\n{out}"
+        assert dump.exists(), out
+        forwarded = [line for line in dump.read_text().split("\n") if line]
+        assert forwarded == [
+            "--passWithNoTests", "tests/feature.test.ts",
+        ], dump.read_text()
+        # Stated separately from the equality above so that a reintroduced
+        # second separator names itself in the failure message rather than
+        # showing up as an opaque list mismatch.
+        assert "--" not in forwarded, dump.read_text()
+
+
+_VITEST_FILES = re.compile(r"Test Files\s+(\d+) passed")
+
+
+def _vitest_project(tmp_path: Path) -> Path:
+    """A real vitest project with TWO passing test files.
+
+    Both files pass on purpose. Scope deletion is invisible when the
+    out-of-scope file fails — the runner then exits non-zero for a reason the
+    gate can legitimately see. It shows up only in *how many files ran*, so
+    this probe reads vitest's own ``Test Files N passed`` line.
+
+    Skips rather than fails when vitest cannot be installed: the install is the
+    one part of this probe that needs a registry or a warm npm cache. The
+    skip cannot hide a regression, because every assertion below is anchored to
+    an unscoped control run measured in the same project — if vitest did not
+    really run, the control does not report two files and the test fails.
+    """
+    if shutil.which("npm") is None:
+        pytest.skip("npm is not installed; this probe needs the real runner")
+
+    project = tmp_path / "vitest-project"
+    (project / "tests").mkdir(parents=True)
+    (project / "package.json").write_text(
+        '{"name": "p", "version": "1.0.0", "scripts": {"test": "vitest run"}}'
+    )
+    for name in ("a", "b"):
+        (project / "tests" / f"{name}.test.ts").write_text(
+            'import { test, expect } from "vitest";\n'
+            f'test("{name}", () => {{ expect(1).toBe(1); }});\n'
+        )
+    install = subprocess.run(
+        ["npm", "install", "--prefer-offline", "--no-audit", "--no-fund",
+         "--silent", "vitest@3"],
+        cwd=project, capture_output=True, text=True, timeout=300,
+    )
+    if install.returncode != 0:
+        pytest.skip(
+            "vitest could not be installed (no registry and no warm cache):\n"
+            + (install.stderr or install.stdout)[-400:]
+        )
+    return project
+
+
+def _vitest_files_ran(project: Path, argv: list[str]) -> int:
+    """Run ``argv`` in ``project`` and return how many test FILES vitest ran."""
+    r = subprocess.run(
+        argv, cwd=project, capture_output=True, text=True, timeout=300,
+    )
+    out = r.stdout + r.stderr
+    m = _VITEST_FILES.search(out)
+    assert m, f"vitest printed no Test Files summary:\n{out}"
+    return int(m.group(1))
+
+
+class TestSecondSeparatorDeletesScopeOnRealVitest:
+    """Why the second ``--`` was withdrawn — measured at the real consumer.
+
+    The withdrawn reasoning was that a second separator is inert on ordinary
+    input and protective on dash-leading input, and it was argued through
+    ``util.parseArgs``. That was the wrong oracle: nothing in the gate ever
+    hands its argv to ``parseArgs``. It hands it to a JS test runner, and on
+    the runner the second separator is not inert — vitest treats everything
+    after it as *not* a file filter, so the scope is **deleted** and the whole
+    suite runs.
+
+    That turns the npm leg into a certified FALSE RED: the leg has
+    ``no_run_codes = ()`` and ``attributes_failures = False``, so a non-zero
+    exit from an unrelated file certifies the TDD RED phase while the branch's
+    own new test passes. The printed line then names a scope that was
+    discarded — a false pass outside SPEC-103's declared property.
+
+    The three measurements are asserted against each other rather than against
+    hard-coded counts alone, so the probe states a *relation* ("scoped runs
+    fewer files than unscoped") that stays meaningful if the fixture grows.
+    """
+
+    def test_one_separator_honours_the_scope_and_two_delete_it(self, tmp_path):
+        project = _vitest_project(tmp_path)
+        scoped_file = "tests/a.test.ts"
+
+        unscoped = _vitest_files_ran(project, ["npm", "test"])
+        gate = _vitest_files_ran(project, npm_argv(scoped_file))
+        disarmed = _vitest_files_ran(
+            project,
+            ["npm", "test", "--", "--passWithNoTests", "--", scoped_file],
+        )
+
+        # Fixture pin: vitest really ran, and the project really has two files.
+        # Without this, a one-file fixture would make every count below equal
+        # and the assertions would hold vacuously.
+        assert unscoped == 2, unscoped
+
+        # The shape the gate sends scopes correctly.
+        assert gate == 1, f"the gate's own argv ran {gate} files, not 1"
+
+        # The withdrawn shape does not scope at all — it is byte-equivalent in
+        # effect to running no scope, which is the defect.
+        assert disarmed == unscoped, (
+            f"second separator ran {disarmed} files, unscoped ran {unscoped}"
+        )
+        assert gate < disarmed, (gate, disarmed)
+
+
+class TestScopeEnforcementFrameForAddopts:
+    """Routes (a) and (b) — ALREADY CLOSED, pinned in the ENFORCEMENT frame.
+
+    ISSUE-103's attribution filter already refuses both, through the two arms
+    it was built with. What was missing is the pin in the frame this issue is
+    about: on exactly these routes — where the project's own configuration
+    makes the executed set differ from the requested one — the gate's output
+    must not claim the scope was applied. That is the issue's fourth AC, and it
+    is asserted on the gate's own printed output, which is behaviour.
+
+    The closure is **monotone, not positive**: the filter can only remove a
+    PASS. If the branch's own test also fails on either route the gate passes
+    while the executed set is still wider than the requested set, which is
+    inside SPEC-103's declared boundary. That bound is carried in
+    `docs/specs/SPEC-114.md`, not asserted here.
+    """
+
+    @pytest.mark.parametrize("config,issue,arm", [
+        # (a) `addopts = "extra_tests"` — an unrelated file fails INSIDE the
+        #     scoped run, and the filter refuses through the "blamed … outside
+        #     the branch's delta" arm.
+        ("addopts_path", "ISSUE-906", "outside the branch's delta"),
+        # (b) `addopts = "--cov=src --cov-fail-under=50"` — the exit code is
+        #     about no test at all, and the filter refuses through the
+        #     "reported no test failure at all" arm.
+        ("cov", "ISSUE-905", "reported no test failure at all"),
+    ])
+    def test_the_route_is_refused_without_claiming_enforcement(
+        self, probe_repo, config, issue, arm
+    ):
+        r = _run_red_checkpoint(probe_repo[config], issue)
+        out = r.stdout + r.stderr
+
+        assert r.returncode != 0, f"{config} certified RED:\n{out}"
+        assert "FAIL: RED phase" in out, out
+        # Which arm refused it — the two routes are different code paths and a
+        # test that could not tell them apart would pass on either.
+        assert arm in out, out
+        # The enforcement frame: requested, never applied or enforced.
+        assert f"Scope requested: {BRANCH_TEST}" in out, out
+        assert "Scope was" not in out, out
+        assert "enforced" not in out.lower(), out
+
+
+@pytest.fixture(scope="module")
+def shallow_vs_full_repo(tmp_path_factory):
+    """Route (d)'s construction and its paired-absence control, one history.
+
+    ``main`` at c1 holds ``tests/test_shared.py``; a branch forks from c1 and
+    adds a genuinely failing ``tests/test_branch_new.py``; ``main`` then
+    advances to c2, which **modifies** ``tests/test_shared.py`` — a file that
+    existed before the fork point, so ``_existing()`` cannot filter it out.
+
+    Two checkouts of that one history:
+
+    * ``shallow`` — ``git clone --depth 1 file://<origin>`` plus
+      ``git fetch --depth 1``. A ``file://`` origin is REQUIRED: ``--depth`` is
+      silently ignored on a local path, which is how an earlier probe of this
+      shape self-falsified. Measured in this worktree::
+
+          merge-base HEAD main                   -> 128
+          rev-parse --verify --quiet main        -> 1
+          merge-base HEAD origin/main            -> 1
+          rev-parse --verify --quiet origin/main -> 0
+
+      So ``main`` is correctly judged unresolvable, SPEC-103's ``origin/``
+      rescue fires, ``origin/main`` resolves — and the gate then diffs against
+      a base it has **no merge base with**. The delta leaks::
+
+          shallow, two-dot (what the gate does)  test_branch_new, test_shared
+          full clone, merge-base-anchored (TRUE) test_branch_new
+
+    * ``full`` — the same history, cloned normally. It HAS a merge base, so it
+      is the paired-absence row for the disclosure.
+    """
+    root = tmp_path_factory.mktemp("red-shallow-probe")
+    origin = root / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)],
+                   check=True)
+
+    seed = root / "seed"
+    seed.mkdir()
+    _git(seed, "init", "-q", "-b", "main")
+    _git(seed, "config", "user.email", "probe@example.com")
+    _git(seed, "config", "user.name", "Probe")
+    _git(seed, "config", "commit.gpgsign", "false")
+    (seed / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    (seed / "tests").mkdir()
+    (seed / "tests/test_shared.py").write_text(
+        "def test_shared():\n    assert True\n"
+    )
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c1: the shared test")
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "-u", "origin", "main")
+
+    branch = "issue/ISSUE-944-forked"
+    _git(seed, "checkout", "-q", "-b", branch)
+    (seed / "tests/test_branch_new.py").write_text(
+        "def test_branch_new():\n    assert False  # implementation absent\n"
+    )
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "test: branch test")
+    _git(seed, "push", "-q", "-u", "origin", branch)
+
+    _git(seed, "checkout", "-q", "main")
+    (seed / "tests/test_shared.py").write_text(
+        "def test_shared():\n    assert True  # touched by main after the fork\n"
+    )
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "c2: main touches the shared test")
+    _git(seed, "push", "-q", "origin", "main")
+
+    def _rc(wt: Path, *args: str) -> int:
+        return subprocess.run(["git", *args], cwd=str(wt),
+                              capture_output=True).returncode
+
+    # ── the shallow checkout ──
+    shallow_clone = root / "work-shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{origin}",
+         str(shallow_clone)],
+        check=True,
+    )
+    for key, value in (("user.email", "probe@example.com"), ("user.name", "Probe"),
+                       ("commit.gpgsign", "false")):
+        _git(shallow_clone, "config", key, value)
+    _git(shallow_clone, "fetch", "-q", "--depth", "1", "origin", branch)
+    shallow = root / "issue-944-shallow"
+    _git(shallow_clone, "worktree", "add", "-q", "--detach", str(shallow),
+         "FETCH_HEAD")
+    _git(shallow_clone, "checkout", "-q", "--detach", "origin/main")
+    _git(shallow_clone, "branch", "-q", "-D", "main")
+
+    # Fixture pins: this really is the four-exit shape under test, not a clone
+    # in which `main` happens to resolve.
+    assert _rc(shallow, "merge-base", "HEAD", "main") != 0, \
+        "fixture pin: 'main' must have no merge-base"
+    assert _rc(shallow, "rev-parse", "--verify", "--quiet", "main") != 0, \
+        "fixture pin: local 'main' must NOT resolve"
+    assert _rc(shallow, "merge-base", "HEAD", "origin/main") != 0, \
+        "fixture pin: 'origin/main' must have no merge-base either"
+    assert _rc(shallow, "rev-parse", "--verify", "--quiet", "origin/main") == 0, \
+        "fixture pin: 'origin/main' must resolve, so the rescue fires"
+
+    # ── the full checkout, same history ──
+    full_clone = root / "work-full"
+    subprocess.run(["git", "clone", "-q", str(origin), str(full_clone)], check=True)
+    for key, value in (("user.email", "probe@example.com"), ("user.name", "Probe"),
+                       ("commit.gpgsign", "false")):
+        _git(full_clone, "config", key, value)
+    full = root / "issue-945-full"
+    _git(full_clone, "worktree", "add", "-q", "--detach", str(full),
+         f"origin/{branch}")
+    assert _rc(full, "merge-base", "HEAD", "origin/main") == 0, \
+        "fixture pin: the control row must HAVE a merge base"
+
+    return {"shallow": shallow, "full": full}
+
+
+class TestUnverifiedScopeDisclosure:
+    """Route (d) — DECLINED, and disclosed instead.
+
+    Both candidate fixes were driven at the real consumer against the shallow
+    construction and each turns a measured PASS on legitimate work into a
+    REFUSE::
+
+        control (shipped)                                     exit 0
+          PASS: RED phase — the branch's own tests fail as expected (exit 1)
+        candidate-1  single-legged _delta_base_unresolvable   exit 1
+          FAIL: RED phase — cannot compute the branch's test-file delta: …
+        candidate-2  three-dot diff (origin/main...HEAD)      exit 1
+          FAIL: no test files found — write tests before RED phase
+
+    ``actions/checkout`` defaults to ``fetch-depth: 1``, and at depth 1 the
+    fork point does not exist locally, so neither refusal is actionable from
+    inside the checkout. A declaration can license a false pass inside a
+    stated boundary and can never license blocking legitimate work, so both
+    are refused and the open route is carried.
+
+    What ships is the disclosure, with three pinned properties: one derivation
+    point upstream of every verdict that rests on the delta, absent on every
+    ordinary run, and a disclosure rather than a verdict.
+    """
+
+    def test_the_shallow_construction_still_passes_and_discloses(
+        self, shallow_vs_full_repo
+    ):
+        """Property 3: a disclosure, not a verdict."""
+        r = _run_red_checkpoint(shallow_vs_full_repo["shallow"], "ISSUE-944")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"the disclosure became a refusal:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert "tests/test_branch_new.py" in out, out
+        assert "UNVERIFIED scope:" in out, out
+        # It must name the base it actually diffed against — the rescued one.
+        assert "origin/main" in out, out
+
+    def test_neither_declined_candidate_fix_shipped(self, shallow_vs_full_repo):
+        """AC-3: the PASS→REFUSE transition is stated, so neither fix may land.
+
+        Both absences are mutation-tested against the measured matrix above:
+        candidate-1 prints ``cannot compute`` on this construction and
+        candidate-2 prints ``no test files found``, so either landing fails
+        here rather than being discovered in CI.
+        """
+        r = _run_red_checkpoint(shallow_vs_full_repo["shallow"], "ISSUE-944")
+        out = r.stdout + r.stderr
+
+        assert "cannot compute" not in out, out
+        assert "no test files found" not in out, out
+
+    def test_the_disclosure_precedes_every_verdict_it_qualifies(
+        self, shallow_vs_full_repo
+    ):
+        """Property 1, position: upstream of the verdict, not appended after it.
+
+        Conventional gate output leads with ``PASS:``/``FAIL:``; this one does
+        not, on these runs only, because that is the sole position upstream of
+        *every* claim resting on the unverified delta.
+        """
+        r = _run_red_checkpoint(shallow_vs_full_repo["shallow"], "ISSUE-944")
+        out = r.stdout + r.stderr
+
+        assert out.index("UNVERIFIED scope:") < out.index("PASS: RED phase"), out
+
+    def test_the_disclosure_is_derived_once(self, shallow_vs_full_repo):
+        """Property 1, arity: one derivation point, one line.
+
+        A per-site inventory of this class short by one is how it recurred at
+        three successive layers (SPEC-102 Finding 3), so the count is pinned.
+        """
+        r = _run_red_checkpoint(shallow_vs_full_repo["shallow"], "ISSUE-944")
+        out = r.stdout + r.stderr
+
+        assert out.count("UNVERIFIED scope:") == 1, out
+
+    def test_the_disclosure_is_absent_on_a_full_clone(self, shallow_vs_full_repo):
+        """Property 2: paired absence on the same history, cloned normally."""
+        r = _run_red_checkpoint(shallow_vs_full_repo["full"], "ISSUE-945")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"the control row was refused:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert "UNVERIFIED" not in out, out
+
+    def test_the_disclosure_is_absent_when_the_base_was_rescued(
+        self, develop_default_repo
+    ):
+        """Property 2, the row that pins the DERIVATION POINT.
+
+        On a repo whose default branch is ``develop`` and is never checked out
+        locally, ``merge-base HEAD develop`` exits 128 and the rescue swaps the
+        base to ``origin/develop``, which DOES have a merge base. A caveat
+        computed against the un-rescued base would fire here and be wrong —
+        so this is the paired absence that distinguishes "derived after the
+        rescue" from "derived before it".
+        """
+        r = _run_red_checkpoint(develop_default_repo, "ISSUE-920")
+        out = r.stdout + r.stderr
+
+        assert r.returncode == 0, f"a 'develop' default blocked a genuine RED:\n{out}"
+        assert "PASS: RED phase" in out, out
+        assert "UNVERIFIED" not in out, out
+
+    def test_the_disclosure_is_upstream_of_the_no_test_files_verdict(
+        self, tmp_path, capsys
+    ):
+        """Property 1, the verdict the disclosure is easiest to miss.
+
+        ``FAIL: no test files found`` also rests on the unverified delta, so a
+        disclosure printed only alongside the test-run verdicts would leave
+        that one claiming a scope it could not compute. Pinned at the seam
+        because the position, not the presence, is the content: the git state
+        is a resolvable base with NO merge base, and the branch's delta holds
+        no test file at all.
+        """
+        wt = tmp_path / "wt" / "issue" / "issue-001-slug"
+        (wt / "src").mkdir(parents=True)
+        (wt / "pyproject.toml").write_text("[tool.pytest]\n")
+        (wt / "src/lib.py").write_text("def f():\n    return 1\n")
+        runs: list = []
+
+        def run(cmd, **kwargs):
+            if cmd[:2] == ["git", "worktree"]:
+                return _mock_run(0, stdout=f"worktree {wt}\n")
+            # No merge base, but the base ref itself resolves — so the delta is
+            # COMPUTED (two-dot) rather than uncomputable, and no rescue fires.
+            if cmd[:2] == ["git", "merge-base"]:
+                return _mock_run(128, stderr="fatal: no merge base")
+            if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                return _mock_run(0, stdout="deadbeef\n")
+            if cmd[:2] == ["git", "diff"] and "main" in cmd:
+                return _mock_run(0, stdout="src/lib.py\n")
+            if "pytest" in cmd or cmd[:2] == ["npm", "test"]:
+                runs.append(cmd)
+                return _mock_run(1)
+            return _mock_run(0, stdout="")
+
+        with patch.object(vc, "_default_branch", lambda: "main"), \
+             patch.object(vc, "_run", side_effect=run):
+            assert vc.verify_implement_red("ISSUE-001") is False
+
+        out = capsys.readouterr().out
+        assert "no test files found" in out, out
+        assert "UNVERIFIED scope:" in out, out
+        assert out.index("UNVERIFIED scope:") < out.index("no test files found"), out
+        # Nothing was executed, so the disclosure is not a by-product of a run.
+        assert runs == [], runs
