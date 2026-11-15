@@ -114,6 +114,19 @@ KIT_ROOT = Path(__file__).resolve().parents[1]
 
 BRANCH_TEST = "tests/test_branch_feature.py"
 UNRELATED_TEST = "tests/test_unrelated.py"
+
+
+def scoped_arg(path: str) -> str:
+    """How a scoped path appears in the pytest argv: ``./``-prefixed.
+
+    ISSUE-114 route (c) prefixes every scoped path so a flag-shaped filename
+    cannot be consumed as an option. The prefix lives here rather than inline
+    at each assertion so that a change to it fails one place loudly instead of
+    turning a dozen membership assertions **vacuously true** — the hollow-pass
+    direction, which is how a negative pin like ``BRANCH_TEST not in argv``
+    stops testing anything the moment the argv's spelling changes.
+    """
+    return f"./{path}"
 # A failing test outside `tests/`, so a project whose addopts inject this path
 # adds a failure the branch never touched. Kept DISJOINT from the scoped argv on
 # purpose: measured, pytest 8.3.4 deduplicates an addopts path that CONTAINS the
@@ -460,8 +473,11 @@ class TestRedScopeArgv:
             assert vc.verify_implement_red("ISSUE-001") is True
 
         assert len(runs) == 1, runs
-        assert BRANCH_TEST in runs[0], runs[0]
+        assert scoped_arg(BRANCH_TEST) in runs[0], runs[0]
+        # Both spellings, so this stays a real exclusion rather than becoming
+        # vacuously true the moment the argv's prefix changes.
         assert UNRELATED_TEST not in runs[0], runs[0]
+        assert scoped_arg(UNRELATED_TEST) not in runs[0], runs[0]
 
     def test_js_runner_is_scoped_and_pytest_never_runs(self, tmp_path):
         """Legacy JS-mis-run pin: a JS repo goes to npm, never to pytest."""
@@ -2288,7 +2304,9 @@ class TestForcedColourStillPasses:
 
         assert "--color=no" in runs[0], runs[0]
         # Position: it must precede the scope paths, which are splatted last.
-        assert runs[0].index("--color=no") < runs[0].index(BRANCH_TEST), runs[0]
+        assert (
+            runs[0].index("--color=no") < runs[0].index(scoped_arg(BRANCH_TEST))
+        ), runs[0]
 
 
 # ── Change 4: computed-and-empty vs could-not-compute ────────────────
@@ -2818,13 +2836,59 @@ def dash_path_repo(tmp_path_factory):
     return worktrees
 
 
-class TestDashLeadingPathRouteIsCarriedOnPytest:
-    """Route (c) on the pytest argv — CARRIED, and pinned as carried.
+class TestDashLeadingPathRouteIsClosedOnPytest:
+    """Route (c) on the pytest argv — CLOSED by a ``./`` prefix, not by ``--``.
 
-    SPEC-114 decided this one closed by a ``--`` separator. Driving that
-    separator at the real consumer against an **unmutated control** measured
-    it adding a refusal, which is the one disposition this pass may not take,
-    so the separator does not ship for pytest and the route stays open.
+    Each scoped path is passed as ``./<path>``, which makes a flag-shaped
+    filename unambiguously a path. The route is closed on **every** supported
+    interpreter and the fix adds **no refusal**, which is what the governing
+    asymmetry requires: a declaration can license a false pass inside a stated
+    boundary and can never license blocking legitimate work.
+
+    **Why not ``--``, which SPEC-114's Decision originally licensed.** Two
+    independent measurements disqualified it, and both are preserved here
+    because they are the reason this class ships a different fix rather than
+    the one the SPEC named.
+
+    First, it adds a refusal on legitimate work. Real consumer, a project whose
+    ``addopts`` contribute a POSITIONAL test path (route (a)'s own shape, and an
+    ordinary idiom) plus a branch whose test genuinely fails:
+
+    ========================  ==============  ==============  ==============
+    child                     plain           with ``--``     with ``./``
+    ========================  ==============  ==============  ==============
+    3.11.13 / pytest 8.3.4    exit 1  PASS    exit 4  REFUSE  exit 1  PASS
+    3.12.7  / pytest 8.3.4    exit 0  PASS    exit 1  REFUSE  --
+    3.11.13 / pytest 9.0.3    exit 0  PASS    exit 0  PASS    --
+    3.14.7  / pytest 9.0.3    exit 0  PASS    exit 0  PASS    --
+    ========================  ==============  ==============  ==============
+
+    On 8.3.4 the prepended positional plus the separator cannot match
+    argparse's positional pattern, pytest exits 4 with a usage error, and the
+    gate refuses it as a no-run code. ``./`` is byte-identical to plain on that
+    same row — which is the measurement that makes it admissible where ``--``
+    was not.
+
+    Second, what ``--`` would buy is narrower than the SPEC recorded, and
+    depends on the INTERPRETER rather than on pytest — same pytest 9.0.3, the
+    dash-path rows, four CPythons: 3.11.13 no, 3.12.3 no, 3.13.6 yes, 3.14.7
+    yes (the reversed-order re-run reproduced it row for row, so it is not a
+    ``.pytest_cache`` artifact of the probe's ordering). A direct
+    ``argparse.parse_args``/``parse_known_args`` probe honours ``--`` on all
+    four, so the divergence is in pytest's own ``_parse_optional`` override.
+    This project declares ``requires-python = ">=3.11"`` and CI tests 3.11 and
+    3.12, so ``--`` would close the route on versions this project does not
+    gate on and leave it open on the ones it does. Measured on 3.11.13, the
+    flag-shaped-directory rows: ``bare`` and ``--`` are byte-identical
+    (``2 passed``, ``2 collected``, help shown — all **exit 0**), while ``./``
+    yields ``1 passed`` on every shape and every interpreter.
+
+    A method note worth keeping, because it is the mistake this class exists to
+    not repeat: an earlier pass of this measurement ran under bare ``python3``,
+    which on the dev host is 3.14.7, and concluded ``--`` worked. It does — on
+    3.14. Re-measured under the canonical ``uv run --extra dev`` 3.11.13 it does
+    not. That is the same defect ISSUE-118 carries about the blocking gate's own
+    interpreter, arriving in a measurement rather than in a verdict.
 
     What the separator costs, real consumer, a project whose ``addopts``
     contribute a POSITIONAL test path (route (a)'s own shape, and an ordinary
@@ -2859,48 +2923,71 @@ class TestDashLeadingPathRouteIsCarriedOnPytest:
     is what makes them the mutation guard for the omission.
     """
 
-    def test_the_route_is_open_in_the_over_collect_direction(self, dash_path_repo):
-        """c1: with no positionals surviving, pytest collects from rootdir.
+    def test_the_over_collect_direction_is_closed(self, dash_path_repo):
+        """c1 CLOSED: the dash path is a path, so the rootdir is not collected.
 
         ``tests/test_unrelated.py`` is in no branch's delta and exists only in
-        the rootdir, so the gate naming it is proof the dash path was consumed
-        as a flag and the whole suite ran — ISSUE-103's defect re-entering
-        through a *filename*. It is still refused, because the standing
-        failure is outside the delta, so the direction is fail-CLOSED.
+        the rootdir, so the gate naming it was the proof that the dash path had
+        been consumed as a flag and the whole suite ran — ISSUE-103's defect
+        re-entering through a *filename*. Its **absence** is now the proof that
+        the prefix holds, which is why the assertion is negative and checks
+        both spellings: a bare ``UNRELATED_TEST not in out`` would also pass if
+        the gate stopped printing scopes at all.
+
+        What remains is narrower and declared: the dash path contains a SPACE,
+        so pytest's ``FAILED <nodeid>`` line cannot be parsed back to it and the
+        gate blames ``-p``. That is **inside SPEC-103's already-declined
+        attribution property**, not a new defect, and it fail-CLOSES — the
+        refusal is truthful ("blamed no test file in the branch's own delta")
+        rather than the false reason this route used to produce.
         """
         r = _run_red_checkpoint(dash_path_repo["overcollect"], "ISSUE-940")
         out = r.stdout + r.stderr
 
         assert DASH_FILE in out, out
         assert f"Scope requested: {DASH_FILE}" in out, out
-        # The open route, named by the file that proves it.
-        assert UNRELATED_TEST in out, out
+        # Over-collection is gone: the rootdir's standing failure is not reached.
+        assert UNRELATED_TEST not in out, out
+        assert scoped_arg(UNRELATED_TEST) not in out, out
+        # Fail-closed, and for the declared reason rather than a fabricated one.
         assert r.returncode != 0, out
+        assert "blamed no test file in the branch's own delta" in out, out
 
-    def test_the_route_is_open_in_the_silent_shrink_direction(self, dash_path_repo):
-        """c3: the requested set is silently shrunk to its green half.
+    def test_the_silent_shrink_direction_is_closed(self, dash_path_repo):
+        """c3 CLOSED: the requested set is no longer shrunk to its green half.
 
-        The expensive direction, and the one the issue text did not name: the
-        dash path never runs, the surviving subset goes green, and the gate
-        blocks a branch that DID write a failing test with the false reason
-        "tests passed but should fail".
+        This was the expensive direction and the one the issue text did not
+        name: the dash path never ran, the surviving subset went green, and the
+        gate blocked a branch that DID write a failing test with the **false
+        reason** "tests passed but should fail".
+
+        The prefix makes the dash path run, so the suite exits non-zero and
+        that false reason is now unreachable. The gate still refuses — the
+        space in the path keeps attribution from naming it — but it refuses
+        **truthfully**. Removing a lie from a refusal is the whole gain here;
+        the refusal itself was never the defect.
         """
         r = _run_red_checkpoint(dash_path_repo["shrink"], "ISSUE-941")
         out = r.stdout + r.stderr
 
         assert r.returncode != 0, out
-        assert "tests passed but should fail" in out, out
-        # The false reason names the dash path among the "all passed" set, and
-        # that file's test asserts False — which is what makes it false.
-        assert f"The branch's own tests all passed: {DASH_FILE}" in out, out
+        # The false reason is gone, in both of the phrasings it could take.
+        assert "tests passed but should fail" not in out, out
+        assert "The branch's own tests all passed" not in out, out
+        # And the truthful one is present, with both scoped paths named.
+        assert "blamed no test file in the branch's own delta" in out, out
+        assert DASH_FILE in out and BRANCH_TEST in out, out
 
-    def test_the_pytest_argv_carries_no_separator(self, tmp_path):
-        """The structural pin for the omission (review lesson 12: position).
+    def test_the_pytest_argv_prefixes_every_scoped_path(self, tmp_path):
+        """The structural pin for the fix (review lesson 12: pin POSITION).
 
-        Asserted as "the scope splat follows ``--color=no`` directly" rather
-        than as a bare ``"--" not in cmd``, so a separator placed anywhere in
-        the pytest argv fails here. If a future pass re-adds it, this is where
-        the measured 8.3.4 refusal surfaces instead of in a consumer's CI.
+        Three things are asserted together because each fails differently:
+        the prefixed path is present, the **bare** path is absent (so a partial
+        revert that prefixes only some paths cannot pass), and the splat still
+        follows ``--color=no`` directly. The last one is the position pin — a
+        prefix applied in the wrong place, or a separator slipped in anywhere
+        in the pytest argv, fails here rather than in a consumer's CI, which is
+        where the measured 8.3.4 ``exit 4`` refusal would otherwise surface.
         """
         wt = _py_worktree(tmp_path)
         runs: list = []
@@ -2917,8 +3004,15 @@ class TestDashLeadingPathRouteIsCarriedOnPytest:
             assert vc.verify_implement_red("ISSUE-001") is True
 
         cmd = runs[0]
+        prefixed = scoped_arg(BRANCH_TEST)
+        assert prefixed in cmd, cmd
+        # A partial revert that leaves any path bare fails here.
+        assert BRANCH_TEST not in cmd, cmd
+        # No separator anywhere: `--` is the REJECTED fix (exit 4 on 8.3.4 when
+        # the project's addopts contribute a positional — measured).
         assert "--" not in cmd, cmd
-        assert cmd[cmd.index(BRANCH_TEST) - 1] == "--color=no", cmd
+        # Position: the splat still follows `--color=no` directly.
+        assert cmd[cmd.index(prefixed) - 1] == "--color=no", cmd
 
     def test_positional_addopts_with_a_failing_branch_test_still_certifies_red(
         self, probe_repo
@@ -3036,7 +3130,12 @@ class TestSeparatorIsANoOpOnOrdinaryInput:
             vc.verify_implement_red("ISSUE-001")
 
         cmd = list(runs[0])
-        split = cmd.index(BRANCH_TEST)
+        # The gate now splats `./`-prefixed paths (ISSUE-114 route (c)), so the
+        # split is found at the prefixed spelling. `targets` stay as the caller
+        # wrote them: this class measures the SEPARATOR in isolation, and
+        # prefixing them too would conflate the rejected fix with the shipped
+        # one — the comparison would then have no disarmed baseline.
+        split = cmd.index(scoped_arg(BRANCH_TEST))
         disarmed = cmd[:split] + list(targets)
         armed = cmd[:split] + ["--"] + list(targets)
         return wt, disarmed, armed

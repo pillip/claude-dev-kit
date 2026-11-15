@@ -1193,9 +1193,33 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         # override. So the separator would close route (c) on 3.13+ only, while
         # adding the 8.3.4 refusal everywhere — carried, not taken. The npm leg
         # has no equivalent hazard and its separator DOES ship: see below.
+        # Route (c), pytest leg: every scoped path is `./`-PREFIXED so a
+        # flag-shaped filename cannot be consumed as an option. A directory
+        # named `-p no:cacheprovider` is otherwise parsed as a plugin flag and
+        # the whole suite runs; `--help` and `--co` are worse, both exiting 0
+        # with no test executed at all. The prefix makes the argument
+        # unambiguously a path without changing what pytest reports.
+        #
+        # `--` is NOT the fix here, and the measurement is interpreter- rather
+        # than pytest-dependent. Same pytest 9.0.3, flag-shaped-directory rows,
+        # four CPythons — does `--` close route (c)?
+        #   3.11.13  no    3.12.3  no    3.13.6  yes    3.14.7  yes
+        # A direct `argparse.parse_args` probe honours `--` on all four, so the
+        # divergence is in pytest's own `_parse_optional` override. This project
+        # declares `requires-python = ">=3.11"` and CI tests 3.11 and 3.12, so
+        # `--` would close the route on versions this project does not gate on
+        # and leave it open on the ones it does. Measured on 3.11.13: `bare` and
+        # `--` are byte-identical (`2 passed`, `2 collected`, help shown — all
+        # exit 0), while `./` yields `1 passed` on every shape and on every
+        # interpreter. The npm leg's `--` DOES ship (line above) because npm
+        # forwards it to the script's own argv handling, a different mechanism.
+        #
+        # Attribution is unaffected: pytest reports `FAILED tests/x.py::t` for
+        # both `tests/x.py` and `./tests/x.py`, measured, so the `FAILED <file>`
+        # parse and the `scoped` membership test still agree.
         cmd = [
             "python3", "-m", "pytest", "-q", "--tb=short", "-rfE", "--color=no",
-            *scoped,
+            *(f"./{path}" for path in scoped),
         ]
         no_run_codes = (4, 5)
         attributes_failures = True

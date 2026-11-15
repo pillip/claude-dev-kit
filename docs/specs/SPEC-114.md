@@ -327,16 +327,51 @@ arguments were the branch's own changed test files exited non-zero") genuinely h
 
 ### Route (c) — the dash-leading filename argv injection: **FIXED, both argvs**
 
-A `--` separator is placed immediately before the scope splat on both argvs:
+> **AMENDMENT — 2026-11-15.** The pytest leg does **not** take a `--` separator. The decision below
+> is superseded for pytest only; the npm leg is unchanged and ships as written.
+>
+> `--` was first carried rather than taken, because driving it at the real consumer measured it
+> turning a PASS on legitimate work into a REFUSE. Then re-measuring found the refusal narrower than
+> recorded *and* the benefit narrower too, so neither the original decision nor the carry was right.
+> What ships is a **`./` prefix on every scoped path**:
+>
+> ```
+> python3 -m pytest -q --tb=short -rfE --color=no ./tests/a.py ./tests/b.py
+> npm test -- --passWithNoTests -- tests/a.test.ts          # unchanged
+> ```
+>
+> **Why `--` is wrong for pytest, both measurements.** It adds a refusal: real consumer, a project
+> whose `addopts` contribute a positional test path plus a branch whose test genuinely fails, on
+> pytest 8.3.4 / Python 3.11.13 — plain `exit 1` PASS, `--` **`exit 4`** which the gate refuses as a
+> no-run code, `./` `exit 1` PASS. And it buys less than recorded, on an axis that is
+> interpreter- rather than pytest-dependent — same pytest 9.0.3, the flag-shaped-directory rows,
+> four CPythons: 3.11.13 **no**, 3.12.3 **no**, 3.13.6 yes, 3.14.7 yes. A direct
+> `argparse.parse_args` probe honours `--` on all four, so the divergence lives in pytest's own
+> `_parse_optional` override. This project declares `requires-python = ">=3.11"` and CI tests 3.11
+> and 3.12, so `--` would have closed the route on versions this project does not gate on and left
+> it open on the ones it does.
+>
+> **A correction to this SPEC's own method, recorded because it is the more useful half.** An earlier
+> pass of the four-interpreter measurement ran under bare `python3`, which on the dev host is 3.14.7,
+> and concluded `--` worked. It does — on 3.14. Under the canonical `uv run --extra dev` 3.11.13 it
+> does not. That is the same defect **ISSUE-118** carries about the blocking gate's own interpreter,
+> arriving in a measurement rather than in a verdict: the canonical-environment rule governs
+> *verdicts*, not only numbers copied into docs.
+>
+> **What the prefix closes, and what it leaves.** Over-collection is gone: the rootdir's standing
+> failure is no longer reached. The silent-shrink direction is gone: the dash path now runs, so the
+> false reason "tests passed but should fail" is unreachable. What remains is **narrower and already
+> declared** — the dash path contains a space, so pytest's `FAILED <nodeid>` line cannot be parsed
+> back to it and the gate blames `-p`. That sits inside **SPEC-103's declined attribution property**
+> rather than being a new defect, and it **fails CLOSED** with a truthful reason. Removing the lie
+> from a refusal is the gain; the refusal itself was never the defect.
+>
+> Attribution output is unaffected: pytest reports `FAILED tests/x.py::t` for both `tests/x.py` and
+> `./tests/x.py`, measured, so the `FAILED <file>` parse and the `scoped` membership test still agree.
 
-```
-python3 -m pytest -q --tb=short -rfE --color=no -- *scoped
-npm test -- --passWithNoTests -- *scoped
-```
-
-Measured correct in both directions on pytest (C1) and measured as forwarded-and-honoured on npm
-(C2). The npm leg's double `--` is not an assumption: npm 9.8.1 delivers `ARG2=[--]` with the scoped
-paths behind it, and `util.parseArgs` goes from dropping the dash path entirely to keeping it.
+Measured as forwarded-and-honoured on npm (C2). The npm leg's double `--` is not an assumption:
+npm 9.8.1 delivers `ARG2=[--]` with the scoped paths behind it, and `util.parseArgs` goes from
+dropping the dash path entirely to keeping it.
 
 The fix's direction is a **de-refusal**. c3 and its npm equivalent are over-refusals today — the
 requested set is shrunk, the surviving subset goes green, and the gate blocks legitimate work with a
