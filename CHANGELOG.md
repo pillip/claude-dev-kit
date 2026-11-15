@@ -6,6 +6,17 @@ release tags are `claude-dev-kit--v<version>`.
 ## Unreleased
 
 ### Fixed
+- **npm's legacy non-zero-is-RED contract is pinned behaviourally at exits 4 and 5** (ISSUE-115,
+  PR #154). Mutant `M20` set npm's `no_run_codes` from `()` to `(4, 5)` and survived the suite.
+  Those are pytest's values — 4 a usage error, 5 "no tests collected" — where they genuinely mean no
+  test ran. For npm they mean nothing of the kind, and **ISSUE-117 is what now proves it rather than
+  assumes it**: npm forwards child exit codes verbatim, so a mocha/tap-convention runner reporting 4
+  or 5 *failures* would be refused as "did not run" — an over-refusal, which a declaration can never
+  license. The pin is behavioural, and the comment-text guard that sat alongside it was **removed**
+  rather than kept: a test asserting on prose about `no_run_codes` is a record-accuracy test, and
+  those manufacture issues instead of catching them. Test-only; no production surface changed.
+
+### Fixed
 - **A chosen exit code is no longer confused with one the kit synthesised** (ISSUE-117, PR #153).
   npm forwards child exit codes verbatim, so a mocha/tap-convention runner reporting exactly **127
   failures** was refused as "could not be executed" and one reporting **124** as "timed out" with no

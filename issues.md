@@ -85,7 +85,7 @@
 - [ ] ISSUE-112: Pin step 0c's bullet ORDER, not just its presence — the review-lesson-12 ordering property is unheld _(track: platform, P2, 0.5d — SPEC-102 Open Question 2; mutant `N9`: hoisting the gate re-run above `/spec $ARGUMENTS` leaves the suite green and restores the STOP that ISSUE-102 exists to remove)_
 - [ ] ISSUE-113: Convert the triaged mutation survivors into unexercised-guard pins — `R2 R4 R5 R9 A1 N8 N10` _(track: platform, P2, 1d — SPEC-102 Open Question 4; the triage category "unexercised guard" assumed absence was harmless and R2/R4 proved FATAL on input a widened enumeration newly reached, so a surviving mutant is evidence about the tests, not the guard)_
 - [ ] ISSUE-114: Enumerate and close the RED gate's four scope-ENFORCEMENT routes — the gate requests a scope and cannot enforce one _(track: platform, P1, 1.5d — SPEC-103 Open Question 1; four measured routes make the executed set differ from the requested set, including a dash-leading filename consumed by pytest as a flag)_
-- [ ] ISSUE-115: Pin npm's legacy non-zero-is-RED contract behaviourally at exits 4 and 5 — mutant `M20` survives _(track: platform, P2, 0.5d — SPEC-103 Open Question 2; the mutation is an over-refusal against a shared contract review lesson 8 requires pinned, and the fix must be behavioural assertions rather than a comment-text guard)_
+- [x] ISSUE-115: Pin npm's legacy non-zero-is-RED contract behaviourally at exits 4 and 5 — mutant `M20` survives _(track: platform, P2, 0.5d — SPEC-103 Open Question 2; the mutation is an over-refusal against a shared contract review lesson 8 requires pinned, and the fix must be behavioural assertions rather than a comment-text guard — **SHIPPED 2026-11-15** (PR #154, squash c8d457b). `M20` killed behaviourally at exits 4 and 5; the comment-text guard removed rather than kept alongside, per SPEC-103; codes re-derived after ISSUE-117 so the basis is measurement rather than inheritance)_
 - [ ] ISSUE-116: Resolve mutant `M14` — make the attribution-scope widening behavioural or record it as equivalent and close it _(track: platform, P2, 0.5d — SPEC-103 Open Question 3; the two sets differ only by non-`.py` paths, which pytest does not blame absent a custom collector)_
 - [x] ISSUE-117: Distinguish the kit's SYNTHESISED 124/127 from a code the child chose — npm forwards exit codes verbatim _(track: platform, P1, 1d — SPEC-103 Open Question 4, which CONTRADICTS the figure SPEC-103 was dispatched with: a failure-count runner at exactly 127 failures is refused as "could not be executed" and at 124 as "timed out" with no timeout — **SHIPPED 2026-11-15** (PR #153, squash 0d4fa69). The chosen-127 evidence residual is declared and MEASURED rather than left undisclosed; the synthesised-tag catch-all fails closed. Post-merge smoke showed 5 failures traced to the gate's own unpinned interpreter, not to this change — control reproduced them at pre-117 main; carried by ISSUE-118)_
 - [ ] ISSUE-118: Pin the blocking gates' interpreter — `verify_gates` runs bare `python3`, which on a dev machine drifted to an untested 3.14 and turns every ship red _(track: platform, P1, 1d — measured 2026-11-15 on ISSUE-117's post-merge smoke: 5 failures under the gate's `python3` 3.14.7 and 0 under the canonical `uv run --extra dev` 3.11.13, with the SAME 5 reproducing at pre-117 main, so the gate blocks legitimate work)_
@@ -7073,11 +7073,11 @@ Either the executed set provably equals the requested set, or scope enforcement 
 - PRD-Ref: none (kit self-development; SPEC-103 Open Question 2; review lesson 8, and the record-only principle that document-accuracy tests manufacture issues)
 - Priority: P2
 - Estimate: 0.5d
-- Status: backlog
+- Status: done
 - Owner:
 - Branch:
 - GH-Issue:
-- PR:
+- PR: https://github.com/pillip/claude-dev-kit/pull/154
 - Depends-On: ISSUE-103
 
 #### Goal
