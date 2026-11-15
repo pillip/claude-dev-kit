@@ -897,6 +897,40 @@ def verify_implement_red(issue_id: str, **_) -> bool:
             return False
         base = remote_base
 
+    # ISSUE-114 route (d): where there is no fork point, `_changed_files_vs_base`
+    # falls back to a TWO-DOT `git diff <base>`, which names files <base> changed
+    # AFTER the fork point as if the branch owned them. Measured in a
+    # `git clone --depth 1` + `git fetch --depth 1` checkout — the
+    # `actions/checkout` default — against a `main` that touched a file older
+    # than the fork point:
+    #   shallow, two-dot (what the gate does)   test_branch_new, test_shared
+    #   full clone, merge-base-anchored (TRUE)  test_branch_new
+    # Both candidate narrowings were DECLINED on their disarm run: a
+    # single-legged `_delta_base_unresolvable` and a three-dot diff each turn
+    # this construction's measured PASS on legitimate work into a REFUSE, and at
+    # depth 1 the fork point is not recoverable locally, so neither refusal is
+    # actionable. A declaration can license a false pass inside a stated
+    # boundary and can never license blocking legitimate work, so the route is
+    # carried and only the CLAIM is corrected: the gate stops presenting a scope
+    # it could not compute as a computed one.
+    #
+    # ONE derivation point, deliberately: probed against the base the delta is
+    # really computed against — i.e. AFTER the `origin/` rescue above, since a
+    # caveat derived before it would fire on every `develop`-default clone and
+    # be wrong — and printed once, upstream of every verdict that rests on the
+    # delta, including `FAIL: no test files found`. A per-site inventory of this
+    # class short by one is how it recurred at three successive layers
+    # (SPEC-102 Finding 3). Costs one extra `git merge-base` per red-gate run,
+    # accepted over threading the fact out of `_changed_files_vs_base`, which
+    # has other callers (review lesson 8).
+    if _merge_base(wt_path, base) is None:
+        print(
+            f"UNVERIFIED scope: HEAD has no merge base with '{base}', so the "
+            f"branch's delta is a two-dot diff that may name files '{base}' "
+            f"changed after the fork point — every scope reported below is "
+            f"UNVERIFIED, not computed (docs/specs/SPEC-114.md)."
+        )
+
     # Now verify test files exist and have real assertions. Scope to the
     # branch's own delta (merge-base diff) and keep only files that exist in the
     # worktree, so a stale base can't inject a phantom test path (ISSUE-048).
@@ -1055,9 +1089,30 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     #    hoisting `rootdir` above the worktree still attributes correctly. The
     #    refusal names both the scope and whatever the runner blamed, so the
     #    case is diagnosable from this output alone.
-    #  - The scope is REQUESTED, not enforced: a dash-leading path is consumed
-    #    by pytest as a flag, and a project's `addopts` can add paths. Both are
-    #    inside SPEC-103's declared boundary and carried there.
+    #  - The scope is REQUESTED, not ENFORCED, and ISSUE-114 settled all four
+    #    measured routes by which the executed set differs from the requested
+    #    one rather than leaving them to be rediscovered one at a time:
+    #    (a) the project's `addopts` inject an extra test PATH and (b) they
+    #    carry a coverage threshold — both ALREADY CLOSED, measured at the real
+    #    consumer, by the two arms of the attribution filter below; the closure
+    #    is MONOTONE, so if the branch's own test also fails the gate passes
+    #    with an executed set still wider than the requested one, which is
+    #    inside SPEC-103's declared boundary. (c) a dash-leading filename
+    #    consumed as a flag — FIXED on the npm argv by the second `--` above,
+    #    and CARRIED on the pytest argv, where the same separator was measured
+    #    to turn a PASS on legitimate work into a REFUSE on pytest 8.3.4 (the
+    #    table sits with the pytest argv above). (d) a shallow clone's two-dot
+    #    diff — DECLINED, because both candidate fixes were measured to refuse
+    #    legitimate work, and disclosed instead by the UNVERIFIED-scope line
+    #    above. Full reasoning in docs/specs/SPEC-114.md, except route (c)'s
+    #    pytest half, which that SPEC decides the other way on a one-host
+    #    measurement and which this file records as carried.
+    #  - The residual `--` does NOT close, measured: pytest's
+    #    `consider_preparse` scans the raw args list with no `--` awareness, so
+    #    a scoped path shaped `-p no:<essential-plugin>/…` still raises a
+    #    UsageError at exit 4, which is refused as a no-run code. Fail-closed,
+    #    inside the declared boundary, and deliberately not closed — closing it
+    #    means validating path shapes, which ADDS a refusal.
     has_python, has_js = _detect_test_runners(wt)
 
     timeout = _test_timeout()
@@ -1074,7 +1129,25 @@ def verify_implement_red(issue_id: str, **_) -> bool:
     if has_js and js_scoped:
         runner = "npm test"
         scoped = js_scoped
-        cmd = ["npm", "test", "--", "--passWithNoTests", *scoped]
+        # The SECOND `--` is ISSUE-114 route (c) on the JS leg. The first one
+        # belongs to npm (it is what forwards anything at all to the test
+        # script); the second belongs to the script's own parser. Measured, npm
+        # 9.8.1 / node v18.18.0: npm forwards it verbatim and in position
+        # (`ARGC=4 … ARG2=[--]`), and node's own `util.parseArgs` goes from
+        # dropping a dash-leading scope path entirely — shredded into 22
+        # single-character boolean flags — to keeping it as a positional. On
+        # ordinary input the two forms parse identically, so this adds no
+        # refusal. jest/vitest/mocha were NOT measured; see docs/specs/SPEC-114.md.
+        #
+        # Why this leg ships while the pytest one does not: the hazard that
+        # stopped the pytest separator is a no-run EXIT CODE, and this branch
+        # has no `no_run_codes` and requires no attribution — every non-zero
+        # exit certifies RED — so a runner that dislikes the separator still
+        # passes. The only PASS→REFUSE here would need the separator to make a
+        # failing run exit ZERO, which requires it to REMOVE scope rather than
+        # add an argument. That direction is reasoned, not measured, because no
+        # real JS runner is installed on the deciding host.
+        cmd = ["npm", "test", "--", "--passWithNoTests", "--", *scoped]
         no_run_codes: tuple[int, ...] = ()
         attributes_failures = False
     else:
@@ -1090,6 +1163,36 @@ def verify_implement_red(issue_id: str, **_) -> bool:
         #   FORCE_COLOR=1 / PY_COLORS=1         exit=1 blamed=[]
         #   addopts="--color=yes"               exit=1 blamed=[]
         #   each of the three + `--color=no`    exit=1 blamed=[branch]
+        # ISSUE-114 route (c): there is deliberately NO `--` here, and the
+        # omission is the decision rather than an oversight. SPEC-114 licensed
+        # the separator on both argvs on the strength of a one-host measurement;
+        # driving it at the real consumer against an unmutated control found it
+        # ADDS a refusal on pytest 8.3.4, which this pass may not do.
+        #
+        # The construction: a project whose own `addopts` contribute a
+        # POSITIONAL test path — `addopts = "extra_tests"`, i.e. route (a)'s own
+        # shape and an ordinary idiom — plus a branch whose test genuinely
+        # fails, so the gate is looking at legitimate work. Real consumer, child
+        # `python3` pinned per column:
+        #   child                     without `--`          with `--`
+        #   3.12.7 / pytest 8.3.4     exit 0  PASS           exit 1  REFUSE
+        #   3.11.13 / pytest 9.0.3    exit 0  PASS           exit 0  PASS
+        #   3.14.7 / pytest 9.0.3     exit 0  PASS           exit 0  PASS
+        # On 8.3.4 the prepended positional plus the separator cannot match
+        # argparse's positional pattern, so pytest exits 4 with a usage error
+        # and the gate refuses it as a no-run code — a PASS→REFUSE on
+        # legitimate work, which is exactly the transition route (d)'s two
+        # candidate fixes were declined for. The same rule declines this one.
+        #
+        # What the separator WOULD buy is also narrower than SPEC-114 recorded,
+        # and it is interpreter-dependent rather than pytest-dependent. Same
+        # pytest 9.0.3 throughout, the dash-path rows, four CPythons:
+        #   3.11.13  no    3.12.3  no    3.13.6  yes    3.14.7  yes
+        # A direct `argparse.parse_args` / `parse_known_args` probe honours `--`
+        # on all four, so the divergence lives in pytest's own `_parse_optional`
+        # override. So the separator would close route (c) on 3.13+ only, while
+        # adding the 8.3.4 refusal everywhere — carried, not taken. The npm leg
+        # has no equivalent hazard and its separator DOES ship: see below.
         cmd = [
             "python3", "-m", "pytest", "-q", "--tb=short", "-rfE", "--color=no",
             *scoped,
