@@ -120,8 +120,26 @@ def _decide(project: Path, *, key: bytes = KEY, process_start: float | None = No
 
 def _delegated_pin_payload() -> list[dict]:
     """The payload whose synthesis is exactly tgd._fixture_results() — so the
-    real consumer's rendering must be byte-identical to the existing pins."""
-    return [asdict(r) for r in tgd._fixture_results()]
+    real consumer's rendering must be byte-identical to the existing pins.
+
+    Projected onto the INGESTION contract's keys rather than dumped whole out
+    of the dataclass. `GateResult` carries a field the runtime never sends and
+    the synthesizer deliberately refuses (`interpreter`, ISSUE-118), so a
+    whole-dict dump builds an artifact that is rejected as unknown-key. The
+    failure mode is the dangerous kind: the consult degrades to the legacy
+    path, `run_applicable_gates` runs, and the byte-identity pin below would
+    be asserting the LEGACY rendering while claiming to assert the delegated
+    one. It was measured doing exactly that.
+
+    Keyed off the contract itself so the fixture tracks what is actually
+    accepted rather than what the kit's dataclass happens to hold;
+    :class:`TestProvenanceCannotBeDelegated` checks that coupling from the
+    other side, so the allowlist cannot quietly grow to admit provenance.
+    """
+    return [
+        {k: v for k, v in asdict(r).items() if k in sgr._ALLOWED_KEYS}
+        for r in tgd._fixture_results()
+    ]
 
 
 def _assert_loud_refusal(out: str, check_name: str) -> None:
@@ -307,7 +325,7 @@ class TestProvenanceMac:
         decision, results, reason = _decide(project)
         assert decision == "delegated"
         assert reason == ""
-        assert [asdict(r) for r in results] == tgd._valid_payload()
+        assert tgd.as_ingested(results, tgd._valid_payload()) == tgd._valid_payload()
         assert capsys.readouterr().out == ""
 
 
@@ -363,7 +381,7 @@ class TestFreshness:
             project, process_start=time.time() - 3600.0
         )
         assert decision == "delegated"
-        assert [asdict(r) for r in results] == tgd._valid_payload()
+        assert tgd.as_ingested(results, tgd._valid_payload()) == tgd._valid_payload()
 
     def test_mtime_exactly_at_process_start_is_fresh(self, project, monkeypatch):
         """AC-2 boundary: st_mtime == process_start is fresh (>=, not >) —
@@ -397,7 +415,7 @@ class TestConsumeOnce:
         self._setenv(project, monkeypatch, path)
         decision, results, reason = _decide(project)
         assert decision == "delegated"
-        assert [asdict(r) for r in results] == tgd._valid_payload()
+        assert tgd.as_ingested(results, tgd._valid_payload()) == tgd._valid_payload()
         assert not path.exists(), "consumed artifact must be renamed away"
         assert Path(str(path) + ".consumed").is_file()
         assert not sig.exists(), "sidecar must be removed or renamed with the artifact"
@@ -663,3 +681,39 @@ class TestConsumerWiringBinding:
         assert out_a.endswith(tgd.EXPECTED_LEGACY_STDOUT)
         loud = out_a[: -len(tgd.EXPECTED_LEGACY_STDOUT)]
         _assert_loud_refusal(loud, "mac")
+
+
+class TestProvenanceCannotBeDelegated:
+    """A delegated result may not CLAIM which interpreter produced it (ISSUE-118).
+
+    `GateResult.interpreter` is evidence the gate collected about its own run.
+    A handoff artifact is untrusted input, so if a payload could set that
+    field, a delegation that executed nothing — or executed under an untested
+    interpreter — could present a canonical-looking provenance line. The
+    synthesizer's key allowlist is what prevents it, and this class pins the
+    allowlist from the side the fixture projection cannot: `_delegated_pin_payload`
+    is keyed off `_ALLOWED_KEYS`, so without these tests the allowlist could
+    grow to admit `interpreter` and the fixture would follow it silently.
+    """
+
+    def test_a_payload_claiming_an_interpreter_is_refused(self):
+        entry = {
+            "gate": "unit", "status": "pass", "blocking": True,
+            "output": "ok", "duration_s": 1.0,
+            "interpreter": ".venv/ (Python 3.11.13)",
+        }
+        with pytest.raises(sgr.GateSynthesisError) as exc:
+            sgr.synthesize_gate_results([entry])
+        assert "interpreter" in str(exc.value), str(exc.value)
+
+    def test_the_allowlist_does_not_contain_interpreter(self):
+        assert "interpreter" not in sgr._ALLOWED_KEYS, sorted(sgr._ALLOWED_KEYS)
+
+    def test_a_synthesized_result_carries_no_provenance(self):
+        """The disarm direction: refusing the key is useless if the field were
+        populated some other way. A delegated verdict must read as 'this
+        process resolved no interpreter', which is the truth."""
+        results = sgr.synthesize_gate_results(_delegated_pin_payload())
+        assert all(r.interpreter == "" for r in results), [
+            r.interpreter for r in results
+        ]

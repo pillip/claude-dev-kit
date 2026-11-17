@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -413,6 +414,26 @@ class TestTimeoutContract:
 
 
 class TestRunGateIntegration:
+    @pytest.fixture(autouse=True)
+    def _pin_interpreter(self):
+        """Isolate these gates from interpreter resolution (ISSUE-118).
+
+        Resolution probes subprocesses of its own, so without this the
+        call-count assertions below would start counting resolution plumbing
+        instead of the gate's own sequence — and the sequence is what they
+        exist to pin. Patched at the delegation seam rather than by padding
+        each `side_effect` list, so adding a probe cannot silently shift which
+        mock entry a gate step consumes.
+
+        The pin is a real `Interpreter`, not a Mock, so an argv the gate
+        cannot splat fails here instead of passing vacuously.
+        """
+        with patch.object(
+            vg, "resolve_interpreter",
+            return_value=vg.Interpreter(["python3"], "test-pinned"),
+        ):
+            yield
+
     @patch.object(vg, "_run")
     def test_skips_when_no_integration_markers(self, mock_run, tmp_path):
         mock_run.return_value = _mock_run(1, "", "no tests ran")
@@ -748,6 +769,15 @@ class TestRunGateE2EMobile:
 
 
 class TestRunGateAPI:
+    @pytest.fixture(autouse=True)
+    def _pin_interpreter(self):
+        """Same seam as TestRunGateIntegration — see its docstring (ISSUE-118)."""
+        with patch.object(
+            vg, "resolve_interpreter",
+            return_value=vg.Interpreter(["python3"], "test-pinned"),
+        ):
+            yield
+
     @patch.object(vg, "_run")
     def test_skips_when_no_openapi_spec(self, mock_run, tmp_path):
         mock_run.return_value = _mock_run(0, "no tests collected\n", "")
@@ -885,3 +915,281 @@ class TestMain:
 
     def test_exit_code_2_on_bad_path(self):
         assert vg.main(["--project-path", "/nonexistent/path/xyz"]) == 2
+
+
+# ── TestGateInterpreterIsPinned (ISSUE-118) ──────────────────────────
+
+
+def _wrapper_interpreter(path: Path, target: str, tag: str) -> Path:
+    """A `.venv/bin/python` that execs `target` with `tag` in the environment.
+
+    A real `python -m venv` plus a pytest install would cost seconds per test
+    and bring network into a unit suite. This is a genuine *separate
+    interpreter path* that really runs pytest — the gate resolves it, probes
+    it, and executes through it exactly as it would a synced venv — while the
+    exported tag gives the fixture suite a way to say WHICH interpreter ran
+    it. That is the discriminator these tests need: the ACs ask for the
+    verdict to be compared across two interpreters, not for the argv to be
+    read back.
+    """
+    bin_dir = path / ".venv" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    python = bin_dir / "python"
+    python.write_text(
+        "#!/bin/sh\n"
+        f'KIT_TEST_INTERPRETER_TAG="{tag}" exec "{target}" "$@"\n'
+    )
+    python.chmod(0o755)
+    return python
+
+
+def _tag_asserting_project(path: Path, expected_tag: str) -> None:
+    """A project whose whole suite passes iff the locked interpreter ran it."""
+    (path / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n"
+    )
+    tests = path / "tests"
+    tests.mkdir(exist_ok=True)
+    (tests / "test_tag.py").write_text(
+        "import os\n\n\n"
+        "def test_ran_under_the_locked_interpreter():\n"
+        f"    assert os.environ.get('KIT_TEST_INTERPRETER_TAG') == {expected_tag!r}\n"
+    )
+
+
+class TestGateInterpreterIsPinned:
+    """ISSUE-118 — a blocking gate's verdict must not depend on PATH.
+
+    A background `brew upgrade` moved PATH `python3` from 3.11 to an untested
+    3.14 and turned every ship red with five failures the canonical suite did
+    not have. These tests are therefore written to compare **verdicts across
+    two interpreters**, per the issue's first AC, rather than to assert the
+    command string — reading the argv back would re-certify the shape without
+    establishing that the shape selects the interpreter.
+    """
+
+    def test_the_gate_runs_the_locked_interpreter_not_path_python3(self, tmp_path):
+        """AC1 — run both, compare. The locked interpreter decides the verdict."""
+        _wrapper_interpreter(tmp_path, sys.executable, "locked")
+        _tag_asserting_project(tmp_path, "locked")
+
+        # Control: the SAME suite under PATH python3 must FAIL. Without this
+        # the comparison below could hold because both interpreters pass, and
+        # the test would certify nothing.
+        via_path = subprocess.run(
+            ["python3", "-m", "pytest", "-q"],
+            cwd=tmp_path, capture_output=True, text=True, timeout=300,
+        )
+        assert via_path.returncode != 0, (
+            "the fixture does not distinguish the two interpreters:\n"
+            + via_path.stdout + via_path.stderr
+        )
+
+        result = vg.run_gate_unit(tmp_path)
+
+        assert result.status == "pass", result.output
+        assert result.blocking is True
+
+    def test_the_gate_output_names_the_interpreter_and_version(self, tmp_path, capsys):
+        """AC2 — divergence must be visible in the verdict, not by bisection.
+
+        Asserted on what is PRINTED as well as on the field, and on a PASS.
+        A PASS is exactly when a silently-swapped interpreter does its damage:
+        the gate looks healthy while measuring something CI never runs. The
+        human-readable printer previously showed `output` only for failures,
+        so provenance carried there would have been invisible in the one case
+        that matters.
+        """
+        _wrapper_interpreter(tmp_path, sys.executable, "locked")
+        _tag_asserting_project(tmp_path, "locked")
+
+        result = vg.run_gate_unit(tmp_path)
+        assert result.status == "pass", result.output
+        assert result.interpreter.startswith(".venv/"), result.interpreter
+        # The version is the half that makes the line useful: ".venv/" alone
+        # would not have revealed the 3.11 → 3.14 move that caused ISSUE-118.
+        assert "Python 3." in result.interpreter, result.interpreter
+
+        capsys.readouterr()
+        assert vg.main(["--project-path", str(tmp_path), "--gates", "unit"]) == 0
+        printed = capsys.readouterr().out
+        assert "interpreter: .venv/" in printed, printed
+        assert "Python 3." in printed, printed
+
+    def test_a_declared_environment_that_cannot_run_pytest_is_REFUSED(self, tmp_path):
+        """AC3, refuse direction — no silent substitution of a different subject."""
+        bin_dir = tmp_path / ".venv" / "bin"
+        bin_dir.mkdir(parents=True)
+        broken = bin_dir / "python"
+        broken.write_text("#!/bin/sh\nexit 1\n")
+        broken.chmod(0o755)
+        _tag_asserting_project(tmp_path, "locked")
+
+        calls: list[list[str]] = []
+        real_run = vg._run
+
+        def record(cmd, *a, **kw):
+            calls.append(list(cmd))
+            return real_run(cmd, *a, **kw)
+
+        with patch.object(vg, "_run", side_effect=record):
+            result = vg.run_gate_unit(tmp_path)
+
+        assert result.status == "fail", result.output
+        assert result.blocking is True
+        assert "REFUSED: environment-unavailable" in result.output, result.output
+        # The load-bearing half: it must not have quietly tested something
+        # else. Asserted on what was EXECUTED, not on the refusal text.
+        assert not any(c and c[0] == "python3" for c in calls), calls
+
+    def test_a_project_with_no_declared_environment_is_NOT_refused(self, tmp_path):
+        """AC3, disarm direction — the fix must not become an over-refusal.
+
+        A project that declares no locked environment has no canonical
+        interpreter to diverge from, so PATH `python3` *is* its environment.
+        Refusing there would block legitimate work on every plain project, and
+        an over-refusal may not be declared away — unlike a false pass inside
+        a stated boundary, it has no licensable form.
+        """
+        (tmp_path / "pyproject.toml").write_text(
+            "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n"
+        )
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+
+        result = vg.run_gate_unit(tmp_path)
+
+        assert result.status == "pass", result.output
+        assert "REFUSED" not in result.output, result.output
+        assert "no locked env declared" in result.interpreter, result.interpreter
+
+    def test_resolution_prefers_the_venv_over_PATH_when_both_work(self, tmp_path):
+        """The ordering is itself behaviour: a working PATH python3 must lose.
+
+        Pinned separately from the gate tests because the gate could pass its
+        assertions while resolving by accident — e.g. if PATH `python3` were
+        missing on the host. Here both candidates genuinely work and the
+        venv must still win.
+        """
+        _wrapper_interpreter(tmp_path, sys.executable, "locked")
+        (tmp_path / "pyproject.toml").write_text("")
+
+        interp = vg.resolve_interpreter(tmp_path)
+
+        assert interp.refusal == ""
+        assert interp.argv == [str(tmp_path / ".venv" / "bin" / "python")]
+        assert interp.provenance.startswith(".venv/")
+
+    def test_the_dev_extra_is_read_from_pyproject_not_assumed(self, tmp_path):
+        """`--extra dev` against a project that declares no `dev` group fails uv.
+
+        Guessing the group name would convert a resolvable environment into a
+        refusal, so the group is read. Both directions are asserted, because
+        returning a constant would satisfy either one alone.
+        """
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = \"p\"\nversion = \"0\"\n"
+            "[project.optional-dependencies]\ntest = [\"pytest\"]\n"
+        )
+        assert vg._dev_extra(tmp_path) == "test"
+
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = \"p\"\nversion = \"0\"\n"
+        )
+        assert vg._dev_extra(tmp_path) == ""
+
+    def test_a_malformed_pyproject_does_not_crash_resolution(self, tmp_path):
+        """A gate that dies on a syntax error reports no verdict at all."""
+        (tmp_path / "pyproject.toml").write_text("this is not = [valid toml\n")
+        assert vg._dev_extra(tmp_path) == ""
+
+    def test_a_venv_contradicting_the_pin_is_disclosed_in_the_verdict(self, tmp_path):
+        """The pin is repo-declared; `.venv/` alone is not (ISSUE-118).
+
+        Measured on this repository: three checkouts of the same commit
+        carried 3.11.13, 3.11.13 and 3.13.6, because uv builds a venv from
+        the newest interpreter satisfying `requires-python` whenever the venv
+        happens to be created. Resolving to `.venv/` removes the PATH
+        dependency and leaves a creation-time one, so a contradiction between
+        the pin and the venv has to reach the verdict.
+        """
+        _wrapper_interpreter(tmp_path, sys.executable, "locked")
+        (tmp_path / "pyproject.toml").write_text("")
+        running = ".".join(str(n) for n in sys.version_info[:2])
+        impossible = "2.6" if running != "2.6" else "2.5"
+        (tmp_path / ".python-version").write_text(impossible + "\n")
+
+        interp = vg.resolve_interpreter(tmp_path)
+
+        assert "MISMATCH" in interp.provenance, interp.provenance
+        assert impossible in interp.provenance, interp.provenance
+        # Disclosed, NOT refused: a stale venv is common and easily fixed, and
+        # blocking on it would be an over-refusal — which has no licensable
+        # form, unlike a false pass inside a declared boundary.
+        assert interp.refusal == "", interp.provenance
+
+    def test_a_venv_matching_the_pin_is_not_flagged(self, tmp_path):
+        """The disarm direction — a constant "MISMATCH" would pass the test above."""
+        _wrapper_interpreter(tmp_path, sys.executable, "locked")
+        (tmp_path / "pyproject.toml").write_text("")
+        running = ".".join(str(n) for n in sys.version_info[:2])
+        (tmp_path / ".python-version").write_text(running + "\n")
+
+        interp = vg.resolve_interpreter(tmp_path)
+
+        assert "MISMATCH" not in interp.provenance, interp.provenance
+        assert interp.refusal == ""
+
+    def test_a_pin_is_a_series_not_an_exact_build(self, tmp_path):
+        """`.python-version` of "3.11" must accept "Python 3.11.13".
+
+        Pinned because the obvious string comparison fails here, and the
+        failure mode is a MISMATCH on every correctly-configured checkout —
+        a warning that is always on teaches readers to ignore it.
+        """
+        assert vg._pin_mismatch_note.__doc__  # the helper is the subject
+        (tmp_path / ".python-version").write_text("3.11\n")
+        assert vg._pin_mismatch_note(tmp_path, "Python 3.11.13") == ""
+        assert vg._pin_mismatch_note(tmp_path, "Python 3.11") == ""
+        assert "MISMATCH" in vg._pin_mismatch_note(tmp_path, "Python 3.1")
+        assert "MISMATCH" in vg._pin_mismatch_note(tmp_path, "Python 3.13.6")
+
+    def test_no_pin_declared_means_nothing_to_contradict(self, tmp_path):
+        assert vg._pin_mismatch_note(tmp_path, "Python 3.13.6") == ""
+
+
+class TestRepositoryDeclaresItsInterpreter:
+    """The repo must pin the interpreter its own gates resolve to (ISSUE-118).
+
+    This is a config-to-config invariant with a behavioural failure mode, not
+    a doc-accuracy check: if the CI matrix moves off the pinned series, the
+    blocking gate goes back to testing an interpreter CI never exercises,
+    which is the whole subject of ISSUE-118.
+    """
+
+    def _repo_root(self) -> Path:
+        return Path(__file__).resolve().parents[1]
+
+    def test_python_version_is_declared(self):
+        pin = self._repo_root() / ".python-version"
+        assert pin.exists(), (
+            "`.python-version` is missing: without it `uv` builds the venv from "
+            "the newest interpreter satisfying requires-python, which measured "
+            "3.13.6 in one worktree and 3.11.13 in another at the same commit"
+        )
+        assert pin.read_text().strip(), "the pin is empty"
+
+    def test_the_pin_is_the_lowest_version_CI_exercises(self):
+        root = self._repo_root()
+        ci = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        matrix = re.search(r"python-version:\s*\[([^\]]+)\]", ci)
+        assert matrix, "could not find the CI python-version matrix"
+        versions = [v.strip().strip("\"'") for v in matrix.group(1).split(",")]
+        assert versions, matrix.group(1)
+        lowest = min(versions, key=lambda v: tuple(int(p) for p in v.split(".")))
+        pin = (root / ".python-version").read_text().strip()
+        assert pin == lowest, (
+            f".python-version pins {pin} but the lowest version CI exercises is "
+            f"{lowest}; the gate would test a series CI does not"
+        )
