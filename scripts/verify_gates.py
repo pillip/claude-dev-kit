@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,11 @@ class GateResult:
     blocking: bool  # True → failure = overall failure
     output: str  # last 2000 chars of test output
     duration_s: float  # execution time in seconds
+    # Which interpreter produced this verdict, for gates that resolve one
+    # (ISSUE-118). A separate field rather than a line inside `output`
+    # because `output` is truncated to its last few lines when printed, and
+    # provenance that only survives on some verdicts is not provenance.
+    interpreter: str = ""
 
 
 # ── subprocess helpers (same pattern as verify_checkpoint.py) ────────
@@ -58,6 +64,208 @@ def _run(cmd: list[str], timeout: int = 120, **kwargs) -> subprocess.CompletedPr
         mock.stdout = ""
         mock.stderr = f"{prog}: command not found"
         return mock
+
+
+# ── canonical interpreter resolution (ISSUE-118) ─────────────────────
+#
+# The blocking gates used to shell bare `python3`, resolved from PATH. That
+# made a blocking verdict depend on ambient state outside the repository: a
+# background `brew upgrade` moved PATH `python3` from 3.11 to an untested
+# 3.14 and turned every subsequent ship red, with five failures the canonical
+# suite did not have. A gate whose verdict depends on unpinned ambient state
+# is not measuring the repository.
+#
+# The rule, and the reason it is not a new over-refusal:
+#
+#   * A project that **declares** a locked environment (`.venv/`, `uv.lock`,
+#     `poetry.lock`) has a canonical interpreter. The gate must use it. If it
+#     is declared but cannot be made to run pytest, the gate REFUSES with
+#     `environment-unavailable` — it must not quietly test a different subject.
+#   * A project that declares **none** has no canonical interpreter to diverge
+#     from, so PATH `python3` *is* its environment. Using it there is not a
+#     substitution, and refusing would block legitimate work on every plain
+#     project. Over-refusals may not be declared away.
+#
+# Either way the resolved interpreter and its version are reported in the
+# gate's own output, so a future divergence shows up in the verdict instead of
+# being found by bisection.
+#
+# AUDIT of every other shelled runner in this module, recorded here rather
+# than in a PR body because a PR body is not a durable carrier:
+#
+#   * `unit`, `integration`, `api` — FIXED. All three resolved pytest through
+#     bare `python3`; all three now go through `resolve_interpreter`. `api`
+#     also builds a shell STRING for gate_server.sh, which is quoted with
+#     `shlex.join` rather than space-joined: a venv path can contain a space,
+#     and splitting there would run a different program.
+#   * `unit`'s npm branch, `e2e-web` (`npx playwright`), `e2e-mobile`
+#     (`detox` / `maestro` / `xcrun` / `adb` / `emulator`), and the
+#     `docker compose` calls — NOT APPLICABLE. No Python interpreter is
+#     selected, so there is no canonical one to diverge from. The JS
+#     toolchain has its own version-resolution question; it is not this one.
+#   * `load` (`locust`, resolved from PATH) — RECORDED, NOT FIXED. `locust`
+#     is a Python tool, so the same drift exists in principle. The gate is
+#     `blocking=False` on every path, so a divergent locust cannot turn a
+#     ship red or block legitimate work, which is the property this issue is
+#     about. Fixing it would mean resolving locust inside the project
+#     environment; that is a real improvement and a different issue.
+
+_ENVIRONMENT_UNAVAILABLE = "environment-unavailable"
+
+
+@dataclass
+class Interpreter:
+    """A resolved pytest invocation plus where it came from.
+
+    `argv` is the prefix to put in front of `-m pytest …`. `refusal` is set
+    only when a declared environment could not be constructed; `argv` is then
+    empty and the caller must refuse rather than run anything.
+    """
+
+    argv: list[str]
+    provenance: str  # human-readable, printed in gate output
+    refusal: str = ""
+
+
+def _declares_locked_env(pp: Path) -> list[str]:
+    """Which locked-environment markers the project declares, in order."""
+    markers = []
+    if (pp / ".venv" / "bin" / "python").exists():
+        markers.append(".venv/")
+    if (pp / "uv.lock").exists():
+        markers.append("uv.lock")
+    if (pp / "poetry.lock").exists():
+        markers.append("poetry.lock")
+    return markers
+
+
+def _pytest_works(argv: list[str], pp: Path) -> str:
+    """Return the probed `python -V` output when `argv` can run pytest, else "".
+
+    Probed rather than assumed: a `.venv` that exists but was never synced
+    with the dev extras has no pytest, and running the suite through it would
+    report a failure the repository does not have — the same false-verdict
+    shape this whole block exists to remove.
+    """
+    probe = _run([*argv, "-m", "pytest", "--version"], timeout=60, cwd=str(pp))
+    if probe.returncode != 0:
+        return ""
+    version = _run([*argv, "-V"], timeout=30, cwd=str(pp))
+    return (version.stdout + version.stderr).strip() or "unknown version"
+
+
+def _dev_extra(pp: Path) -> str:
+    """The project's dev-ish optional-dependency group, or "" if none.
+
+    Read from `pyproject.toml` rather than assumed to be `dev`: passing
+    `--extra dev` to a project that does not declare it makes uv fail, which
+    would turn a resolvable environment into a refusal.
+    """
+    pyproject = pp / "pyproject.toml"
+    if not pyproject.exists():
+        return ""
+    try:
+        import tomllib
+
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    extras = data.get("project", {}).get("optional-dependencies", {})
+    for name in ("dev", "test", "tests", "testing"):
+        if name in extras:
+            return name
+    return ""
+
+
+def _declared_python(pp: Path) -> str:
+    """The version the repository pins in `.python-version`, or "".
+
+    `.venv/` alone is not a *repository* declaration: measured on this repo,
+    three checkouts of the same commit carried 3.11.13, 3.11.13 and 3.13.6,
+    because `uv` builds a venv from the newest interpreter satisfying
+    `requires-python` at the moment the venv happens to be created. Resolving
+    to `.venv/` therefore removes the PATH dependency and leaves a
+    creation-time one — the same defect class with a different ambient source.
+    """
+    pin = pp / ".python-version"
+    if not pin.exists():
+        return ""
+    return pin.read_text(encoding="utf-8").strip()
+
+
+def _pin_mismatch_note(pp: Path, version: str) -> str:
+    """A visible note when the resolved interpreter contradicts the pin.
+
+    A note and not a refusal, deliberately. A stale `.venv` is common, easily
+    fixed, and refusing it would block legitimate work on a condition that is
+    not itself a defect — and an over-refusal has no licensable form, while a
+    divergence the verdict *names* can be acted on. This is AC2's stated
+    intent: make the divergence visible in the verdict rather than something
+    found by bisection.
+    """
+    declared = _declared_python(pp)
+    if not declared:
+        return ""
+    # "3.11" must accept "Python 3.11.13"; a pin is a series, not a build.
+    numbers = re.search(r"(\d+(?:\.\d+)*)", version)
+    actual = numbers.group(1) if numbers else ""
+    if actual and not (actual == declared or actual.startswith(declared + ".")):
+        return f" [MISMATCH: .python-version pins {declared}, this is {actual}]"
+    return ""
+
+
+def resolve_interpreter(project_path: Path) -> Interpreter:
+    """Resolve the interpreter the blocking gates must use for this project."""
+    pp = project_path
+    declared = _declares_locked_env(pp)
+
+    venv_python = pp / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        version = _pytest_works([str(venv_python)], pp)
+        if version:
+            note = _pin_mismatch_note(pp, version)
+            return Interpreter([str(venv_python)], f".venv/ ({version}){note}")
+
+    if (pp / "uv.lock").exists() and shutil.which("uv"):
+        extra = _dev_extra(pp)
+        base = ["uv", "run", *(("--extra", extra) if extra else ()), "python"]
+        version = _pytest_works(base, pp)
+        if version:
+            label = f"uv.lock + --extra {extra}" if extra else "uv.lock"
+            return Interpreter(base, f"{label} ({version})")
+
+    if (pp / "poetry.lock").exists() and shutil.which("poetry"):
+        base = ["poetry", "run", "python"]
+        version = _pytest_works(base, pp)
+        if version:
+            return Interpreter(base, f"poetry.lock ({version})")
+
+    if declared:
+        return Interpreter(
+            [],
+            "declared " + ", ".join(declared) + " — none could run pytest",
+            refusal=_ENVIRONMENT_UNAVAILABLE,
+        )
+
+    version = _pytest_works(["python3"], pp) or "pytest not importable"
+    return Interpreter(["python3"], f"PATH python3, no locked env declared ({version})")
+
+
+def _interpreter_refusal_output(interp: Interpreter) -> str:
+    """The blocking-gate output for an unconstructable declared environment.
+
+    Names the reason rather than reporting a test failure, because no test
+    ran: the gate could not establish its subject. "Could not compute" and
+    "the suite failed" are different verdicts and must not print the same way.
+    """
+    return (
+        f"REFUSED: {interp.refusal}\n"
+        f"{interp.provenance}\n"
+        "The project declares a locked environment, so the gate will not fall back to\n"
+        "whatever `python3` PATH happens to resolve — that is how an untested\n"
+        "interpreter silently became the subject of a blocking verdict (ISSUE-118).\n"
+        "Fix the environment (e.g. `uv sync --extra dev`) and re-run."
+    )
 
 
 _DEFAULT_TEST_TIMEOUT = 600  # seconds — default for test-phase subprocess runs
@@ -346,13 +554,24 @@ def run_gate_unit(project_path: Path, **_kwargs) -> GateResult:
     # Decide: pytest or npm test
     pkg_json = pp / "package.json"
     if (pp / "pyproject.toml").exists() or (pp / "tests").is_dir() or list(pp.glob("test_*.py")):
+        interp = resolve_interpreter(pp)
+        if interp.refusal:
+            return GateResult(
+                gate="unit",
+                status="fail",
+                blocking=True,
+                output=_interpreter_refusal_output(interp),
+                duration_s=time.monotonic() - start,
+            )
         result = _run(
-            ["python3", "-m", "pytest", "-q", "--tb=short"],
+            [*interp.argv, "-m", "pytest", "-q", "--tb=short"],
             timeout=_test_timeout(),
             cwd=str(pp),
         )
+        provenance = interp.provenance
     elif pkg_json.exists():
         result = _run(["npm", "test"], timeout=_test_timeout(), cwd=str(pp))
+        provenance = ""
     else:
         return GateResult(
             gate="unit",
@@ -370,6 +589,7 @@ def run_gate_unit(project_path: Path, **_kwargs) -> GateResult:
         blocking=True,
         output=output,
         duration_s=time.monotonic() - start,
+        interpreter=provenance,
     )
 
 
@@ -378,9 +598,20 @@ def run_gate_integration(project_path: Path, **_kwargs) -> GateResult:
     start = time.monotonic()
     pp = project_path
 
+    interp = resolve_interpreter(pp)
+    if interp.refusal:
+        return GateResult(
+            gate="integration",
+            status="fail",
+            blocking=True,
+            output=_interpreter_refusal_output(interp),
+            duration_s=time.monotonic() - start,
+            interpreter=interp.provenance,
+        )
+
     # Check if there are integration-marked tests
     collect = _run(
-        ["python3", "-m", "pytest", "--collect-only", "-q", "-m", "integration"],
+        [*interp.argv, "-m", "pytest", "--collect-only", "-q", "-m", "integration"],
         timeout=30,
         cwd=str(pp),
     )
@@ -399,14 +630,14 @@ def run_gate_integration(project_path: Path, **_kwargs) -> GateResult:
         # Start services
         _run(["docker", "compose", "up", "-d"], timeout=60, cwd=str(pp))
         result = _run(
-            ["python3", "-m", "pytest", "-q", "--tb=short", "-m", "integration"],
+            [*interp.argv, "-m", "pytest", "-q", "--tb=short", "-m", "integration"],
             timeout=120,
             cwd=str(pp),
         )
         _run(["docker", "compose", "down"], timeout=30, cwd=str(pp))
     else:
         result = _run(
-            ["python3", "-m", "pytest", "-q", "--tb=short", "-m", "integration"],
+            [*interp.argv, "-m", "pytest", "-q", "--tb=short", "-m", "integration"],
             timeout=120,
             cwd=str(pp),
         )
@@ -419,6 +650,7 @@ def run_gate_integration(project_path: Path, **_kwargs) -> GateResult:
         blocking=True,
         output=output,
         duration_s=time.monotonic() - start,
+        interpreter=interp.provenance,
     )
 
 
@@ -724,9 +956,20 @@ def run_gate_api(project_path: Path, config: dict | None = None, **_kwargs) -> G
 
     has_openapi = (pp / "openapi.yaml").exists() or (pp / "openapi.json").exists()
 
+    interp = resolve_interpreter(pp)
+    if interp.refusal:
+        return GateResult(
+            gate="api",
+            status="fail",
+            blocking=True,
+            output=_interpreter_refusal_output(interp),
+            duration_s=time.monotonic() - start,
+            interpreter=interp.provenance,
+        )
+
     # Check for pytest -m api tests
     collect = _run(
-        ["python3", "-m", "pytest", "--collect-only", "-q", "-m", "api"],
+        [*interp.argv, "-m", "pytest", "--collect-only", "-q", "-m", "api"],
         timeout=30,
         cwd=str(pp),
     )
@@ -768,12 +1011,14 @@ def run_gate_api(project_path: Path, config: dict | None = None, **_kwargs) -> G
     else:
         # Fall back to pytest -m api
         if config.get("server_start_cmd") and config.get("server_health_url"):
-            result = _run_with_server(
-                pp, config, "python3 -m pytest -q --tb=short -m api", timeout=120
-            )
+            # gate_server.sh takes a shell STRING, so the resolved argv is
+            # quoted rather than joined with spaces — a venv path can contain
+            # one, and a split there would silently run a different program.
+            test_cmd = shlex.join([*interp.argv, "-m", "pytest", "-q", "--tb=short", "-m", "api"])
+            result = _run_with_server(pp, config, test_cmd, timeout=120)
         else:
             result = _run(
-                ["python3", "-m", "pytest", "-q", "--tb=short", "-m", "api"],
+                [*interp.argv, "-m", "pytest", "-q", "--tb=short", "-m", "api"],
                 timeout=120,
                 cwd=str(pp),
             )
@@ -786,6 +1031,7 @@ def run_gate_api(project_path: Path, config: dict | None = None, **_kwargs) -> G
         blocking=True,
         output=output,
         duration_s=time.monotonic() - start,
+        interpreter=interp.provenance,
     )
 
 
@@ -999,6 +1245,11 @@ def main(argv: list[str] | None = None) -> int:
             icon = {"pass": "PASS", "fail": "FAIL", "skip": "SKIP", "warn": "WARN"}[r.status]
             blocking_tag = " [blocking]" if r.blocking else ""
             print(f"  {icon}: {r.gate}{blocking_tag} ({r.duration_s:.1f}s)")
+            # Printed on EVERY status, not just failures (ISSUE-118). A PASS
+            # is exactly when a silently-swapped interpreter does its damage:
+            # the gate looks healthy while measuring something CI never runs.
+            if r.interpreter:
+                print(f"        interpreter: {r.interpreter}")
             if r.status == "fail":
                 # Show last few lines of output for failures
                 lines = r.output.strip().splitlines()

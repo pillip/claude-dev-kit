@@ -55,6 +55,32 @@ def _valid_payload() -> list[dict]:
     ]
 
 
+def as_ingested(results, payload: list[dict]) -> list[dict]:
+    """`asdict(results)` restricted to the keys the payload actually declares.
+
+    `GateResult` grew an optional `interpreter` field (ISSUE-118) that records
+    which interpreter produced a verdict. No external runtime sends it — the
+    synthesizer's key allowlist *refuses* a payload that tries to, so a
+    delegated result can never claim provenance it did not earn — which means
+    a whole-dict comparison against `_valid_payload()` would now fail for a
+    reason that has nothing to do with ingestion.
+
+    `_valid_payload()` is deliberately NOT widened to carry the field: it
+    models what the runtime sends, and a fixture rewritten to match the kit's
+    own dataclass has stopped modelling its subject.
+
+    What this still catches: a dropped key (KeyError), a key ingested with the
+    wrong value, and a reordered list. What it no longer catches: an extra
+    field appearing on `GateResult`. That is the trade, and it is the right
+    way round — extra fields are visible in the dataclass, whereas a silently
+    mis-ingested value is not.
+    """
+    return [
+        {key: asdict(result)[key] for key in entry}
+        for result, entry in zip(results, payload, strict=True)
+    ]
+
+
 def _write_results(project: Path, payload, name: str = "gate_results.json") -> Path:
     run_dir = project / ".claude" / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -142,7 +168,7 @@ class TestSynthesizeMapper:
 
     def test_exact_schema_round_trip(self):
         results = sgr.synthesize_gate_results(_valid_payload())
-        assert [asdict(r) for r in results] == _valid_payload()
+        assert as_ingested(results, _valid_payload()) == _valid_payload()
 
     def test_blocking_flag_preserved_both_ways(self):
         results = sgr.synthesize_gate_results(_valid_payload())
@@ -267,7 +293,7 @@ class TestDecideGatePath:
         decision, results, reason = _decide(project)
         assert decision == "delegated"
         assert reason == ""
-        assert [asdict(r) for r in results] == _valid_payload()
+        assert as_ingested(results, _valid_payload()) == _valid_payload()
 
     def test_nonexistent_project_path_is_safe(self, monkeypatch):
         _probe(monkeypatch, 2)
